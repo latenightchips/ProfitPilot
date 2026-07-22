@@ -128,7 +128,7 @@ Profile
 
 • Uses Aave V3
 
-• Borrows USDC or GHO
+• Borrows USDC or other stablecoins
 
 • Uses BTC as collateral
 
