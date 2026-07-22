@@ -280,7 +280,7 @@ BTC
 
 USDC
 
-GHO
+USDT
 
 Every function should have one responsibility.
 
