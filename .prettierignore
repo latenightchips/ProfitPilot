@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+build
+coverage
+pnpm-lock.yaml
+playwright-report
+test-results
+
+# Specification documents — never auto-formatted or modified as a side effect
+# of tooling. See CONTRIBUTING.md.
+docs/
+README.md
