@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-23
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 1 of 9 complete
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 2 of 9 complete
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -95,6 +95,64 @@ list, both fixed:
 | `pnpm build`         | ✅ Pass                                                         |
 
 No test, lint, or build failures were left unresolved.
+
+**Sync status**: committed as `4315a41`, exported as patch/bundle, applied
+locally, and confirmed present on `origin/main` (re-derived hashes `2cf8c1a`
+Milestone 1 / `226876a` Batch 1 — expected from patch reapply, content
+identical). Verified by fetching `origin/main` directly and walking its
+ancestry from this session.
+
+### Batch 2 — Portfolio Mathematics (M2-006 through M2-008)
+
+| Task                                          | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-006 Implement Portfolio Value Calculations | ✅ Done | `engine/portfolio/{calculateCollateralValue,calculateDebtValue,calculatePortfolioValue,calculateNetWorth}.ts` — F-001, F-002, F-003, F-004. "Asset/debt allocation percentages" sub-bullets skipped: no Formula ID, and trivially 100% under the approved single-asset/single-debt scope.                                                                                        |
+| M2-007 Implement Loan-to-Value Calculations   | ✅ Done | `engine/portfolio/calculateLoanToValue.ts` (F-020); `engine/loop/calculateBorrowCapacity.ts` adds `calculateMaximumBorrowLimit` (F-021) and `calculateAvailableBorrow` (F-013). "Weighted maximum LTV" sub-bullet skipped: multi-collateral only, N/A under approved scope.                                                                                                      |
+| M2-008 Implement Leverage Calculations        | ✅ Done | `engine/portfolio/{calculateExposure,calculateEffectiveLeverage}.ts` — F-010, F-011 ("Equity" reuses F-004). "Debt-to-equity ratio" and "Collateral multiplier" sub-bullets skipped: no Formula ID in `02_Formulas.md`, would mean inventing a formula. "Effective BTC exposure" is documented as equal to F-010 under single-asset scope rather than given a separate function. |
+
+**Formula ID duplication found and handled**: `02_Formulas.md` documents the
+identical equation (Collateral Value × Max LTV) twice — F-012 "Borrow
+Capacity" (Leverage & Loop chapter) and F-021 "Maximum Borrow Limit" (Aave
+Risk chapter). Implemented once (`computeBorrowCapacity`, private) with two
+public, correctly-tagged wrappers (`calculateBorrowCapacity` for F-012,
+`calculateMaximumBorrowLimit` for F-021), so both Formula IDs have a
+canonical, traceable implementation without duplicating the math.
+
+**Framework-independence**: re-audited after Batch 2 — still zero
+React/Next.js/Zustand/Supabase/UI imports, and no `@/...` alias usage inside
+`engine/` (all internal imports are relative).
+
+**Validation — Batch 2**
+
+| Command              | Result                                                          |
+| -------------------- | --------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                         |
+| `pnpm lint`          | ✅ Pass                                                         |
+| `pnpm format:check`  | ✅ Pass                                                         |
+| `pnpm test`          | ✅ Pass, 89/89 (38 new)                                         |
+| `pnpm test:coverage` | ✅ 100% statements/branches/functions/lines on all Batch 2 code |
+| `pnpm build`         | ✅ Pass                                                         |
+
+Every test asserts against a worked example from `02_Formulas.md` (or, where
+noted, the "UNIT TEST EXAMPLES" scenarios in the Leverage & Loop chapter)
+wherever one exists, plus edge/invalid-input cases per the M2 Testing
+Requirements. No test, lint, or build failures were left unresolved.
+
+**Traceability audit (Batch 2, pre-commit)**: every public function carries
+its Formula ID in both a doc comment and its runtime `FormulaResult`
+metadata; all 10 implemented Formula IDs (F-001, F-002, F-003, F-004, F-010,
+F-011, F-012, F-013, F-020, F-021) have an explicit
+`metadata.formulaId`-asserting test; no Formula ID called for by M2-006
+through M2-008 was omitted.
+
+**Finding: F-005–F-008 (Equity Ratio, Debt Ratio, Portfolio Gain, Portfolio
+Return — the rest of `02_Formulas.md`'s Portfolio Metrics chapter) have no
+task assigned anywhere in `06_TASKS.md`** — confirmed by a full-document
+search, zero matches. Not a Batch 2 omission (never assigned to M2-006 or
+any other task). **Decision: intentionally not implemented at this time.**
+Treated as an unassigned documentation gap, to be picked up at the Formula
+Traceability Audit milestone (M2-032) or whenever `06_TASKS.md` is updated
+to assign them — not implemented speculatively now.
 
 ---
 
@@ -230,13 +288,16 @@ is a single constant and trivially reversible if the intended value is 2.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 1 before committing, per
+2. **This pass stops here for approval** of Batch 2 before committing, per
    instruction.
-3. Once approved and committed: **Batch 2 — Portfolio Mathematics
-   (M2-006 through M2-008)** — Portfolio/Collateral/Debt/Net Portfolio Value
-   (F-001–F-004), Loan-to-Value (F-020, F-021, F-013), Leverage (F-004,
-   F-010, F-011). Built single-asset per conflict #5's resolution above.
-4. The Health Factor risk-band conflict (item 1) and the compound-interest
-   scope gap (see the Milestone 2 review) don't block Batch 2 — they matter
-   starting at Batch 3 (Risk Mathematics, M2-009's classification sub-item)
-   and Batch 4 (Interest Mathematics, M2-013) respectively.
+3. Once approved and committed: **Batch 3 — Risk Mathematics
+   (M2-009 through M2-011)** — Health Factor (F-022), Liquidation Price/
+   Distance/Buffer (F-023–F-025), Target Health Factor (F-027). **This is
+   where the Health Factor risk-band conflict (item 1 above) actually needs
+   resolving** — specifically M2-009's "Health Factor status classification"
+   sub-item (F-026), which cannot be implemented correctly without a chosen
+   banding scheme. The rest of M2-009/010/011 (the numeric HF/liquidation
+   formulas themselves) can proceed regardless.
+4. The compound-interest scope gap (see the Milestone 2 review) doesn't
+   block Batch 3 — it matters starting at Batch 4 (Interest Mathematics,
+   M2-013).

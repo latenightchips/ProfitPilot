@@ -12,6 +12,20 @@
  * M2-031; until then this re-exports everything implemented so far.
  */
 export {
+  calculateAvailableBorrow,
+  calculateBorrowCapacity,
+  calculateMaximumBorrowLimit,
+} from './loop';
+export {
+  calculateCollateralValue,
+  calculateDebtValue,
+  calculateEffectiveLeverage,
+  calculateExposure,
+  calculateLoanToValue,
+  calculateNetWorth,
+  calculatePortfolioValue,
+} from './portfolio';
+export {
   Decimal,
   type DecimalInput,
   DISPLAY_PRECISION,
