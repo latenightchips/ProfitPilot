@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-07-22
-Current milestone: **Milestone 1 — Project Foundation** (per `docs/06_TASKS.md`)
+Last updated: 2026-07-23
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 1 of 9 complete
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -11,39 +11,88 @@ open documentation conflicts. It is not a specification document.
 
 ## Completed tasks
 
-| Task | Status | Notes |
-|---|---|---|
-| M1-001 Create Next.js Project | ✅ Done | Next.js 15.5.21, App Router, TypeScript, Turbopack dev/build |
-| M1-002 Install Core Dependencies | ✅ Done | All packages from the documented list installed (see "Dependency versions" below) |
-| M1-003 Create Repository Structure | ✅ Done | `app/ components/ features/ engine/ services/ stores/ hooks/ types/ utils/ constants/ providers/ styles/ tests/ supabase/ docs/` created per Build Guide's M1-003 directory list; empty dirs hold `.gitkeep` |
-| M1-004 Configure Code Quality | ✅ Done | ESLint (flat config) + Prettier + `eslint-config-prettier` + `eslint-plugin-simple-import-sort`; TypeScript strict mode (already on from scaffold); path alias `@/*`. **Not done:** committed editor "format-on-save" config — declined; see Deviations. |
-| M1-005 Configure Testing | ✅ Done | Vitest (jsdom, v8 coverage, `tests/unit/`) + Playwright (`tests/e2e/`, Chromium via sandbox-installed browser). 6 unit tests / 2 e2e tests passing. |
-| M1-006 Create Application Layout | ✅ Done | `AppShell`/`AppHeader`/`AppSidebar` (03_UI.md page 2 layout), dark theme default, Inter font, 6 placeholder routes (`/`, `/portfolio`, `/simulation`, `/loop-builder`, `/exit-planner`, `/settings`). No business logic. |
-| M1-007 Configure Environment | ✅ Done | `.env.example` + `utils/env.ts` (Zod-validated, all fields optional/defaulted so Manual Mode runs with zero external config, per REQ-010). |
-| M1-008 Configure CI Pipeline | ✅ Done | `.github/workflows/ci.yml`: install → lint → typecheck → format check → unit tests (coverage) → build. Not yet run on GitHub (no push performed). |
-| M1-010 Create Developer Documentation | ✅ Done | `CONTRIBUTING.md`: setup, dev/test commands, structure, contribution workflow. |
+| Task                                  | Status  | Notes                                                                                                                                                                                                                                                    |
+| ------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1-001 Create Next.js Project         | ✅ Done | Next.js 15.5.21, App Router, TypeScript, Turbopack dev/build                                                                                                                                                                                             |
+| M1-002 Install Core Dependencies      | ✅ Done | All packages from the documented list installed (see "Dependency versions" below)                                                                                                                                                                        |
+| M1-003 Create Repository Structure    | ✅ Done | `app/ components/ features/ engine/ services/ stores/ hooks/ types/ utils/ constants/ providers/ styles/ tests/ supabase/ docs/` created per Build Guide's M1-003 directory list; empty dirs hold `.gitkeep`                                             |
+| M1-004 Configure Code Quality         | ✅ Done | ESLint (flat config) + Prettier + `eslint-config-prettier` + `eslint-plugin-simple-import-sort`; TypeScript strict mode (already on from scaffold); path alias `@/*`. **Not done:** committed editor "format-on-save" config — declined; see Deviations. |
+| M1-005 Configure Testing              | ✅ Done | Vitest (jsdom, v8 coverage, `tests/unit/`) + Playwright (`tests/e2e/`, Chromium via sandbox-installed browser). 6 unit tests / 2 e2e tests passing.                                                                                                      |
+| M1-006 Create Application Layout      | ✅ Done | `AppShell`/`AppHeader`/`AppSidebar` (03_UI.md page 2 layout), dark theme default, Inter font, 6 placeholder routes (`/`, `/portfolio`, `/simulation`, `/loop-builder`, `/exit-planner`, `/settings`). No business logic.                                 |
+| M1-007 Configure Environment          | ✅ Done | `.env.example` + `utils/env.ts` (Zod-validated, all fields optional/defaulted so Manual Mode runs with zero external config, per REQ-010).                                                                                                               |
+| M1-008 Configure CI Pipeline          | ✅ Done | `.github/workflows/ci.yml`: install → lint → typecheck → format check → unit tests (coverage) → build. Not yet run on GitHub (no push performed).                                                                                                        |
+| M1-010 Create Developer Documentation | ✅ Done | `CONTRIBUTING.md`: setup, dev/test commands, structure, contribution workflow.                                                                                                                                                                           |
 
 **Deferred:**
 
-| Task | Status | Notes |
-|---|---|---|
+| Task                              | Status     | Notes                                                                                                                                                                                                                     |
+| --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | M1-009 Deploy Initial Application | ⏸ Deferred | Explicitly excluded from this pass per instruction. Project builds cleanly and is deployable to Vercel with zero extra config, but **no Vercel project has been created and none should be until explicitly instructed.** |
 
 ---
 
-## Validation results (all run against this working tree)
+## Validation results — Milestone 1 (historical, at time of completion)
 
-| Command | Result |
-|---|---|
-| `pnpm typecheck` | ✅ Pass, no errors |
-| `pnpm lint` | ✅ Pass, no errors (after autofix of import ordering) |
-| `pnpm format:check` | ✅ Pass (spec docs excluded from Prettier scope — see below) |
-| `pnpm test` (Vitest, 6 tests) | ✅ Pass |
-| `pnpm test:coverage` | ✅ Pass, 100% on covered files (`utils/cn.ts`, `utils/env.ts` — the only files with logic so far) |
-| `pnpm exec playwright test --list` (config check) | ✅ Valid, discovers 2 tests |
-| `pnpm exec playwright test` (actual run, bonus) | ✅ Pass, 2/2 |
-| `pnpm build` (production, Turbopack) | ✅ Pass, 6 routes statically prerendered |
-| `pnpm validate` (full pipeline, mirrors CI) | ✅ Pass end-to-end |
+| Command                                           | Result                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`                                  | ✅ Pass, no errors                                                                                |
+| `pnpm lint`                                       | ✅ Pass, no errors (after autofix of import ordering)                                             |
+| `pnpm format:check`                               | ✅ Pass (spec docs excluded from Prettier scope — see below)                                      |
+| `pnpm test` (Vitest, 6 tests)                     | ✅ Pass                                                                                           |
+| `pnpm test:coverage`                              | ✅ Pass, 100% on covered files (`utils/cn.ts`, `utils/env.ts` — the only files with logic so far) |
+| `pnpm exec playwright test --list` (config check) | ✅ Valid, discovers 2 tests                                                                       |
+| `pnpm exec playwright test` (actual run, bonus)   | ✅ Pass, 2/2                                                                                      |
+| `pnpm build` (production, Turbopack)              | ✅ Pass, 6 routes statically prerendered                                                          |
+| `pnpm validate` (full pipeline, mirrors CI)       | ✅ Pass end-to-end                                                                                |
+
+No test, lint, or build failures were left unresolved.
+
+---
+
+## Milestone 2 progress
+
+Implementation order follows the sequence proposed in the Milestone 2 review
+(Foundation → Portfolio → Risk → Interest → Loop → Simulation → Exit →
+Recommendations → Verification), one batch at a time, tests run after each
+batch, commit only when a batch passes.
+
+### Batch 1 — Engine Foundation (M2-001 through M2-005)
+
+| Task                                         | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-001 Create Formula Engine Foundation      | ✅ Done | `engine/{portfolio,health,liquidation,interest,loop,simulation,exit,recommendation,validation,shared}/` + `engine/index.ts` public entry point. No framework dependencies.                                                                                                                                                                                                                                             |
+| M2-002 Implement Shared Financial Types      | ✅ Done | `engine/shared/types.ts` — `MarketPrices`, `CollateralPosition`, `DebtPosition`, `ProtocolParameters`, `PortfolioInput`. Single-asset (BTC collateral / one stablecoin debt), per `01_PRD.md` REQ-003 v0.1 scope — see conflict #5 below. Simulation/Exit-plan/Recommendation input types deferred to the batches that implement those modules, so their shapes come from real formulas rather than being guessed now. |
+| M2-003 Configure Decimal Arithmetic          | ✅ Done | `engine/shared/decimal.ts` — Decimal.js configured globally (34-digit precision, `ROUND_HALF_UP`), `toDecimal`/`roundForDisplay`/`toOutputNumber` conversion helpers, `DISPLAY_PRECISION` table. See conflict #6 (Health Factor decimal places).                                                                                                                                                                       |
+| M2-004 Create Standard Formula Result Model  | ✅ Done | `engine/shared/result.ts` — `FormulaResult<T>` discriminated union (`FormulaSuccess`/`FormulaFailure`), `FormulaWarning`, `FormulaError`, `FormulaMetadata`, `createSuccess`/`createFailure` constructors.                                                                                                                                                                                                             |
+| M2-005 Implement Engine Validation Utilities | ✅ Done | `engine/validation/validate.ts` — `validateFinite/NonNegative/Positive/Percentage/Price/TokenQuantity/Rate/Threshold/TimePeriod`, plus composite `validateProtocolParameters` (also enforces the documented invariant maxLTV ≤ liquidationThreshold).                                                                                                                                                                  |
+
+**Framework-independence audit (post-implementation, pre-commit)**: confirmed
+zero imports of React/Next.js/Zustand/Supabase/UI anywhere in `engine/`. The
+audit did surface two things that reached outside "Decimal.js + its own
+shared modules + TypeScript stdlib" without being on that explicit forbidden
+list, both fixed:
+
+- `engine/shared/result.ts` imported the host app's `../../package.json` for
+  `engineVersion`. Replaced with a hardcoded `ENGINE_VERSION` constant; a new
+  test (`tests/unit/engine/shared/result.test.ts`) guards against it drifting
+  from `package.json`'s real version.
+- `engine/validation/validate.ts` imported its sibling `engine/shared/*`
+  modules via the `@/...` path alias, which only resolves via this app's
+  `tsconfig.json`. Changed to relative imports (`../shared/...`) so the
+  Engine's internal module graph doesn't depend on the host app's build
+  configuration — relevant if the Engine is ever extracted as an independent
+  package (04_BUILD_GUIDE.md).
+
+**Validation — Batch 1**
+
+| Command              | Result                                                          |
+| -------------------- | --------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                         |
+| `pnpm lint`          | ✅ Pass                                                         |
+| `pnpm format:check`  | ✅ Pass                                                         |
+| `pnpm test`          | ✅ Pass, 51/51 (45 new)                                         |
+| `pnpm test:coverage` | ✅ 100% statements/branches/functions/lines on all Batch 1 code |
+| `pnpm build`         | ✅ Pass                                                         |
 
 No test, lint, or build failures were left unresolved.
 
@@ -56,12 +105,12 @@ decision before the milestone that depends on them.
 
 ### 1. Health Factor risk-band thresholds disagree across four documents — BLOCKS Milestone 2 (Risk classification, Formula F-026/F-060) and Milestone 5 (Dashboard)
 
-| Source | Bands |
-|---|---|
-| README.md / `01_PRD.md` REQ-001 Dashboard card | HF>2.0 Green Safe · 1.50–2.00 Yellow Monitor · 1.20–1.50 Orange Elevated · <1.20 Red Critical · ≤1.00 Liquidation |
-| `01_PRD.md` REQ-005 Risk Engine categories | SAFE >2.50 · MONITOR 2.00–2.50 · ELEVATED 1.50–2.00 · HIGH RISK 1.20–1.50 · LIQUIDATION RISK ≤1.20 |
-| `02_Formulas.md` F-026 Risk Category | HF≥2.00 Very Safe · 1.70–1.99 Safe · 1.50–1.69 Moderate · 1.30–1.49 High Risk · 1.10–1.29 Critical · <1.10 Extreme |
-| `02_Formulas.md` F-060 Recommendation rules | HF≥2.00 Excellent · 1.80–2.00 Healthy · 1.60–1.80 Good · 1.40–1.60 Caution · 1.20–1.40 High Risk · <1.20 Critical |
+| Source                                         | Bands                                                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| README.md / `01_PRD.md` REQ-001 Dashboard card | HF>2.0 Green Safe · 1.50–2.00 Yellow Monitor · 1.20–1.50 Orange Elevated · <1.20 Red Critical · ≤1.00 Liquidation  |
+| `01_PRD.md` REQ-005 Risk Engine categories     | SAFE >2.50 · MONITOR 2.00–2.50 · ELEVATED 1.50–2.00 · HIGH RISK 1.20–1.50 · LIQUIDATION RISK ≤1.20                 |
+| `02_Formulas.md` F-026 Risk Category           | HF≥2.00 Very Safe · 1.70–1.99 Safe · 1.50–1.69 Moderate · 1.30–1.49 High Risk · 1.10–1.29 Critical · <1.10 Extreme |
+| `02_Formulas.md` F-060 Recommendation rules    | HF≥2.00 Excellent · 1.80–2.00 Healthy · 1.60–1.80 Good · 1.40–1.60 Caution · 1.20–1.40 High Risk · <1.20 Critical  |
 
 No canonical set is designated. This does not block Milestone 1 (no risk logic
 exists yet) but **must be resolved before implementing F-026/F-060 or any
@@ -85,7 +134,7 @@ so it isn't a surprise later.
 ### 3. `01_PRD.md` REQ-001 through REQ-017 sequencing vs. version scope (v0.1–v1.0)
 
 The PRD's per-page "Blocking Dependencies" chain reads as strictly
-sequential (each REQ blocked on *all* prior REQs), but REQ-015's actual v0.1
+sequential (each REQ blocked on _all_ prior REQs), but REQ-015's actual v0.1
 feature scope is narrow while REQ-012 (Security), REQ-013 (DevOps/CI-CD),
 REQ-014 (AI framework), REQ-016 (Governance) read as full-project, ongoing
 concerns. No document maps REQ numbers to version milestones. Not a
@@ -105,6 +154,31 @@ hardening) scope.
   React 19.1.0** (latest 15.x/19.x — both fully available, no compatibility
   deviation was required). Flagging the wording mismatch between the two docs
   rather than silently picking a side.
+
+### 5. Single-asset vs. multi-asset collateral/debt scope — RESOLVED for Milestone 2 in favor of single-asset
+
+Several `06_TASKS.md` Milestone 2 task descriptions imply multi-asset support
+(M2-006 "by asset" / allocation percentages, M2-007 "weighted maximum LTV",
+M2-009 "weighted liquidation threshold", M2-028 "multiple collateral assets" /
+"multiple debt assets"), but `01_PRD.md` REQ-003 is explicit: _"Version 0.1
+assumes Bitcoin only"_ (collateral) and _"Version 0.1 assumes one
+stablecoin"_ (debt), and every one of `02_Formulas.md`'s F-001–F-069 is
+written single-asset. Batch 1's shared types (`engine/shared/types.ts`) were
+built single-asset, following the PRD's explicit v0.1 scope and the
+documented Formula IDs, since building multi-asset aggregation now would mean
+inventing formulas that don't exist in `02_Formulas.md` — which conflicts
+with "do not invent functionality." **This decision was made without
+explicit confirmation and should be reviewed** — if multi-asset support is
+actually wanted for Milestone 2, `engine/shared/types.ts` will need
+revisiting before Batch 2 (Portfolio Mathematics) builds on it.
+
+### 6. Health Factor display precision: 2 decimals vs. 3 decimals
+
+`02_Formulas.md` "PRECISION STANDARD" (page 1) states Health Factor uses 3
+decimals; `01_PRD.md` REQ-002 "PRECISION REQUIREMENTS" states 2 decimals.
+`engine/shared/decimal.ts`'s `DISPLAY_PRECISION.healthFactor` uses **3**,
+following `02_Formulas.md` as the document of record for calculations. This
+is a single constant and trivially reversible if the intended value is 2.
 
 ---
 
@@ -154,15 +228,15 @@ hardening) scope.
 
 ## Next task
 
-1. **This pass stops here for approval**, per instruction.
-2. Once approved: **M1-009 (Deploy Initial Application)** — create the
-   Vercel project and perform the first deployment — is the only remaining
-   Milestone 1 task.
-3. After M1-009, Milestone 1's Definition of Done is fully satisfied and
-   **Milestone 2 (Formula Engine)** begins — starting with Build Guide Phase
-   1 ("Shared Types and Validation": Decimal utilities, `FormulaResult` type,
-   warnings, formula metadata, assertions, input schemas, protocol parameter
-   validation), per `04_BUILD_GUIDE.md`'s 8-phase Engine build order. The
-   Health Factor risk-band conflict (item 1 above) should be resolved before
-   or during the Aave Risk Mathematics phase (Formula IDs F-020–F-029,
-   F-026 specifically) and before the Recommendation Engine phase (F-060).
+1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
+   project created, per instruction.
+2. **This pass stops here for approval** of Batch 1 before committing, per
+   instruction.
+3. Once approved and committed: **Batch 2 — Portfolio Mathematics
+   (M2-006 through M2-008)** — Portfolio/Collateral/Debt/Net Portfolio Value
+   (F-001–F-004), Loan-to-Value (F-020, F-021, F-013), Leverage (F-004,
+   F-010, F-011). Built single-asset per conflict #5's resolution above.
+4. The Health Factor risk-band conflict (item 1) and the compound-interest
+   scope gap (see the Milestone 2 review) don't block Batch 2 — they matter
+   starting at Batch 3 (Risk Mathematics, M2-009's classification sub-item)
+   and Batch 4 (Interest Mathematics, M2-013) respectively.
