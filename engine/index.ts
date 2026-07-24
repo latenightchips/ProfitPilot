@@ -11,6 +11,12 @@
  * The curated public API surface (hiding internal helpers) is finalized in
  * M2-031; until then this re-exports everything implemented so far.
  */
+export { calculateAdditionalBorrow, calculateHealthFactor } from './health';
+export {
+  calculateLiquidationBuffer,
+  calculateLiquidationDistance,
+  calculateLiquidationPrice,
+} from './liquidation';
 export {
   calculateAvailableBorrow,
   calculateBorrowCapacity,

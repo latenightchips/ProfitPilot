@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-23
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 2 of 9 complete
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 3 of 9 complete
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -156,6 +156,67 @@ to assign them — not implemented speculatively now.
 
 ---
 
+### Batch 3 — Risk Mathematics (M2-009 through M2-011)
+
+| Task                                               | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-009 Implement Health Factor Calculations        | ⚠️ Partial | `engine/health/calculateHealthFactor.ts` — F-022, including the "Health Factor without debt" sub-item (returns `Infinity` with a `NO_DEBT` warning, satisfying the "handles zero-debt safely" DoD). "Weighted liquidation threshold" / "Adjusted collateral value" skipped: multi-collateral only, N/A under approved single-asset scope (Adjusted collateral value equals F-002 under current scope, documented in code). **"Health Factor status classification" (F-026) intentionally not implemented — blocked by the still-unresolved Health Factor risk-band conflict (item 1 below).** |
+| M2-010 Implement Liquidation Price Calculations    | ✅ Done    | `engine/liquidation/{calculateLiquidationPrice,calculateLiquidationDistance,calculateLiquidationBuffer}.ts` — F-024, F-023, F-025. "Price decline to liquidation" and "Debt increase to liquidation" sub-bullets satisfied by F-025 and F-027 respectively (no separate functions needed). "Required collateral price for a target Health Factor" and "Collateral reduction to liquidation" skipped: no distinct Formula ID in `02_Formulas.md`.                                                                                                                                              |
+| M2-011 Implement Target Health Factor Calculations | ✅ Done    | `engine/health/calculateAdditionalBorrow.ts` — F-027, signed result (negative = repayment required), satisfying "Debt repayment required". "Resulting Health Factor verification" (DoD) implemented as an internal self-check that recomputes F-022 and attaches a warning on any mismatch. "Collateral addition required" and "Collateral withdrawal available" skipped: no distinct Formula ID.                                                                                                                                                                                             |
+
+F-026 remains intentionally unimplemented pending resolution of the
+documented Health Factor threshold conflict. This is a specification
+decision rather than an implementation defect.
+
+**A second Formula ID duplication found and handled**: `02_Formulas.md`
+documents `(Collateral × Liquidation Threshold) / Target HF` twice — as the
+first term of F-027 "Maximum Additional Debt" (Aave Risk chapter, this
+batch) and as F-040 "Target Debt" (Exit Strategy chapter, assigned to the
+later task M2-023). Implemented the shared math as a **private**,
+non-exported helper inside `calculateAdditionalBorrow.ts` rather than a
+public F-040-tagged function, to stay scoped to this batch's assigned
+Formula IDs. When M2-023 is implemented, this should be promoted to a
+shared public implementation (same pattern as F-012/F-021 from Batch 2)
+rather than duplicated.
+
+**A documented exception to "never return Infinity"**: `calculateHealthFactor`
+and `calculateLiquidationDistance` return `Infinity` (with an explanatory
+`NO_DEBT` warning) for zero-debt portfolios, rather than a structured error —
+this is the mathematically correct limit of the formula and directly
+required by M2-009's "handles zero-debt portfolios safely" DoD. This is a
+deliberate, judgment-call exception to `01_PRD.md` REQ-002's general
+"never return ... Infinity" rule, which is understood to target _accidental_
+unhandled division-by-zero, not this explicitly anticipated case.
+
+**Framework-independence**: re-audited after Batch 3 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all 5 newly
+implemented Formula IDs (F-022, F-023, F-024, F-025, F-027) have an explicit
+`metadata.formulaId`-asserting test; every M2-009/010/011 sub-bullet was
+cross-checked and is either implemented, or skipped with a documented
+Formula-ID-based reason (no formula exists, or blocked by conflict #1).
+
+**Validation — Batch 3**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 114/114 (25 new)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `pnpm test:coverage` | ✅ 99.6% statements / 99.13% branches / 100% functions / 99.53% lines — one branch (`TARGET_VERIFICATION_MISMATCH` in `calculateAdditionalBorrow.ts`) is a defensive check that's mathematically unreachable given valid inputs (the resulting debt is provably always non-negative), left untested rather than forced via internal mocking. Both figures clear `04_BUILD_GUIDE.md`'s documented Engine coverage targets (≥95% statements, ≥90% branches). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+Every test asserts against a worked example from `02_Formulas.md` wherever
+one exists (deriving equivalent inputs where the doc's example numbers
+don't map directly onto this function's parameters), plus edge/invalid-input
+cases. No test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -170,11 +231,13 @@ decision before the milestone that depends on them.
 | `02_Formulas.md` F-026 Risk Category           | HF≥2.00 Very Safe · 1.70–1.99 Safe · 1.50–1.69 Moderate · 1.30–1.49 High Risk · 1.10–1.29 Critical · <1.10 Extreme |
 | `02_Formulas.md` F-060 Recommendation rules    | HF≥2.00 Excellent · 1.80–2.00 Healthy · 1.60–1.80 Good · 1.40–1.60 Caution · 1.20–1.40 High Risk · <1.20 Critical  |
 
-No canonical set is designated. This does not block Milestone 1 (no risk logic
-exists yet) but **must be resolved before implementing F-026/F-060 or any
-Dashboard risk-category UI.** Action needed: pick one banding scheme (or
-explicitly define which doc governs which context) before Milestone 2's risk
-classification work begins.
+No canonical set is designated. **This is now an active blocker**: Batch 3
+(M2-009) implemented Health Factor (F-022) and everything downstream of it,
+but skipped F-026 (Health Factor status classification) specifically
+because of this conflict — it's the only sub-item left undone in M2-009.
+Action needed: pick one banding scheme (or explicitly define which doc
+governs which context) before F-026 (Batch 3 cleanup) or F-060 (Batch 8,
+Recommendation Engine) can be implemented.
 
 ### 2. Two `04_BUILD_GUIDE.md` pages are referenced but missing content
 
@@ -288,16 +351,15 @@ is a single constant and trivially reversible if the intended value is 2.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 2 before committing, per
+2. **This pass stops here for approval** of Batch 3 before committing, per
    instruction.
-3. Once approved and committed: **Batch 3 — Risk Mathematics
-   (M2-009 through M2-011)** — Health Factor (F-022), Liquidation Price/
-   Distance/Buffer (F-023–F-025), Target Health Factor (F-027). **This is
-   where the Health Factor risk-band conflict (item 1 above) actually needs
-   resolving** — specifically M2-009's "Health Factor status classification"
-   sub-item (F-026), which cannot be implemented correctly without a chosen
-   banding scheme. The rest of M2-009/010/011 (the numeric HF/liquidation
-   formulas themselves) can proceed regardless.
-4. The compound-interest scope gap (see the Milestone 2 review) doesn't
-   block Batch 3 — it matters starting at Batch 4 (Interest Mathematics,
-   M2-013).
+3. Once approved and committed: **Batch 4 — Interest Mathematics
+   (M2-012 through M2-014)**. **M2-013 ("Implement Compound Interest
+   Calculations") has its own blocker**: `02_Formulas.md` F-030–F-034 are
+   simple-interest only and F-033 explicitly defers compounding to a future
+   version — there is no documented compound-interest formula to implement
+   against. M2-012 (Simple Interest, F-030–F-032) and M2-014 (Variable Rate
+   Projection, no Formula ID — likely another skip) are not blocked by this.
+4. **F-026 (Health Factor status classification) remains outstanding** from
+   M2-009, blocked on conflict #1 above — revisit once a banding scheme is
+   chosen, independent of which batch is in progress by then.
