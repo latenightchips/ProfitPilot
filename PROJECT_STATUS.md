@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 13 complete (pending approval) — M2-001 through M2-029 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-030 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 14 complete (pending approval) — M2-001 through M2-030 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-031/M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1181,6 +1181,83 @@ M2-029 produces a test suite and a report, not new Engine functionality.
 
 ---
 
+### Batch 14 — Benchmark Engine Performance (M2-030)
+
+| Task                                | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-030 Benchmark Engine Performance | ⚠️ Partial | `tests/performance/engineBenchmarks.test.ts` — 7 timed benchmarks covering all 6 of M2-030's named "Benchmark" items (2 for "Single scenario": price and position-change variants). No new Formula ID: M2-030 measures already-implemented functions' execution time, it doesn't compute anything new. "Partial" because 2 of the 6 named items had to be mapped onto the closest documented Build Guide category rather than a category matching their own name exactly — see below. |
+
+**Targets sourced from `04_BUILD_GUIDE.md` specifically, per the DoD's own
+wording** ("Calculations satisfy the performance targets defined in the
+**Build Guide**"). `04_BUILD_GUIDE.md` states its Engine-benchmark numbers
+identically in 3 separate places (Page 3's "PERFORMANCE TARGETS," the
+later app-level "PERFORMANCE TARGETS," and the dedicated "PERFORMANCE
+TESTS" section — "Benchmark critical calculations" / "Targets," the most
+directly on-point one): **Single portfolio calculation < 10ms, Optimal
+loop calculation < 20ms, Standard simulation < 50ms, Recommendation
+evaluation < 20ms.** All 4 numbers are used verbatim; none is invented.
+
+**Two gaps found while mapping M2-030's 6 named items onto these 4
+categories** (see conflict #16 for the full writeup):
+
+1. `02_Formulas.md` has its own, differently-numbered "PERFORMANCE
+   TARGETS" section (Portfolio Calculation < 50ms, Scenario Simulation
+   < 100ms — both looser than the Build Guide's < 10ms / < 50ms). Not
+   used here, since the DoD names the Build Guide specifically, but
+   flagged as a cross-document disagreement.
+2. M2-030 names 6 targets (Portfolio summary, Health Factor, Liquidation
+   calculations, Loop strategy, Single scenario, Scenario comparison) but
+   the Build Guide only defines 4 categories — it has no line item for
+   "Health Factor," "Liquidation calculations," or "Scenario comparison"
+   specifically. "Health Factor" and "Liquidation calculations" are
+   benchmarked against "Single portfolio calculation" (< 10ms) — both are
+   steps in `02_Formulas.md`'s own FORMULA DEPENDENCY GRAPH chain
+   starting at "Portfolio Value," the same chain "Portfolio summary"
+   draws from. "Scenario comparison" is benchmarked against "Standard
+   simulation" (< 50ms), the closest documented category — comparing two
+   already-computed `ScenarioSummary` objects (no recomputation, per
+   Batch 8's `compareScenarios` design) is if anything lighter-weight
+   than running a full simulation, so this reuse is a conservative
+   (not an invented) threshold choice.
+
+**Methodology**: each benchmark uses a real Golden Reference Portfolio
+(M2-028) as input — "representative inputs," per `04_BUILD_GUIDE.md`'s
+own "PERFORMANCE TESTS" guidance — runs a warmup pass (20 iterations) to
+avoid JIT-compilation skew, then measures the **median** of 200 timed
+calls via `performance.now()`, rather than a single cold-start
+measurement. All 7 benchmarks pass comfortably under their target (pure
+`decimal.js` arithmetic on these input sizes runs in well under a
+millisecond per call in practice), so no threshold needed loosening to
+pass.
+
+**Framework-independence**: re-audited after Batch 14 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`. The new benchmark file lives under `tests/performance/` (a new
+top-level test category, alongside `tests/unit/` and `tests/e2e/`,
+signaling these are timing-sensitive rather than pure correctness tests)
+and uses the `@/engine/...` alias like every other test file.
+
+**Traceability audit (pre-commit)**: all 6 of M2-030's named benchmark
+items have a corresponding timed test; every threshold traces to one of
+the 4 numbers actually written in `04_BUILD_GUIDE.md`'s "PERFORMANCE
+TESTS" section, with the 2 non-exact-name mappings explicitly documented
+above and in the test file's own header comment; no new public exports
+were needed since M2-030 produces a test suite, not new Engine
+functionality.
+
+**Validation — Batch 14**
+
+| Command              | Result                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                      |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                      |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                      |
+| `pnpm test`          | ✅ Pass, 420/420 (7 new)                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — identical to Batch 13 (test-only additions, no new `engine/` source lines to cover). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                      |
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1539,6 +1616,68 @@ point they move from "documented gap" to "implemented" in the registry.
 
 ---
 
+### 16. `04_BUILD_GUIDE.md` and `02_Formulas.md` state different Engine performance targets; M2-030 names 2 more benchmark categories than the Build Guide defines
+
+**Two source documents disagree on the numbers.** `04_BUILD_GUIDE.md`
+states, identically in 3 separate places (Page 3's "PERFORMANCE TARGETS,"
+a later app-level "PERFORMANCE TARGETS," and the dedicated "PERFORMANCE
+TESTS" section): Portfolio Calculation < 10ms, Loop Calculation/Loop
+Strategy < 20ms, Simulation < 50ms, Recommendation < 20ms, Dashboard
+Refresh < 100ms. `02_Formulas.md`'s own "PERFORMANCE TARGETS" section
+states different numbers for two of the same categories: Portfolio
+Calculation < 50ms (5× looser) and Scenario Simulation < 100ms (2×
+looser) — only "Dashboard Refresh < 100ms" agrees across both documents.
+M2-030's DoD resolves which one governs _for this task_: "Calculations
+satisfy the performance targets defined in the **Build Guide**" — so
+`04_BUILD_GUIDE.md`'s tighter numbers were used, and `02_Formulas.md`'s
+looser ones were not. This does not resolve the disagreement itself,
+only which document this one task defers to; a canonical set should
+still be picked before the Engine is benchmarked outside the context of
+M2-030 specifically.
+
+**M2-030 names 6 benchmark targets; the Build Guide's own "PERFORMANCE
+TESTS" section only defines 4 categories.** M2-030's "Benchmark" list is
+Portfolio summary, Health Factor, Liquidation calculations, Loop
+strategy, Single scenario, Scenario comparison. The Build Guide's
+"Targets" are Single portfolio calculation, Optimal loop calculation,
+Standard simulation, Recommendation evaluation — no category named
+"Health Factor," "Liquidation calculations," or "Scenario comparison"
+exists. Rather than invent new numbers for these 3, they were mapped to
+the closest already-documented category: Health Factor and Liquidation
+calculations → Single portfolio calculation (< 10ms), since both are
+steps in `02_Formulas.md`'s own FORMULA DEPENDENCY GRAPH chain that
+starts at "Portfolio Value" — the same chain "Portfolio summary" draws
+from; Scenario comparison → Standard simulation (< 50ms), the closest
+documented category, and a conservative one since comparing two
+already-computed scenarios does no recomputation and should in practice
+run well under a full simulation's budget.
+
+**This mapping is a benchmarking categorization only, not a claim about
+computational complexity or expected runtime.** Stated explicitly: using
+"Single portfolio calculation" as Health Factor's and Liquidation
+calculations' budget, and "Standard simulation" as Scenario comparison's,
+does **not** assert that these operations have the same computational
+cost, the same number of steps, or the same expected runtime as the
+category they borrow from — some are almost certainly far cheaper in
+practice (a single Health Factor call is a handful of `decimal.js`
+operations; "Single portfolio calculation" bundles 8). The mapping exists
+solely because `02_Formulas.md`/`04_BUILD_GUIDE.md` provide **no separate
+benchmark target** for these 3 items, and reusing the nearest documented
+ceiling is the way to give them _some_ enforced upper bound without
+inventing a new number specific to their own, unstated complexity. A
+future, more precise per-operation target (if one is ever specified)
+should replace this borrowed one rather than assume the borrowed ceiling
+was ever meant to reflect their actual cost.
+
+Action needed: `06_TASKS.md` or `04_BUILD_GUIDE.md` either merges "Health
+Factor"/"Liquidation calculations" explicitly into "Portfolio
+Calculation," or the Build Guide adds a "Recommendation"-style dedicated
+line item for each — and the "Recommendation evaluation < 20ms" target
+itself remains unbenchmarked here, since M2-030's own "Benchmark" list
+does not name a recommendation category at all.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -1587,19 +1726,24 @@ point they move from "documented gap" to "implemented" in the registry.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 13 (M2-029) before
+2. **This pass stops here for approval** of Batch 14 (M2-030) before
    committing, per instruction.
-3. Once approved and committed: **Batch 14 — M2-030 (Benchmark Engine
-   Performance)**, continuing the Verification chapter. M2-030 depends on
-   M2-029 (done, partially) and is unblocked (P2 priority, effort S). Its
-   "Benchmark" list names 6 targets (Portfolio summary, Health Factor,
-   Liquidation calculations, Loop strategy, Single scenario, Scenario
-   comparison) and its DoD points at `04_BUILD_GUIDE.md`'s "PERFORMANCE
-   TARGETS" (`02_Formulas.md`: Single Formula < 1ms, Portfolio Calculation
-   < 50ms, Scenario Simulation < 100ms, Dashboard Refresh < 100ms) —
-   re-read its exact text and DoD fresh at the start of that batch, per
-   the standing workflow, rather than assuming its shape from this
-   preview.
+3. Once approved and committed: **Batch 15 — M2-031 (Publish Formula
+   Engine API)**, continuing the Verification chapter. M2-031 depends on
+   M2-029 (done, partially) and is unblocked (P0 priority, effort M). Its
+   Requirements ("Expose only supported public functions," "Hide internal
+   helpers," "Export shared public types," "Document each public
+   operation") and DoD ("Application Services can use the Engine without
+   importing internal module files") point at finally curating
+   `engine/index.ts` — currently a re-export-everything file by its own
+   header comment's admission ("until then this re-exports everything
+   implemented so far") — into the actual finalized public surface. Expect
+   this batch to need a decision on what counts as "internal" (e.g.
+   `computeInterestForPeriod` in `calculateDailyInterest.ts`, already
+   marked "Not part of the curated public Engine API" in its own doc
+   comment) versus "public" — re-read its exact text and DoD fresh at the
+   start of that batch, per the standing workflow, rather than assuming
+   its shape from this preview.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
@@ -1613,7 +1757,8 @@ point they move from "documented gap" to "implemented" in the registry.
    documentation (conflict #12), F-040's exit-collateral-sale discrepancy
    (conflict #13, a known approximation), the unspecified "Target borrow
    percentage" blocking a post-loop Golden Reference Portfolio fixture
-   (conflict #14), and M2-029's DoD-vs-scope tension over the 33
-   unimplemented Formula IDs (conflict #15, new this batch, resolved via
-   the coverage-report interpretation explained there). Revisit all ten
-   once resolved upstream.
+   (conflict #14), M2-029's DoD-vs-scope tension over the 33 unimplemented
+   Formula IDs (conflict #15), and the Build-Guide-vs-Formulas.md
+   performance-target disagreement plus M2-030's 2 unmapped benchmark
+   categories (conflict #16, new this batch). Revisit all eleven once
+   resolved upstream.
