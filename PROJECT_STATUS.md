@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 15 complete (pending approval) — M2-001 through M2-031 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-032 (final M2 task) remains
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 16 complete (pending approval) — **M2-001 through M2-032 all addressed; Milestone 2 is complete within the documented Version 1 scope** (M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see the Batch 16 section and conflicts #5/#7/#15)
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1343,6 +1343,171 @@ files already imported from specific submodule paths, never the barrel).
 
 ---
 
+### Batch 16 — Complete Formula Traceability Audit (M2-032) — FINAL MILESTONE 2 BATCH
+
+| Task                                       | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-032 Complete Formula Traceability Audit | ✅ Done | Extended `tests/unit/engine/formulaCoverage.test.ts` (M2-029) with 2 new mechanical checks (110 tests total, up from 73) + the consolidated audit table below. One genuine documentation gap found and fixed (`engine/simulation/simulateInterestScenario.ts` — see below). No new Formula ID, no business-logic change: M2-032 is a verification task over the 36 already-implemented Formula IDs. |
+
+**Per 06_TASKS.md's own 5-point checklist ("For every Formula ID
+confirm..."), each mechanically verified — not just asserted in prose:**
+
+1. **"Documentation exists."** New check: every `engine/` file that tags
+   a Formula ID must also cite `02_Formulas.md` in its own doc comment
+   (the established convention). **Found one violation**:
+   `simulateInterestScenario.ts` (F-033) cited `06_TASKS.md M2-020`
+   extensively but never wrote "02_Formulas.md" — a real gap this audit
+   exists to catch. **Fixed** (doc comment only, no logic change): its
+   header now explicitly reads "...realizing 02_Formulas.md F-033 'Debt
+   Growth'..." Every other of the 36 implemented Formula IDs already
+   passed this check without modification.
+2. **"Canonical implementation exists."** Confirmed via
+   `tests/fixtures/formulaCoverage.ts` (M2-029), re-verified this batch:
+   36 Formula IDs implemented, each with exactly the equation
+   `02_Formulas.md` documents (re-confirmed by re-reading each
+   implementation's own doc comment against its source formula, not
+   re-reading the whole spec from scratch).
+3. **"Tests exist."** Already true (M2-029), re-confirmed unchanged.
+4. **"Public output includes the correct Formula ID."** New, stricter
+   check: `formulaCoverage.test.ts`'s prior check only confirmed a
+   Formula ID was _mentioned_ somewhere in a test file (which a
+   description string or comment alone would satisfy); this batch adds a
+   check for the actual **runtime assertion**
+   (`result.metadata.formulaId).toBe('F-0XX')`) specifically. All 36
+   already had one — no gap found, but the claim is now mechanically
+   enforced rather than merely likely.
+5. **"Dependencies are known."** Every one of the 8 Formula IDs tagged in
+   more than one file (F-014, F-018, F-030, F-033, F-037, F-040, F-042,
+   F-061) was individually re-verified this batch (via direct source
+   inspection, not assumed from memory) to share one computational core
+   through a real function call — none duplicates its equation:
+   `calculateLoopStep` calls `calculateLoopCapital` (F-014);
+   `validateLoopStrategySafety` (F-018) takes an already-computed
+   `LoopStrategyResult` rather than recomputing the loop;
+   `calculateProratedInterest` reuses `calculateDailyInterest`'s shared
+   `computeInterestForPeriod` helper (F-030);
+   `simulateInterestScenario` calls `calculateDebtGrowth` (F-033);
+   `calculateLoopCosts` calls `calculateBreakEvenAppreciation` (F-037);
+   `calculateTargetExit` calls `calculateTargetDebt` (F-040);
+   `calculateExitPosition` calls `calculateBtcSaleRequired` (F-042);
+   `generateRecommendations` calls `calculateBorrowRecommendation`
+   (F-061). The cross-Formula-ID sharing established in earlier batches
+   (F-012/F-021 sharing `computeBorrowCapacity`; F-027 calling F-040's
+   `calculateTargetDebt`) was also re-confirmed still holds.
+
+**DoD ("No undocumented, duplicated, or untested Version 1 calculations
+remain") — read consistently with conflict #15's established
+"tracked vs. implemented" distinction**: "Version 1 calculations" means
+the 36 Formula IDs actually implemented, not all 69 documented — the 33
+unimplemented ones are documented _gaps_ with reasons, not calculations
+requiring an audit trail. Under that reading, the DoD holds: zero of the
+36 are undocumented (after the one fix above), zero duplicate their
+equation (5-point check #5), and zero are untested (5-point checks #3/#4).
+
+**Consolidated Formula Traceability Table** (all 36 implemented Formula
+IDs; ✓ means mechanically verified by `formulaCoverage.test.ts`, not
+manually claimed):
+
+| Formula ID | Title                                | Canonical Implementation                                               | Reuses / Composed by                                                                          | Doc | Test | Metadata |
+| ---------- | ------------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | :-: | :--: | :------: |
+| F-001      | Portfolio Value                      | `engine/portfolio/calculatePortfolioValue.ts`                          | Reuses F-002                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-002      | Collateral Value                     | `engine/portfolio/calculateCollateralValue.ts`                         | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-003      | Debt Value                           | `engine/portfolio/calculateDebtValue.ts`                               | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-004      | Net Portfolio Value                  | `engine/portfolio/calculateNetWorth.ts`                                | Reuses F-001, F-003                                                                           |  ✓  |  ✓   |    ✓     |
+| F-006      | Debt Ratio                           | `engine/portfolio/calculateDebtRatio.ts`                               | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-007      | Portfolio Gain                       | `engine/simulation/calculatePortfolioGain.ts`                          | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-010      | Exposure                             | `engine/portfolio/calculateExposure.ts`                                | Reuses F-002                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-011      | Effective Leverage                   | `engine/portfolio/calculateEffectiveLeverage.ts`                       | Reuses F-010, F-004                                                                           |  ✓  |  ✓   |    ✓     |
+| F-012      | Borrow Capacity                      | `engine/loop/calculateBorrowCapacity.ts`                               | Shares core with F-021                                                                        |  ✓  |  ✓   |    ✓     |
+| F-013      | Available Borrow                     | `engine/loop/calculateBorrowCapacity.ts`                               | Reuses F-012                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-014      | Loop Capital                         | `engine/loop/calculateLoopCapital.ts`                                  | Reused by `calculateLoopStep`                                                                 |  ✓  |  ✓   |    ✓     |
+| F-015      | BTC Purchased Per Loop               | `engine/loop/calculateBtcPurchasedPerLoop.ts`                          | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-018      | Maximum Loop Count                   | `engine/loop/calculateLoopStrategy.ts`                                 | Composes F-014, F-015; validated by `validateLoopStrategySafety` (same ID, different concern) |  ✓  |  ✓   |    ✓     |
+| F-020      | Loan-to-Value (LTV)                  | `engine/portfolio/calculateLoanToValue.ts`                             | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-021      | Maximum Borrow Limit                 | `engine/loop/calculateBorrowCapacity.ts`                               | Shares core with F-012                                                                        |  ✓  |  ✓   |    ✓     |
+| F-022      | Health Factor                        | `engine/health/calculateHealthFactor.ts`                               | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-023      | Distance to Liquidation              | `engine/liquidation/calculateLiquidationDistance.ts`                   | Reuses F-022                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-024      | Liquidation Price                    | `engine/liquidation/calculateLiquidationPrice.ts`                      | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-025      | Liquidation Buffer                   | `engine/liquidation/calculateLiquidationBuffer.ts`                     | Reuses F-024                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-027      | Maximum Additional Debt              | `engine/health/calculateAdditionalBorrow.ts`                           | Reuses F-040                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-030      | Daily Interest                       | `engine/interest/calculateDailyInterest.ts`                            | Shared core reused by `calculateProratedInterest`                                             |  ✓  |  ✓   |    ✓     |
+| F-031      | Monthly Interest                     | `engine/interest/calculateMonthlyInterest.ts`                          | Reuses F-030                                                                                  |  ✓  |  ✓   |    ✓     |
+| F-032      | Annual Interest                      | `engine/interest/calculateAnnualInterest.ts`                           | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-033      | Debt Growth                          | `engine/simulation/calculateDebtGrowth.ts`                             | Reused by `simulateInterestScenario`                                                          |  ✓  |  ✓   |    ✓     |
+| F-037      | Break-Even BTC Appreciation          | `engine/loop/calculateBreakEvenAppreciation.ts`                        | Reused by `calculateLoopCosts`                                                                |  ✓  |  ✓   |    ✓     |
+| F-040      | Target Debt                          | `engine/exit/calculateTargetDebt.ts`                                   | Reused by F-027, `calculateTargetExit`                                                        |  ✓  |  ✓   |    ✓     |
+| F-041      | Required Debt Repayment              | `engine/exit/calculateRequiredDebtRepayment.ts`                        | Reused by `calculateRepaymentRecommendation`                                                  |  ✓  |  ✓   |    ✓     |
+| F-042      | BTC Sale Required                    | `engine/exit/calculateBtcSaleRequired.ts`                              | Reused by `calculateExitPosition`                                                             |  ✓  |  ✓   |    ✓     |
+| F-050      | Price Change Simulation              | `engine/simulation/simulatePriceScenario.ts`                           | Composes F-002/F-003/F-004/F-020/F-022/F-023/F-007                                            |  ✓  |  ✓   |    ✓     |
+| F-051      | Percentage Price Movement            | `engine/simulation/resolveScenarioPrice.ts`                            | Reused by F-050, `simulateInterestScenario`                                                   |  ✓  |  ✓   |    ✓     |
+| F-052      | Portfolio Projection                 | `engine/simulation/simulatePositionChange.ts`                          | Composes F-002/F-003/F-004/F-020/F-022/F-023                                                  |  ✓  |  ✓   |    ✓     |
+| F-053      | Scenario Difference                  | `engine/simulation/compareScenarios.ts`                                | —                                                                                             |  ✓  |  ✓   |    ✓     |
+| F-061      | Borrow Recommendation                | `engine/recommendation/calculateBorrowRecommendation.ts`               | Reuses F-006, F-013, F-022; composed by `generateRecommendations` (same ID)                   |  ✓  |  ✓   |    ✓     |
+| F-062      | Repayment Recommendation             | `engine/recommendation/calculateRepaymentRecommendation.ts`            | Reuses F-040, F-041, F-042                                                                    |  ✓  |  ✓   |    ✓     |
+| F-063      | Additional Collateral Recommendation | `engine/recommendation/calculateAdditionalCollateralRecommendation.ts` | Derived from F-022's equation                                                                 |  ✓  |  ✓   |    ✓     |
+| F-064      | Loop Recommendation                  | `engine/recommendation/calculateLoopRecommendation.ts`                 | Reuses F-014 (via `calculateLoopStep`), F-032                                                 |  ✓  |  ✓   |    ✓     |
+
+**Framework-independence**: re-audited after Batch 16 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: this batch's own work product **is**
+the traceability audit — see the consolidated table above and the 5-point
+checklist. All 110 `formulaCoverage.test.ts` tests pass, including the 2
+new checks added this batch. No public exports changed (M2-032 verifies
+and documents; it does not add or remove Engine functionality).
+
+**Validation — Batch 16**
+
+| Command              | Result                                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                |
+| `pnpm test`          | ✅ Pass, 526/526 (37 new: 2 new `formulaCoverage.test.ts` checks × their `it.each` expansion)                                                                          |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — identical to Batch 15 (the one source change is a doc-comment edit, no executable statements). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                |
+
+**MILESTONE 2 — FORMULA ENGINE IS COMPLETE WITHIN THE DOCUMENTED VERSION
+1 SCOPE.** That qualifier is deliberate, not boilerplate — stated
+directly: "complete" here means every task and Formula ID that
+`06_TASKS.md`/`02_Formulas.md` actually define for Version 1 has been
+implemented, tested, and traced; it does **not** mean every formula
+`02_Formulas.md` mentions exists in code, or that every ambiguity the
+specification contains has been resolved. Three categories of
+intentionally-not-implemented work remain **documented, not built**, and
+none of them are omissions:
+
+- **33 of the 69 documented Formula IDs are intentionally unimplemented**
+  (`tests/fixtures/formulaCoverage.ts`, conflict #15) — no task assigns
+  most of them, several give only a discrete example table or an
+  unspecified "iterative solver" with no closed-form equation to
+  implement, and one (F-009) is never defined at all anywhere in
+  `02_Formulas.md`. Each has its own recorded reason; none was skipped
+  silently.
+- **2 tasks are formally blocked** (M2-013/M2-014 — no compound-interest
+  formula exists anywhere in `02_Formulas.md` to implement against,
+  conflict #7) — every downstream consumer was routed around the block
+  using the documented simple-interest alternative instead of an invented
+  compounding formula.
+- **Multi-asset scenarios are out of scope** (conflict #5, `01_PRD.md`
+  REQ-003's own "Version 0.1 assumes Bitcoin only" / "one stablecoin") —
+  `PortfolioInput` models exactly one collateral asset and one debt asset;
+  "Multiple collateral assets" and "Multiple debt assets" (2 of M2-028's
+  7 named Golden Reference Portfolio cases) were documented as
+  out-of-scope rather than built against an invented multi-asset model.
+
+All 32 M2 tasks (M2-001 through M2-032) have been addressed: 30 fully or
+partially done, 2 formally blocked as above. 17 unresolved documentation
+conflicts remain open, carried forward as product/specification decisions
+for whoever picks up Milestone 3 — several (#1 Health Factor risk bands,
+#7 compound interest, #8 transaction costs, #9 Recommendation Engine
+gaps) should likely be resolved before Milestone 3 builds UI/Services on
+top of the Engine, since they affect what those layers can correctly
+display or compute.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1871,44 +2036,40 @@ re-export.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 15 (M2-031) before
+2. **This pass stops here for approval** of Batch 16 (M2-032) before
    committing, per instruction.
-3. Once approved and committed: **Batch 16 — M2-032 (Complete Formula
-   Traceability Audit)**, the **final Milestone 2 task**. M2-032 depends
-   on M2-031 (done) and is unblocked (P0 priority, effort M). Its
-   Description ("Verify alignment between documentation, implementation,
-   and tests") and per-Formula-ID checklist (documentation exists,
-   canonical implementation exists, tests exist, public output includes
-   the correct Formula ID, dependencies are known) and DoD ("No
-   undocumented, duplicated, or untested Version 1 calculations remain")
-   describe an **audit task over work already done across Batches
-   1–15**, not new calculations — expect this to mean systematically
-   re-verifying (and where a gap is found, fixing only the traceability
-   gap itself, not inventing new scope) every one of the 36 implemented
-   Formula IDs against `tests/fixtures/formulaCoverage.ts` (M2-029) and
-   `engine/index.ts` (M2-031), likely producing a final consolidated
-   audit summary in `PROJECT_STATUS.md` — re-read its exact text and DoD
-   fresh at the start of that batch, per the standing workflow, rather
-   than assuming its shape from this preview. **Milestone 2 completes
-   when M2-032 is done.**
-4. **Outstanding blockers carried forward, independent of which batch is in
-   progress**: F-026 (Health Factor status classification, conflict #1),
-   compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
-   still-open formal dependencies on it), the swap-fees/slippage/gas-estimate
-   gap (conflict #8, affects M2-017's "Total implementation cost" and
-   M2-023's "Exit transaction costs"), the partially-unassigned
-   Recommendation Engine chapter (conflict #9 — narrowed by Batch 10 to
-   F-060, F-065, F-066, F-067, F-068, F-069; F-061–F-064 are implemented),
-   "Target cash proceeds"'s ambiguous mechanics (conflict #10), "Exit
-   readiness"'s unmapped Formula ID (conflict #11), F-067's partial
-   documentation (conflict #12), F-040's exit-collateral-sale discrepancy
-   (conflict #13, a known approximation), the unspecified "Target borrow
+3. **Once approved and committed: Milestone 2 — Formula Engine is
+   complete.** There is no "Batch 17" within Milestone 2 to preview —
+   M2-032 was its final task. What comes next is **Milestone 3** (per
+   `docs/06_TASKS.md`'s own milestone sequence, not previewed here in
+   detail — that re-read should happen at the start of whatever batch
+   first touches it, per the standing workflow, the same way every M2
+   batch began with a fresh re-read rather than trusting a prior
+   preview). This is a genuine decision point, not a default to act on
+   unprompted: whether to proceed directly into Milestone 3, or to first
+   resolve one or more of the 17 open conflicts below (several of which —
+   especially #1 Health Factor risk bands, #7 compound interest, #8
+   transaction costs, #9 Recommendation Engine gaps — plausibly affect
+   what Milestone 3's Services/UI layer can correctly display or compute
+   on top of the Engine) is a product call, not an implementation one.
+4. **Outstanding blockers/conflicts, all still open**: F-026 (Health
+   Factor status classification, conflict #1), compound interest /
+   M2-013–M2-014 (conflict #7, still-open formal dependencies from
+   M2-017/M2-020), the swap-fees/slippage/gas-estimate gap (conflict #8),
+   the partially-unassigned Recommendation Engine chapter (conflict #9 —
+   F-061–F-064 implemented; F-060, F-065–F-069 not), "Target cash
+   proceeds"'s ambiguous mechanics (conflict #10), "Exit readiness"'s
+   unmapped Formula ID (conflict #11), F-067's partial documentation
+   (conflict #12), F-040's exit-collateral-sale discrepancy (conflict
+   #13, a known, tested approximation), the unspecified "Target borrow
    percentage" blocking a post-loop Golden Reference Portfolio fixture
-   (conflict #14), M2-029's DoD-vs-scope tension over the 33 unimplemented
-   Formula IDs (conflict #15), the Build-Guide-vs-Formulas.md
-   performance-target disagreement plus M2-030's 2 unmapped benchmark
-   categories (conflict #16), and M2-031's undocumented public/internal
-   split criteria (conflict #17, new this batch). Revisit all twelve once
-   resolved upstream — several (especially #1, #7, #8, #9) will likely
-   need a product decision before Milestone 3 can safely build on top of
-   the Engine.
+   (conflict #14), M2-029's DoD-vs-scope tension over the 33
+   unimplemented Formula IDs (conflict #15, resolved for M2-029/M2-032's
+   own purposes via the "tracked vs. implemented" distinction), the
+   Build-Guide-vs-Formulas.md performance-target disagreement plus
+   M2-030's 2 unmapped benchmark categories (conflict #16), and M2-031's
+   undocumented public/internal split criteria (conflict #17). None of
+   these 17 block Milestone 2 from being considered complete — each was
+   resolved _for Milestone 2's own purposes_ (implement what's
+   documented, skip and document what isn't) — but several are worth a
+   product decision before Milestone 3 depends on their resolution.

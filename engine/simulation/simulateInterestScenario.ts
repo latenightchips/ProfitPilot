@@ -36,16 +36,17 @@ export interface InterestScenarioResult {
 
 /**
  * Interest Scenario Simulation — 06_TASKS.md M2-020 ("Implement Interest
- * Scenario Simulation"). Formally depends on M2-014 ("Variable Rate
- * Projection", blocked — see PROJECT_STATUS.md conflict #7), but its own
- * "Projected debt" sub-item does not need variable-rate/compound
- * projection: it is satisfied by F-033 "Debt Growth" (Future Debt =
- * Current Debt + Accrued Interest), an explicitly simple, single-constant-
- * rate equation, using the already-implemented simple-interest chain
- * (F-030/M2-012, generalized to an arbitrary day count) for "Accrued
- * Interest". Same task-dependency-graph-inconsistency pattern as M2-017's
- * unsatisfied dependency on M2-013 (Batch 5) — the formal M2-014
- * dependency remains unsatisfied, so this task is Partial, not Done.
+ * Scenario Simulation"), realizing 02_Formulas.md F-033 "Debt Growth"
+ * (Future Debt = Current Debt + Accrued Interest). Formally depends on
+ * M2-014 ("Variable Rate Projection", blocked — see PROJECT_STATUS.md
+ * conflict #7), but its own "Projected debt" sub-item does not need
+ * variable-rate/compound projection: F-033 is an explicitly simple,
+ * single-constant-rate equation, using the already-implemented
+ * simple-interest chain (F-030/M2-012, generalized to an arbitrary day
+ * count) for "Accrued Interest". Same task-dependency-graph-inconsistency
+ * pattern as M2-017's unsatisfied dependency on M2-013 (Batch 5) — the
+ * formal M2-014 dependency remains unsatisfied, so this task is Partial,
+ * not Done.
  *
  * Satisfies the DoD ("price and interest assumptions can be combined in
  * one deterministic scenario") by accepting the same `PriceScenarioInput`
