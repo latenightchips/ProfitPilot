@@ -10,10 +10,13 @@
  * this file is where the rest of the application should import Services
  * from.
  *
- * Currently re-exports nothing: every subdirectory below is a documented,
- * intentionally empty placeholder (see each one's own doc comment) until
- * its own dedicated Milestone 3 task builds it. The wiring exists now so
- * later tasks only need to add exports, not restructure.
+ * `./shared` (M3-002, M3-003) is the first subdirectory with real
+ * content — the Standard Service Result Model and Application Error
+ * Model every future Service will return. Every other subdirectory
+ * below remains a documented, intentionally empty placeholder (see each
+ * one's own doc comment) until its own dedicated Milestone 3 task builds
+ * it. The wiring exists now so later tasks only need to add exports, not
+ * restructure.
  */
 export * from './exit';
 export * from './export';

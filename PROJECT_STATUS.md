@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 1 complete (pending approval) — M3-001 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 2 complete (pending approval) — M3-001 through M3-003 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1577,6 +1577,101 @@ by this batch.
 
 ---
 
+### Batch 2 — Standard Service Result Model + Application Error Model (M3-002, M3-003)
+
+**Batch scoping, decided before implementation**: M3-002 and M3-003 were
+batched together (M3-004 deliberately excluded) because M3-003 formally
+depends on M3-002, and M3-002's own "Errors" field is exactly what M3-003
+defines — building the result model without the error model would leave
+that field provisionally typed, then need revising the moment M3-003
+landed. M3-004 (Portfolio Mapping Utilities) has no dependency on either
+and is a different concern (data transformation between layers, not the
+result/error contract), so it was left for a future batch rather than
+included to pad this one's size. This scoping proposal, including the
+architecture question below, was presented to and approved before any
+code was written.
+
+| Task                                        | Status  | Notes                                                                                                                                                                                                                                                               |
+| ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-002 Create Standard Service Result Model | ✅ Done | `services/shared/result.ts` — `ServiceResult<T>` discriminated union (`ServiceSuccess<T>` / `ServiceFailure`), covering exactly M3-002's "Include" list (Data, Warnings, Errors, Metadata → Source status, Calculation timestamp, Engine version, Formula version). |
+| M3-003 Implement Application Error Model    | ✅ Done | `services/shared/errors.ts` — `ApplicationError` covering exactly the 9 documented categories (Validation, Calculation, Persistence, Provider, Authentication, Synchronization, Import, Export, Unknown).                                                           |
+
+**Architecture decision (approved before implementation, not defaulted
+on silently)**: `ServiceResult<T>` reuses the Engine's own
+`FormulaResult<T>` discriminated-union shape (`{ok:true}` / `{ok:false}`)
+rather than a single envelope with nullable `data`/`errors` fields. This
+was flagged as a genuine ambiguity before writing any code — M3-002's
+"Include" list names `Data`, `Warnings`, `Errors`, and `Metadata` in a
+way compatible with either design, and `04_BUILD_GUIDE.md` never
+elaborates the exact shape. The discriminated union was chosen because
+it reuses a convention already proven across all 45 Engine functions,
+keeps the codebase consistent, and avoids introducing partial-success
+semantics (simultaneous `data` and `errors`) that no document defines.
+
+**One deliberate, literal departure from the Engine's own naming**:
+`ServiceFailure.errors` is plural (an `ApplicationError[]`), unlike the
+Engine's singular `FormulaFailure.error`. This follows M3-002's own
+"Include" list, which names "Errors" (plural) — and is substantively
+justified, not just literal: a Service call can legitimately aggregate
+more than one validation failure at once (e.g. two missing fields),
+whereas an atomic Engine formula call always fails on the first invalid
+input it checks.
+
+**Two specification gaps found, both resolved by explicit instruction
+rather than invention — see conflicts #18 and #19**:
+
+- **"Source status"** (`ServiceMetadata.sourceStatus`) is named exactly
+  once in the entire specification, with no documented enum or value
+  domain anywhere. Typed as a plain `string` rather than a literal
+  union — no taxonomy was invented.
+- **"Formula version" aggregation** across a Service call that composes
+  multiple Engine functions (e.g. the future Portfolio Summary Service,
+  M3-005) is out of scope for M3-002, which only defines the per-call
+  metadata shape. Explicitly deferred, not solved provisionally.
+
+`ServiceMetadata.engineVersion` is not a separately hardcoded constant:
+`CreateServiceResultOptions.engineVersion` is a required input a future
+Service must supply from the real `FormulaResult.metadata.engineVersion`
+it actually received from the Engine, avoiding a second version string
+that could drift out of sync with the Engine's own (private,
+unexported) `ENGINE_VERSION`.
+
+**Dependency-direction and architecture audit**: re-verified (not
+assumed) that `services/` still imports no `react`, `next`, or
+`@/components` path — the same check `serviceFoundation.test.ts`
+established in Batch 1, now covering real code instead of empty
+placeholders. `services/shared/result.ts` and `errors.ts` import nothing
+from `engine/` (this batch introduces no Engine calls at all — that
+begins with M3-004/M3-005). No Milestone 2 file was modified.
+
+**Traceability audit (pre-commit)**: both public entry points
+(`createServiceSuccess`, `createServiceFailure`, `createApplicationError`,
+plus every exported type) are reachable through `@/services` alone,
+verified by `tests/unit/services/publicApiSurface.test.ts` — the same
+"prove the DoD, don't just assert it" pattern used throughout Milestone
+2's own `publicApiSurface.test.ts`. All 9 `ApplicationErrorCategory`
+values are individually asserted constructible; both `ServiceResult<T>`
+variants are asserted to genuinely lack the other variant's field
+(`'errors' in result` is `false` on success; `'data' in result` is
+`false` on failure) — a direct, mechanical check that the discriminated
+union is real, not just typed as one while behaving like an envelope.
+
+**Validation — Batch 2 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                             |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                             |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                             |
+| `pnpm test`          | ✅ Pass, 563/563 (23 new)                                                                                                                                                           |
+| `pnpm test:coverage` | ✅ 95.34% statements / 90.59% branches / 100% functions / 98.81% lines — a slight improvement over Milestone 2's baseline (the new `services/shared/` code is fully, 100%-covered). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                             |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -2057,6 +2152,54 @@ re-export.
 
 ---
 
+### 18. "Source status" (M3-002) is named once in the entire specification with no documented value domain
+
+`06_TASKS.md` M3-002's "Include" list names `Source status` as a field
+every `ServiceResult`'s metadata must carry, but the term appears
+nowhere else in `06_TASKS.md`, `04_BUILD_GUIDE.md`, `01_PRD.md`, or
+`02_Formulas.md` — no enum, no example values, no description of what
+states it can take. A textually similar but distinct concept, "Data
+source" / "Freshness timestamp," appears later on the Protocol Parameter
+Service (M3-008) and, separately, in a "Manual or provider data source"
+context elsewhere — but those are service-specific fields for a
+different Service, not this generic, cross-cutting one.
+
+**Resolution applied (by explicit instruction, not invented)**:
+`ServiceMetadata.sourceStatus` is typed as a plain `string` rather than a
+literal union — no taxonomy (e.g. `"live" | "cached" | "fallback"`) was
+guessed at. Action needed: a future task (plausibly M3-007 Market Data
+Service or M3-008 Protocol Parameter Service, both of which have real
+data-freshness concepts) should either define this field's actual value
+domain, or `06_TASKS.md` should clarify whether "Source status" is
+meant to be populated at all by Services that have no notion of a data
+source (e.g. a purely Engine-calculation-driven result).
+
+---
+
+### 19. "Formula version" (M3-002) is singular; how a multi-Engine-call Service aggregates it is unspecified
+
+`ServiceMetadata.formulaVersion` (M3-002's own wording is singular) fits
+cleanly for a Service that calls exactly one Engine function, but several
+already-scoped future Services will call many — the Portfolio Summary
+Service (M3-005) alone is specified to include Collateral value, Debt
+value, Net equity, LTV, Leverage, Health Factor, Liquidation information,
+and Interest cost, each traceable to a different Engine function with
+its own `FormulaResult.metadata.formulaVersion`. Nothing in `06_TASKS.md`
+or `04_BUILD_GUIDE.md` says whether a composite Service result should
+report one representative version, a list, the newest, or omit the field
+when it isn't singular.
+
+**Resolution applied**: M3-002 defines only the per-call metadata shape;
+aggregation across multiple Engine calls is explicitly deferred to
+whichever Service task first needs to solve it (M3-005 at the latest).
+Not solved provisionally here to avoid inventing a composition rule the
+specification doesn't state. Action needed: M3-005's own implementation
+batch should either find textual guidance elsewhere in `06_TASKS.md` or
+flag this as a decision point before shipping a Portfolio Summary
+Service result.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -2105,19 +2248,22 @@ re-export.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 1 (M3-001)
-   before committing, per instruction.
-3. Once approved and committed: **Milestone 3 Batch 2 — M3-002 (Create
-   Standard Service Result Model)**. M3-002 depends on M3-001 (done) and
-   is unblocked. Its "Include" list (Data, Warnings, Errors, Metadata,
-   Source status, Calculation timestamp, Engine version, Formula version)
-   and DoD ("All public Services return a predictable structure") point
-   at building the Service-layer analog of the Engine's own
-   `FormulaResult<T>` (`engine/shared/result.ts`) — almost certainly
-   living in `services/shared/`, the one subdirectory this batch's own
-   write-up named as its eventual home — re-read its exact text and DoD
-   fresh at the start of that batch, per the standing workflow, rather
-   than assuming its shape from this preview.
+2. **This pass stops here for approval** of Milestone 3 Batch 2 (M3-002,
+   M3-003) before committing, per instruction.
+3. Once approved and committed: **Milestone 3 Batch 3 — M3-004
+   (Implement Portfolio Mapping Utilities)**, the task this batch's own
+   scoping deliberately excluded. M3-004 depends on M2-002 and M3-001
+   (both done) and is unblocked. Its "Requirements" (keep mappings
+   explicit; validate required fields; avoid unsafe type casting; do not
+   format values for display) and DoD ("Portfolio data can move between
+   layers without leaking persistence-specific structures into the
+   Engine") point at mapping functions between persistence models,
+   application models, and `engine/shared/types.ts`'s `PortfolioInput` —
+   re-read its exact text and DoD fresh at the start of that batch, per
+   the standing workflow, and re-check whether M3-005 (Portfolio Summary
+   Service, which formally depends on M3-004) naturally belongs in the
+   same batch or is better left separate, the same batch-boundary
+   judgment this batch itself went through for M3-002/M3-003 vs. M3-004.
 4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
    still open**: F-026 (Health Factor status classification, conflict
    #1), compound interest / M2-013–M2-014 (conflict #7), the
@@ -2135,8 +2281,11 @@ re-export.
    benchmark categories (conflict #16), and M2-031's undocumented
    public/internal split criteria (conflict #17). None of these 17
    blocked Milestone 2's own completion, but several (especially #1, #7,
-   #8, #9) plausibly gate specific Milestone 3 Services — e.g. a
-   Recommendation Service (M3, deliverables list) built on top of a
-   ~40%-implemented Recommendation Engine chapter will inherit conflict
-   #9's gaps directly. Revisit each as the Service that depends on it is
-   actually built, rather than resolving all of them speculatively now.
+   #8, #9) plausibly gate specific Milestone 3 Services.
+5. **New from this batch, both open**: "Source status"'s undefined value
+   domain (conflict #18 — likely relevant again at M3-007 Market Data
+   Service or M3-008 Protocol Parameter Service) and "Formula version"
+   aggregation across a multi-Engine-call Service being unspecified
+   (conflict #19 — will need an answer no later than M3-005, Portfolio
+   Summary Service). Revisit each as the Service that depends on it is
+   actually built, rather than resolving all nineteen speculatively now.
