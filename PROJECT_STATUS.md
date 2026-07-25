@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 16 complete (pending approval) — **M2-001 through M2-032 all addressed; Milestone 2 is complete within the documented Version 1 scope** (M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see the Batch 16 section and conflicts #5/#7/#15)
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 1 complete (pending approval) — M3-001 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1508,6 +1508,75 @@ display or compute.
 
 ---
 
+## Milestone 3 progress
+
+### Batch 1 — Create Service Foundation (M3-001)
+
+| Task                             | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-001 Create Service Foundation | ✅ Done | `services/{portfolio,market,protocol,simulation,loop,exit,recommendation,persistence,import,export,shared}/index.ts` + root `services/index.ts` — the exact 11-subdirectory tree M3-001's own "Include" code block specifies, plus the root entry point it lists alongside them. `tests/unit/services/serviceFoundation.test.ts` (14 tests) mechanically verifies both DoD sentences. |
+
+**Scope, stated precisely**: M3-001 is structural only — "Create the
+Service layer structure defined in the Build Guide," with a DoD about
+entry points and dependency direction, not about any Service's actual
+behavior. Nothing behavioral was invented to fill the empty directories;
+each subdirectory's `index.ts` is a documented, intentionally empty
+module (`export {};`) whose doc comment states which later, dependent
+Milestone 3 task will build it, cross-referencing whichever
+`04_BUILD_GUIDE.md` section already describes that Service's
+responsibilities (`SERVICE RESPONSIBILITIES` for portfolio/simulation/
+loop/exit/recommendation; the explicit `IMPORT / EXPORT DIRECTORY` file
+tree for import/export). Two subdirectories — `market/` and `protocol/`
+— have no responsibilities detailed anywhere in `04_BUILD_GUIDE.md`
+beyond being named in `06_TASKS.md`'s own Milestone 3 Deliverables list
+("Market Data Service implemented," "Protocol Parameter Service
+implemented"); `persistence/` has no responsibilities detailed at all
+yet. All three are left equally empty rather than having a responsibility
+guessed for them.
+
+**Naming note, not a conflict**: `04_BUILD_GUIDE.md`'s own "SERVICES
+DIRECTORY" example list names a `PriceService` where `06_TASKS.md`'s
+M3-001/Deliverables instead say "Market Data Service" / `market/`. Not
+flagged as a specification conflict requiring a stop, since `06_TASKS.md`
+— the document this task is drawn from — is unambiguous and internally
+consistent about the name and folder; `04_BUILD_GUIDE.md`'s example list
+reads as an earlier or looser naming pass, not a contradiction that
+blocks this task.
+
+**Dependency-direction check** (`04_BUILD_GUIDE.md` "DEPENDENCY RULES":
+"Services → UI" is forbidden; only Services may import the Engine
+directly): re-verified by the same grep-based technique
+`engine/`'s own framework-independence checks used all through Milestone
+2, applied to `services/` in the other direction — no file under
+`services/` imports `react`, `next`, or `@/components`. `engine/` itself
+was not touched by this batch; the only deletion is the now-redundant
+`services/.gitkeep` placeholder from Milestone 1, superseded by real
+files.
+
+**Traceability audit (pre-commit)**: M3-001 introduces no Formula ID, so
+the Milestone 2 Formula traceability apparatus doesn't apply — instead,
+every one of the 11 named subdirectories and the root entry point from
+M3-001's own "Include" tree was checked present, and
+`serviceFoundation.test.ts` enforces both DoD sentences mechanically
+(existence/importability of entry points; absence of forbidden imports)
+rather than by inspection alone.
+
+**Validation — Batch 1 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                       |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                       |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                       |
+| `pnpm test`          | ✅ Pass, 540/540 (14 new)                                                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — unchanged from Milestone 2 (the new `services/` files are empty modules with no executable statements to instrument). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                       |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -2036,27 +2105,24 @@ re-export.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 16 (M2-032) before
-   committing, per instruction.
-3. **Once approved and committed: Milestone 2 — Formula Engine is
-   complete.** There is no "Batch 17" within Milestone 2 to preview —
-   M2-032 was its final task. What comes next is **Milestone 3** (per
-   `docs/06_TASKS.md`'s own milestone sequence, not previewed here in
-   detail — that re-read should happen at the start of whatever batch
-   first touches it, per the standing workflow, the same way every M2
-   batch began with a fresh re-read rather than trusting a prior
-   preview). This is a genuine decision point, not a default to act on
-   unprompted: whether to proceed directly into Milestone 3, or to first
-   resolve one or more of the 17 open conflicts below (several of which —
-   especially #1 Health Factor risk bands, #7 compound interest, #8
-   transaction costs, #9 Recommendation Engine gaps — plausibly affect
-   what Milestone 3's Services/UI layer can correctly display or compute
-   on top of the Engine) is a product call, not an implementation one.
-4. **Outstanding blockers/conflicts, all still open**: F-026 (Health
-   Factor status classification, conflict #1), compound interest /
-   M2-013–M2-014 (conflict #7, still-open formal dependencies from
-   M2-017/M2-020), the swap-fees/slippage/gas-estimate gap (conflict #8),
-   the partially-unassigned Recommendation Engine chapter (conflict #9 —
+2. **This pass stops here for approval** of Milestone 3 Batch 1 (M3-001)
+   before committing, per instruction.
+3. Once approved and committed: **Milestone 3 Batch 2 — M3-002 (Create
+   Standard Service Result Model)**. M3-002 depends on M3-001 (done) and
+   is unblocked. Its "Include" list (Data, Warnings, Errors, Metadata,
+   Source status, Calculation timestamp, Engine version, Formula version)
+   and DoD ("All public Services return a predictable structure") point
+   at building the Service-layer analog of the Engine's own
+   `FormulaResult<T>` (`engine/shared/result.ts`) — almost certainly
+   living in `services/shared/`, the one subdirectory this batch's own
+   write-up named as its eventual home — re-read its exact text and DoD
+   fresh at the start of that batch, per the standing workflow, rather
+   than assuming its shape from this preview.
+4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
+   still open**: F-026 (Health Factor status classification, conflict
+   #1), compound interest / M2-013–M2-014 (conflict #7), the
+   swap-fees/slippage/gas-estimate gap (conflict #8), the
+   partially-unassigned Recommendation Engine chapter (conflict #9 —
    F-061–F-064 implemented; F-060, F-065–F-069 not), "Target cash
    proceeds"'s ambiguous mechanics (conflict #10), "Exit readiness"'s
    unmapped Formula ID (conflict #11), F-067's partial documentation
@@ -2064,12 +2130,13 @@ re-export.
    #13, a known, tested approximation), the unspecified "Target borrow
    percentage" blocking a post-loop Golden Reference Portfolio fixture
    (conflict #14), M2-029's DoD-vs-scope tension over the 33
-   unimplemented Formula IDs (conflict #15, resolved for M2-029/M2-032's
-   own purposes via the "tracked vs. implemented" distinction), the
-   Build-Guide-vs-Formulas.md performance-target disagreement plus
-   M2-030's 2 unmapped benchmark categories (conflict #16), and M2-031's
-   undocumented public/internal split criteria (conflict #17). None of
-   these 17 block Milestone 2 from being considered complete — each was
-   resolved _for Milestone 2's own purposes_ (implement what's
-   documented, skip and document what isn't) — but several are worth a
-   product decision before Milestone 3 depends on their resolution.
+   unimplemented Formula IDs (conflict #15), the Build-Guide-vs-
+   Formulas.md performance-target disagreement plus M2-030's 2 unmapped
+   benchmark categories (conflict #16), and M2-031's undocumented
+   public/internal split criteria (conflict #17). None of these 17
+   blocked Milestone 2's own completion, but several (especially #1, #7,
+   #8, #9) plausibly gate specific Milestone 3 Services — e.g. a
+   Recommendation Service (M3, deliverables list) built on top of a
+   ~40%-implemented Recommendation Engine chapter will inherit conflict
+   #9's gaps directly. Revisit each as the Service that depends on it is
+   actually built, rather than resolving all of them speculatively now.
