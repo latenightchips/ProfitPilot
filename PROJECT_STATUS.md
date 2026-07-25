@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 2 complete (pending approval) — M3-001 through M3-003 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 3 complete (pending approval) — M3-001 through M3-004 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1670,6 +1670,152 @@ union is real, not just typed as one while behaving like an envelope.
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 3 — Portfolio Mapping Utilities (M3-004)
+
+**Batch scoping, decided before implementation**: M3-004 was implemented
+alone. It has no dependency on M3-005 (Portfolio Summary Service, the
+first major Service-to-Engine calculation integration) — combining the
+two would mix a data-transformation concern with a calculation concern.
+This scoping proposal, including the dependency sketch below, was
+presented to and approved before any code was written.
+
+**Dependency sketch (`UI → Services → Engine`)**: nothing in the UI
+layer calls this batch's code yet (no consuming component exists before
+Milestone 4/5). Within Services, `services/portfolio/mapping.ts` is the
+new leaf: it imports only `services/shared/errors.ts` (M3-003, for
+`ApplicationError`) and `@/engine`'s published `PortfolioInput` type
+(M2-002/M2-031) — it introduces no dependency on any other Service
+subdirectory. `services/portfolio/models.ts` imports only `@/engine`'s
+published domain types. Both stay one-directional: Services → Engine,
+never the reverse, and neither imports React, Next.js, Zustand, or
+`@/components`.
+
+| Task                                         | Status  | Notes                                                                                                                                                                                                                                                             |
+| -------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-004 Implement Portfolio Mapping Utilities | ✅ Done | `services/portfolio/models.ts` (persistence and application Portfolio shapes) + `services/portfolio/mapping.ts` (`mapPersistencePortfolioToApplicationPortfolio`, `mapApplicationPortfolioToEngineInput`), covering M3-004's 4 Requirements and its DoD directly. |
+
+**Specification finding: a reverse dependency, not a missing one**.
+`06_TASKS.md` lists M4-001 ("Define Application-Layer Portfolio Models")
+as a later task, which might suggest M3-004 should build on top of it.
+Reading M4-001's own text shows the opposite: **M4-001 depends on
+M3-004**, not the other way around. So neither a persistence schema nor
+a full application-layer Portfolio model is formally defined anywhere in
+the specification at the point M3-004 is built. Resolved, per explicit
+instruction, by building the smallest Engine-aligned shape that
+satisfies M3-004's own Requirements and DoD — `ApplicationPortfolio`
+reuses `@/engine`'s own `CollateralPosition`/`DebtPosition`/
+`MarketPrices`/`ProtocolParameters` types directly (collateral, debt,
+market, protocol only) — and explicitly **not** pre-inventing M4-001's
+later identity, name, description, base-currency, settings, or
+created/updated-timestamp fields. `services/portfolio/models.ts`
+documents this in place so M4-001's implementer sees it immediately.
+
+**Design decision: `MappingResult<T>`, not `ServiceResult<T>`**. This
+batch introduces a third discriminated-union result type
+(`services/portfolio/mapping.ts`), deliberately distinct from M3-002's
+`ServiceResult<T>`. Reasoning: `ServiceResult`'s `ServiceMetadata`
+(`engineVersion`, `formulaVersion`, `calculationTimestamp`) describes an
+Engine _calculation_ — and M3-004's mapping functions perform none, they
+only reshape data between layers. Forcing an `engineVersion` value onto
+a mapping operation that never calls the Engine would mean fabricating a
+value with no real source (the Engine's own `ENGINE_VERSION` constant is
+intentionally unexported, per Milestone 2 Batch 15's public-API
+curation). `MappingResult<T>` reuses `ApplicationError` (M3-003) for its
+error shape rather than inventing a new error vocabulary, so a future
+Service that calls this mapping (M3-005 onward) can pass a mapping
+failure's `errors` array straight into a real `ServiceResult` failure at
+the point it actually has genuine Engine metadata to report. This was a
+judgment call made without a prior dedicated approval round (unlike the
+M3-002 `ServiceResult` decision, which was raised as an explicit
+pre-implementation question) — flagged here for visibility rather than
+folded in silently, and reviewed and **explicitly approved** afterward.
+
+**Architectural review (post-implementation, pre-commit)**: asked to
+justify `MappingResult<T>` against three alternatives before approval —
+(1) reusing `ServiceResult<T>` as-is, (2) making `ServiceMetadata`
+optional on `ServiceResult<T>` instead of introducing a new type, and
+(3) whether a third success/failure abstraction is simply one too many.
+Reasoning, in summary: `ServiceMetadata`'s fields are a provenance claim
+("this came from a real Engine calculation, just now"), and a mapping
+operation that never calls the Engine cannot make that claim truthfully
+— populating it would mean fabricating values. Optional metadata on
+`ServiceResult<T>` was rejected because it would spread defensive
+null-checking across every existing and future consumer of the Service
+layer's primary result type, to accommodate a minority (non-calculation)
+use case, rather than confining the difference to one narrowly-scoped
+type. `MappingResult<T>` is not a parallel invented design — it is
+`ServiceResult<T>`'s `{ok, data}` / `{ok, errors}` shape with the
+provenance fields removed entirely, reusing `ApplicationError` from
+M3-003. **Approved.** Future mapping utilities (Market Data, Protocol
+Parameters, Import/Export) are expected to reuse this same type; it
+should be promoted from `services/portfolio/mapping.ts` to
+`services/shared/` the first time a second mapping utility needs it,
+rather than moved preemptively now with only one consumer.
+
+**"Validate required fields" implementation note**: validation happens
+only at the persistence → application boundary
+(`mapPersistencePortfolioToApplicationPortfolio`), where data may
+legitimately be missing (a legacy record, a partially-filled draft, a
+malformed import). `mapApplicationPortfolioToEngineInput` is infallible
+by construction — every field of a valid `ApplicationPortfolio` is
+already an Engine-compatible type, so there is nothing left to check.
+Every field-level problem is aggregated into one `ApplicationError[]`
+rather than stopping at the first (mirroring `ServiceFailure.errors`'
+plural design from M3-002/M3-003) — verified directly by
+`tests/unit/services/portfolio/mapping.test.ts`'s "aggregates every
+field-level error" case, which supplies a fully-empty persistence
+Portfolio and asserts all 9 expected error codes are present at once.
+
+**"Avoid unsafe type casting" implementation note**: no `as` cast
+appears anywhere in `mapping.ts`. Every value used in a constructed
+object comes from a small typed helper (`readRequiredNumber`,
+`readRequiredNonEmptyString`) whose own return type (`T | undefined`)
+already proves validity to the compiler — chosen over relying on
+multi-statement optional-chaining narrowing, which TypeScript does not
+reliably preserve across separate statements. The one literal-type field
+(`collateral.asset: 'BTC'`) is never read back from the validated input;
+the returned object hardcodes the `'BTC'` literal directly, since by
+that point in the function the only way execution reaches it is if the
+source value already equaled `'BTC'`.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/portfolio/mapping.ts` and `models.ts` import only from
+`@/engine` (published types only, no deep `engine/` submodule imports)
+and `services/shared/errors.ts` — no dependency on any other Service
+subdirectory. No Milestone 2 file (`engine/`, its tests, or its
+fixtures) was modified by this batch. `mapApplicationPortfolioToEngineInput`
+reads exactly the 4 Engine-relevant fields and nothing else, satisfying
+M3-004's DoD ("Portfolio data can move between layers without leaking
+persistence-specific structures into the Engine") by construction —
+verified by `mapping.test.ts`'s "drops unrelated fields" case, which
+passes an object with extra `name`/`id` fields and asserts the Engine
+input contains only `collateral`/`debt`/`market`/`protocol`.
+
+**Traceability audit (pre-commit)**: both public mapping functions and
+every exported type from `services/portfolio/` are reachable through
+`@/services` alone, verified by a new `describe` block in
+`tests/unit/services/publicApiSurface.test.ts` (M3-004), following the
+same "prove the DoD, don't just assert it" pattern used throughout
+Milestone 2 and Milestone 3 Batch 2. Both `MappingResult<T>` variants
+are asserted to genuinely lack the other variant's field (`'data' in
+result` is `false` on failure; `'errors' in result` is `false` on
+success).
+
+**Validation — Batch 3 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                         |
+| `pnpm lint`          | ✅ Pass (after autofix of export ordering in `services/portfolio/index.ts`)                                                                                                                     |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of `services/portfolio/models.ts` and its test file)                                                                                                         |
+| `pnpm test`          | ✅ Pass, 591/591 (28 new)                                                                                                                                                                       |
+| `pnpm test:coverage` | ✅ 95.54% statements / 91.2% branches / 100% functions / 98.86% lines — the new `services/portfolio/` code is fully, 100%-covered (it does not appear as a partial-coverage row in the report). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                         |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2248,22 +2394,20 @@ Service result.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 2 (M3-002,
-   M3-003) before committing, per instruction.
-3. Once approved and committed: **Milestone 3 Batch 3 — M3-004
-   (Implement Portfolio Mapping Utilities)**, the task this batch's own
-   scoping deliberately excluded. M3-004 depends on M2-002 and M3-001
-   (both done) and is unblocked. Its "Requirements" (keep mappings
-   explicit; validate required fields; avoid unsafe type casting; do not
-   format values for display) and DoD ("Portfolio data can move between
-   layers without leaking persistence-specific structures into the
-   Engine") point at mapping functions between persistence models,
-   application models, and `engine/shared/types.ts`'s `PortfolioInput` —
-   re-read its exact text and DoD fresh at the start of that batch, per
-   the standing workflow, and re-check whether M3-005 (Portfolio Summary
-   Service, which formally depends on M3-004) naturally belongs in the
-   same batch or is better left separate, the same batch-boundary
-   judgment this batch itself went through for M3-002/M3-003 vs. M3-004.
+2. **This pass stops here for approval** of Milestone 3 Batch 3 (M3-004)
+   before committing, per instruction.
+3. Once approved and committed: **Milestone 3 Batch 4 — re-read M3-005
+   (Portfolio Summary Service) and M3-006 (Portfolio Action Preview
+   Service) together**, per explicit instruction, rather than
+   automatically isolating M3-005. Propose that batch's scope — including
+   a `UI → Services → Engine` dependency sketch, per the pattern now
+   established in Batches 2 and 3 — before implementing. M3-005 is the
+   first Service to actually call the Engine (via M3-004's
+   `mapApplicationPortfolioToEngineInput`) and is where conflict #19
+   ("Formula version" aggregation across a multi-Engine-call Service)
+   will need a real answer, not a deferral. Watch for whether M3-006
+   naturally depends on M3-005's output shape or is independent enough to
+   warrant its own batch.
 4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
    still open**: F-026 (Health Factor status classification, conflict
    #1), compound interest / M2-013–M2-014 (conflict #7), the

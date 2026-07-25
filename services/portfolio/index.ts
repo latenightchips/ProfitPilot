@@ -1,11 +1,23 @@
 /**
- * Portfolio Service — 06_TASKS.md M3-001 ("Create Service Foundation").
+ * Portfolio Service — public entry point.
  *
- * 04_BUILD_GUIDE.md "SERVICE RESPONSIBILITIES": "Portfolio Service — Loads
- * portfolio. Calls Portfolio Engine. Returns Portfolio Model."
- *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Portfolio Service's implementation
- * (a separate, dependent Milestone 3 task). This file is that entry point.
+ * 06_TASKS.md M3-001 ("Create Service Foundation") established this
+ * directory; M3-004 ("Implement Portfolio Mapping Utilities") is its
+ * first occupant. The Portfolio Service itself (M3-005/M3-006) is a
+ * separate, dependent Milestone 3 task not yet implemented.
  */
-export {};
+export {
+  mapApplicationPortfolioToEngineInput,
+  mapPersistencePortfolioToApplicationPortfolio,
+  type MappingFailure,
+  type MappingResult,
+  type MappingSuccess,
+} from './mapping';
+export type {
+  ApplicationPortfolio,
+  PersistenceCollateralPosition,
+  PersistenceDebtPosition,
+  PersistenceMarketPrices,
+  PersistencePortfolio,
+  PersistenceProtocolParameters,
+} from './models';

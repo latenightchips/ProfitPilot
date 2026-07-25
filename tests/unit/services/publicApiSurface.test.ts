@@ -35,3 +35,38 @@ describe('Public Service layer API surface (M3-002, M3-003)', () => {
     expect(failure.ok).toBe(false);
   });
 });
+
+/**
+ * Portfolio Mapping Utilities — 06_TASKS.md M3-004. Verifies the mapping
+ * functions are reachable through the root `@/services` entry point, not
+ * just `@/services/portfolio`.
+ */
+describe('Public Service layer API surface (M3-004)', () => {
+  const expectedFunctionNames = [
+    'mapPersistencePortfolioToApplicationPortfolio',
+    'mapApplicationPortfolioToEngineInput',
+  ];
+
+  it.each(expectedFunctionNames)('%s is reachable through @/services alone', (name) => {
+    expect(typeof (Services as Record<string, unknown>)[name]).toBe('function');
+  });
+
+  it('a full mapping round-trip can be performed using only @/services imports', () => {
+    const persistenceResult = Services.mapPersistencePortfolioToApplicationPortfolio({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 1000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.8,
+        liquidationThreshold: 0.83,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+    expect(persistenceResult.ok).toBe(true);
+    if (!persistenceResult.ok) return;
+
+    const engineInput = Services.mapApplicationPortfolioToEngineInput(persistenceResult.data);
+    expect(engineInput.collateral.asset).toBe('BTC');
+  });
+});
