@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 14 complete (pending approval) — M2-001 through M2-030 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-031/M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 15 complete (pending approval) — M2-001 through M2-031 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-032 (final M2 task) remains
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1258,6 +1258,91 @@ functionality.
 
 ---
 
+### Batch 15 — Publish Formula Engine API (M2-031)
+
+| Task                              | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-031 Publish Formula Engine API | ✅ Done | `engine/index.ts` curated (previously a re-export-everything barrel by its own prior header comment's admission) + `tests/unit/engine/publicApiSurface.test.ts` (69 new tests). All 4 Requirements addressed; DoD satisfied and directly demonstrated by an end-to-end test using only `@/engine` imports. No new Formula ID: M2-031 curates already-implemented, already-tagged exports — it computes nothing new. |
+
+**All 4 Requirements addressed:**
+
+1. **"Expose only supported public functions."** Every Formula-ID-tagged
+   calculation, plus `rankScenarios` (explicitly Service/UI-facing per its
+   own M2-022 DoD despite carrying no Formula ID), remains exported.
+2. **"Hide internal helpers."** Two modules were removed from the barrel
+   (still fully implemented, tested, and directly importable from their
+   own file — nothing was deleted, only un-curated from the top-level
+   entry point):
+   - `engine/validation/invariants.ts`'s 5 check functions
+     (`checkNetWorthInvariant` and siblings) — M2-027's own
+     Description/DoD frame these as an automated **test**-time
+     consistency check ("Invariant violations fail **tests**"), not a
+     Service-facing calculation. Every existing consumer already imports
+     them directly from `./validation/invariants`, never through the
+     barrel — removing them from `engine/index.ts` broke nothing.
+   - `engine/validation/validate.ts`'s validator functions
+     (`validateNonNegative` and siblings) — internal plumbing every
+     formula function already uses to build its own `FormulaResult`
+     error; a Service never needs to pre-validate, since every formula
+     call already validates and returns a structured error itself
+     (01_PRD.md REQ-002). Confirmed (not assumed) by finding that
+     `06_TASKS.md`'s own later Milestone 3/4 tasks ("Create Portfolio
+     Validation Schemas," "Use Zod validation") establish a **separate**
+     Zod-based schema layer for actual Service/UI-facing input
+     validation — these granular Engine-internal validators were never
+     meant to cross the Engine/Service boundary.
+3. **"Export shared public types."** `PortfolioInput` and its component
+   types, the full `FormulaResult`/`FormulaError`/`FormulaMetadata`/
+   `FormulaWarning` contract, and every calculation's own result/params
+   type remain exported.
+4. **"Document each public operation."** Each export block now carries a
+   one-line category comment (e.g. "Leverage & Loop Mathematics —
+   F-012–F-015, F-018, F-037; M2-015–M2-018") naming its Formula ID range
+   and source tasks, making `engine/index.ts` itself a legible index of
+   the whole public surface — on top of each function's own existing,
+   detailed Formula-ID doc comment in its own file, not a replacement for
+   it.
+
+**DoD directly demonstrated, not just claimed**:
+`publicApiSurface.test.ts`'s last test runs a representative
+Collateral Value → Health Factor → Recommendation pipeline using **only**
+`import * as Engine from '@/engine'` — no internal module path — proving
+"Application Services can use the Engine without importing internal
+module files" rather than asserting it in prose.
+
+**Judgment call, documented as conflict #17**: `06_TASKS.md` does not
+enumerate which specific functions count as "internal helpers" — that
+determination required interpreting each candidate against its own
+task's Description/DoD framing (test-tooling vs. Service-facing
+calculation) rather than a rule stated anywhere in the docs. See conflict
+#17 for the full reasoning and the specific evidence (the Zod-schema
+finding) that resolved the `validate.ts` case.
+
+**Framework-independence**: re-audited after Batch 15 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: no new Formula ID was introduced;
+every previously-implemented Formula ID remains reachable and unchanged
+(only re-export wiring moved); `publicApiSurface.test.ts` mechanically
+verifies both the presence of every expected public export and the
+absence of every hidden internal one, plus a full pipeline test proving
+the DoD; no existing test broke from the curation (all 55 prior test
+files already imported from specific submodule paths, never the barrel).
+
+**Validation — Batch 15**
+
+| Command              | Result                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                              |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                              |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                              |
+| `pnpm test`          | ✅ Pass, 489/489 (69 new)                                                                                                                                                            |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — identical to Batch 14 (re-export wiring and test-only additions add no new `engine/` executable statements). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                              |
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1678,6 +1763,66 @@ does not name a recommendation category at all.
 
 ---
 
+### 17. `06_TASKS.md` never enumerates which Engine functions count as "internal helpers" for M2-031 — the public/internal split required interpretation, not a documented rule
+
+M2-031's Requirements say "Expose only supported public functions" and
+"Hide internal helpers," but no document anywhere — not `06_TASKS.md`,
+not `04_BUILD_GUIDE.md`, not `02_Formulas.md` — lists which specific
+functions are "internal" versus "public." Every function already carries
+a Formula ID, a doc comment, and a full test suite, so "has
+documentation" and "is tested" (the usual signals used throughout this
+project to distinguish real work from a gap) don't discriminate here —
+both categories are fully documented and tested.
+
+**Resolution applied**: each candidate was judged against its own task's
+Description/DoD framing, not a stated rule:
+
+- `engine/validation/invariants.ts` (5 check functions): M2-027's DoD
+  says "Invariant violations fail **tests**," and its Description says
+  "Add automated **checks**" — both are testing-framework language, not
+  calculation-output language. Every existing consumer already imports
+  these directly from `./validation/invariants`, never through
+  `engine/index.ts`, which is corroborating (not conclusive) evidence
+  they were never treated as part of the curated surface.
+- `engine/validation/validate.ts` (10 validator functions): the stronger
+  finding here is that `06_TASKS.md` itself, in later Milestone 3/4
+  tasks, introduces a **separate** Zod-based "Portfolio Validation
+  Schemas" layer for Service/UI-facing input validation ("Use Zod
+  validation") — a second, independent validation mechanism that would
+  be redundant if Services were also meant to call
+  `engine/validation/validate.ts`'s functions directly. This is textual
+  evidence, not just architectural inference.
+
+**Everything else was kept public** on the same standard: every
+remaining exported function either carries a Formula ID (a Version 1
+calculation with its own documented equation) or, in `rankScenarios`'s
+one exception, has its own task DoD explicitly framing it as UI/Service-
+facing ("scenarios can be ranked and displayed... without recalculating
+values in the UI," M2-022). Nothing was hidden merely because it seemed
+"low-level" without a specific textual signal supporting that call.
+
+**This curation reflects the best interpretation of the Version 1
+specification available now — it is not a claim that these two modules
+should never be public.** Stated directly: `checkNetWorthInvariant` and
+`validateNonNegative` (and their siblings) are hidden today because
+nothing in the current `06_TASKS.md`/`04_BUILD_GUIDE.md`/`02_Formulas.md`
+gives a Service a documented reason to call them directly — not because
+of some inherent property that makes them permanently unsuitable for
+public use. If a later milestone's specification evolves to give
+Services a genuine, documented need for either (e.g. a future task
+explicitly asks the UI to run a live consistency check, or a future
+Service is asked to pre-validate input before submission rather than
+relying on each formula's own returned error), the correct response is
+to re-curate `engine/index.ts` to expose them, not to treat this
+conflict as having permanently settled the question. Action needed: if a
+future milestone finds a function was hidden that a Service genuinely
+needs (or exposed that should have been hidden), `engine/index.ts`'s
+curation should be revisited explicitly against that milestone's own
+specification — the function itself never needs to move, only its
+re-export.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -1726,24 +1871,26 @@ does not name a recommendation category at all.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 14 (M2-030) before
+2. **This pass stops here for approval** of Batch 15 (M2-031) before
    committing, per instruction.
-3. Once approved and committed: **Batch 15 — M2-031 (Publish Formula
-   Engine API)**, continuing the Verification chapter. M2-031 depends on
-   M2-029 (done, partially) and is unblocked (P0 priority, effort M). Its
-   Requirements ("Expose only supported public functions," "Hide internal
-   helpers," "Export shared public types," "Document each public
-   operation") and DoD ("Application Services can use the Engine without
-   importing internal module files") point at finally curating
-   `engine/index.ts` — currently a re-export-everything file by its own
-   header comment's admission ("until then this re-exports everything
-   implemented so far") — into the actual finalized public surface. Expect
-   this batch to need a decision on what counts as "internal" (e.g.
-   `computeInterestForPeriod` in `calculateDailyInterest.ts`, already
-   marked "Not part of the curated public Engine API" in its own doc
-   comment) versus "public" — re-read its exact text and DoD fresh at the
-   start of that batch, per the standing workflow, rather than assuming
-   its shape from this preview.
+3. Once approved and committed: **Batch 16 — M2-032 (Complete Formula
+   Traceability Audit)**, the **final Milestone 2 task**. M2-032 depends
+   on M2-031 (done) and is unblocked (P0 priority, effort M). Its
+   Description ("Verify alignment between documentation, implementation,
+   and tests") and per-Formula-ID checklist (documentation exists,
+   canonical implementation exists, tests exist, public output includes
+   the correct Formula ID, dependencies are known) and DoD ("No
+   undocumented, duplicated, or untested Version 1 calculations remain")
+   describe an **audit task over work already done across Batches
+   1–15**, not new calculations — expect this to mean systematically
+   re-verifying (and where a gap is found, fixing only the traceability
+   gap itself, not inventing new scope) every one of the 36 implemented
+   Formula IDs against `tests/fixtures/formulaCoverage.ts` (M2-029) and
+   `engine/index.ts` (M2-031), likely producing a final consolidated
+   audit summary in `PROJECT_STATUS.md` — re-read its exact text and DoD
+   fresh at the start of that batch, per the standing workflow, rather
+   than assuming its shape from this preview. **Milestone 2 completes
+   when M2-032 is done.**
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
@@ -1758,7 +1905,10 @@ does not name a recommendation category at all.
    (conflict #13, a known approximation), the unspecified "Target borrow
    percentage" blocking a post-loop Golden Reference Portfolio fixture
    (conflict #14), M2-029's DoD-vs-scope tension over the 33 unimplemented
-   Formula IDs (conflict #15), and the Build-Guide-vs-Formulas.md
+   Formula IDs (conflict #15), the Build-Guide-vs-Formulas.md
    performance-target disagreement plus M2-030's 2 unmapped benchmark
-   categories (conflict #16, new this batch). Revisit all eleven once
-   resolved upstream.
+   categories (conflict #16), and M2-031's undocumented public/internal
+   split criteria (conflict #17, new this batch). Revisit all twelve once
+   resolved upstream — several (especially #1, #7, #8, #9) will likely
+   need a product decision before Milestone 3 can safely build on top of
+   the Engine.
