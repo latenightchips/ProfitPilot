@@ -62,6 +62,17 @@ function resolveTargetDebt(
     const targetHf = validatePositive(target.targetHealthFactor, 'target.targetHealthFactor');
     if (!targetHf.ok) return createFailure(targetHf.error, options);
 
+    // KNOWN LIMITATION (found via the M2-027 invariant suite, not fixed
+    // here — see PROJECT_STATUS.md): F-040 computes its target debt
+    // assuming collateral stays fixed, matching 02_Formulas.md's EXIT
+    // DEPENDENCY GRAPH's sequential F-040 -> F-041 -> F-042 chain — but
+    // calculateExitPosition actually sells BTC to fund the repayment,
+    // which reduces collateral value too. F-040 has no note about solving
+    // this iteratively (unlike F-045 "Target Price Exit", which does), so
+    // the Engine follows the documented, non-iterative chain exactly
+    // rather than inventing a corrective equation. The practical effect:
+    // the resulting Health Factor undershoots this target whenever a
+    // nontrivial sale occurs.
     const collateralValue = toDecimal(portfolio.collateral.quantity).times(
       portfolio.market.btcPriceUsd,
     );

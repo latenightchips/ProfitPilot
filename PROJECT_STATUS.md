@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 10 complete (pending approval) — M2-001 through M2-026 addressed (M2-013/M2-014 blocked); M2-027 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 11 complete (pending approval) — M2-001 through M2-027 addressed (M2-013/M2-014 blocked); M2-028 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -897,6 +897,99 @@ test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 11 — Engine Invariants (M2-027)
+
+| Task                               | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-027 Implement Engine Invariants | ✅ Done | `engine/validation/invariants.ts` — 5 plain boolean-predicate functions, one per `06_TASKS.md` "Example," exercised by `tests/unit/engine/invariants/` against real, already-implemented engine functions across multiple scenarios (not just unit-tested in isolation). No new Formula ID: M2-027 is a cross-cutting property-check task over already-implemented formulas, not a new calculation, so nothing is tagged/composed the way M2-001–M2-026's functions were. |
+
+Scoped to M2-027 alone: its dependency list is "M2-006 through M2-026" —
+essentially the whole Engine built so far — while M2-028 (Golden Reference
+Portfolios) depends on M2-027 and is a different kind of work (creating
+immutable fixtures), a natural batch boundary.
+
+**Design choice: invariants are plain predicates, not `FormulaResult`s.**
+`06_TASKS.md`'s own M2-027 DoD says "Invariant violations fail **tests**,"
+and its Description says "Add automated **checks**" — both point to a
+test-suite-and-predicate-function shape rather than a new user-facing
+calculation. `engine/validation/invariants.ts` follows
+`engine/validation/validate.ts`'s (M2-005) existing precedent for
+non-formula boolean helpers, rather than wrapping pass/fail judgments in
+the `FormulaResult` envelope meant for derived values with their own
+Formula ID.
+
+**A genuine implementation defect found and documented (not silently
+patched) by this batch's own invariant #3 ("Target Health Factor results
+reproduce the target"): `calculateTargetExit`'s `'healthFactor'` target
+type (M2-024, Batch 9) does not actually reproduce the requested target.**
+F-040 "Target Debt" computes its target assuming collateral stays fixed —
+matching `02_Formulas.md`'s own EXIT DEPENDENCY GRAPH, which chains
+F-040 → F-041 → F-042 sequentially with no correction step. But
+`calculateExitPosition` (M2-023) actually **sells BTC** to fund the
+repayment F-040/F-041 compute, which reduces collateral value too — an
+effect F-040 never accounts for (unlike F-045 "Target Price Exit", which
+explicitly says its own target is solved "iteratively"; F-040 has no such
+note). Concretely, for collateral $120,000 / debt $60,000 / threshold
+80% / target HF 2.00: F-040 says target debt is $48,000, but actually
+reaching $48,000 debt requires selling $12,000 of BTC, which drops
+collateral to $108,000 — producing an actual Health Factor of **1.80**,
+not the requested 2.00.
+
+**Decision: implement F-040 exactly as documented (matching the EXIT
+DEPENDENCY GRAPH literally) rather than inventing a corrective,
+undocumented equation that would exactly reproduce the target.** The
+mathematically "more correct" equation is straightforward to derive
+(solve `H = ((C − R) × T) / (D − R)` for `R`, the self-consistent
+repayment), but it does not appear anywhere in `02_Formulas.md`, and
+`02_Formulas.md` gives no indication F-040 is meant to be solved this way
+for the exit case — inventing it would be exactly the kind of
+undocumented-behavior addition the standing instructions prohibit. The
+discrepancy is now explicitly documented in `calculateTargetExit.ts`'s
+own code comment at the point it occurs, and asserted precisely (not
+hidden) by a dedicated invariant test that expects the violation and
+checks its exact magnitude, rather than silently passing or being
+deleted. Every other function checked against this same invariant
+(`calculateAdditionalBorrow` F-027, `calculateRepaymentRecommendation`
+F-062, `calculateAdditionalCollateralRecommendation` F-063) reproduces
+its target exactly, because none of them sell collateral to fund the
+change — this self-referential effect only exists in the sell-based exit
+path. Action needed: either author a documented, self-consistent
+"Target Debt" equation for the exit-sells-collateral case in
+`02_Formulas.md`, or accept the approximation and document it as intended
+behavior at the specification level (not just in this codebase).
+
+**Framework-independence**: re-audited after Batch 11 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: all 5 documented M2-027 "Examples"
+have a corresponding check function in `engine/validation/invariants.ts`
+and at least one dedicated cross-cutting test exercising it against real
+engine output (not synthetic numbers only); public exports
+(`checkNetWorthInvariant`, `checkAllocationInvariant`,
+`checkTargetHealthFactorInvariant`, `checkLoopReconciliationInvariant`,
+`checkFullRepaymentInvariant`) are wired through `engine/index.ts`; no new
+Formula ID was needed or invented; the one genuine defect the invariant
+suite surfaced is documented in both code and this file rather than
+silently fixed with an undocumented equation or silently ignored.
+
+**Validation — Batch 11**
+
+| Command              | Result                                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                           |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                           |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                           |
+| `pnpm test`          | ✅ Pass, 320/320 (28 new)                                                                                                                                                                                                                         |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines. `engine/validation/invariants.ts` itself is 100% covered; remaining uncovered lines elsewhere are the same documented defensive/unreachable branches as every prior batch. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                           |
+
+Every invariant is checked against multiple realistic scenarios (not just
+one), including different loop-strategy stop reasons and a zero-debt
+edge case. No test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1113,6 +1206,51 @@ argues against inventing the missing normalization rather than for it.
 Action needed: either document each component's 0–100 conversion, or
 descope F-067 explicitly.
 
+### 13. F-040 "Target Debt" does not account for collateral sold during an exit — `calculateTargetExit`'s `'healthFactor'` target does not exactly reproduce the requested Health Factor
+
+**F-040 itself is not being marked incorrect.** Stated directly, as four
+separate points: (1) F-040 is not wrong — it correctly computes Target
+Debt under its own stated equation. (2) The conflict arises because F-040
+assumes collateral stays fixed while debt changes. (3) M2-024 applies
+F-040 to `calculateTargetExit`'s `'healthFactor'` target, a workflow that
+_simultaneously_ changes collateral (sells BTC to fund the repayment
+F-040's output leads to) — a scenario F-040's own assumption doesn't
+cover. (4) Therefore this is a mismatch between F-040's documented
+assumption (fixed collateral) and M2-024's documented task behavior
+(collateral changes as part of the same exit), not necessarily an error
+in F-040 itself.
+
+Found via Batch 11's own M2-027 invariant suite ("Target Health Factor
+results reproduce the target"), applied against Batch 9's
+`calculateTargetExit`. `02_Formulas.md`'s EXIT DEPENDENCY GRAPH chains
+F-040 "Target Debt" → F-041 "Required Debt Repayment" → F-042 "BTC Sale
+Required" sequentially, with F-040 computed against the _current_
+(pre-sale) collateral value. But executing that repayment via
+`calculateExitPosition` (M2-023) sells BTC to fund it, which reduces
+collateral value — an effect F-040 was never designed to account for (it
+has no "solved iteratively" note the way F-045 "Target Price Exit" does).
+Concretely: collateral $120,000, debt $60,000, threshold 80%, target HF
+2.00 → F-040 says target debt $48,000, but selling the $12,000 of BTC
+needed to reach it drops collateral to $108,000, producing an actual
+Health Factor of 1.80, not 2.00.
+
+**Not fixed in code** — the mathematically self-consistent equation (solve
+`H = ((Collateral − R) × Threshold) / (Debt − R)` for repayment `R`) is
+straightforward to derive but appears nowhere in `02_Formulas.md`, and
+inventing it would mean implementing undocumented behavior. The Engine
+implements F-040 exactly as documented; the discrepancy is flagged in
+`calculateTargetExit.ts`'s own code comment and asserted precisely by a
+dedicated invariant test (`tests/unit/engine/invariants/targetHealthFactorInvariant.test.ts`)
+rather than hidden. Every other target-Health-Factor consumer
+(`calculateAdditionalBorrow` F-027, `calculateRepaymentRecommendation`
+F-062, `calculateAdditionalCollateralRecommendation` F-063) reproduces its
+target exactly, since none of them sell collateral to fund the change —
+this is specific to the sell-based exit path. Action needed: either
+`02_Formulas.md` documents a self-consistent Target Debt equation for the
+exit case (or says F-040 is explicitly an approximation here), or the
+approximation is accepted and stated as intended behavior at the
+specification level.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -1163,28 +1301,34 @@ descope F-067 explicitly.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 10 (M2-025, M2-026)
-   before committing, per instruction.
-3. Once approved and committed: **Batch 11 — M2-027 (Engine Invariants)**,
-   opening the Verification chapter (M2-027–M2-032). M2-027's own
-   dependency list is unusual — "M2-006 through M2-026," i.e. essentially
-   everything implemented so far — meaning it is a cross-cutting task
-   (automated invariant checks: "Net value equals collateral minus debt,"
-   "Target Health Factor results reproduce the target," "Loop results
-   reconcile with step totals," "Full debt repayment produces zero debt,"
-   per its own "Examples") rather than one with new Formula IDs of its
-   own. Re-read its exact text and DoD fresh at the start of that batch,
-   per the standing workflow, before assuming its scope or how it relates
-   to the traceability/regression work in M2-028–M2-029.
+2. **This pass stops here for approval** of Batch 11 (M2-027) before
+   committing, per instruction.
+3. Once approved and committed: **Batch 12 — M2-028 (Golden Reference
+   Portfolios)**, continuing the Verification chapter. M2-028 depends on
+   M2-027 (done) and is unblocked. Its "Reference cases should include"
+   list names 7 scenarios — No debt / Conservative leverage / Moderate
+   leverage / High-risk leverage / Near liquidation / Multiple collateral
+   assets / Multiple debt assets — and the last two are explicitly
+   **out of scope under the approved single-asset model**
+   (`engine/shared/types.ts`'s documented v0.1 scope, conflict #5), so
+   M2-028 is expected to be partial from the outset for exactly that
+   reason; re-read its exact text and DoD fresh at the start of that
+   batch, per the standing workflow, rather than assuming which 5 of the
+   7 cases apply.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
    still-open formal dependencies on it), the swap-fees/slippage/gas-estimate
    gap (conflict #8, affects M2-017's "Total implementation cost" and
    M2-023's "Exit transaction costs"), the partially-unassigned
-   Recommendation Engine chapter (conflict #9 — now narrowed by Batch 10
-   to F-060, F-065, F-066, F-067, F-068, F-069 specifically; F-061–F-064
-   are implemented), "Target cash proceeds"'s ambiguous mechanics
-   (conflict #10), "Exit readiness"'s unmapped Formula ID (conflict #11),
-   and F-067's partial documentation (conflict #12). Revisit all seven
-   once resolved upstream.
+   Recommendation Engine chapter (conflict #9 — narrowed by Batch 10 to
+   F-060, F-065, F-066, F-067, F-068, F-069; F-061–F-064 are implemented),
+   "Target cash proceeds"'s ambiguous mechanics (conflict #10), "Exit
+   readiness"'s unmapped Formula ID (conflict #11), F-067's partial
+   documentation (conflict #12), and F-040's exit-collateral-sale
+   discrepancy (conflict #13, a known approximation, not something
+   Batch 12's golden-reference fixtures should try to "correct" — any
+   fixture exercising `calculateTargetExit`'s `'healthFactor'` target
+   should encode the documented, approximate result, not the
+   mathematically "corrected" one). Revisit all eight once resolved
+   upstream.

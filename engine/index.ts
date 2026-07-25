@@ -138,6 +138,13 @@ export {
   simulatePriceScenario,
 } from './simulation';
 export {
+  checkAllocationInvariant,
+  checkFullRepaymentInvariant,
+  checkLoopReconciliationInvariant,
+  checkNetWorthInvariant,
+  checkTargetHealthFactorInvariant,
+} from './validation/invariants';
+export {
   type ValidatedProtocolParameters,
   validateFinite,
   validateNonNegative,
