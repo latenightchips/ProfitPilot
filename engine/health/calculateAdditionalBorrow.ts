@@ -1,38 +1,29 @@
-import { Decimal, toDecimal, toOutputNumber } from '../shared/decimal';
+import { calculateTargetDebt } from '../exit/calculateTargetDebt';
+import { toDecimal, toOutputNumber } from '../shared/decimal';
 import {
   createFailure,
   createSuccess,
   type FormulaResult,
   type FormulaWarning,
 } from '../shared/result';
-import { validateNonNegative, validatePositive, validateThreshold } from '../validation/validate';
+import { validateNonNegative } from '../validation/validate';
 import { calculateHealthFactor } from './calculateHealthFactor';
 
 const FORMULA_ID = 'F-027';
 const FORMULA_VERSION = '1.0';
 
 /**
- * (Collateral × Liquidation Threshold) / Target HF — the first term of
- * 02_Formulas.md F-027 "Maximum Additional Debt". The identical equation is
- * also documented as F-040 "Target Debt" in the Exit Strategy chapter,
- * which belongs to a later Milestone 2 task (M2-023, not yet implemented).
- * Kept private here rather than exposed as a public, F-040-tagged function,
- * to stay scoped to this batch's assigned Formula IDs (M2-011); promote
- * this to a shared public implementation when M2-023 is reached, following
- * the F-012/F-021 pattern from calculateBorrowCapacity.ts.
- */
-function computeTargetDebt(
-  collateralValue: Decimal,
-  liquidationThreshold: Decimal,
-  targetHealthFactor: Decimal,
-): Decimal {
-  return collateralValue.times(liquidationThreshold).dividedBy(targetHealthFactor);
-}
-
-/**
  * Maximum Additional Debt — 02_Formulas.md F-027.
  * Equation: Max Additional Debt = ((Collateral × Liquidation Threshold) /
  *   Target HF) − Current Debt.
+ *
+ * The first term is the same equation as F-040 "Target Debt" (Exit
+ * Strategy chapter, M2-023) — reused via `calculateTargetDebt` rather
+ * than duplicated, following the F-012/F-021 pattern from
+ * `calculateBorrowCapacity.ts`. (Batch 3 originally kept this as a
+ * private helper here, scoped to M2-011, with a comment flagging
+ * promotion to a shared public F-040 implementation once M2-023 was
+ * reached — this is that promotion.)
  *
  * The result is signed: positive means additional safe borrowing is
  * available; negative means debt must be repaid by that amount to reach
@@ -59,20 +50,17 @@ export function calculateAdditionalBorrow(
     inputsUsed: { collateralValue, liquidationThreshold, currentDebt, targetHealthFactor },
   };
 
-  const collateral = validateNonNegative(collateralValue, 'collateralValue');
-  if (!collateral.ok) return createFailure(collateral.error, options);
-
-  const threshold = validateThreshold(liquidationThreshold, 'liquidationThreshold');
-  if (!threshold.ok) return createFailure(threshold.error, options);
-
   const debt = validateNonNegative(currentDebt, 'currentDebt');
   if (!debt.ok) return createFailure(debt.error, options);
 
-  const targetHf = validatePositive(targetHealthFactor, 'targetHealthFactor');
-  if (!targetHf.ok) return createFailure(targetHf.error, options);
+  const targetDebtResult = calculateTargetDebt(
+    collateralValue,
+    liquidationThreshold,
+    targetHealthFactor,
+  );
+  if (!targetDebtResult.ok) return createFailure(targetDebtResult.error, options);
 
-  const targetDebt = computeTargetDebt(collateral.value, threshold.value, targetHf.value);
-  const additionalDebt = targetDebt.minus(debt.value);
+  const additionalDebt = toDecimal(targetDebtResult.value).minus(debt.value);
 
   const warnings: FormulaWarning[] = [];
   const resultingDebt = toDecimal(debt.value).plus(additionalDebt);
@@ -83,7 +71,7 @@ export function calculateAdditionalBorrow(
   );
   if (
     !verification.ok ||
-    !toDecimal(verification.value).minus(targetHf.value).abs().lessThanOrEqualTo('0.0000001')
+    !toDecimal(verification.value).minus(targetHealthFactor).abs().lessThanOrEqualTo('0.0000001')
   ) {
     warnings.push({
       code: 'TARGET_VERIFICATION_MISMATCH',

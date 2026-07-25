@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 8 complete (pending approval) — M2-001 through M2-022 addressed (M2-013/M2-014 blocked); M2-023 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 9 complete (pending approval) — M2-001 through M2-024 addressed (M2-013/M2-014 blocked); M2-025 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -676,6 +676,110 @@ lint, or build failures were left unresolved.
 
 ---
 
+### Batch 9 — Exit Strategy (M2-023, M2-024)
+
+| Task                                        | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-023 Implement Exit Position Calculations | ✅ Done    | `engine/exit/{calculateRequiredDebtRepayment,calculateBtcSaleRequired,calculateExitPosition}.ts` — F-041, F-042, composing F-002/F-004. A single `targetDebt` parameter covers both "Full-exit result" (0) and "Partial-exit result" (any value between 0 and current debt). "BTC quantity retained" and "Remaining equity" reconcile with current balances per the DoD. "Exit transaction costs" is not computed — see the extended conflict #8 note below.                                                                                                                     |
+| M2-024 Implement Target Exit Calculations   | ⚠️ Partial | `engine/exit/{calculateTargetDebt,calculateTargetExit}.ts` — F-040 (promoted from a private helper, see below). 3 of 5 documented target types implemented (Target debt balance, Target Health Factor, Target retained BTC); "Target BTC price" is satisfied structurally by `calculateExitPosition`'s own optional scenario-price parameter rather than a 4th target-type branch; "Target cash proceeds" is not implemented — genuinely ambiguous mechanics, see below. DoD ("reports when a target is mathematically infeasible") satisfied for every implemented target type. |
+
+**F-040 "Target Debt" promoted from a private helper to a shared public
+implementation, as flagged in Batch 3.** `calculateAdditionalBorrow.ts`
+(F-027, M2-011) originally computed `(Collateral × Liquidation Threshold) /
+Target HF` as a private, non-exported `computeTargetDebt` helper, with its
+own comment stating this equation is also F-040 and should be promoted
+"when M2-023 is reached." That promotion is done: `engine/exit/calculateTargetDebt.ts`
+is now the canonical, publicly F-040-tagged implementation (following the
+F-012/F-021 dual-tagging pattern), and `calculateAdditionalBorrow` calls it
+instead of duplicating the equation. All 6 of `calculateAdditionalBorrow`'s
+existing Batch 3 tests still pass unmodified — this was a refactor, not a
+behavior change.
+
+**Finding: "Target BTC price" is not a standalone M2-024 target type.**
+`06_TASKS.md` M2-024 lists it under "Targets may include," but a later
+milestone's UI task read for context, M7-021 ("Implement Exit Type
+Selection"), enumerates the actual selectable exit _types_ — Full exit /
+Partial debt repayment / Target Health Factor / Target retained BTC /
+Target debt balance / Target cash proceeds — and "Target BTC price" is
+**not** among them; it only appears in the separate M7-022 form-fields
+list, alongside "Fees / Slippage / Gas estimate." This indicates "Target
+BTC price" is a price-scenario override usable with any exit calculation,
+not its own target type. `calculateExitPosition` (M2-023) accordingly
+accepts an optional `scenarioBtcPriceUsd`, which every M2-024 target type
+can use — no separate "Target BTC price" branch was needed or added.
+
+**Finding: "Target cash proceeds" is not implemented — genuinely
+ambiguous, not merely undocumented.** Unlike swap fees / slippage / gas
+estimate (no formula exists at all), "cash proceeds" has an implicit
+equation derivable from a later milestone's task text (M7-024's "Net cash
+proceeds = Gross sale value − Debt repaid − ... "), but its _mechanics_ as
+a standalone exit target are not determinable: does selecting "Target cash
+proceeds" leave debt untouched (sell BTC purely for liquidity, worsening
+LTV) or does it imply a full debt repayment with the specified amount left
+over afterward? Both are plausible, materially different exits, and
+`06_TASKS.md`/`02_Formulas.md` do not disambiguate. Implementing either
+guess would mean inventing architecture. Flagged rather than guessed, per
+instruction. Logged as conflict #10 below.
+
+**Extending conflict #8 (swap fees / slippage / gas estimate)**: the same
+undocumented-transaction-cost gap that blocked parts of M2-017 (Batch 5)
+also blocks M2-023's "Exit transaction costs." `calculateExitPosition`
+itemizes `swapFees`, `slippage`, and `gasEstimate` as `unavailableCosts`
+with reasons, the same treatment `calculateLoopCosts` established — not a
+new root cause, an additional occurrence of the same one.
+
+**Finding: F-043, F-044, F-046, F-047, F-048, and F-049 (the rest of the
+Exit Strategy chapter — Exit Profit, Capital Preservation Ratio,
+Recommended Partial Exit, Risk Reduction Efficiency, Optimal Exit Window,
+Exit Confidence Score) have no task assignment found in `06_TASKS.md`**
+by name search — the same unassigned-Formula-ID pattern as F-005–F-008
+(Batch 2), F-034–F-039 (Batch 4), and F-060–F-069 (Batch 6). Not a Batch 9
+omission: none map to M2-023/M2-024's own "Include"/"Targets may include"
+lists. Whether any of these six are assigned to a _later_-phrased task
+(the same way "Profit or loss" turned out to be F-007, Batch 7) has not
+been exhaustively re-checked against every M2-025–M2-032 task text —
+flagged for verification whenever a later batch's scope might plausibly
+touch profit/return/confidence-scoring concepts, rather than claimed
+resolved now.
+
+**Framework-independence**: re-audited after Batch 9 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all newly
+implemented/promoted Formula IDs (F-040, F-041, F-042) have an explicit
+`metadata.formulaId`-asserting test, as do the reused IDs exercised
+through `calculateExitPosition`'s composite (F-002, F-004) and F-027's
+refactored reuse of F-040; every M2-023 sub-bullet and every implemented
+M2-024 target type was cross-checked against the implementation; the two
+unimplemented items ("Exit transaction costs," "Target cash proceeds")
+are documented as blocked rather than silently omitted; public exports
+(`calculateTargetDebt`, `calculateRequiredDebtRepayment`,
+`calculateBtcSaleRequired`, `calculateExitPosition`, `calculateTargetExit`,
+and their types) are wired through both `engine/exit/index.ts` and
+`engine/index.ts`.
+
+**Validation — Batch 9**
+
+| Command              | Result                                                                                                                                                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                     |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                     |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                     |
+| `pnpm test`          | ✅ Pass, 251/251 (32 new; all 6 pre-existing `calculateAdditionalBorrow` tests still pass unmodified after the F-040 refactor)                                                                                                                              |
+| `pnpm test:coverage` | ✅ 95% statements / 89.35% branches / 100% functions / 98.56% lines. Remaining uncovered lines are defensive re-validation of already-validated data, mathematically unreachable given valid inputs — same documented pattern as Batches 3, 5, 6, 7, and 8. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                     |
+
+Every test asserts against a worked example from `02_Formulas.md` where
+one exists (F-040, F-041, F-042 examples), plus a full-exit/partial-exit/
+target-Health-Factor/target-retained-BTC cross-check (all four resolve to
+the same underlying numbers for an equivalent scenario), infeasibility
+cases for each implemented target type, and edge/invalid-input cases. No
+test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -819,6 +923,38 @@ M2-018 or any other task. Flagged for the same eventual resolution: the
 M2-032 Formula Traceability Audit, or a `06_TASKS.md` update that assigns a
 Recommendation Engine milestone/task set to this chapter.
 
+### 10. "Target cash proceeds" (M2-024) has ambiguous mechanics, not just a missing formula — BLOCKS full M2-024
+
+**This is a behavioral / business-rule ambiguity about execution order,
+not a missing mathematical formula.** Found while implementing Batch 9.
+`06_TASKS.md` lists "Target cash proceeds" as one of M2-024's five target
+types, and a later milestone's task (M7-024) implies an equation for the
+resulting figure ("Net cash proceeds = Gross sale value − Debt repaid −
+..."), so this is not the same class of gap as swap fees/slippage/gas
+estimate (conflict #8), where no equation exists at all — the arithmetic
+for either interpretation below is straightforward once the business rule
+is picked. The blocker is that **selecting "Target cash proceeds" as an
+exit type doesn't determine a unique execution order**, and the two
+candidate interpretations produce different, individually valid
+calculations:
+
+- **(a) Repay debt first, then withdraw proceeds**: fully repay the
+  current debt, and whatever cash remains from the BTC sale is the "cash
+  proceeds" the user receives. Debt goes to zero; retained BTC and cash
+  proceeds both fall out of that single sale.
+- **(b) Preserve debt, maximize cash withdrawal**: sell BTC purely for
+  liquidity without touching debt at all — debt stays unchanged, and the
+  full sale value becomes cash proceeds. This worsens LTV/Health Factor
+  (collateral drops, debt doesn't), which interpretation (a) does not.
+
+Both are coherent, materially different exits — (a) resolves to a
+`targetDebt` of 0 (a full exit as already implemented), while (b) has no
+representation in `calculateExitPosition`'s current `targetDebt` model at
+all, since it never reduces debt. No document specifies which is meant.
+Not implemented — see the Batch 9 section above for the fuller reasoning.
+Action needed: specify which execution order "Target cash proceeds"
+means (or both, as separate exit types) before this can be implemented.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -867,40 +1003,31 @@ Recommendation Engine milestone/task set to this chapter.
 
 ## Next task
 
-**Correction to the batch-count framing carried in this file's header**:
-earlier updates labeled batches "N of 9," a total estimated during the
-original Milestone 2 planning pass before every task chapter had been
-read in detail. `docs/06_TASKS.md` actually defines **32** Milestone 2
-tasks (M2-001 through M2-032); 22 have been addressed (M2-013/M2-014
-blocked) after 8 batches, at roughly 3 tasks/batch. Continuing to claim a
-9-batch total would be misleading once Batch 9 exists — the header now
-states progress as "M2-001 through M2-022 addressed... M2-023 through
-M2-032 remain" instead of a batch fraction.
-
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 8 (M2-021, M2-022)
+2. **This pass stops here for approval** of Batch 9 (M2-023, M2-024)
    before committing, per instruction.
-3. Once approved and committed: **Batch 9 — M2-023 (Exit Position
-   Calculations)** onward, opening the Exit Strategy chapter
-   (`02_Formulas.md` F-040–F-049, `engine/exit/`, currently empty except
-   `.gitkeep`). M2-023 depends on M2-006/M2-009 (both done) and is
-   unblocked. F-040 "Target Debt" was already identified in Batch 3 as
-   sharing its equation with `calculateAdditionalBorrow.ts`'s private
-   `computeTargetDebt` helper, which that file's own comment flags for
-   promotion to a shared public F-040 implementation "when M2-023 is
-   reached" — that promotion is now due. F-041 (Required Debt Repayment),
-   F-042 (BTC Sale Required), and F-043 (Exit Profit) all look directly
-   relevant to M2-023's "Include" list, but have not yet been verified
-   against M2-023's exact task text — re-read both fresh at the start of
-   that batch, per the standing workflow.
+3. Once approved and committed: **Batch 10 — M2-025 (Recommendation Rule
+   Framework)** onward, opening the Recommendation Engine chapter
+   (`02_Formulas.md` F-060–F-069, `engine/recommendation/`, currently
+   empty except `.gitkeep`). **M2-025 depends on M2-009, M2-010, and
+   M2-013 — the last of which is blocked** (conflict #7), so this is
+   expected to be a partial batch from the outset, unlike Batches 5/7/9
+   where the blocked-dependency sub-items turned out to be salvageable.
+   Whether M2-025's own "Recommendation categories" (Safety, Debt
+   management, Collateral management, Interest cost, Leverage, Exit
+   readiness) actually need compound interest specifically, or can reuse
+   simple interest like M2-017/M2-020 did, has not yet been checked —
+   verify at the start of that batch, per the standing workflow, rather
+   than assuming either way.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
-   compound interest / M2-013–M2-014 (conflict #7, M2-017's still-open
-   formal dependency on it, and M2-020's still-open formal dependency on
-   it), the swap-fees/slippage/gas-estimate gap (conflict #8, affects
-   M2-017's "Total implementation cost" and will recur in later
-   milestones), and the unassigned Recommendation Engine chapter F-060–
-   F-069 (conflict #9, F-056-F-058 in particular may resurface for a much
-   later milestone's iterative-solver/scoring tasks). Revisit all four
-   once resolved upstream.
+   compound interest / M2-013–M2-014 (conflict #7 — now also M2-025's
+   formal dependency, in addition to M2-017's and M2-020's), the
+   swap-fees/slippage/gas-estimate gap (conflict #8, affects M2-017's
+   "Total implementation cost" and M2-023's "Exit transaction costs," and
+   will recur further), the unassigned Recommendation Engine chapter
+   F-060–F-069 (conflict #9 — M2-025 may resolve some of these
+   assignments directly, since it's the first task to reach that
+   chapter), and "Target cash proceeds"'s ambiguous mechanics (conflict
+   #10). Revisit all five once resolved upstream.

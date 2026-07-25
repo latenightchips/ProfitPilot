@@ -11,6 +11,19 @@
  * The curated public API surface (hiding internal helpers) is finalized in
  * M2-031; until then this re-exports everything implemented so far.
  */
+export {
+  calculateBtcSaleRequired,
+  calculateExitPosition,
+  calculateRequiredDebtRepayment,
+  calculateTargetDebt,
+  calculateTargetExit,
+  type ExitPositionInput,
+  type ExitPositionResult,
+  type ExitTarget,
+  type TargetExitParams,
+  type TargetExitResult,
+  type UnavailableExitCost,
+} from './exit';
 export { calculateAdditionalBorrow, calculateHealthFactor } from './health';
 export {
   calculateAnnualInterest,
