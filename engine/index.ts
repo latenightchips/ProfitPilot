@@ -34,6 +34,9 @@ export {
   calculateLoopStrategy,
   calculateMaximumBorrowLimit,
   type LoopCostResult,
+  type LoopSafetyCheck,
+  type LoopSafetyFinding,
+  type LoopSafetyValidationResult,
   type LoopStepInput,
   type LoopStepRecord,
   type LoopStepResult,
@@ -41,6 +44,7 @@ export {
   type LoopStrategyInput,
   type LoopStrategyResult,
   type UnavailableLoopCost,
+  validateLoopStrategySafety,
 } from './loop';
 export {
   calculateCollateralValue,

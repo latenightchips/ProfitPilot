@@ -19,3 +19,9 @@ export {
   type LoopStrategyInput,
   type LoopStrategyResult,
 } from './calculateLoopStrategy';
+export {
+  type LoopSafetyCheck,
+  type LoopSafetyFinding,
+  type LoopSafetyValidationResult,
+  validateLoopStrategySafety,
+} from './validateLoopStrategySafety';

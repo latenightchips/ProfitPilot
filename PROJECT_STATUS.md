@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 5 of 9 complete (pending approval)
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 6 of 9 complete (pending approval)
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -366,6 +366,118 @@ unresolved.
 
 ---
 
+### Batch 6 — Loop Safety Validation (M2-018 only)
+
+Scoped to M2-018 alone: it is the sole remaining task from the original
+Loop chapter (M2-015–M2-018), was explicitly deferred out of Batch 5, has
+no dependents among M2-019/M2-020 (Price/Interest Scenario Simulation,
+which start the next chapter and depend on M2-006/M2-009/M2-010/M2-014
+instead), and — as detailed below — turned out to be a materially
+different kind of task (validation/orchestration, not a new formula),
+worth landing and reviewing on its own before opening the Simulation
+chapter.
+
+| Task                                    | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-018 Implement Loop Safety Validation | ⚠️ Partial | `engine/loop/validateLoopStrategySafety.ts`. 6 of the 7 documented checks implemented, each grounded in an already-documented formula or definition (see breakdown below); "Excessive cost" is not implemented — see below. Wraps `calculateLoopStrategy` (F-018, M2-016) with a pre-flight/post-hoc safety gate; per the DoD, a well-formed but unsafe strategy returns `ok: true` with `viable: false` and explicit `error`-severity findings, rather than a failed result or a false-positive success. |
+
+**Why `validateLoopStrategySafety` is tagged F-018 instead of its own
+Formula ID — intentional reuse, not a missing implementation:**
+
+1. **M2-018 is an orchestration/validation task, not a new calculation.**
+   Its title is "Implement Loop Safety **Validation**": it runs already-
+   computed values through a set of pass/fail safety checks (per its own
+   DoD, "unsafe strategies return explicit errors or warnings"), the same
+   category of work as `engine/validation/validate.ts` (M2-005), not a new
+   piece of math with its own equation.
+2. **No Formula ID exists for M2-018 anywhere in the documentation.**
+   `06_TASKS.md`'s M2-018 task text names no `F-xxx` reference at all —
+   the first M2 task encountered so far where that's true — and
+   `02_Formulas.md` defines no "Loop Safety Validation" formula anywhere
+   (confirmed by a full-document search for "loop safety" / "safety
+   validation": zero matches beyond the task title itself, and one
+   unrelated Milestone 7 UI task, `M7-013 Implement Loop Safety Analysis`,
+   a display/frontend task, out of scope).
+3. **Reusing F-018 is a deliberate, documented choice, not an omission.**
+   `validateLoopStrategySafety`'s core computation is a direct call to
+   `calculateLoopStrategy`, which _is_ F-018 ("Maximum Loop Count" — the
+   iterative loop algorithm, M2-016). Tagging the wrapper with the same ID
+   as the function it wraps and re-verifies is consistent with the
+   established F-012/F-021 (Batch 2) and F-014 (Batch 5) dual-tagging
+   precedent, not a substitute for a Formula ID that was never written for
+   this task in the first place.
+
+**The 6 implemented checks, each individually grounded** (mirrors the
+`LoopSafetyCheck` union `validateLoopStrategySafety` returns at runtime):
+
+- **Valid protocol parameters** — reuses `validateProtocolParameters`
+  (already implemented, M2-005).
+- **Liquidation proximity** — the _starting_ position's Health Factor
+  (F-022) must be above 1.0. Not an invented threshold: F-022's own Human
+  Explanation states "Above 1.0 Safe / Near 1.0 Danger / Below 1.0
+  Liquidation" — 1.0 is the equation's own documented liquidation boundary.
+- **Minimum Health Factor** — the _configured_ `minHealthFactor` floor
+  itself must be above 1.0, for the same documented reason: a configured
+  floor at or below the liquidation boundary can never be safe, regardless
+  of what the strategy computes.
+- **Borrowing capacity** — Available Borrow (F-013) on the starting
+  position; zero or negative produces a **warning**, not an error — having
+  no capacity to loop is non-actionable, not unsafe.
+- **Maximum LTV** and **Maximum loop count** — re-verified against the
+  computed strategy's actual outcome (Loan-to-Value F-020; `steps.length`
+  vs. the configured `maxLoops`) as defense-in-depth. `calculateLoopStrategy`
+  already guarantees both structurally (steps are bounded by `maxLoops`;
+  each step only ever borrows up to available capacity, so LTV can never
+  exceed `maxLoanToValue`), so these two checks are expected to never fire
+  for valid inputs — same defensive-branch pattern as the pre-existing
+  Batch 3/5 findings, left uncovered by tests with an explanation rather
+  than forced via internal mocking.
+
+**"Excessive cost" — not implemented, due to missing specification.**
+`02_Formulas.md`'s only cost-related safety rule, F-065 "Interest Warning"
+(`Annual Interest > Expected Annual Portfolio Growth` → warning), requires
+an "Expected Annual Portfolio Growth" figure that has no formula or
+definition anywhere in `02_Formulas.md`. Separately, **F-065 itself is not
+assigned to any task in `06_TASKS.md`** (confirmed by search) — the same
+unassigned-Formula-ID pattern as F-005–F-008 (Batch 2) and F-034/035/036/
+038/039 (Batch 4). Implementing it would require inventing an "expected
+growth" assumption, which is out of scope. This is a new instance of the
+pattern, not a new root cause.
+
+**Framework-independence**: re-audited after Batch 6 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: `validateLoopStrategySafety` carries
+its (reused) Formula ID in both a doc comment and its runtime metadata;
+every reused Formula ID (F-013, F-018, F-020, F-022) is cited per-check in
+code comments and already covered by its own standalone tests; a new test
+asserts `metadata.formulaId === 'F-018'`; all four reachable checks
+(`VALID_PROTOCOL_PARAMETERS`, `LIQUIDATION_PROXIMITY`,
+`MINIMUM_HEALTH_FACTOR`, `BORROWING_CAPACITY`) have a dedicated test firing
+that exact finding; the two structurally-unreachable checks
+(`MAXIMUM_LTV`, `MAXIMUM_LOOP_COUNT`) are documented as such rather than
+silently untested; the one M2-018 sub-bullet with no implementable formula
+("Excessive cost") is explicitly flagged rather than omitted; public
+exports (`validateLoopStrategySafety`, `LoopSafetyCheck`,
+`LoopSafetyFinding`, `LoopSafetyValidationResult`) are wired through both
+`engine/loop/index.ts` and `engine/index.ts`.
+
+**Validation — Batch 6**
+
+| Command              | Result                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                |
+| `pnpm test`          | ✅ Pass, 171/171 (8 new)                                                                                                                                                                                                                               |
+| `pnpm test:coverage` | ✅ 96.16% statements / 91.7% branches / 100% functions / 98.48% lines. Three new uncovered lines in `validateLoopStrategySafety.ts` are the two structurally-unreachable defensive checks described above, same documented pattern as Batches 3 and 5. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                |
+
+No test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -493,6 +605,22 @@ transaction-cost model (fixed vs. percentage swap fee, slippage-vs-size
 curve, gas estimation source) in `02_Formulas.md`, or explicitly descope
 these fields from the tasks that reference them.
 
+### 9. The entire Recommendation Engine formula chapter (F-060–F-069) has no task assignment anywhere in `06_TASKS.md`
+
+Found while implementing Batch 6 (M2-018): F-065 "Interest Warning" looked
+like it might satisfy M2-018's "Excessive cost" check, but a search showed
+it has no assigned task. Checking the rest of the chapter for the same
+report confirmed **all ten Formula IDs F-060 through F-069 — Risk
+Category (also see conflict #1), Loop Recommendation, Interest Warning, and
+the rest of the Recommendation Engine chapter — have zero matches anywhere
+in `06_TASKS.md`.** This is a third instance of the same pattern as
+F-005–F-008 (Batch 2, Portfolio Metrics) and F-034/035/036/038/039 (Batch 4,
+Interest & Position Decay), now spanning a full chapter rather than a few
+scattered IDs. Not a Batch 6 omission — none of these were ever assigned to
+M2-018 or any other task. Flagged for the same eventual resolution: the
+M2-032 Formula Traceability Audit, or a `06_TASKS.md` update that assigns a
+Recommendation Engine milestone/task set to this chapter.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -543,17 +671,21 @@ these fields from the tasks that reference them.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 5 (M2-015–M2-017) before
-   committing, per instruction. M2-018 (Loop Safety Validation) was
-   explicitly excluded from this batch's scope and is not yet started.
-3. Once approved and committed: **Batch 6 — M2-018 (Loop Safety Validation)
-   onward**, per whatever scope is assigned next. M2-018's own
-   `06_TASKS.md` text and referenced Formula IDs have not yet been
-   re-read in detail and should be re-verified fresh at the start of that
-   batch, per the standing workflow.
+2. **This pass stops here for approval** of Batch 6 (M2-018) before
+   committing, per instruction.
+3. Once approved and committed: **Batch 7 — Simulation (M2-019, M2-020)**,
+   the next chapter after Loop. M2-019 ("Price Scenario Simulation")
+   depends on M2-006/M2-009/M2-010 (all done) and is unblocked. M2-020
+   ("Interest Scenario Simulation") depends on M2-014 (blocked, compound
+   interest — conflict #7) and M2-019 — expect a partial batch again, same
+   pattern as Batches 4, 5, and 6. M2-021/M2-022 have not yet been read in
+   detail and should be checked at the start of that batch to confirm they
+   belong to a later batch rather than this one.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, and M2-017's still-open
-   formal dependency on it), and the swap-fees/slippage/gas-estimate gap
-   (conflict #8, affects M2-017's "Total implementation cost" and will
-   recur in later milestones). Revisit all three once resolved upstream.
+   formal dependency on it, and now M2-020's direct dependency on it), the
+   swap-fees/slippage/gas-estimate gap (conflict #8, affects M2-017's
+   "Total implementation cost" and will recur in later milestones), and the
+   unassigned Recommendation Engine chapter F-060–F-069 (conflict #9).
+   Revisit all four once resolved upstream.
