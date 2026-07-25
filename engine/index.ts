@@ -26,7 +26,21 @@ export {
 export {
   calculateAvailableBorrow,
   calculateBorrowCapacity,
+  calculateBreakEvenAppreciation,
+  calculateBtcPurchasedPerLoop,
+  calculateLoopCapital,
+  calculateLoopCosts,
+  calculateLoopStep,
+  calculateLoopStrategy,
   calculateMaximumBorrowLimit,
+  type LoopCostResult,
+  type LoopStepInput,
+  type LoopStepRecord,
+  type LoopStepResult,
+  type LoopStopReason,
+  type LoopStrategyInput,
+  type LoopStrategyResult,
+  type UnavailableLoopCost,
 } from './loop';
 export {
   calculateCollateralValue,

@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-07-23
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 4 of 9 complete
+Last updated: 2026-07-25
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 5 of 9 complete (pending approval)
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -280,6 +280,92 @@ No test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 5 — Loop Mathematics (M2-015 through M2-017 only; M2-018 out of scope for this batch)
+
+| Task                                      | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-015 Implement Loop Step Mathematics    | ✅ Done    | `engine/loop/{calculateLoopCapital,calculateBtcPurchasedPerLoop,calculateLoopStep}.ts` — F-014, F-015, composing F-013/F-002/F-020/F-022. "Collateral after resupply" and "Debt after borrowing" are plain additions with no dedicated Formula ID, computed directly rather than routed through a formula-tagged function. `calculateLoopStep` reconciles all 7 documented outputs in one call, per the DoD.                                                                                                                                                                                                                                                                                                                                                                                  |
+| M2-016 Implement Multi-Step Loop Strategy | ✅ Done    | `engine/loop/calculateLoopStrategy.ts` — F-018, realizing 02_Formulas.md's own documented pseudo-algorithm ("intentionally avoids a fixed mathematical formula... determines this iteratively"). Also realizes F-016 "Recursive Exposure" conceptually (cumulative BTC holdings across `steps[]`) without a separate F-016-tagged function, since M2-016 does not name "exposure" as a distinct output. Stops safely (does not commit a step that would breach the configured minimum Health Factor) per the DoD. **"Fees and slippage assumptions" (a documented M2-016 input) is not accepted as a parameter** — no equation for fees or slippage exists anywhere in `02_Formulas.md` (same gap as M2-017 below); inventing a deduction formula would violate "do not invent architecture." |
+| M2-017 Implement Loop Cost Calculations   | ⚠️ Partial | `engine/loop/{calculateBreakEvenAppreciation,calculateLoopCosts}.ts` — F-037 (new), reusing F-032 (Annual Interest, M2-012) for "Borrowing interest". Four of the six documented sub-bullets are **not implemented, due to missing specification** — see the individual breakdown immediately below the table. `calculateLoopCosts` itemizes each as `unavailable`, with a reason, rather than silently omitting them or inventing zeros — satisfying the DoD's "every cost is itemized" as far as honestly possible.                                                                                                                                                                                                                                                                         |
+
+**M2-017 — individually itemized unimplemented sub-bullets** (mirrors the
+`unavailable` array `calculateLoopCosts` returns at runtime):
+
+- **Swap fees** — not implemented, due to missing specification. No Formula
+  ID or equation for swap fees exists anywhere in `02_Formulas.md`.
+- **Slippage** — not implemented, due to missing specification. No Formula
+  ID or equation for slippage exists anywhere in `02_Formulas.md`.
+- **Gas estimate** — not implemented, due to missing specification. No
+  Formula ID or equation for gas estimation exists anywhere in
+  `02_Formulas.md`.
+- **Total implementation cost** — not implemented, due to missing
+  specification. It would need to sum swap fees, slippage, and gas
+  estimate, all three of which are themselves undocumented; it cannot be
+  honestly computed while they are.
+
+("Borrowing interest" and "Break-even BTC appreciation," the other two
+M2-017 sub-bullets, **are** implemented — F-032 and F-037 respectively —
+and are excluded from this list.)
+
+**Formula ID reused as a composite's primary tag, third occurrence of this
+pattern**: `calculateLoopStep` (M2-015) and `calculateLoopStrategy` (M2-016)
+each compose several already-tagged Formula IDs into one multi-field result,
+matching `02_Formulas.md`'s own LOOP DEPENDENCY GRAPH chaining. Neither
+`06_TASKS.md` task names its own dedicated Formula ID, so each composite is
+tagged with the Formula ID whose documented purpose most directly describes
+the whole function (F-014 "Loop Capital" for the step; F-018 "Maximum Loop
+Count" for the multi-step strategy, since F-018 is explicitly the iterative
+algorithm this function implements). Every other Formula ID each composes is
+documented per-field in code comments and independently tested via its own
+standalone function.
+
+**Task-dependency-graph inconsistency found**: `06_TASKS.md` lists M2-017's
+dependencies as "M2-016, M2-013" — but M2-013 (Compound Interest) is
+blocked (conflict #7), while M2-017's own "Borrowing interest" sub-item is
+fully satisfiable using the already-implemented _simple_-interest chain
+(F-030–F-032, M2-012), independent of compound interest. Implemented
+"Borrowing interest" on that basis rather than treating the whole task as
+blocked by a dependency that, on inspection, doesn't actually gate the one
+sub-item that's implementable. The formally-declared M2-013 dependency
+remains unsatisfied and is why M2-017 is marked Partial rather than Done —
+if M2-013 is ever unblocked and introduces additional interest-cost
+sub-items, M2-017 will need revisiting.
+
+**Framework-independence**: re-audited after Batch 5 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all newly
+implemented Formula IDs (F-014, F-015, F-037) have an explicit
+`metadata.formulaId`-asserting test, as do the reused IDs exercised through
+the new composites (F-002, F-013, F-020, F-022, F-004, F-011, F-032); every
+M2-015/016/017 sub-bullet was cross-checked and is either implemented, or
+explicitly documented as skipped/blocked with a reason — F-017 (Loop
+Efficiency) and F-019 (Loop Amplification Ratio) were checked and correctly
+excluded, since neither is named as a required M2-016 output ("Final
+leverage" maps to the already-implemented F-011, not F-019).
+
+**Validation — Batch 5**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                               |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                               |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                               |
+| `pnpm test`          | ✅ Pass, 163/163 (30 new)                                                                                                                                                                                                                                                                                                                                                             |
+| `pnpm test:coverage` | ✅ 97.18% statements / 93.71% branches / 100% functions / 99.16% lines. Two new uncovered branches (`calculateLoopStep.ts`, `calculateLoopStrategy.ts`) are defensive re-validation of already-validated data, mathematically unreachable given valid inputs — same pattern as the pre-existing Batch 3 defensive branch, commented in place rather than forced via internal mocking. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                               |
+
+Every test asserts against a worked example from `02_Formulas.md` where one
+exists (F-014, F-015, F-037 examples; the "Scenario A" BTC-purchase example
+from the Leverage & Loop unit test examples), plus hand-derived multi-step
+scenarios for `calculateLoopStrategy`'s three stop conditions and
+edge/invalid-input cases. No test, lint, or build failures were left
+unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -372,9 +458,13 @@ compounding."_ `06_TASKS.md` M2-013 ("Implement Compound Interest
 Calculations") and M2-014 ("Implement Variable Rate Projection," which
 depends on M2-013) have no formula to implement against. **Not implemented,
 per instruction, rather than inventing a compounding model.** Downstream
-impact: M2-017 ("Loop Cost Calculations") and M2-020 ("Interest Scenario
-Simulation") both depend on M2-014 and will hit the same blocker when their
-batches (5 and 6) are reached, unless this is resolved first. Action needed:
+impact: M2-017 ("Loop Cost Calculations") formally depends on M2-013, but
+its "Borrowing interest" sub-item turned out to be satisfiable via simple
+interest (M2-012) independent of this blocker — see the Batch 5 section
+above; M2-017 is still marked Partial because the formal dependency itself
+remains unsatisfied. M2-020 ("Interest Scenario Simulation") depends on
+M2-014 and will hit the same blocker when its batch (6) is reached, unless
+this is resolved first. Action needed:
 either author and document a compounding formula (frequency, day-count
 convention, protocol-defined vs. continuous), or descope M2-013/M2-014 from
 Version 1 explicitly.
@@ -384,6 +474,24 @@ Version 1 explicitly.
 anywhere in `06_TASKS.md` at all — see the Batch 4 section above. This
 mirrors the F-005–F-008 gap found in Batch 2 and should likely be resolved
 together with it.
+
+### 8. Swap fees / slippage / gas estimate have no documented formula anywhere — BLOCKS full M2-017 and recurs in later milestones
+
+`06_TASKS.md` names "Swap fees", "Slippage", and "Gas estimate" (or close
+variants) as required inputs/outputs across at least five task
+descriptions (M2-016's "Fees and slippage assumptions" input, M2-017's cost
+breakdown, and further occurrences later in the document), but
+`02_Formulas.md` has zero matches for any of these terms — no Formula ID,
+equation, or worked example exists for transaction/execution costs anywhere
+in the spec. Found while implementing Batch 5 (M2-017): "Borrowing
+interest" and "Break-even BTC appreciation" are fully documented (F-032,
+F-037) and were implemented; swap fees, slippage, gas estimate, and the
+"Total implementation cost" that would sum them were not, and are itemized
+as `unavailable` (with reasons) in `calculateLoopCosts`'s result rather
+than invented or silently dropped. Action needed: author and document a
+transaction-cost model (fixed vs. percentage swap fee, slippage-vs-size
+curve, gas estimation source) in `02_Formulas.md`, or explicitly descope
+these fields from the tasks that reference them.
 
 ---
 
@@ -435,15 +543,17 @@ together with it.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 4 before committing, per
-   instruction.
-3. Once approved and committed: **Batch 5 — Loop Mathematics
-   (M2-015 through M2-018)**. M2-017 ("Loop Cost Calculations") depends on
-   M2-013 (blocked) for its "Borrowing interest" sub-item and includes
-   "Swap fees / Slippage / Gas estimate," none of which have a documented
-   formula — likely a partial batch again, same pattern as Batch 3 and 4.
-   M2-015, M2-016, and M2-018 are not blocked by the interest gap.
-4. **Two outstanding blockers carried forward, independent of which batch
-   is in progress**: F-026 (Health Factor status classification, conflict
-   #1) and compound interest / M2-013 (conflict #7). Revisit both once
-   resolved upstream.
+2. **This pass stops here for approval** of Batch 5 (M2-015–M2-017) before
+   committing, per instruction. M2-018 (Loop Safety Validation) was
+   explicitly excluded from this batch's scope and is not yet started.
+3. Once approved and committed: **Batch 6 — M2-018 (Loop Safety Validation)
+   onward**, per whatever scope is assigned next. M2-018's own
+   `06_TASKS.md` text and referenced Formula IDs have not yet been
+   re-read in detail and should be re-verified fresh at the start of that
+   batch, per the standing workflow.
+4. **Outstanding blockers carried forward, independent of which batch is in
+   progress**: F-026 (Health Factor status classification, conflict #1),
+   compound interest / M2-013–M2-014 (conflict #7, and M2-017's still-open
+   formal dependency on it), and the swap-fees/slippage/gas-estimate gap
+   (conflict #8, affects M2-017's "Total implementation cost" and will
+   recur in later milestones). Revisit all three once resolved upstream.
