@@ -83,6 +83,18 @@ export type {
   ProtocolParameters,
 } from './shared/types';
 export {
+  calculateDebtGrowth,
+  calculatePortfolioGain,
+  type InterestScenarioParams,
+  type InterestScenarioResult,
+  type PriceScenarioInput,
+  type PriceScenarioParams,
+  type PriceScenarioResult,
+  resolveScenarioPrice,
+  simulateInterestScenario,
+  simulatePriceScenario,
+} from './simulation';
+export {
   type ValidatedProtocolParameters,
   validateFinite,
   validateNonNegative,

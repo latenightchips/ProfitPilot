@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 6 of 9 complete (pending approval)
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 7 of 9 complete (pending approval)
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -478,6 +478,117 @@ No test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 7 — Simulation (M2-019, M2-020)
+
+| Task                                          | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-019 Implement Price Scenario Simulation    | ✅ Done    | `engine/simulation/{resolveScenarioPrice,simulatePriceScenario}.ts` — F-050, F-051, composing F-002/F-003/F-004/F-020/F-022/F-023/F-007. All 7 documented outputs (Collateral value, Debt value, Net equity, LTV, Health Factor, Liquidation distance, Profit or loss) implemented. DoD ("the same function supports both absolute prices and percentage changes") satisfied by `resolveScenarioPrice` (F-051), which both scenario shapes resolve through before any other calculation runs. |
+| M2-020 Implement Interest Scenario Simulation | ⚠️ Partial | `engine/simulation/{calculateDebtGrowth,simulateInterestScenario}.ts` — F-033, reusing F-030 (generalized, M2-012) for accrued interest and F-002/F-004/F-022. All 5 documented items (Time horizon, Rate assumptions, Projected debt, Projected equity, Projected Health Factor) implemented. Formally depends on M2-014 (blocked); see the dependency-graph finding below for why it's Partial rather than Done despite every sub-bullet being implemented.                                 |
+
+**A new formula chapter found: 02_Formulas.md's "Scenario Simulation &
+Forecast Engine" (page 7, F-050–F-059)**, not previously read in detail.
+F-050 "Price Change Simulation" and F-051 "Percentage Price Movement" map
+directly onto M2-019 — F-051 in particular hands over the exact documented
+equation for the DoD's percentage-change requirement (`New Price = Current
+Price × (1 + Change%)`), removing what would otherwise have been an
+invented conversion. F-052–F-059 (Portfolio Projection, Scenario
+Difference, Best/Worst Case, Break-Even Scenario, Target Achievement,
+Scenario Ranking Score, Simulation Summary) were read for context but are
+out of scope for M2-019/M2-020 specifically — some (F-053 Scenario
+Difference) look relevant to the later M2-022 (Scenario Comparison, Batch
+8), others (F-056/F-057/F-058, iterative solvers and undefined scoring
+weights) will need the same scrutiny M2-018's "Excessive cost" got before
+assuming they're implementable as documented.
+
+**Correction to the Batch 2 finding on F-005–F-008**: implementing
+"Profit or loss" (M2-019) required finding a Formula ID for it. The only
+match is **F-007 "Portfolio Gain"** (`Gain = Current Value − Initial
+Investment`) — one of the four IDs the Batch 2 finding reported as
+"unassigned anywhere in `06_TASKS.md`". **What the earlier conclusion was
+based on**: Batch 2 searched for each formula's literal name ("Portfolio
+Gain", "Equity Ratio", etc.) directly against `06_TASKS.md` and found zero
+matches — an accurate result for that method, since `06_TASKS.md` task
+text never cites Formula IDs or their exact names directly (every task in
+this milestone uses plain-English phrasing, cross-referenced to
+`02_Formulas.md` by hand). **What changed**: implementing M2-019 required
+mapping its plain-English "Profit or loss" output to a real equation, and
+that mapping landed on F-007 — demonstrating F-007 is in fact required,
+something a literal-name search could not have surfaced. **This is a
+correction to the Batch 2 documentation analysis, not a code change**:
+nothing built in Batch 2 was wrong or is being modified; F-007 simply
+did not have an implementation to assign to a task until M2-019 needed
+one. F-007 is now implemented, assigned to M2-019, and tested. **F-005
+(Equity Ratio), F-006 (Debt Ratio), and F-008 (Portfolio Return) remain
+unassigned** — nothing in M2-019 or M2-020's task text maps to those three
+specifically (LTV, already required by M2-019, is F-020, not F-006's
+differently-defined Debt Ratio).
+
+**Task-dependency-graph inconsistency, same pattern as M2-017/M2-013
+(Batch 5)**: `06_TASKS.md` lists M2-020's dependencies as "M2-014, M2-019"
+— M2-014 (Variable Rate Projection) is blocked (conflict #7). But M2-020's
+"Projected debt" sub-item does not need variable-rate or compound
+projection: **F-033 "Debt Growth"** (`Future Debt = Current Debt + Accrued
+Interest`) is an explicitly simple, single-constant-rate equation — its
+own text ends "Future versions may support continuous compounding,"
+meaning this version is exactly the addition M2-020 needs. This is the
+same formula the Batch 4 finding identified as "the closest documented
+match for M2-013's 'Projected debt balance,'" left unassigned there because
+M2-013 is scoped to compound interest specifically; M2-020 turns out to be
+its correct home. All 5 of M2-020's documented sub-items are implemented
+on this basis. The formally-declared M2-014 dependency remains unsatisfied
+— that's why M2-020 is marked Partial, not because any sub-item is
+missing.
+
+**Implementation-quality finding, unrelated to documentation**: while
+building `resolveScenarioPrice` (F-051), a genuine bug was caught before
+it shipped: `decimal.js`'s `Decimal.isPositive()` treats `0` as positive
+(sign-based: `+0` has a positive sign), not `> 0` as the name suggests. An
+initial `!newPrice.isPositive()` guard against a percentage change
+crashing the price to zero silently passed 0 through as "valid," caught by
+a test asserting `percentageChange: -1` (a 100% drop) is rejected. Fixed
+with an explicit `!newPrice.greaterThan(0)` check. Audited the rest of
+`engine/` for the same pattern (`grep -rn "isPositive()" engine/`): the
+only other call site, `validatePositive` in `engine/validation/validate.ts`
+(M2-005), already explicitly ORs in `isZero()` to compensate — no latent
+bug there. Worth a permanent note for any future decimal.js "positive"
+checks in this codebase.
+
+**Framework-independence**: re-audited after Batch 7 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all newly
+implemented Formula IDs (F-007, F-033, F-050, F-051) have an explicit
+`metadata.formulaId`-asserting test, as do the reused IDs exercised through
+the two composites (F-002, F-003, F-004, F-020, F-022, F-023, F-030); every
+M2-019/M2-020 "Include"/output item was cross-checked against the
+implementation — all 7 of M2-019's and all 5 of M2-020's are present; the
+M2-020/M2-014 dependency-graph inconsistency is documented rather than
+silently resolved either way; public exports (`resolveScenarioPrice`,
+`simulatePriceScenario`, `calculatePortfolioGain`, `calculateDebtGrowth`,
+`simulateInterestScenario`, and their types) are wired through both
+`engine/simulation/index.ts` and `engine/index.ts`.
+
+**Validation — Batch 7**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                            |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                                                            |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                                                            |
+| `pnpm test`          | ✅ Pass, 200/200 (29 new)                                                                                                                                                                                                                                                                                          |
+| `pnpm test:coverage` | ✅ 95.11% statements / 89.51% branches / 100% functions / 98.33% lines. New uncovered lines in `simulateInterestScenario.ts` and `simulatePriceScenario.ts` are defensive re-validation of already-validated data, mathematically unreachable given valid inputs — same documented pattern as Batches 3, 5, and 6. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                            |
+
+Every test asserts against a worked example from `02_Formulas.md` where one
+exists (F-007, F-033, F-050, F-051 examples), plus hand-derived combined
+scenarios (price movement + interest accrual together, per the M2-020 DoD)
+and edge/invalid-input cases. No test, lint, or build failures were left
+unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -671,21 +782,25 @@ Recommendation Engine milestone/task set to this chapter.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 6 (M2-018) before
-   committing, per instruction.
-3. Once approved and committed: **Batch 7 — Simulation (M2-019, M2-020)**,
-   the next chapter after Loop. M2-019 ("Price Scenario Simulation")
-   depends on M2-006/M2-009/M2-010 (all done) and is unblocked. M2-020
-   ("Interest Scenario Simulation") depends on M2-014 (blocked, compound
-   interest — conflict #7) and M2-019 — expect a partial batch again, same
-   pattern as Batches 4, 5, and 6. M2-021/M2-022 have not yet been read in
-   detail and should be checked at the start of that batch to confirm they
-   belong to a later batch rather than this one.
+2. **This pass stops here for approval** of Batch 7 (M2-019, M2-020)
+   before committing, per instruction.
+3. Once approved and committed: **Batch 8 — M2-021 (Collateral and Debt
+   Scenarios) and M2-022 (Scenario Comparison)**, finishing the Simulation
+   chapter. M2-021 depends on M2-019 (done) and is unblocked; its five
+   sub-actions (add collateral, withdraw collateral, borrow more, repay
+   debt, combined actions) all look composable from already-implemented
+   functions, similar to `simulatePriceScenario`. M2-022 depends on
+   M2-019/M2-020/M2-021 and looks like it maps to F-053 "Scenario
+   Difference" (page 7) — read briefly during Batch 7 but not yet verified
+   in the detail the standing workflow requires; re-read fresh at the start
+   of that batch along with M2-021's exact text and referenced formulas.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
-   compound interest / M2-013–M2-014 (conflict #7, and M2-017's still-open
-   formal dependency on it, and now M2-020's direct dependency on it), the
-   swap-fees/slippage/gas-estimate gap (conflict #8, affects M2-017's
-   "Total implementation cost" and will recur in later milestones), and the
-   unassigned Recommendation Engine chapter F-060–F-069 (conflict #9).
-   Revisit all four once resolved upstream.
+   compound interest / M2-013–M2-014 (conflict #7, M2-017's still-open
+   formal dependency on it, and M2-020's still-open formal dependency on
+   it), the swap-fees/slippage/gas-estimate gap (conflict #8, affects
+   M2-017's "Total implementation cost" and will recur in later
+   milestones), and the unassigned Recommendation Engine chapter F-060–
+   F-069 (conflict #9, F-056-F-058 in particular may resurface for a much
+   later milestone's iterative-solver/scoring tasks). Revisit all four
+   once resolved upstream.
