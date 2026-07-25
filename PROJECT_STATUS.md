@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 7 of 9 complete (pending approval)
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 8 complete (pending approval) — M2-001 through M2-022 addressed (M2-013/M2-014 blocked); M2-023 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -589,6 +589,93 @@ unresolved.
 
 ---
 
+### Batch 8 — Simulation, continued (M2-021, M2-022)
+
+| Task                                           | Status  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-021 Implement Collateral and Debt Scenarios | ✅ Done | `engine/simulation/simulatePositionChange.ts` — F-052, composing F-002/F-003/F-004/F-020/F-022/F-023. A single signed-delta interface (`collateralDelta`, `debtDelta`) covers all 5 documented sub-bullets (add/withdraw collateral, borrow more/repay debt, combined actions) without 5 separate functions. DoD ("each simulated action returns both before and after portfolio states") satisfied literally with a `before`/`after` snapshot pair. |
+| M2-022 Implement Scenario Comparison           | ✅ Done | `engine/simulation/{compareScenarios,rankScenarios}.ts` — F-053 for comparison, all 6 documented "Compare" metrics (Equity, Profit or loss, Health Factor, Liquidation distance, Debt cost, Leverage) present as `ScenarioSummary` fields. "Ranked" satisfied by `rankScenarios`, a plain sort utility — see the F-058 finding below for why it is not F-058 itself.                                                                                 |
+
+**Design choice: `ScenarioSummary` is a caller-assembled input, not a type
+`compareScenarios`/`rankScenarios` compute themselves.** M2-022's DoD
+("scenarios can be ranked and displayed without recalculating values in
+the UI") means these two functions consume already-computed values rather
+than deriving them from raw portfolios. None of M2-019/M2-020/M2-021's
+result types natively contain all 6 of M2-022's named metrics in one
+place (e.g. `simulateInterestScenario` has no `profitOrLoss` field;
+`simulatePositionChange` has no `leverage` field) — assembling a
+`ScenarioSummary` from whichever scenario function produced a result is
+left to the caller (a future UI/store layer), rather than retroactively
+changing Batch 7's already-synchronized result shapes, which was out of
+this batch's documented scope.
+
+**Finding: 02_Formulas.md F-058 "Scenario Ranking Score" cannot be
+implemented as documented.** Stated plainly: `rankScenarios` is a utility
+helper, not a formula implementation; it is explicitly **not** an
+implementation of F-058; and F-058 itself remains unimplemented because no
+scoring equation or weighting model exists anywhere in `02_Formulas.md`
+for it. M2-022's DoD says "ranked," and F-058 is the
+only formula in the Scenario Simulation & Forecast Engine chapter
+(page 7) that names "ranking" as its purpose — but F-058 documents no
+equation: it lists 6 inputs (Expected Return, Health Factor, Debt,
+Interest Cost, Risk Score, Target Completion) and says the output is
+"0–100, higher = more attractive," with no formula, weights, or worked
+example combining them. Implementing it would mean inventing a scoring
+model. **`rankScenarios` instead sorts by one caller-chosen
+`ScenarioSummary` metric at a time** — a literal, non-invented reading of
+"ranked" that doesn't require F-058's undefined methodology. Because it is
+not a formula computation, `rankScenarios` does not return a `FormulaResult`
+or carry a Formula ID, the same treatment `engine/validation/validate.ts`
+(M2-005) gives its own plain utility functions.
+
+**Implementation-quality finding, same class as Batch 7's decimal.js
+`isPositive()` bug**: `calculateHealthFactor` (F-022) legitimately returns
+`Infinity` for a zero-debt portfolio (a documented Batch 3 exception), and
+`ScenarioSummary.healthFactor` can carry that value into
+`compareScenarios`. A naive `validateFinite`-style rejection would have
+made comparing any zero-debt scenario fail outright. Instead,
+`compareScenarios` only rejects `NaN`, computes `Infinity`-aware
+differences via plain JS arithmetic when either side is non-finite, and
+attaches a warning (rather than failing) for the one genuinely undefined
+case — two infinite Health Factors compared against each other
+(`Infinity − Infinity`). Caught and fixed before shipping, via a test
+asserting this exact zero-debt-vs-zero-debt comparison.
+
+**Framework-independence**: re-audited after Batch 8 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata (except
+`rankScenarios`, whose lack of one is itself documented and justified);
+both newly implemented Formula IDs (F-052, F-053) have an explicit
+`metadata.formulaId`-asserting test, as do the reused IDs exercised
+through `simulatePositionChange`'s composite snapshot (F-002, F-003,
+F-004, F-020, F-022, F-023); every M2-021 sub-bullet and every M2-022
+"Compare" metric was cross-checked against the implementation — all
+present; the F-058 gap is documented rather than silently invented or
+silently dropped; public exports (`simulatePositionChange`,
+`compareScenarios`, `rankScenarios`, and their types) are wired through
+both `engine/simulation/index.ts` and `engine/index.ts`.
+
+**Validation — Batch 8**
+
+| Command              | Result                                                                                                                                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 219/219 (19 new)                                                                                                                                                                                                                                                                  |
+| `pnpm test:coverage` | ✅ 94.97% statements / 89.22% branches / 100% functions / 98.51% lines. Remaining uncovered lines in `simulatePositionChange.ts` are defensive re-validation of already-validated data, mathematically unreachable given valid inputs — same documented pattern as Batches 3, 5, 6, and 7. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                    |
+
+Every test asserts against a worked example from `02_Formulas.md` where
+one exists (F-053's own Net Worth example), plus hand-derived combined-action
+and zero-debt/`Infinity` scenarios, and edge/invalid-input cases. No test,
+lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -780,20 +867,33 @@ Recommendation Engine milestone/task set to this chapter.
 
 ## Next task
 
+**Correction to the batch-count framing carried in this file's header**:
+earlier updates labeled batches "N of 9," a total estimated during the
+original Milestone 2 planning pass before every task chapter had been
+read in detail. `docs/06_TASKS.md` actually defines **32** Milestone 2
+tasks (M2-001 through M2-032); 22 have been addressed (M2-013/M2-014
+blocked) after 8 batches, at roughly 3 tasks/batch. Continuing to claim a
+9-batch total would be misleading once Batch 9 exists — the header now
+states progress as "M2-001 through M2-022 addressed... M2-023 through
+M2-032 remain" instead of a batch fraction.
+
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 7 (M2-019, M2-020)
+2. **This pass stops here for approval** of Batch 8 (M2-021, M2-022)
    before committing, per instruction.
-3. Once approved and committed: **Batch 8 — M2-021 (Collateral and Debt
-   Scenarios) and M2-022 (Scenario Comparison)**, finishing the Simulation
-   chapter. M2-021 depends on M2-019 (done) and is unblocked; its five
-   sub-actions (add collateral, withdraw collateral, borrow more, repay
-   debt, combined actions) all look composable from already-implemented
-   functions, similar to `simulatePriceScenario`. M2-022 depends on
-   M2-019/M2-020/M2-021 and looks like it maps to F-053 "Scenario
-   Difference" (page 7) — read briefly during Batch 7 but not yet verified
-   in the detail the standing workflow requires; re-read fresh at the start
-   of that batch along with M2-021's exact text and referenced formulas.
+3. Once approved and committed: **Batch 9 — M2-023 (Exit Position
+   Calculations)** onward, opening the Exit Strategy chapter
+   (`02_Formulas.md` F-040–F-049, `engine/exit/`, currently empty except
+   `.gitkeep`). M2-023 depends on M2-006/M2-009 (both done) and is
+   unblocked. F-040 "Target Debt" was already identified in Batch 3 as
+   sharing its equation with `calculateAdditionalBorrow.ts`'s private
+   `computeTargetDebt` helper, which that file's own comment flags for
+   promotion to a shared public F-040 implementation "when M2-023 is
+   reached" — that promotion is now due. F-041 (Required Debt Repayment),
+   F-042 (BTC Sale Required), and F-043 (Exit Profit) all look directly
+   relevant to M2-023's "Include" list, but have not yet been verified
+   against M2-023's exact task text — re-read both fresh at the start of
+   that batch, per the standing workflow.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's still-open
