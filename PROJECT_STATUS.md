@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 11 complete (pending approval) — M2-001 through M2-027 addressed (M2-013/M2-014 blocked); M2-028 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 12 complete (pending approval) — M2-001 through M2-028 addressed (M2-013/M2-014 blocked; M2-028 partial by design); M2-029 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -990,6 +990,98 @@ edge case. No test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 12 — Golden Reference Portfolios (M2-028)
+
+| Task                                      | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-028 Create Golden Reference Portfolios | ⚠️ Partial | `tests/fixtures/goldenReferencePortfolios.ts` (5 immutable fixtures) + `tests/unit/engine/goldenReferencePortfolios.test.ts`. 5 of the 7 named reference cases are implemented (No debt, Conservative leverage, Moderate leverage, High-risk leverage, Near liquidation); "Multiple collateral assets" and "Multiple debt assets" are explicitly out of scope — see below. No new Formula ID: M2-028 exercises already-implemented formulas (F-001, F-002, F-003, F-004, F-006, F-010, F-011, F-020, F-022, F-023, F-024, F-025, F-030, F-031, F-032) against fixed, hand-verified portfolios. |
+
+**A pre-existing "official" Golden Reference Portfolio was found in
+`02_Formulas.md` itself** (its own "GOLDEN REFERENCE PORTFOLIO" /
+"REFERENCE OUTPUTS" / "ACCEPTABLE ERROR" section, not previously acted on
+by any earlier batch), separate from `06_TASKS.md` M2-028's 7-scenario
+list. It specifies one exact input scenario (Initial Capital $100,000,
+BTC Price $30,000, Initial BTC Purchased 3.33333333 BTC, Max LTV 70%,
+Liquidation Threshold 80%, Borrow APR 5%, Target Health Factor 1.80, Loop
+Strategy Automatic/Stop at Target HF) and names which Formula ID computes
+each of 8 "Reference Outputs" — but, notably, **gives no actual numeric
+expected values**, only the formula-to-output mapping; the numbers
+themselves are left for the implementer to derive and verify, which is
+exactly M2-028's own DoD ("Expected results are manually verified and
+stored as immutable test fixtures"). The two documents are complementary,
+not conflicting: the `NO_DEBT` fixture below uses this official scenario's
+exact figures for its pre-loop (zero-debt) starting state, and is
+simultaneously M2-028's "No debt" reference case.
+
+**Every `expected` value in the fixture file was derived independently**
+by hand-applying the documented equations with decimal.js at the Engine's
+own working precision, in a scratch calculation kept outside the
+repository (not by calling the Engine's own functions and copying their
+output) — the actual point of "manually verified," per M2-028's DoD.
+Comparisons in the test file use `02_Formulas.md`'s own "ACCEPTABLE
+ERROR" table (Currency ± $0.01, Health Factor ± 0.001, etc.) rather than
+exact floating-point equality — the first batch to explicitly apply that
+table, which existed in the spec but had gone unused until now.
+
+**Fixture design**: all 5 fixtures share the same BTC quantity
+(3.33333333), BTC price ($30,000), and protocol parameters, varying only
+the debt balance — isolating leverage as the sole variable across the
+family. "Near liquidation" (debt $77,000, ~77% LTV) intentionally exceeds
+the 70% Max LTV: Max LTV (F-012 "Borrow Capacity") only constrains _new_
+borrowing, not an existing position's LTV drifting upward after the debt
+was already drawn (e.g. from price decline), so this is a realistic
+post-origination state, not an invented rule. Only the Liquidation
+Threshold (F-022, F-024) governs actual liquidation risk, and this
+fixture's Health Factor is just above 1.0 (~1.039) as intended.
+
+**Not implemented, and why (neither invented nor silently skipped):**
+
+- **"Multiple collateral assets" / "Multiple debt assets"** (2 of the 7
+  named M2-028 reference cases) — `PortfolioInput` models exactly one BTC
+  collateral position and one stablecoin debt position (approved
+  single-asset scope, conflict #5). No Formula ID defines multi-asset
+  aggregation (e.g. a weighted Liquidation Threshold across several
+  collateral assets), so building these fixtures would require inventing
+  an aggregation formula absent from `02_Formulas.md`.
+- **The "loop to Target Health Factor 1.80" step** of `02_Formulas.md`'s
+  own official Golden Reference Portfolio is not reproduced as a fixture
+  — see conflict #14 below.
+- **Portfolio Score (F-067)**, named in the official portfolio's own
+  "REFERENCE OUTPUTS" list, is not computed for any fixture — F-067 has
+  no implementation (conflict #12).
+
+**Framework-independence**: re-audited after Batch 12 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`. The new fixture and test files live under `tests/`, use the
+`@/engine/...` alias as every other test file does, and are excluded from
+the `engine/**` coverage scope (`vitest.config.ts`) as pure test data —
+consistent with the M2-028 DoD framing these as "immutable test
+fixtures," not a new Engine API surface, so nothing was added to
+`engine/index.ts`.
+
+**Traceability audit (pre-commit)**: all 15 Formula IDs referenced by the
+fixtures (F-001, F-002, F-003, F-004, F-006, F-010, F-011, F-020, F-022,
+F-023, F-024, F-025, F-030, F-031, F-032) already have canonical, tagged
+implementations from prior batches — none new. Every fixture is exercised
+against every applicable already-implemented function, including the two
+documented no-debt failure paths (Liquidation Price / Liquidation Buffer
+return structured `NOT_APPLICABLE_NO_DEBT` failures, asserted explicitly
+rather than skipped). No public exports needed adding since M2-028
+produces test fixtures, not Engine functionality.
+
+**Validation — Batch 12**
+
+| Command              | Result                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 327/327 (7 new)                                                                                                                                   |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — identical to Batch 11 (fixtures/tests add no new `engine/` source lines to cover). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                    |
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1253,6 +1345,55 @@ specification level.
 
 ---
 
+### 14. `02_Formulas.md`'s official Golden Reference Portfolio's loop step cannot be reproduced as an immutable fixture — the "Target borrow percentage" it implies is never given a value
+
+**The published Golden Reference Portfolio is not being marked
+incorrect.** Stated directly, as three separate points: (1) The scenario
+as documented — starting position, protocol parameters, "Loop Strategy:
+Automatic," "Stop at Target HF: 1.80" — is internally consistent and
+nothing in it is wrong. (2) It simply omits a value for
+`targetBorrowPercentage` (or an equivalent intermediate parameter, e.g. an
+explicit per-step borrow rule) — the one input `calculateLoopStrategy`
+(F-018, M2-016) requires beyond the stop condition in order to execute the
+loop deterministically, and neither `02_Formulas.md` nor `06_TASKS.md`
+assigns "Automatic" a concrete numeric meaning anywhere. (3) Therefore the
+documented Target HF 1.80 example cannot be deterministically recreated as
+a single immutable fixture without introducing an undocumented assumption
+about that missing parameter — this is a gap in what the scenario
+specifies, not an error in what it does specify.
+
+`02_Formulas.md`'s "GOLDEN REFERENCE PORTFOLIO" specifies a starting
+position (3.33333333 BTC, zero debt) plus "Loop Strategy: Automatic /
+Stop at Target HF: 1.80," implying the scenario's _real_ reference state
+is what results after looping from that start to Health Factor 1.80. But
+`calculateLoopStrategy` (F-018, M2-016) — the Engine's only implementation
+of "repeated loop calculations" — requires a `targetBorrowPercentage`
+input, because `06_TASKS.md` M2-016 itself lists "Target borrow
+percentage" as a required input, separate from "Minimum Health Factor."
+`02_Formulas.md`'s F-018 pseudo-algorithm ("while Health Factor > Target:
+Borrow, Buy BTC, Deposit BTC, Repeat") never states how much to borrow
+per step, and the Golden Reference Portfolio's own description ("Loop
+Strategy: Automatic") does not supply a numeric value either — "Automatic"
+is not defined anywhere as a synonym for "borrow to maximum capacity each
+step" or any other specific percentage.
+
+**Not fixed by inventing a value.** Any single assumed
+`targetBorrowPercentage` (e.g. 100% of available borrow capacity each
+step) would produce a different final collateral/debt state, and locking
+one in as an "immutable" fixture (M2-028's own DoD wording) would mean
+enshrining an invented assumption as if it were documented, undetectable
+to a future reader as anything other than a genuine spec value. Instead,
+`tests/fixtures/goldenReferencePortfolios.ts`'s `NO_DEBT` fixture
+reproduces only the portion of the official scenario that is fully
+specified — the pre-loop starting state — and this gap is documented
+here and in that file's own comments rather than silently worked around.
+Action needed: `02_Formulas.md` or `06_TASKS.md` specifies a concrete
+target borrow percentage (or an explicit rule, e.g. "borrow to Max LTV
+each step") for "Automatic" loop strategies, after which the post-loop
+state can be added as a further fixture.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -1301,20 +1442,23 @@ specification level.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 11 (M2-027) before
+2. **This pass stops here for approval** of Batch 12 (M2-028) before
    committing, per instruction.
-3. Once approved and committed: **Batch 12 — M2-028 (Golden Reference
-   Portfolios)**, continuing the Verification chapter. M2-028 depends on
-   M2-027 (done) and is unblocked. Its "Reference cases should include"
-   list names 7 scenarios — No debt / Conservative leverage / Moderate
-   leverage / High-risk leverage / Near liquidation / Multiple collateral
-   assets / Multiple debt assets — and the last two are explicitly
-   **out of scope under the approved single-asset model**
-   (`engine/shared/types.ts`'s documented v0.1 scope, conflict #5), so
-   M2-028 is expected to be partial from the outset for exactly that
-   reason; re-read its exact text and DoD fresh at the start of that
-   batch, per the standing workflow, rather than assuming which 5 of the
-   7 cases apply.
+3. Once approved and committed: **Batch 13 — M2-029 (Implement Formula
+   Regression Suite)**, continuing the Verification chapter. M2-029
+   depends on M2-028 (done, partially) and is unblocked. Its Requirements
+   ("Every Formula ID has at least one normal test," "Critical risk
+   formulas have boundary and error tests," "Golden Reference results
+   remain unchanged unless formally approved") and DoD ("A formula
+   coverage report identifies no untested Version 1 Formula IDs") suggest
+   this batch is largely an **audit-and-gap-fill** task over the 69
+   documented Formula IDs, plus a coverage report artifact — re-read its
+   exact text and DoD fresh at the start of that batch, per the standing
+   workflow, rather than assuming its shape from this preview. Expect it
+   to surface exactly the already-known unimplemented Formula IDs (F-005,
+   F-007's sibling F-008, F-026, F-033–F-039, F-060, F-065–F-069, etc. —
+   see the conflicts list) as "untested" for a documented, not accidental,
+   reason.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
@@ -1325,10 +1469,8 @@ specification level.
    F-060, F-065, F-066, F-067, F-068, F-069; F-061–F-064 are implemented),
    "Target cash proceeds"'s ambiguous mechanics (conflict #10), "Exit
    readiness"'s unmapped Formula ID (conflict #11), F-067's partial
-   documentation (conflict #12), and F-040's exit-collateral-sale
-   discrepancy (conflict #13, a known approximation, not something
-   Batch 12's golden-reference fixtures should try to "correct" — any
-   fixture exercising `calculateTargetExit`'s `'healthFactor'` target
-   should encode the documented, approximate result, not the
-   mathematically "corrected" one). Revisit all eight once resolved
+   documentation (conflict #12), F-040's exit-collateral-sale discrepancy
+   (conflict #13, a known approximation), and the unspecified "Target
+   borrow percentage" blocking a post-loop Golden Reference Portfolio
+   fixture (conflict #14, new this batch). Revisit all nine once resolved
    upstream.
