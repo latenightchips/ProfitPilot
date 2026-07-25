@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-23
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 3 of 9 complete
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 4 of 9 complete
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -217,6 +217,69 @@ cases. No test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 4 — Interest Mathematics (M2-012 through M2-014)
+
+| Task                                            | Status                       | Notes                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-012 Implement Simple Interest Calculations   | ✅ Done                      | `engine/interest/{calculateDailyInterest,calculateMonthlyInterest,calculateAnnualInterest,calculateProratedInterest}.ts` — F-030, F-031, F-032. "Prorated interest cost" (no distinct Formula ID) satisfied by generalizing F-030's own equation to an arbitrary day count, the same way `02_Formulas.md` itself derives F-031 from F-030 ("Daily Interest × 30") — tagged F-030, not invented. |
+| M2-013 Implement Compound Interest Calculations | ⛔ Not implemented — blocked | `02_Formulas.md` F-030–F-034 are simple-interest only; F-033 states explicitly: _"Future versions may support continuous compounding."_ No compound-interest formula exists anywhere in the document to implement against. Per instruction, stopped rather than inventing one. Nothing was written for this task.                                                                               |
+| M2-014 Implement Variable Rate Projection       | ⛔ Not implemented — blocked | Formally depends on M2-013 (blocked). Its own sub-bullets (constant/increasing/decreasing/custom rate scenarios) also have no Formula ID — every F-030–F-039 formula assumes a single constant APR. Nothing was written for this task.                                                                                                                                                          |
+
+**Comprehensive finding, same pattern as the F-005–F-008 gap (Batch 2)**: a
+full-document search shows **F-034 (Position Decay), F-035 (Health Factor
+Over Time), F-036 (Liquidation Price Over Time), F-038 (Time to Target
+Health Factor), and F-039 (Time to Danger) have no task assigned anywhere
+in `06_TASKS.md`** — zero matches for any of their names/concepts. (F-037
+"Break-Even BTC Appreciation" _is_ correctly assigned, to the later M2-017.)
+Additionally, **F-033 "Debt Growth" has ambiguous ownership**: it's a fully
+documented, simple (non-compounding) formula whose concept ("Future Debt")
+is the closest match to M2-013's "Projected debt balance" sub-bullet, but
+M2-013 as a whole is scoped to _compound_ interest and F-033 explicitly
+isn't. It wasn't implemented this batch since M2-012 (the batch's other,
+unblocked task) never mentions "debt growth" or "future debt" as one of its
+own sub-bullets — assigning it there would have been a scoping guess, not
+something documented. **Not a Batch 4 omission** (none of these six Formula
+IDs were ever assigned to M2-012 specifically) — flagged for the same
+eventual resolution as F-005–F-008: the M2-032 Formula Traceability Audit,
+or a `06_TASKS.md` update.
+
+**Framework-independence**: re-audited after Batch 4 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**A documentation-internal tension found and resolved in favor of the
+stricter stated rule**: `02_Formulas.md`'s own F-031 worked example
+("Daily $6.85 × 30 = Monthly $205.50") multiplies the already-_rounded_
+daily figure — but the same document's "ROUNDING POLICY" states "Never
+round intermediate calculations" and explicitly labels
+round-then-calculate-then-round-again as "Incorrect." `calculateMonthlyInterest`
+follows the ROUNDING POLICY (full-precision daily value × 30 ≈ $205.48, not
+the example's pre-rounded $205.50) rather than reproducing the example's
+literal number — tests assert the full-precision value, with a comment
+explaining the discrepancy.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all 3 newly
+implemented Formula IDs (F-030, F-031, F-032) have an explicit
+`metadata.formulaId`-asserting test; every M2-012/013/014 sub-bullet was
+cross-checked and is either implemented, or explicitly documented as
+blocked (compound-interest scope gap) rather than silently skipped.
+
+**Validation — Batch 4**
+
+| Command              | Result                                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                |
+| `pnpm test`          | ✅ Pass, 133/133 (19 new)                                                                                                                                              |
+| `pnpm test:coverage` | ✅ 100% on all new Batch 4 code (99.66%/99.23%/100%/99.6% overall — the one uncovered line is the same pre-existing, already-documented defensive branch from Batch 3) |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                |
+
+No test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -301,6 +364,27 @@ decimals; `01_PRD.md` REQ-002 "PRECISION REQUIREMENTS" states 2 decimals.
 following `02_Formulas.md` as the document of record for calculations. This
 is a single constant and trivially reversible if the intended value is 2.
 
+### 7. Compound interest (M2-013/M2-014) has no documented formula — BLOCKS M2-013, M2-014, and downstream tasks
+
+`02_Formulas.md` F-030–F-034 (Interest & Position Decay) are simple-interest
+only; F-033 states explicitly: _"Future versions may support continuous
+compounding."_ `06_TASKS.md` M2-013 ("Implement Compound Interest
+Calculations") and M2-014 ("Implement Variable Rate Projection," which
+depends on M2-013) have no formula to implement against. **Not implemented,
+per instruction, rather than inventing a compounding model.** Downstream
+impact: M2-017 ("Loop Cost Calculations") and M2-020 ("Interest Scenario
+Simulation") both depend on M2-014 and will hit the same blocker when their
+batches (5 and 6) are reached, unless this is resolved first. Action needed:
+either author and document a compounding formula (frequency, day-count
+convention, protocol-defined vs. continuous), or descope M2-013/M2-014 from
+Version 1 explicitly.
+
+**Related, separately confirmed**: F-034, F-035, F-036, F-038, and F-039
+(the rest of the Interest & Position Decay chapter) have no task assignment
+anywhere in `06_TASKS.md` at all — see the Batch 4 section above. This
+mirrors the F-005–F-008 gap found in Batch 2 and should likely be resolved
+together with it.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -351,15 +435,15 @@ is a single constant and trivially reversible if the intended value is 2.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 3 before committing, per
+2. **This pass stops here for approval** of Batch 4 before committing, per
    instruction.
-3. Once approved and committed: **Batch 4 — Interest Mathematics
-   (M2-012 through M2-014)**. **M2-013 ("Implement Compound Interest
-   Calculations") has its own blocker**: `02_Formulas.md` F-030–F-034 are
-   simple-interest only and F-033 explicitly defers compounding to a future
-   version — there is no documented compound-interest formula to implement
-   against. M2-012 (Simple Interest, F-030–F-032) and M2-014 (Variable Rate
-   Projection, no Formula ID — likely another skip) are not blocked by this.
-4. **F-026 (Health Factor status classification) remains outstanding** from
-   M2-009, blocked on conflict #1 above — revisit once a banding scheme is
-   chosen, independent of which batch is in progress by then.
+3. Once approved and committed: **Batch 5 — Loop Mathematics
+   (M2-015 through M2-018)**. M2-017 ("Loop Cost Calculations") depends on
+   M2-013 (blocked) for its "Borrowing interest" sub-item and includes
+   "Swap fees / Slippage / Gas estimate," none of which have a documented
+   formula — likely a partial batch again, same pattern as Batch 3 and 4.
+   M2-015, M2-016, and M2-018 are not blocked by the interest gap.
+4. **Two outstanding blockers carried forward, independent of which batch
+   is in progress**: F-026 (Health Factor status classification, conflict
+   #1) and compound interest / M2-013 (conflict #7). Revisit both once
+   resolved upstream.

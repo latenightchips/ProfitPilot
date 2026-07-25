@@ -13,6 +13,12 @@
  */
 export { calculateAdditionalBorrow, calculateHealthFactor } from './health';
 export {
+  calculateAnnualInterest,
+  calculateDailyInterest,
+  calculateMonthlyInterest,
+  calculateProratedInterest,
+} from './interest';
+export {
   calculateLiquidationBuffer,
   calculateLiquidationDistance,
   calculateLiquidationPrice,
