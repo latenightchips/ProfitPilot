@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 12 complete (pending approval) — M2-001 through M2-028 addressed (M2-013/M2-014 blocked; M2-028 partial by design); M2-029 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 13 complete (pending approval) — M2-001 through M2-029 addressed (M2-013/M2-014 blocked; M2-028/M2-029 partial by design); M2-030 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1082,6 +1082,105 @@ produces test fixtures, not Engine functionality.
 
 ---
 
+### Batch 13 — Formula Regression Suite (M2-029)
+
+| Task                                      | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-029 Implement Formula Regression Suite | ⚠️ Partial | `tests/fixtures/formulaCoverage.ts` (69-entry registry, one per documented Formula ID F-001–F-069) + `tests/unit/engine/formulaCoverage.test.ts` (73 tests: registry completeness, bidirectional cross-check against real `engine/` and `tests/` source text) + `tests/unit/engine/criticalRiskBoundaryRegression.test.ts` (13 new boundary/error tests for the liquidation-critical formulas). All 3 documented Requirements addressed; DoD satisfied under the reading explained below, not the fully literal one. |
+
+**All 3 Requirements addressed:**
+
+1. **"Every Formula ID has at least one normal test."** For all 36
+   currently-implemented Formula IDs — enforced, not just asserted:
+   `formulaCoverage.test.ts` scans every `.ts` file under `engine/` for the
+   literal pattern `FORMULA_ID = 'F-0XX'` / `formulaId: 'F-0XX'`, scans
+   every `.ts` file under `tests/unit/engine/` for any mention of each ID,
+   and fails if an `'implemented'` registry entry is missing either. This
+   makes "has a test" an executable, continuously-checked fact rather than
+   a one-time claim.
+2. **"Critical risk formulas have boundary and error tests."** Every
+   liquidation-critical formula already had error-case tests from its own
+   batch (rejecting negative/out-of-range inputs, zero-collateral,
+   zero-debt) — `criticalRiskBoundaryRegression.test.ts` adds the boundary
+   case those per-function suites didn't have: the exact point of
+   liquidation, checked **across** Formula IDs rather than within just one
+   (Health Factor = 1.0 exactly when BTC price = Liquidation Price;
+   Liquidation Buffer = 0% at that same point; Distance to Liquidation = 0
+   at HF = 1.0; Available Borrow = 0 exactly at Borrow Capacity, negative
+   the instant it's exceeded; Health Factor accepts a threshold of exactly
+   1.0 and rejects one a hair above it). All reuse already-implemented
+   functions (F-012, F-013, F-022, F-023, F-024, F-025) — no new formula
+   or tolerance was introduced.
+3. **"Golden Reference results remain unchanged unless formally
+   approved."** Already enforced by Batch 12's
+   `goldenReferencePortfolios.test.ts`, which asserts exact locked values
+   against the fixtures — cross-referenced, not duplicated, in the new
+   test file's own header comment.
+
+**DoD interpretation, stated explicitly (see conflict #15 below):** the
+literal DoD text — "A formula coverage report identifies no untested
+Version 1 Formula IDs" — would require testing all 69 documented Formula
+IDs, but 33 of them have no implementation to test (`02_Formulas.md`
+never assigns most a task, several give only a discrete example table or
+an "iterative solver" with no closed-form equation, one — F-009 — is
+never even defined). Implementing all 33 to satisfy the DoD literally
+would mean inventing formulas, scoring models, and numerical solvers
+nowhere specified — directly against this batch's own "never invent
+formulas" instruction, and against the same discipline followed in every
+prior batch. The DoD is instead satisfied as: **no Formula ID is silently
+untested** — `formulaCoverage.test.ts` mechanically enforces that all 69
+IDs are accounted for, each either genuinely tested (36) or explicitly
+documented with a specific reason (33), and fails if either set drifts
+without the registry being updated to match.
+
+**Two findings refine, rather than contradict, prior batches' analysis:**
+
+- **F-045 "Target Price Exit"** was never individually added to Batch 9's
+  "unassigned Exit Strategy formulas" list (F-043, F-044, F-046, F-047,
+  F-048, F-049) — it's mentioned only in passing in conflict #13's prose.
+  Building the coverage registry surfaced this gap in the prior
+  documentation itself: F-045 is now explicitly registered with its own
+  precise reason (`06_TASKS.md` M2-024 does not treat "Target BTC price"
+  as a standalone exit target type, and F-045's own equation is stated as
+  solved only "iteratively," not as a closed form) — no code changed.
+- **F-028 "Health Factor After Price Change"** and **F-029 "Protocol
+  Safety Score"** had never been flagged in any prior batch — a genuine
+  gap in the Risk Mathematics chapter's own coverage. F-028 turns out to
+  be realized conceptually (same pattern as F-016): `simulatePriceScenario`
+  (F-050, Batch 7) already computes exactly F-028's equation by calling
+  `calculateHealthFactor` (F-022) with a scenario's new collateral value.
+  F-029 is a genuine gap of the F-058/F-067 class: only a discrete
+  7-point example lookup table is given, with no interpolation rule
+  between points.
+
+**Framework-independence**: re-audited after Batch 13 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`. The registry and its tests live under `tests/`, use
+`node:fs`/`node:path` (fine for test infrastructure, never imported by
+`engine/` itself) and the `@/engine/...` alias as every other test file
+does.
+
+**Traceability audit (pre-commit)**: all 69 Formula IDs are accounted for
+in the registry (36 implemented + 33 not-implemented = 69, mechanically
+verified); every implemented ID is cross-checked bidirectionally against
+real source text (nothing in the registry is stale in either direction);
+the 13 new critical-risk boundary tests all reuse already-tagged,
+already-implemented functions; no new public exports were needed since
+M2-029 produces a test suite and a report, not new Engine functionality.
+
+**Validation — Batch 13**
+
+| Command              | Result                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                      |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                      |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                      |
+| `pnpm test`          | ✅ Pass, 413/413 (86 new)                                                                                                                                    |
+| `pnpm test:coverage` | ✅ 95.32% statements / 90.57% branches / 100% functions / 98.8% lines — identical to Batch 12 (test-only additions, no new `engine/` source lines to cover). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                      |
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -1394,6 +1493,52 @@ state can be added as a further fixture.
 
 ---
 
+### 15. M2-029's DoD, read literally, would require implementing all 69 Formula IDs — in direct tension with "never invent formulas"
+
+**M2-029's DoD text**: "A formula coverage report identifies no untested
+Version 1 Formula IDs." Taken 100% literally, this requires every one of
+`02_Formulas.md`'s 69 Formula IDs (F-001–F-069) to have a passing test —
+but 33 of them have no implementation, for reasons ranging from "no task
+in `06_TASKS.md` assigns it" (the majority) to "only a discrete example
+table is given, with no equation or interpolation rule" (F-029, F-058,
+F-067) to "the Engine's own documented Method is an unspecified
+'Iterative Solver'" (F-045, F-056, F-057) to "never defined anywhere in
+the document at all" (F-009). None of these are testable without first
+inventing the missing formula, scoring model, or numerical method — which
+directly contradicts this batch's own instruction ("Never invent
+formulas, regression expectations, tolerances, assumptions, or
+architecture") and the discipline every prior batch has followed.
+
+**Resolution applied (not a code fix, a DoD interpretation, stated here
+explicitly)**: "no untested Version 1 Formula IDs" is read as "no Formula
+ID is _silently_ untested" — every one of the 69 is mechanically
+accounted for in `tests/fixtures/formulaCoverage.ts` as either genuinely
+implemented-and-tested (36) or explicitly documented as not implemented,
+with a specific reason (33), and `formulaCoverage.test.ts` fails the
+build if either set drifts without the registry being updated to match.
+This satisfies the DoD's evident intent — nothing is quietly missing from
+the picture — without inventing the 33 missing formulas.
+
+**Tracked is not the same as implemented, stated plainly**: the Formula
+Coverage Registry **tracks** all 69 documented Formula IDs — it has one
+entry for every single one, `'implemented'` or `'not_implemented'`,
+with no ID omitted. Actual **implementation** remains limited to the 36
+Version 1 formulas the specification actually supports with a real
+equation and a task assigning it. Being present in the registry is not a
+claim that a Formula ID works, has code behind it, or is safe to call —
+only that its status has been recorded and, when unimplemented, why.
+`formulaCoverage.test.ts` enforces this distinction mechanically: it
+fails if a `'not_implemented'` entry is ever found tagged in `engine/`
+source (the registry would be stale in the "hasn't caught up to a real
+implementation" direction) and equally fails if an `'implemented'` entry
+has no matching source tag (stale in the "claims an implementation that
+doesn't exist" direction). Action needed: either the DoD is reworded to
+say "Version 1 Formula IDs **with an implementation**," or a product
+decision authorizes implementing (a subset of) the 33 gaps, at which
+point they move from "documented gap" to "implemented" in the registry.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -1442,23 +1587,19 @@ state can be added as a further fixture.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 12 (M2-028) before
+2. **This pass stops here for approval** of Batch 13 (M2-029) before
    committing, per instruction.
-3. Once approved and committed: **Batch 13 — M2-029 (Implement Formula
-   Regression Suite)**, continuing the Verification chapter. M2-029
-   depends on M2-028 (done, partially) and is unblocked. Its Requirements
-   ("Every Formula ID has at least one normal test," "Critical risk
-   formulas have boundary and error tests," "Golden Reference results
-   remain unchanged unless formally approved") and DoD ("A formula
-   coverage report identifies no untested Version 1 Formula IDs") suggest
-   this batch is largely an **audit-and-gap-fill** task over the 69
-   documented Formula IDs, plus a coverage report artifact — re-read its
-   exact text and DoD fresh at the start of that batch, per the standing
-   workflow, rather than assuming its shape from this preview. Expect it
-   to surface exactly the already-known unimplemented Formula IDs (F-005,
-   F-007's sibling F-008, F-026, F-033–F-039, F-060, F-065–F-069, etc. —
-   see the conflicts list) as "untested" for a documented, not accidental,
-   reason.
+3. Once approved and committed: **Batch 14 — M2-030 (Benchmark Engine
+   Performance)**, continuing the Verification chapter. M2-030 depends on
+   M2-029 (done, partially) and is unblocked (P2 priority, effort S). Its
+   "Benchmark" list names 6 targets (Portfolio summary, Health Factor,
+   Liquidation calculations, Loop strategy, Single scenario, Scenario
+   comparison) and its DoD points at `04_BUILD_GUIDE.md`'s "PERFORMANCE
+   TARGETS" (`02_Formulas.md`: Single Formula < 1ms, Portfolio Calculation
+   < 50ms, Scenario Simulation < 100ms, Dashboard Refresh < 100ms) —
+   re-read its exact text and DoD fresh at the start of that batch, per
+   the standing workflow, rather than assuming its shape from this
+   preview.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
    compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
@@ -1470,7 +1611,9 @@ state can be added as a further fixture.
    "Target cash proceeds"'s ambiguous mechanics (conflict #10), "Exit
    readiness"'s unmapped Formula ID (conflict #11), F-067's partial
    documentation (conflict #12), F-040's exit-collateral-sale discrepancy
-   (conflict #13, a known approximation), and the unspecified "Target
-   borrow percentage" blocking a post-loop Golden Reference Portfolio
-   fixture (conflict #14, new this batch). Revisit all nine once resolved
-   upstream.
+   (conflict #13, a known approximation), the unspecified "Target borrow
+   percentage" blocking a post-loop Golden Reference Portfolio fixture
+   (conflict #14), and M2-029's DoD-vs-scope tension over the 33
+   unimplemented Formula IDs (conflict #15, new this batch, resolved via
+   the coverage-report interpretation explained there). Revisit all ten
+   once resolved upstream.
