@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-25
-Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 9 complete (pending approval) — M2-001 through M2-024 addressed (M2-013/M2-014 blocked); M2-025 through M2-032 remain
+Current milestone: **Milestone 2 — Formula Engine** (per `docs/06_TASKS.md`), Batch 10 complete (pending approval) — M2-001 through M2-026 addressed (M2-013/M2-014 blocked); M2-027 through M2-032 remain
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -780,6 +780,123 @@ test, lint, or build failures were left unresolved.
 
 ---
 
+### Batch 10 — Recommendation Engine (M2-025, M2-026)
+
+| Task                                           | Status     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2-025 Implement Recommendation Rule Framework | ⚠️ Partial | `engine/recommendation/{calculateBorrowRecommendation,calculateRepaymentRecommendation,calculateAdditionalCollateralRecommendation,calculateLoopRecommendation,generateRecommendations}.ts` — F-061, F-062, F-063, F-064, composing F-006 (promoted this batch), F-013, F-022, F-032, F-040, F-041, F-042, F-014. 3 of 6 documented "Recommendation categories" implemented (Debt management, Collateral management, Leverage); Safety (F-060) and Interest cost (F-065) remain blocked by pre-existing conflicts; "Exit readiness" has no mapped Formula ID at all — see below. |
+| M2-026 Implement Recommendation Explanations   | ✅ Done    | Every recommendation-producing function returns the shared `Recommendation` shape (`engine/recommendation/types.ts`) with all 6 documented fields (Triggering condition, Relevant values, Expected effect, Risk level, Suggested action, Formula references) populated from the moment it is created — M2-026 adds no Formula ID of its own, only this shape requirement on M2-025's outputs, satisfied for every recommendation that is generated.                                                                                                                              |
+
+**F-006 "Debt Ratio" promoted from unassigned to implemented, third
+instance of the F-007 pattern (Batch 7).** F-061 "Borrow Recommendation"
+explicitly conditions on "Debt Ratio below target." `engine/portfolio/calculateDebtRatio.ts`
+implements it, following `calculateLoanToValue`'s (F-020) established
+zero-collateral-analog pattern for the zero-portfolio-value edge case
+(02_Formulas.md documents no explicit edge case for F-006 itself). F-005
+(Equity Ratio) and F-008 (Portfolio Return) remain unassigned.
+
+**A genuinely useful discovery: 02_Formulas.md's "DECISION PRIORITY" list
+(page 8), read fresh for this batch.** The Recommendation Engine chapter
+documents an explicit, ordered priority — 1. Prevent Liquidation, 2.
+Maintain Target Health Factor, 3. Reduce Interest Costs, 4. Improve
+Capital Efficiency, 5. Achieve User Goals ("Safety always has higher
+priority than profitability") — used as every `Recommendation`'s
+`decisionPriority` field (the M2-026 "Risk level" requirement), instead of
+the disputed numeric Health Factor risk bands (conflict #1). This keeps
+every implemented recommendation's risk framing fully independent of that
+unresolved conflict.
+
+**F-062 "Repayment Recommendation" is a fourth instance of the
+same-equation-different-chapter duplication pattern** (after F-012/F-021,
+F-027/F-040, and now this): its own equation ("Required Repayment =
+Current Debt − Target Debt", "Reference: F-040") is identical to F-041
+"Required Debt Repayment" (M2-023, Batch 9), itself built on F-040.
+`calculateRepaymentRecommendation` reuses `calculateTargetDebt` (F-040)
+and `calculateRequiredDebtRepayment` (F-041) rather than duplicating
+either.
+
+**F-063 "Additional Collateral Recommendation" has no equation
+documented, but one was derivable without inventing anything**: F-022's
+own equation (Health Factor = (Collateral Value × Liquidation Threshold) /
+Debt) rearranged for Collateral Value gives exactly the collateral needed
+for a target Health Factor — the algebraic mirror of F-040 solved for the
+other variable. Verified by recomputing F-022 with the resulting
+collateral value, the same verification pattern `calculateAdditionalBorrow`
+(F-027, Batch 3) established.
+
+**F-060 (Safety) and F-065 (Interest cost) remain blocked — no new root
+cause, both already-documented gaps recurring in a new task.** F-060
+"Health Factor Recommendation" needs a risk-band scheme, and the
+documented bands disagree across README.md / 01_PRD.md REQ-001 / REQ-005 /
+F-026 / F-060 itself (conflict #1). F-065 "Interest Warning" needs an
+"Expected Annual Portfolio Growth" figure with no formula anywhere
+(the same gap that blocked part of M2-018's "Excessive cost" check).
+Neither is implemented; both are itemized in `generateRecommendations`'s
+`unavailableCategories` output with reasons, not silently dropped.
+
+**Finding: "Exit readiness" (an M2-025 category) has no Formula ID
+anywhere in the Recommendation Engine chapter (F-060–F-069).** Checked
+every one of F-060 through F-069 individually — none names or implies
+"exit readiness" as its purpose. This is not the same class of gap as
+F-060/F-065 (a documented-but-blocked formula); it is a category listed
+in `06_TASKS.md` with nothing in `02_Formulas.md` to implement against at
+all. Not implemented; itemized in `unavailableCategories`. (F-066 Profit
+Target Recommendation, F-067 Simple Portfolio Score, F-068 Primary
+Recommendation, and F-069 Recommendation Summary were also read this
+batch and confirmed not required by M2-025/M2-026's specific category
+list — see the next finding for F-067 specifically.)
+
+**Finding: F-067 "Simple Portfolio Score" has partial documentation —
+weights given, component formulas missing.** Unlike F-058 "Scenario
+Ranking Score" (Batch 8, no weights at all), F-067 documents explicit
+weights (Health Factor 40%, Debt Ratio 20%, Interest Cost 15%, Leverage
+15%, Portfolio Growth 10%) and a 0–100 output with example bands. But it
+never defines how each raw component (e.g. a Health Factor of 1.6) maps
+to its own 0–100 sub-score before weighting — that normalization is
+undocumented, and 02_Formulas.md's own "IMPLEMENTATION NOTES" for this
+chapter state "No hidden scoring," which reinforces not inventing one.
+Not required by M2-025/M2-026; flagged for whichever later task (if any)
+is assigned F-067, since the gap is narrower than F-058's but still real.
+
+**Framework-independence**: re-audited after Batch 10 — still zero
+React/Next.js/Zustand/Supabase/UI imports, no `@/...` alias usage inside
+`engine/`.
+
+**Traceability audit (pre-commit)**: every public function carries its
+Formula ID in both a doc comment and its runtime metadata; all newly
+implemented/promoted Formula IDs (F-006, F-061, F-062, F-063, F-064) have
+an explicit `metadata.formulaId`-asserting test, as do the reused IDs
+exercised through the four recommendation functions (F-013, F-022, F-032,
+F-040, F-041, F-042, F-014); every `Recommendation` includes all 6 M2-026
+fields, verified by a dedicated test; the three unimplemented categories
+(Safety, Interest cost, Exit readiness) are itemized with reasons rather
+than silently omitted; public exports (`calculateDebtRatio`,
+`calculateBorrowRecommendation`, `calculateRepaymentRecommendation`,
+`calculateAdditionalCollateralRecommendation`, `calculateLoopRecommendation`,
+`generateRecommendations`, and their types) are wired through
+`engine/portfolio/index.ts`, `engine/recommendation/index.ts`, and
+`engine/index.ts`.
+
+**Validation — Batch 10**
+
+| Command              | Result                                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                               |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                               |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                               |
+| `pnpm test`          | ✅ Pass, 292/292 (41 new)                                                                                                                                                                                                                             |
+| `pnpm test:coverage` | ✅ 95.25% statements / 90.4% branches / 100% functions / 98.78% lines. Remaining uncovered lines are defensive re-validation of already-validated data, mathematically unreachable given valid inputs — same documented pattern as every prior batch. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                               |
+
+Every test asserts against a worked example from `02_Formulas.md` where
+one exists (a cross-checked scenario shared across all four rule
+functions and `generateRecommendations`), plus every documented
+"otherwise" branch (do-not-recommend / stop-looping / no-repayment-needed
+/ no-additional-collateral-needed), and edge/invalid-input cases. No
+test, lint, or build failures were left unresolved.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -955,6 +1072,47 @@ Not implemented — see the Batch 9 section above for the fuller reasoning.
 Action needed: specify which execution order "Target cash proceeds"
 means (or both, as separate exit types) before this can be implemented.
 
+### 11. "Exit readiness" (M2-025) has no Formula ID anywhere in the Recommendation Engine chapter — BLOCKS full M2-025
+
+Found while implementing Batch 10. `06_TASKS.md` M2-025 lists "Exit
+readiness" as one of six "Recommendation categories," but a full read of
+every Formula ID in the chapter (F-060 through F-069) found none that
+names or implies it — unlike F-060/F-065 (documented formulas blocked by
+other conflicts), there is nothing here to implement against at all, the
+same class of gap as conflict #9 (the whole chapter's task-assignment
+gap) but at the level of a single category within an otherwise-assigned
+task. Not implemented; `generateRecommendations` itemizes it in
+`unavailableCategories`. Action needed: either author an "Exit readiness"
+formula in `02_Formulas.md`, or map this category to existing Exit
+Strategy chapter formulas (F-047 "Risk Reduction Efficiency" looks like
+the closest conceptual fit, though `06_TASKS.md` never draws that
+connection) and update the task documentation to say so explicitly.
+
+### 12. F-067 "Simple Portfolio Score" documents weights but not the component formulas they weight
+
+**Why F-067 cannot currently be implemented, stated directly: weighting
+factors alone are insufficient to compute the score.** A weighted sum
+needs two things — the weights, and the per-component values being
+weighted. F-067 supplies only the first. The specification does not
+define how each raw component (e.g. a Health Factor of 1.6, a Debt Ratio
+of 0.4) is calculated into its own 0–100 sub-score before that weight is
+applied — there is no equation, scale, or worked sub-example for any of
+the five components (Health Factor, Debt Ratio, Interest Cost, Leverage,
+Portfolio Growth). Therefore the overall weighted score cannot be
+computed without inventing that missing normalization behavior ourselves,
+which is out of scope.
+
+Found while implementing Batch 10 (not required by M2-025/M2-026, so not
+blocking anything yet — flagged for whoever is assigned it). F-067 gives
+explicit weights (Health Factor 40%, Debt Ratio 20%, Interest Cost 15%,
+Leverage 15%, Portfolio Growth 10%) combining into a 0–100 score, unlike
+F-058 "Scenario Ranking Score" (conflict, Batch 8) which has no weights
+at all — so this gap is narrower than F-058's, but not zero. This
+chapter's own "IMPLEMENTATION NOTES" state "No hidden scoring," which
+argues against inventing the missing normalization rather than for it.
+Action needed: either document each component's 0–100 conversion, or
+descope F-067 explicitly.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -1005,29 +1163,28 @@ means (or both, as separate exit types) before this can be implemented.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Batch 9 (M2-023, M2-024)
+2. **This pass stops here for approval** of Batch 10 (M2-025, M2-026)
    before committing, per instruction.
-3. Once approved and committed: **Batch 10 — M2-025 (Recommendation Rule
-   Framework)** onward, opening the Recommendation Engine chapter
-   (`02_Formulas.md` F-060–F-069, `engine/recommendation/`, currently
-   empty except `.gitkeep`). **M2-025 depends on M2-009, M2-010, and
-   M2-013 — the last of which is blocked** (conflict #7), so this is
-   expected to be a partial batch from the outset, unlike Batches 5/7/9
-   where the blocked-dependency sub-items turned out to be salvageable.
-   Whether M2-025's own "Recommendation categories" (Safety, Debt
-   management, Collateral management, Interest cost, Leverage, Exit
-   readiness) actually need compound interest specifically, or can reuse
-   simple interest like M2-017/M2-020 did, has not yet been checked —
-   verify at the start of that batch, per the standing workflow, rather
-   than assuming either way.
+3. Once approved and committed: **Batch 11 — M2-027 (Engine Invariants)**,
+   opening the Verification chapter (M2-027–M2-032). M2-027's own
+   dependency list is unusual — "M2-006 through M2-026," i.e. essentially
+   everything implemented so far — meaning it is a cross-cutting task
+   (automated invariant checks: "Net value equals collateral minus debt,"
+   "Target Health Factor results reproduce the target," "Loop results
+   reconcile with step totals," "Full debt repayment produces zero debt,"
+   per its own "Examples") rather than one with new Formula IDs of its
+   own. Re-read its exact text and DoD fresh at the start of that batch,
+   per the standing workflow, before assuming its scope or how it relates
+   to the traceability/regression work in M2-028–M2-029.
 4. **Outstanding blockers carried forward, independent of which batch is in
    progress**: F-026 (Health Factor status classification, conflict #1),
-   compound interest / M2-013–M2-014 (conflict #7 — now also M2-025's
-   formal dependency, in addition to M2-017's and M2-020's), the
-   swap-fees/slippage/gas-estimate gap (conflict #8, affects M2-017's
-   "Total implementation cost" and M2-023's "Exit transaction costs," and
-   will recur further), the unassigned Recommendation Engine chapter
-   F-060–F-069 (conflict #9 — M2-025 may resolve some of these
-   assignments directly, since it's the first task to reach that
-   chapter), and "Target cash proceeds"'s ambiguous mechanics (conflict
-   #10). Revisit all five once resolved upstream.
+   compound interest / M2-013–M2-014 (conflict #7, M2-017's/M2-020's
+   still-open formal dependencies on it), the swap-fees/slippage/gas-estimate
+   gap (conflict #8, affects M2-017's "Total implementation cost" and
+   M2-023's "Exit transaction costs"), the partially-unassigned
+   Recommendation Engine chapter (conflict #9 — now narrowed by Batch 10
+   to F-060, F-065, F-066, F-067, F-068, F-069 specifically; F-061–F-064
+   are implemented), "Target cash proceeds"'s ambiguous mechanics
+   (conflict #10), "Exit readiness"'s unmapped Formula ID (conflict #11),
+   and F-067's partial documentation (conflict #12). Revisit all seven
+   once resolved upstream.

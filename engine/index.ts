@@ -61,6 +61,7 @@ export {
 } from './loop';
 export {
   calculateCollateralValue,
+  calculateDebtRatio,
   calculateDebtValue,
   calculateEffectiveLeverage,
   calculateExposure,
@@ -68,6 +69,24 @@ export {
   calculateNetWorth,
   calculatePortfolioValue,
 } from './portfolio';
+export {
+  type AdditionalCollateralRecommendationParams,
+  type BorrowRecommendationParams,
+  calculateAdditionalCollateralRecommendation,
+  calculateBorrowRecommendation,
+  calculateLoopRecommendation,
+  calculateRepaymentRecommendation,
+  type DecisionPriority,
+  generateRecommendations,
+  type GenerateRecommendationsParams,
+  type LoopRecommendationParams,
+  type Recommendation,
+  type RecommendationCategory,
+  type RecommendationRuleConfig,
+  type RecommendationSet,
+  type RepaymentRecommendationParams,
+  type UnavailableRecommendationCategory,
+} from './recommendation';
 export {
   Decimal,
   type DecimalInput,
