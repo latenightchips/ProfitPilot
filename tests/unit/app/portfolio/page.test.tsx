@@ -286,7 +286,7 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     // Zero debt -> Health Factor Infinity, formatted by Intl.NumberFormat as "∞".
-    expect(section.getByText(/Health Factor/)).toBeInTheDocument();
+    expect(section.getByText('Health Factor', { selector: 'dt' })).toBeInTheDocument();
     expect(section.getByText(/∞/)).toBeInTheDocument();
 
     await user.click(section.getByRole('button', { name: 'Apply Changes' }));
@@ -312,6 +312,115 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     createAndSelect();
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+});
+
+describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
+  it('displays the Liquidation Price change alongside Net Equity/Health Factor/LTV', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Quantity'));
+    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(section.getByText('Liquidation Price', { selector: 'dt' })).toBeInTheDocument();
+    // Base: 2 BTC/$20,000 debt/80% threshold -> $12,500. After: 3 BTC -> $8,333.33.
+    expect(section.getByText(/\$12,500\.00 → \$8,333\.33/)).toBeInTheDocument();
+  });
+
+  it('shows "N/A (no debt)" for the Liquidation Price side that has no debt (conflict #20)', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Debt amount'));
+    await user.type(section.getByLabelText('Debt amount'), '0');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(section.getByText(/\$12,500\.00 → N\/A \(no debt\)/)).toBeInTheDocument();
+  });
+
+  it('surfaces the "after" summary\'s Warnings directly from the Service, not a UI-invented list', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Debt amount'));
+    await user.type(section.getByLabelText('Debt amount'), '0');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    // The real NO_DEBT warning calculateHealthFactor (F-022) already
+    // produces — not text invented in this component.
+    expect(
+      section.getByText(/No debt exists; Health Factor is infinite \(no liquidation risk\)/),
+    ).toBeInTheDocument();
+  });
+
+  it('requires explicit confirmation before applying a risk-increasing change (DoD)', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    // Withdrawing collateral lowers Health Factor: 4 -> 2.
+    await user.clear(section.getByLabelText('Quantity'));
+    await user.type(section.getByLabelText('Quantity'), '1');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    const checkbox = section.getByRole('checkbox');
+    expect(checkbox).not.toBeChecked();
+    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+
+    await user.click(checkbox);
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.collateral.quantity).toBe(
+      1,
+    );
+  });
+
+  it('does not show a risk-acknowledgment checkbox for a non-risk-increasing change', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    // Adding collateral raises Health Factor: 4 -> 6.
+    await user.clear(section.getByLabelText('Quantity'));
+    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(section.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+  });
+
+  it('resets the risk acknowledgment when the field changes again after checking it', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Quantity'));
+    await user.type(section.getByLabelText('Quantity'), '1');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('checkbox'));
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+
+    // Editing again clears both the preview and the acknowledgment.
+    await user.type(section.getByLabelText('Quantity'), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
 });

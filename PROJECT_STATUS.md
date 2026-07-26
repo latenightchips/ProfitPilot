@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), and Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction) are synchronized to GitHub; Batch 4 (M4-007, M4-008) is implemented and awaiting approval; M4-009 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), and Batch 4 (M4-007, M4-008) are synchronized to GitHub; Batch 5 (M4-009) is implemented and awaiting approval; M4-011 has not started (M4-010 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3334,6 +3334,137 @@ silently decided.
 
 ---
 
+### Batch 5 — Portfolio Action Preview (M4-009)
+
+Extends `PreviewDiff` (built in Batch 4 for M4-007/M4-008) rather than
+adding a new component — M4-009's own Dependencies (M4-007, M4-008) and
+"Display" list are a direct refinement of what that component already
+showed, not a separate feature.
+
+**Pre-implementation verification (per instruction)**: re-read M4-009's
+exact task text directly from `06_TASKS.md` (not from memory/earlier
+summary) before writing any code. Confirmed the metrics summary's only
+data source is `calculatePortfolioSummary` (M3-005) — `before` comes
+from the Store's own cached `record.summary` (Batch 1), `after` from
+this file's own preview mechanism (Batch 4); `PreviewDiff` performs no
+calculation of its own, only formatting and diffing fields already
+present on that Service's output. Grepped `01_PRD.md`/`02_Formulas.md`/
+`04_BUILD_GUIDE.md`/`06_TASKS.md` for "risk-increasing" before writing
+any classification logic — see below.
+
+**"Display" list — 2 of 3 already shown (Batch 4), 2 added this
+batch**: "Net equity change," "LTV change," "Health Factor change" were
+already in `PreviewDiff`. Added "Liquidation price change" (handling
+`null` on either side for a zero-debt portfolio — conflict #20 — as
+"N/A (no debt)," not a fabricated number) and "Warnings" (reads
+`after.warnings` directly, `ServiceResult`'s own field from M3-002 — the
+real `NO_DEBT`/`NEGATIVE_EQUITY`/etc. warnings the Engine already
+produces, not new UI-authored text).
+
+**New finding — no "risk-increasing" definition exists anywhere.**
+Grepped the full documentation set; the term appears only in M4-009's
+own DoD and Milestone 4's acceptance criteria, with no threshold, band,
+or scoring rule anywhere. Per explicit instruction, no risk band, label,
+or threshold was invented. Resolved with the most conservative possible
+reading: a change is "risk-increasing" exactly when it strictly lowers
+Health Factor (`isRiskIncreasing` — `after.healthFactor <
+before.healthFactor`) — a directional comparison of two numbers
+`calculatePortfolioSummary` already produces, not a new formula, scoring
+system, or numeric boundary. If "before" is itself unreadable (should
+not occur — the Store only ever holds already-valid portfolios), the
+change is conservatively treated as risk-increasing rather than
+silently skipping confirmation.
+
+**DoD ("Risk-increasing changes require explicit confirmation after
+preview") — a real, additional gate, not just the existing preview hard
+gate.** Batch 4 already required preview-before-apply for every change.
+This batch adds: when `isRiskIncreasing` is true, `PreviewDiff` renders
+a checkbox with an explicit acknowledgment label, and "Apply Changes"
+stays disabled until it is checked (`canApply`, shared by both forms) —
+on top of the existing preview-exists gate. Non-risk-increasing changes
+are completely unaffected — no checkbox renders, "Apply Changes" enables
+immediately after preview, exactly as Batch 4 already behaved.
+Unchecking/re-editing any field after checking the box clears both the
+preview and the acknowledgment together (same `watch()` subscription
+Batch 4 already used to invalidate stale previews).
+
+**M3-006 (`previewPortfolioAction`) reconsidered, decision reaffirmed
+unchanged from Batch 4.** M4-009 explicitly names M3-006 as a
+Dependency, which reopened the question of whether this batch should
+switch the preview mechanism to use that Service literally.
+Re-examined: `PortfolioAction`'s six variants each change exactly one
+field; these forms let a user edit a position field and a protocol
+field together in one preview, which no single variant represents.
+`previewPortfolioAction`'s own return shape
+(`{before: PortfolioSummary, after: PortfolioSummary}`) is structurally
+identical to what `PreviewDiff` already consumes, so the M3-006
+dependency is satisfied at the architectural level — this feature _is_
+"Portfolio Action Preview," built on the same M3-005 Service
+`previewPortfolioAction` itself wraps — without calling a Service whose
+action union can't represent these forms' combined edits. Kept the
+Batch 4 decision rather than reversing it.
+
+**Scope**: only applies to the Collateral/Debt Position Management
+forms (M4-007/M4-008's own Dependencies) — not the Creation Flow
+(M4-005), which has no "before" portfolio to compare against (there is
+no existing portfolio yet when creating one), so risk-increasing
+detection has nothing to apply to there.
+
+**Test files**: `tests/unit/app/portfolio/page.test.tsx` (+6 tests:
+Liquidation Price change display, the `null`-on-either-side case,
+real Warnings surfaced from the Service, the full risk-increasing
+confirm-then-apply flow, confirming no checkbox appears for a
+non-risk-increasing change, and confirming re-editing after
+acknowledging resets both the preview and the acknowledgment). One
+pre-existing test's loose `getByText(/Health Factor/)` match became
+ambiguous once the new Warnings list could also contain that phrase
+(the real `NO_DEBT` warning text) — narrowed to `{ selector: 'dt' }` to
+target the metric label specifically, not a text change.
+
+**Browser verification**: started the dev server and drove the
+risk-increasing flow with Playwright/Chromium — created a portfolio,
+withdrew collateral from 2 to 1 BTC (Health Factor 4 → 2), previewed,
+confirmed "Apply Changes" was disabled before checking the
+acknowledgment box and enabled immediately after, then applied
+successfully. Screenshot confirms the full preview panel (Net Equity
+$80,000.00 → $30,000.00, Health Factor 4 → 2, Loan-to-Value 20% → 40%,
+Liquidation Price $12,500.00 → $25,000.00, and the checkbox with its
+warning label) rendering correctly. Zero console/page errors.
+
+**Scope discipline**: only M4-009 was implemented. No M4-010/M4-011+
+work was started (M4-010 was already completed in Batch 2). `engine/`,
+`services/`, `stores/`, `types/` are completely untouched (`git diff
+--stat -- engine/ services/ stores/ types/` empty) — the only file
+touched is `app/portfolio/page.tsx`, plus its test file.
+
+**Validation — Batch 5**
+
+| Command              | Result                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 816/816 (6 net new)                                                                                                               |
+| `pnpm test:coverage` | ✅ 94.84% statements / 87.88% branches / 100% functions / 98.44% lines (project-wide). `app/portfolio/page.tsx`: 93.47%/73.61%/100%/98.7%. |
+| `pnpm build`         | ✅ Pass — `/portfolio`'s bundle grew from 2.6 kB to 2.95 kB, confirming real new content                                                   |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ stores/
+types/` empty. No Service file imports from `@/app`. No `fetch`/
+`axios`/`XMLHttpRequest`/`process.env`/`infrastructure/` reference in
+the modified file. `app/portfolio/page.tsx` imports only
+`calculatePortfolioSummary`/`PortfolioSummary`/`ServiceResult` from
+`@/services` and `usePortfolioStore` from `@/stores/portfolioStore` —
+unchanged from Batch 4, the allowed UI → Store/Services direction.
+
+**Traceability**: M4-009's "Display" list (5 items — 3 pre-existing, 2
+added) and its DoD (explicit confirmation for risk-increasing changes)
+are each addressed directly above, with the one genuine specification
+gap ("risk-increasing" undefined) resolved via the most conservative
+possible directional comparison and documented rather than guessed at
+with an invented threshold.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -4142,6 +4273,36 @@ supposed to mean, before either can move past being a documented gap.
 
 ---
 
+### 26. M4-009's DoD requires confirmation for "risk-increasing" changes, but no such term is defined anywhere
+
+Found while implementing Milestone 4 Batch 5 (M4-009). The task's own
+DoD is "Risk-increasing changes require explicit confirmation after
+preview," and Milestone 4's acceptance criteria repeat "Risk-increasing
+actions provide previews" — but neither `01_PRD.md`, `02_Formulas.md`,
+`04_BUILD_GUIDE.md`, nor `06_TASKS.md` defines what makes a change
+"risk-increasing": no threshold (e.g., "Health Factor drops below
+X"), no band/classification system, no scoring rule. The term is used
+as if its meaning were already established elsewhere in the
+specification, but it is not.
+
+**Resolution applied**: per explicit instruction not to invent risk
+bands, labels, or thresholds, resolved with the most conservative
+possible reading available — a directional comparison, not a
+classification system. A change is "risk-increasing" exactly when it
+strictly lowers Health Factor (`isRiskIncreasing`,
+`app/portfolio/page.tsx`): `after.healthFactor < before.healthFactor`.
+Both values already come from `calculatePortfolioSummary` (M3-005); no
+new formula, scoring rule, or numeric boundary was introduced. This
+correctly triggers confirmation for the two clearest real cases
+(withdrawing collateral, increasing debt) without asserting anything
+about _how much_ riskier a change is, which the specification never
+states. Action needed: a product/engineering decision on whether a
+finer-grained classification (e.g., magnitude-based, LTV-based, or
+tied to the user's own Safety Target settings from M4-006) is ever
+required, versus this directional check being sufficient permanently.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -4190,44 +4351,31 @@ supposed to mean, before either can move past being a documented gap.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 4
-   (M4-007, M4-008) before committing, per instruction. Do not begin
-   M4-009 until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 5
+   (M4-009) before committing, per instruction. Do not begin M4-011
+   until this is approved (M4-010 was already completed in Batch 2).
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   4**:
-   - **Conflict A (positions)**: reaffirmed — "add/edit/remove" is the
-     one collateral slot's and one debt slot's lifecycle, never an
-     array.
-   - **Conflict B (persistence timing)**: unaffected by this batch's own
-     scope (these forms use an explicit preview+apply flow, not
-     auto-save, so Conflict B's auto-save framing doesn't directly apply
-     here — "Apply" still only commits to the in-memory Store).
-   - **Conflict C (M4-008 vs. conflict #20)**: **now proven reachable
-     end-to-end through real UI**, not just Service/Store-layer tests —
-     this batch's browser verification repaid a live portfolio's debt to
-     zero through the Debt Position Management form and confirmed the
-     Health Factor preview renders "∞" correctly.
-4. Once Batch 4 is approved and committed, the next batch is **Batch 5
-   (M4-009)** — Portfolio Action Preview — per the approved plan's batch
-   order. Note: this batch's own preview mechanism already satisfies
-   M4-007/M4-008's "preview before applying" Requirements directly via
-   `calculatePortfolioSummary`; M4-009's own scope (classifying which
-   changes are "risk-increasing" and requiring confirmation specifically
-   for those) is still meaningfully separate work, not already done.
-5. **New from Batch 4**: conflict #25 — M4-008 names "Price" and "Rate
-   type" as debt fields with no counterpart anywhere in the data model
-   (`calculateDebtValue`'s hard 1:1 peg; no rate-type concept exists,
-   and the Engine work that would house one, M2-013/M2-014, was formally
-   blocked per conflict #7). "Price" shown as read-only informational
-   text; "Rate type" not rendered at all.
-6. **Real bug found and fixed this batch, affecting all four forms
-   built so far**: inline field-error `<span>` elements rendered inside
-   their wrapping `<label>` polluted the label's computed accessible
-   name once an error appeared — breaking both `getByLabelText` queries
-   and real screen-reader semantics. Fixed by moving every error span to
-   be a sibling after `</label>`, not a child of it, across
-   `app/portfolio/page.tsx` and `app/portfolios/new/page.tsx` in full
-   (not just this batch's own two new sections).
+   5**: all three remain resolved as established (Batch 0/1) and
+   unaffected by this batch's own scope (a display/UX extension of the
+   already-built preview mechanism, no new position-editing behavior).
+4. Once Batch 5 is approved and committed, the next batch per the
+   approved plan is **Batch 6 (M4-011, M4-012)** — Portfolio
+   Duplication and Portfolio Archive/Delete. Note: Batch 1's
+   `store.duplicate()`/`store.archive()` actions already implement the
+   core mechanism for both (built early since M4-003 itself required
+   _some_ working versions) — this batch is primarily UI wiring
+   (buttons on `/portfolios`) plus M4-012's own confirmation/explanation
+   requirements, not new Store logic.
+5. **New from Batch 5**: conflict #26 — M4-009's DoD requires
+   confirmation for "risk-increasing" changes, but no such term is
+   defined anywhere in the documentation (no threshold, band, or
+   scoring rule). Resolved with the most conservative possible
+   directional comparison (`after.healthFactor < before.healthFactor`),
+   not an invented threshold or classification system.
+6. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
+   "Rate type" as debt fields with no counterpart anywhere in the data
+   model. "Price" shown as read-only informational text; "Rate type" not
+   rendered at all.
 7. **From Batch 3, still open**: conflict #24 — M4-005's "Protocol
    parameters or preset" names a preset option with no concrete values
    anywhere in the documentation. Resolved by offering manual entry
@@ -4241,8 +4389,7 @@ supposed to mean, before either can move past being a documented gap.
    conservatively (safety-targets-only) — still flagged for a real
    decision.
 10. **Conflict #20 remains resolved** (Batch 0) — no longer an open
-    item. This batch is the first to prove it reachable through real UI,
-    not just tests (see point 3 above).
+    item.
 11. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
@@ -4272,6 +4419,8 @@ supposed to mean, before either can move past being a documented gap.
     undefined shape (conflict #22 — point 9 above), the Portfolio List
     page's missing place in 03_UI.md's page inventory (conflict #23 —
     point 8 above), the missing protocol-preset values (conflict #24 —
-    point 7 above), and the debt "Price"/"Rate type" gap (conflict #25 —
-    point 5 above). Conflict #20 (resolved Batch 0) is not counted.
-    **24 open conflicts remain (25 total raised, minus #20, resolved).**
+    point 7 above), the debt "Price"/"Rate type" gap (conflict #25 —
+    point 6 above), and the undefined "risk-increasing" term (conflict
+    #26 — point 5 above). Conflict #20 (resolved Batch 0) is not
+    counted. **25 open conflicts remain (26 total raised, minus #20,
+    resolved).**

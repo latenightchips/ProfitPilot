@@ -92,10 +92,64 @@ import {
  * whenever no preview exists — so a stale preview can never be applied
  * silently. This is the concrete mechanism behind "Preview effects
  * before destructive changes" (M4-007) / "Preview Health Factor impact"
- * (M4-008): every change, not only ones a later task might classify as
- * risk-increasing, is previewed before it can be applied. Classifying
- * *which* changes are "risk-increasing" specifically is M4-009's own
- * task (Portfolio Action Preview), not built here.
+ * (M4-008): every change is previewed before it can be applied.
+ *
+ * ---
+ *
+ * **Portfolio Action Preview — 06_TASKS.md M4-009.** "Display: Net
+ * equity change, LTV change, Health Factor change, Liquidation price
+ * change, Warnings." "DoD: Risk-increasing changes require explicit
+ * confirmation after preview." Extends `PreviewDiff` (built in Batch 4
+ * for M4-007/M4-008) rather than a new component — M4-009's own
+ * Dependencies (M4-007, M4-008) and "Display" list are a direct
+ * refinement of what that component already showed (Net Equity, Health
+ * Factor, LTV), adding the two fields it was missing (Liquidation price,
+ * Warnings) and the risk-increasing confirmation gate.
+ *
+ * **Metrics come from `calculatePortfolioSummary` (M3-005) alone** —
+ * `before`/`after` are both `PortfolioSummary` values already computed
+ * by that Service (the "before" from the Store's own cached
+ * `record.summary`, Batch 1; the "after" from this file's own preview
+ * mechanism, Batch 4). `PreviewDiff` only formats and diffs fields
+ * already present on that Service's output; it computes nothing new.
+ * "Warnings" reads `after.warnings` directly — `ServiceResult`'s own
+ * field (M3-002) — not a UI-invented list.
+ *
+ * **Still deliberately not `previewPortfolioAction` (M3-006), despite
+ * M4-009 naming it as a Dependency**: see the note above this one for
+ * why — `PortfolioAction`'s six variants each change exactly one field,
+ * and these forms combine a position field with a protocol field in one
+ * preview. `previewPortfolioAction`'s own return shape
+ * (`{before: PortfolioSummary, after: PortfolioSummary}`) is structurally
+ * identical to what `PreviewDiff` already consumes, so the M3-006
+ * dependency is satisfied at the architectural level (this *is* the
+ * "Portfolio Action Preview" concept, built on the same M3-005 Service
+ * `previewPortfolioAction` itself wraps) without literally calling a
+ * Service whose action union can't represent these forms' combined
+ * edits.
+ *
+ * **"Liquidation price change"**: both `before.liquidation` and
+ * `after.liquidation` can be `null` for a zero-debt portfolio (conflict
+ * #20, resolved Batch 0) — shown as "N/A (no debt)" on whichever side is
+ * `null`, not a fabricated number.
+ *
+ * **"Risk-increasing" — no value domain is defined anywhere in the
+ * documentation** (grepped `01_PRD.md`/`02_Formulas.md`/
+ * `04_BUILD_GUIDE.md`/`06_TASKS.md`; the term appears only in M4-009's
+ * own DoD and Milestone 4's acceptance criteria, with no threshold, band,
+ * or scoring rule). Per instruction, no risk band, label, or threshold is
+ * invented. Resolved with the most conservative possible reading: a
+ * change is "risk-increasing" exactly when it strictly lowers Health
+ * Factor (`isRiskIncreasing`, below) — a directional comparison of two
+ * numbers `calculatePortfolioSummary` already produces, not a new
+ * formula, scoring system, or numeric boundary. If the "before" summary
+ * is itself unreadable (should not occur in practice — the Store only
+ * holds already-valid portfolios), the change is conservatively treated
+ * as risk-increasing rather than silently skipping confirmation.
+ * Risk-increasing previews require an explicit checkbox acknowledgment
+ * before "Apply Changes" becomes enabled, on top of the preview hard
+ * gate every change already has (M4-007/M4-008); non-risk-increasing
+ * previews are unaffected, unchanged from Batch 4.
  *
  * **"Price source" (M4-007) / "Price" (M4-008) — read-only, not
  * editable inputs.** No live price/rate source exists anywhere in this
@@ -147,6 +201,35 @@ function formatPercent(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(
     value,
   );
+}
+
+/**
+ * "Risk-increasing" — see this file's own M4-009 header note for the
+ * full reasoning. A strict Health Factor decrease, nothing more.
+ */
+function isRiskIncreasing(
+  before: ServiceResult<PortfolioSummary>,
+  after: PortfolioSummary,
+): boolean {
+  if (!before.ok) return true;
+  return after.healthFactor < before.data.healthFactor;
+}
+
+/**
+ * Whether "Apply Changes" may be clicked — unchanged from Batch 4 for
+ * the `preview === null`/`!preview.ok` cases (no preview yet, or an
+ * invalid one still gets a chance to surface the Store's own validation
+ * failure); new for M4-009: a valid, risk-increasing preview also needs
+ * `riskAcknowledged`.
+ */
+function canApply(
+  preview: ServiceResult<PortfolioSummary> | null,
+  beforeSummary: ServiceResult<PortfolioSummary>,
+  riskAcknowledged: boolean,
+): boolean {
+  if (preview === null) return false;
+  if (!preview.ok) return true;
+  return !isRiskIncreasing(beforeSummary, preview.data) || riskAcknowledged;
 }
 
 type PortfolioDetailsFormValues = z.input<typeof portfolioDetailsSchema>;
@@ -275,12 +358,20 @@ function PortfolioDetailsForm({
   );
 }
 
+function formatLiquidationPrice(summary: PortfolioSummary): string {
+  return summary.liquidation === null ? 'N/A (no debt)' : formatCurrency(summary.liquidation.price);
+}
+
 function PreviewDiff({
   before,
   after,
+  riskAcknowledged,
+  onRiskAcknowledgedChange,
 }: {
   before: ServiceResult<PortfolioSummary>;
   after: ServiceResult<PortfolioSummary>;
+  riskAcknowledged: boolean;
+  onRiskAcknowledgedChange: (checked: boolean) => void;
 }) {
   if (!after.ok) {
     return (
@@ -289,24 +380,57 @@ function PreviewDiff({
       </p>
     );
   }
+
+  const riskIncreasing = isRiskIncreasing(before, after.data);
+
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-      <dt className="text-muted-foreground">Net Equity</dt>
-      <dd>
-        {before.ok ? formatCurrency(before.data.netEquity) : '—'} →{' '}
-        {formatCurrency(after.data.netEquity)}
-      </dd>
-      <dt className="text-muted-foreground">Health Factor</dt>
-      <dd>
-        {before.ok ? formatHealthFactor(before.data.healthFactor) : '—'} →{' '}
-        {formatHealthFactor(after.data.healthFactor)}
-      </dd>
-      <dt className="text-muted-foreground">Loan-to-Value</dt>
-      <dd>
-        {before.ok ? formatPercent(before.data.loanToValue) : '—'} →{' '}
-        {formatPercent(after.data.loanToValue)}
-      </dd>
-    </dl>
+    <div className="flex flex-col gap-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <dt className="text-muted-foreground">Net Equity</dt>
+        <dd>
+          {before.ok ? formatCurrency(before.data.netEquity) : '—'} →{' '}
+          {formatCurrency(after.data.netEquity)}
+        </dd>
+        <dt className="text-muted-foreground">Health Factor</dt>
+        <dd>
+          {before.ok ? formatHealthFactor(before.data.healthFactor) : '—'} →{' '}
+          {formatHealthFactor(after.data.healthFactor)}
+        </dd>
+        <dt className="text-muted-foreground">Loan-to-Value</dt>
+        <dd>
+          {before.ok ? formatPercent(before.data.loanToValue) : '—'} →{' '}
+          {formatPercent(after.data.loanToValue)}
+        </dd>
+        <dt className="text-muted-foreground">Liquidation Price</dt>
+        <dd>
+          {before.ok ? formatLiquidationPrice(before.data) : '—'} →{' '}
+          {formatLiquidationPrice(after.data)}
+        </dd>
+      </dl>
+
+      {after.warnings.length > 0 && (
+        <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          {after.warnings.map((warning) => (
+            <li key={warning.code}>⚠ {warning.message}</li>
+          ))}
+        </ul>
+      )}
+
+      {riskIncreasing && (
+        <label className="flex items-start gap-2 text-xs text-destructive">
+          <input
+            type="checkbox"
+            checked={riskAcknowledged}
+            onChange={(event) => onRiskAcknowledgedChange(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            This change lowers your Health Factor. I understand the increased risk and want to
+            proceed.
+          </span>
+        </label>
+      )}
+    </div>
   );
 }
 
@@ -323,6 +447,7 @@ function CollateralPositionForm({
 }) {
   const update = usePortfolioStore((state) => state.update);
   const [preview, setPreview] = useState<ServiceResult<PortfolioSummary> | null>(null);
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
   const {
     register,
@@ -341,7 +466,10 @@ function CollateralPositionForm({
   });
 
   useEffect(() => {
-    const subscription = watch(() => setPreview(null));
+    const subscription = watch(() => {
+      setPreview(null);
+      setRiskAcknowledged(false);
+    });
     return () => subscription.unsubscribe();
   }, [watch]);
 
@@ -350,10 +478,11 @@ function CollateralPositionForm({
   });
 
   const onApply = handleSubmit((data) => {
-    if (preview === null) return;
+    if (!canApply(preview, beforeSummary, riskAcknowledged)) return;
     const result = update(portfolioId, data);
     if (result.ok) {
       setPreview(null);
+      setRiskAcknowledged(false);
       reset({ collateral: data.collateral, market: data.market, protocol: data.protocol });
     }
   });
@@ -433,14 +562,21 @@ function CollateralPositionForm({
         <button
           type="button"
           onClick={onApply}
-          disabled={preview === null}
+          disabled={!canApply(preview, beforeSummary, riskAcknowledged)}
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           Apply Changes
         </button>
       </div>
 
-      {preview && <PreviewDiff before={beforeSummary} after={preview} />}
+      {preview && (
+        <PreviewDiff
+          before={beforeSummary}
+          after={preview}
+          riskAcknowledged={riskAcknowledged}
+          onRiskAcknowledgedChange={setRiskAcknowledged}
+        />
+      )}
     </form>
   );
 }
@@ -458,6 +594,7 @@ function DebtPositionForm({
 }) {
   const update = usePortfolioStore((state) => state.update);
   const [preview, setPreview] = useState<ServiceResult<PortfolioSummary> | null>(null);
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
   const {
     register,
@@ -475,7 +612,10 @@ function DebtPositionForm({
   });
 
   useEffect(() => {
-    const subscription = watch(() => setPreview(null));
+    const subscription = watch(() => {
+      setPreview(null);
+      setRiskAcknowledged(false);
+    });
     return () => subscription.unsubscribe();
   }, [watch]);
 
@@ -484,10 +624,11 @@ function DebtPositionForm({
   });
 
   const onApply = handleSubmit((data) => {
-    if (preview === null) return;
+    if (!canApply(preview, beforeSummary, riskAcknowledged)) return;
     const result = update(portfolioId, data);
     if (result.ok) {
       setPreview(null);
+      setRiskAcknowledged(false);
       reset({ debt: data.debt, protocol: data.protocol });
     }
   });
@@ -560,14 +701,21 @@ function DebtPositionForm({
         <button
           type="button"
           onClick={onApply}
-          disabled={preview === null}
+          disabled={!canApply(preview, beforeSummary, riskAcknowledged)}
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           Apply Changes
         </button>
       </div>
 
-      {preview && <PreviewDiff before={beforeSummary} after={preview} />}
+      {preview && (
+        <PreviewDiff
+          before={beforeSummary}
+          after={preview}
+          riskAcknowledged={riskAcknowledged}
+          onRiskAcknowledgedChange={setRiskAcknowledged}
+        />
+      )}
     </form>
   );
 }
