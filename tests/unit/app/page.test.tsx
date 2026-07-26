@@ -65,6 +65,21 @@ describe('DashboardPage — valid portfolio (M5-003 pipeline)', () => {
     expect(screen.getByText('$80,000.00')).toBeInTheDocument();
     expect(screen.getByText('Health Factor')).toBeInTheDocument();
   });
+
+  it('renders the Summary Header (M5-004) with a Refresh action and an Edit Portfolio link', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit Portfolio' })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
+    expect(screen.getByText(/Storage: Saved/)).toBeInTheDocument();
+  });
 });
 
 describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => {
@@ -97,5 +112,18 @@ describe('DashboardPage — calculation failure', () => {
     expect(
       screen.getByRole('link', { name: 'Return to Portfolio to fix the underlying data' }),
     ).toHaveAttribute('href', '/portfolio');
+  });
+
+  it('still shows the Summary Header — identity is not gated on calculation success (M5-004)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('My Portfolio')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 });

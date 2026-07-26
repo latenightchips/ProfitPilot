@@ -12,6 +12,8 @@
  * Conflict #6 interpretation: Health Factor at 2 decimals) so a number
  * reads the same on the Dashboard as it does on the Portfolio page.
  */
+import type { PortfolioSaveStatus } from '@/stores/portfolioStore';
+
 export function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
@@ -53,4 +55,27 @@ export function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
+}
+
+/**
+ * M5-004's "Storage status" Display item — same wording
+ * `app/portfolio/page.tsx`'s own `formatSaveStatus` uses (M4-013:
+ * Conflict B, an in-memory Store, not a durable save), added here rather
+ * than imported since that function is not exported from its page file
+ * (this project's established per-page/per-feature convention — see this
+ * file's own header comment).
+ */
+export function formatSaveStatus(status: PortfolioSaveStatus): string {
+  switch (status) {
+    case 'idle':
+      return 'No changes yet';
+    case 'saving':
+      return 'Saving…';
+    case 'saved':
+      return 'Saved';
+    case 'error':
+      return 'Error saving';
+    case 'offline':
+      return 'Offline';
+  }
 }

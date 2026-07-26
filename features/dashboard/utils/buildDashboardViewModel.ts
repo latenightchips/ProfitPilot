@@ -17,6 +17,15 @@
  *   it — `formatPercentagePoints` divides by 100 again before handing it
  *   to `Intl`'s percent formatter, rather than double-applying the ×100
  *   `formatPercent` would if used directly on an already-scaled value.
+ *
+ * **`base` (identity + freshness) is built unconditionally, before the
+ * `summaryResult.ok` check — added in Batch 2 (M5-004)**: unlike
+ * `PortfolioSummary`'s fields, market/protocol freshness and portfolio
+ * identity are derived from `Portfolio` alone (`normalizeMarketQuote`/
+ * `normalizeProtocolQuote`), never from the Engine calculation — so they
+ * remain available even when `summaryResult.ok` is `false`, letting
+ * `DashboardSummaryHeader` show "which portfolio and data source are
+ * currently active" (M5-004's own DoD) regardless of calculation status.
  */
 import {
   normalizeMarketQuote,
@@ -32,6 +41,7 @@ import type {
   DashboardMetrics,
   DashboardMetricStatus,
   DashboardViewModel,
+  DashboardViewModelBase,
 } from '../types/viewModel';
 import {
   formatCurrency,
@@ -118,13 +128,18 @@ export function buildDashboardViewModel(
   portfolio: Portfolio,
   summaryResult: ServiceResult<PortfolioSummary>,
 ): DashboardViewModel {
+  const base: DashboardViewModelBase = {
+    portfolioId: portfolio.id,
+    portfolioName: portfolio.name,
+    portfolioDescription: portfolio.description ?? null,
+    freshness: {
+      market: buildMarketFreshness(portfolio),
+      protocol: buildProtocolFreshness(portfolio),
+    },
+  };
+
   if (!summaryResult.ok) {
-    return {
-      ok: false,
-      portfolioId: portfolio.id,
-      portfolioName: portfolio.name,
-      errors: summaryResult.errors,
-    };
+    return { ...base, ok: false, errors: summaryResult.errors };
   }
 
   const summary = summaryResult.data;
@@ -202,15 +217,10 @@ export function buildDashboardViewModel(
   };
 
   return {
+    ...base,
     ok: true,
-    portfolioId: portfolio.id,
-    portfolioName: portfolio.name,
     metrics,
     warnings: summaryResult.warnings,
-    freshness: {
-      market: buildMarketFreshness(portfolio),
-      protocol: buildProtocolFreshness(portfolio),
-    },
     calculationTimestamp: summaryResult.metadata.calculationTimestamp,
     formattedCalculationTimestamp: formatDateTime(summaryResult.metadata.calculationTimestamp),
   };

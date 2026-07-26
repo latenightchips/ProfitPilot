@@ -134,4 +134,39 @@ describe('buildDashboardViewModel — calculation failure (M4-017 precedent)', (
     expect(viewModel.portfolioName).toBe('My Portfolio');
     expect(viewModel.errors.length).toBeGreaterThan(0);
   });
+
+  it('still populates identity and freshness (Batch 2, M5-004) even though the calculation itself failed', () => {
+    const portfolio = createPortfolio({
+      collateral: { asset: 'BTC', quantity: 0 },
+      debt: { asset: 'USDC', balance: 20000 },
+    });
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.portfolioId).toBe(portfolio.id);
+    expect(viewModel.freshness.market).not.toBeNull();
+    expect(viewModel.freshness.market?.origin).toBe('manual');
+    expect(viewModel.freshness.protocol).not.toBeNull();
+  });
+});
+
+describe('buildDashboardViewModel — portfolio description (M5-004)', () => {
+  it('carries an explicit description through as-is', () => {
+    const portfolio = createPortfolio({ description: 'Core BTC-backed loan' });
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.portfolioDescription).toBe('Core BTC-backed loan');
+  });
+
+  it('reports null, not a fabricated placeholder, when no description was set', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.portfolioDescription).toBeNull();
+  });
 });

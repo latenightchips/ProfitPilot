@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
-import { buildDashboardViewModel } from '@/features/dashboard';
+import { buildDashboardViewModel, DashboardSummaryHeader } from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -13,20 +13,20 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `/` (03_UI.md: the Dashboard is the default landing page, answering
  * "Am I safe?" among its five objective questions).
  *
- * **Batch scope — Dashboard Foundation only (M5-001–M5-003), per
- * 06_TASKS.md's own "IMPLEMENTATION ORDER"**: "Dashboard Foundation →
- * Summary Header → KPI Metrics → Risk Sections → Portfolio Composition →
- * Recommendations → Responsive and Accessible States → Testing." This
- * batch renders every documented portfolio state for real (no
- * placeholder text) using `buildDashboardViewModel` (M5-003), but the
- * actual Summary Header (M5-004), Shared KPI Card component (M5-005) and
- * Core KPI Grid (M5-006), Health Factor/Liquidation Risk sections
- * (M5-007–M5-010), Portfolio Composition (M5-011), Recommendation Summary
- * (M5-015), and full Dashboard Error Recovery (M5-021) are each later,
- * separate, dependency-gated tasks — not built here. The metrics list
- * below is a plain, real (live-data) list proving the
- * Store → Service → View Model → render pipeline end-to-end, not a
- * preview of the eventual KPI grid's visual design.
+ * **Batch scope — Dashboard Foundation (M5-001–M5-003, Batch 1) +
+ * Summary Header (M5-004, Batch 2), per 06_TASKS.md's own
+ * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header → KPI
+ * Metrics → Risk Sections → Portfolio Composition → Recommendations →
+ * Responsive and Accessible States → Testing." `DashboardSummaryHeader`
+ * (`features/dashboard/components/`) is this batch's addition; the
+ * Shared KPI Card component (M5-005) and Core KPI Grid (M5-006),
+ * Health Factor/Liquidation Risk sections (M5-007–M5-010), Portfolio
+ * Composition (M5-011), Recommendation Summary (M5-015), and full
+ * Dashboard Error Recovery (M5-021) are each later, separate,
+ * dependency-gated tasks — not built here. The plain metrics list below
+ * (unchanged since Batch 1) remains a real-data proof of the
+ * Store → Service → View Model → render pipeline, not a preview of the
+ * eventual KPI grid's visual design.
  *
  * **Loading state**: calls `load()` on mount, mirroring
  * `app/portfolios/page.tsx`'s own M4-004 pattern exactly. Per Conflict B
@@ -41,6 +41,14 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * choice ("No portfolio is currently selected." + a link), not a hard
  * redirect. Consistency across both routes for the same underlying
  * condition, not a new decision.
+ *
+ * **`DashboardSummaryHeader` renders above the ok/error branch**, using
+ * only `DashboardViewModel`'s base fields (identity + freshness), which
+ * — unlike the metrics/warnings below — do not depend on
+ * `calculatePortfolioSummary` succeeding (see
+ * `features/dashboard/types/viewModel.ts`'s own `DashboardViewModelBase`
+ * comment). This means a calculation failure still shows which portfolio
+ * and price data are active, not just an error message.
  *
  * **Error state**: `buildDashboardViewModel` can return `{ ok: false }`
  * (`calculatePortfolioSummary` genuinely fails for certain Zod-valid
@@ -92,43 +100,48 @@ export default function DashboardPage() {
           </Link>
           .
         </p>
-      ) : viewModel.ok === false ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
-          <p className="font-medium text-destructive">
-            Unable to calculate a summary for {viewModel.portfolioName}.
-          </p>
-          {viewModel.errors.map((error) => (
-            <p key={error.code} className="mt-1 text-destructive">
-              {error.message}
-            </p>
-          ))}
-          <Link href="/portfolio" className="mt-2 inline-block underline">
-            Return to Portfolio to fix the underlying data
-          </Link>
-        </div>
       ) : (
-        <div key={activePortfolioId} className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium text-foreground">{viewModel.portfolioName}</h2>
-          <p className="text-xs text-muted-foreground">
-            Calculated {viewModel.formattedCalculationTimestamp}
-          </p>
+        <div key={activePortfolioId} className="flex flex-col gap-6">
+          <DashboardSummaryHeader viewModel={viewModel} />
 
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.values(viewModel.metrics).map((item) => (
-              <div key={item.label} className="flex flex-col">
-                <dt className="text-xs text-muted-foreground">{item.label}</dt>
-                <dd className="text-base font-medium text-foreground">{item.formattedValue}</dd>
-              </div>
-            ))}
-          </dl>
-
-          {viewModel.warnings.length > 0 && (
-            <div className="rounded-md border border-border bg-accent/20 p-3 text-sm">
-              {viewModel.warnings.map((warning) => (
-                <p key={warning.code} className="text-muted-foreground">
-                  {warning.message}
+          {viewModel.ok === false ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
+              <p className="font-medium text-destructive">
+                Unable to calculate a summary for {viewModel.portfolioName}.
+              </p>
+              {viewModel.errors.map((error) => (
+                <p key={error.code} className="mt-1 text-destructive">
+                  {error.message}
                 </p>
               ))}
+              <Link href="/portfolio" className="mt-2 inline-block underline">
+                Return to Portfolio to fix the underlying data
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <p className="text-xs text-muted-foreground">
+                Calculated {viewModel.formattedCalculationTimestamp}
+              </p>
+
+              <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.values(viewModel.metrics).map((item) => (
+                  <div key={item.label} className="flex flex-col">
+                    <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                    <dd className="text-base font-medium text-foreground">{item.formattedValue}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {viewModel.warnings.length > 0 && (
+                <div className="rounded-md border border-border bg-accent/20 p-3 text-sm">
+                  {viewModel.warnings.map((warning) => (
+                    <p key={warning.code} className="text-muted-foreground">
+                      {warning.message}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

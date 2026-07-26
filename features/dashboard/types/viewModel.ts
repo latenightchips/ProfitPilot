@@ -91,21 +91,36 @@ export interface DashboardFreshness {
   protocol: DashboardProtocolFreshness | null;
 }
 
-export interface DashboardViewModelOk {
-  ok: true;
+/**
+ * Fields available regardless of whether `calculatePortfolioSummary`
+ * succeeded — added in Batch 2 (M5-004, "Implement Dashboard Summary
+ * Header"). Identity and price/protocol freshness are read directly off
+ * `Portfolio` via `normalizeMarketQuote`/`normalizeProtocolQuote`, never
+ * off `PortfolioSummary` — computing them does not depend on the Engine
+ * calculation succeeding, so a Summary Header can honestly show "which
+ * portfolio and data source are currently active" (M5-004's own DoD)
+ * even when the deeper calculation has failed. `DashboardMetrics`/
+ * `warnings`/`calculationTimestamp` remain in the `ok`-only branch below,
+ * since those genuinely do not exist without a successful calculation.
+ */
+export interface DashboardViewModelBase {
   portfolioId: string;
   portfolioName: string;
+  /** `Portfolio.description` is optional — `null` when unset, never a fabricated placeholder string. */
+  portfolioDescription: string | null;
+  freshness: DashboardFreshness;
+}
+
+export interface DashboardViewModelOk extends DashboardViewModelBase {
+  ok: true;
   metrics: DashboardMetrics;
   warnings: DashboardWarning[];
-  freshness: DashboardFreshness;
   calculationTimestamp: string;
   formattedCalculationTimestamp: string;
 }
 
-export interface DashboardViewModelError {
+export interface DashboardViewModelError extends DashboardViewModelBase {
   ok: false;
-  portfolioId: string;
-  portfolioName: string;
   errors: ApplicationError[];
 }
 

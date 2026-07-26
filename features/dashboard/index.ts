@@ -6,13 +6,14 @@
  * import from here, not reach into `features/dashboard/*` subpaths
  * directly.
  *
- * `components/`, `hooks/`, and `services/` remain empty (each holding
- * only a `.gitkeep`) until the Dashboard tasks that need them — M5-004
- * onward for components, M5-018 (Refresh Workflow) for a hook/service —
- * are actually implemented; the directory skeleton exists now so those
- * later batches only add files, not restructure, mirroring M1-003's own
- * precedent for the top-level directory layout.
+ * `hooks/` and `services/` remain empty (each holding only a
+ * `.gitkeep`) until the Dashboard tasks that need them — M5-018 (Refresh
+ * Workflow) — are actually implemented; the directory skeleton exists
+ * now so that later batch only adds files, not restructures, mirroring
+ * M1-003's own precedent for the top-level directory layout.
+ * `components/` gained its first real file in Batch 2 (M5-004).
  */
+export * from './components/DashboardSummaryHeader';
 export * from './types/viewModel';
 export * from './utils/buildDashboardViewModel';
 export * from './utils/format';
