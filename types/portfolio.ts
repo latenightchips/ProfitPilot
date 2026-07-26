@@ -76,11 +76,28 @@ export interface PortfolioSettings {
   safetyTargets?: PortfolioSafetyTargets;
 }
 
+/**
+ * 01_PRD.md "PRICING PROVIDER" (REQ-010) "Supported Assets" is the only
+ * concrete stablecoin list anywhere in the documentation — see
+ * `types/portfolio.schema.ts`'s own header comment for the full
+ * reasoning. Defined here (not in the schema file) so `Portfolio.debt`
+ * can be honestly narrower than the Engine's own generic
+ * `DebtPosition.asset: string` (Version 0.1 supports any stablecoin
+ * string at the Engine layer, but M4-002's validation — and therefore
+ * every `debt.asset` a `Portfolio` in this Store can actually hold —
+ * narrows it to these three); `portfolio.schema.ts`'s `debtPositionSchema`
+ * imports this same constant rather than defining a second copy.
+ */
+export const SUPPORTED_DEBT_ASSETS = ['USDC', 'USDT', 'DAI'] as const;
+
+export type SupportedDebtAsset = (typeof SUPPORTED_DEBT_ASSETS)[number];
+
 export interface Portfolio extends ApplicationPortfolio {
   id: string;
   name: string;
   description?: string;
   baseCurrency: string;
+  debt: { asset: SupportedDebtAsset; balance: number };
   settings: PortfolioSettings;
   /** `null` unless archived — see this file's header comment. */
   archivedAt: string | null;

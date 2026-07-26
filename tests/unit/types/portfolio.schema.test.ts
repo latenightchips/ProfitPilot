@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collateralManagementSchema,
   collateralPositionSchema,
+  debtManagementSchema,
   debtPositionSchema,
   portfolioDetailsSchema,
   portfolioInputSchema,
@@ -217,5 +219,90 @@ describe('portfolioDetailsSchema (M4-006)', () => {
       settings: {},
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('collateralManagementSchema (M4-007)', () => {
+  const validProtocol = {
+    maxLoanToValue: 0.75,
+    liquidationThreshold: 0.8,
+    borrowApr: 0.05,
+    supplyApr: 0.02,
+  };
+
+  it('accepts a valid collateral + market + protocol payload', () => {
+    const result = collateralManagementSchema.safeParse({
+      collateral: { asset: 'BTC', quantity: 2 },
+      market: { btcPriceUsd: 50000 },
+      protocol: validProtocol,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('is structurally incapable of accepting a debt field', () => {
+    const result = collateralManagementSchema.safeParse({
+      collateral: { asset: 'BTC', quantity: 2 },
+      market: { btcPriceUsd: 50000 },
+      protocol: validProtocol,
+      debt: { asset: 'USDC', balance: 999 },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect('debt' in result.data).toBe(false);
+  });
+
+  it('still enforces the protocol invariant (maxLoanToValue <= liquidationThreshold)', () => {
+    const result = collateralManagementSchema.safeParse({
+      collateral: { asset: 'BTC', quantity: 2 },
+      market: { btcPriceUsd: 50000 },
+      protocol: { ...validProtocol, maxLoanToValue: 0.9 },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('debtManagementSchema (M4-008)', () => {
+  const validProtocol = {
+    maxLoanToValue: 0.75,
+    liquidationThreshold: 0.8,
+    borrowApr: 0.05,
+    supplyApr: 0.02,
+  };
+
+  it('accepts a valid debt + protocol payload', () => {
+    const result = debtManagementSchema.safeParse({
+      debt: { asset: 'USDC', balance: 20000 },
+      protocol: validProtocol,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a zero balance (M4-008: support zero-debt portfolios)', () => {
+    const result = debtManagementSchema.safeParse({
+      debt: { asset: 'USDC', balance: 0 },
+      protocol: validProtocol,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a negative balance (M4-008: validate non-negative debt)', () => {
+    const result = debtManagementSchema.safeParse({
+      debt: { asset: 'USDC', balance: -1 },
+      protocol: validProtocol,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('is structurally incapable of accepting collateral/market fields', () => {
+    const result = debtManagementSchema.safeParse({
+      debt: { asset: 'USDC', balance: 20000 },
+      protocol: validProtocol,
+      collateral: { asset: 'BTC', quantity: 999 },
+      market: { btcPriceUsd: 1 },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect('collateral' in result.data).toBe(false);
+    expect('market' in result.data).toBe(false);
   });
 });

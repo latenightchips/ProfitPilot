@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), and Batch 2 (M4-004, M4-010, M4-016) are synchronized to GitHub; Batch 3 (M4-005, M4-006) is implemented and awaiting approval; M4-007 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), and Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction) are synchronized to GitHub; Batch 4 (M4-007, M4-008) is implemented and awaiting approval; M4-009 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3185,6 +3185,155 @@ silently decided.
 
 ---
 
+### Batch 4 — Collateral Position Management + Debt Position Management (M4-007, M4-008)
+
+Adds two new sections to `/portfolio` (M4-006's existing Details Form
+page), alongside it — 03_UI.md's own "PORTFOLIO PAGE" section lists
+"Collateral" and "Debt" as content areas of the same page, not separate
+routes.
+
+**Conflict A reaffirmed**: "add, edit, and remove positions" is the one
+collateral slot's and one debt slot's lifecycle (set from zero, change,
+clear back to zero), not an array. "Prevent duplicate invalid positions"
+is structurally satisfied by the same single-slot model.
+
+**Preview mechanism — deliberately not `previewPortfolioAction`
+(M3-006)**: that Service's `PortfolioAction` union changes exactly one
+field per call. These forms let a user edit a position field and its
+related protocol field(s) together in one preview (e.g., quantity and
+Liquidation threshold at once) — no single `PortfolioAction` variant
+represents that combination. Rather than force an artificial
+one-field-at-a-time flow the task text doesn't ask for, both forms
+compose the same "snapshot, apply change, snapshot again" pattern
+`previewPortfolioAction` itself uses, directly via
+`calculatePortfolioSummary` (M3-005) — still Service-delegated
+calculation, just without the single-action constraint.
+
+**Preview is a hard gate, not just a display**: `watch()` clears any
+existing preview the instant a field changes, and "Apply Changes" is
+disabled whenever no preview exists — a stale preview can never be
+applied silently. This is the concrete mechanism behind "Preview effects
+before destructive changes" (M4-007) / "Preview Health Factor impact"
+(M4-008): every change is previewed before it can be applied, not only
+ones a later task might classify as risk-increasing. Classifying _which_
+changes are "risk-increasing" specifically is M4-009's own task
+(Portfolio Action Preview), not built here.
+
+**New finding — conflict #25: M4-008 names "Price" and "Rate type" as
+debt fields with no counterpart anywhere in the actual data model.**
+`calculateDebtValue` (F-003)'s own equation is "Debt Value = Borrowed
+Stablecoins" — a hard 1:1 USD peg with no price parameter accepted
+anywhere in the Engine. "Rate type" (Fixed/Variable or any other domain)
+has zero definition anywhere in the documentation, and the Engine work
+that would naturally house a fixed-vs-variable distinction
+(M2-013/M2-014, "Variable Rate Projection") was formally blocked and
+never implemented (conflict #7) — there is nothing for a "Rate type"
+control to affect even if built. Resolved conservatively: "Price" is
+shown as read-only informational text stating the 1:1 peg assumption
+(a real, textually-grounded fact, not a fabricated editable field);
+"Rate type" is not rendered at all (no grounded value exists to display,
+unlike "Price"). "Price source" (M4-007's analogous field) is
+similarly read-only ("Manual") — no live price source has ever been
+built (the same unbuilt `PriceProvider` infrastructure-layer gap found
+repeatedly since Milestone 3).
+
+**"Manual price" (M4-007) writes to `portfolio.market.btcPriceUsd`**,
+the same field M4-005 calls "Manual BTC price" — a basic editable input
+here; the fuller manual-price UX (timestamp, reset, stale-data warning)
+is M4-014's own, later, dedicated task. **"Maximum LTV"/"Liquidation
+threshold" (M4-007) and "Borrow rate" (M4-008) write to
+`portfolio.protocol`** (portfolio-level, not per-position) — each form
+edits only its own named field(s), carrying the other, untouched
+protocol fields through via hidden inputs so a complete, valid
+`ProtocolParameters` object is always submitted. The fuller "preset
+selection"/"freshness status" UX is M4-015's own, later, dedicated task.
+
+**Type correction**: `Portfolio.debt.asset` was inherited as the
+Engine's generic `DebtPosition.asset: string` (via `ApplicationPortfolio`),
+but every `debt.asset` a `Portfolio` in this Store can actually hold is
+already narrowed to `'USDC' | 'USDT' | 'DAI'` by M4-002's own
+`debtPositionSchema`. Narrowed `Portfolio.debt` directly in
+`types/portfolio.ts` (exporting `SUPPORTED_DEBT_ASSETS`/
+`SupportedDebtAsset` as the one source of truth; `portfolio.schema.ts`'s
+`debtPositionSchema` now imports and reuses it rather than keeping its
+own separate copy) instead of type-casting at each call site — a more
+honest, structurally-enforced type, not a workaround.
+
+**Real bug found and fixed while writing tests — inline field errors
+inside a wrapping `<label>` pollute the computed accessible name.**
+Every form built in M4-005/M4-006/M4-007/M4-008 rendered its
+`{errors.field && <span>...}</span>` _inside_ the same `<label>` that
+wrapped the field's own `<input>`. The instant an error renders, the
+label's computed accessible name becomes the concatenation of every
+text node inside it — "Debt amount" _and_ the error message together —
+so `getByLabelText('Debt amount')` (and a real screen reader) can no
+longer resolve the field by its intended name. Caught by a test
+(`Unable to find a label with the text of: Debt amount`, immediately
+after a transient invalid-input state), reproduced in isolation, and
+traced to this exact cause rather than worked around. Fixed by moving
+every inline field-error `<span>` to be a _sibling_ immediately after
+its `<label>` closes, not a child of it — applied consistently across
+all four forms in both `app/portfolio/page.tsx` and
+`app/portfolios/new/page.tsx` (not just the two new sections this batch
+added), since the same latent defect existed in M4-005/M4-006's
+already-shipped markup too. A pre-existing test
+(`does not auto-save an invalid edit...`) that checked
+`label.querySelector('.text-destructive')` was updated to check
+`label.nextElementSibling` instead, matching the corrected DOM shape.
+
+**Test files**: `tests/unit/types/portfolio.schema.test.ts` (+15 tests
+for `collateralManagementSchema`/`debtManagementSchema`),
+`tests/unit/app/portfolio/page.test.tsx` (+11 tests: both forms' field
+lists prefilled correctly, the "Rate type" omission, the preview/apply
+hard-gate behavior for both forms, stale-preview invalidation, invalid
+previews staying blocked, and a dedicated debt-to-zero test confirming
+conflict #20 stays reachable through this real UI with a finite,
+correctly-rendered summary).
+
+**Browser verification**: started the dev server and drove the full
+flow with Playwright/Chromium — created a portfolio, changed collateral
+quantity from 2 to 3 BTC, previewed (Net Equity $130,000.00 →
+$150,000.00), applied; then repaid debt to exactly zero on the same
+portfolio, previewed (Health Factor "6 → ∞", Loan-to-Value "13.33% →
+0%" — Conflict #20's fix rendering correctly end-to-end through real
+UI), and applied. Zero console/page errors throughout. Screenshot taken
+of the full assembled `/portfolio` page.
+
+**Scope discipline**: only M4-007 and M4-008 were implemented (plus the
+label-error fix, which touched already-shipped M4-005/M4-006 markup to
+correct a genuine, newly-discovered defect — not scope creep into a
+later task). No M4-009+ work was started. `engine/`, `services/`,
+`stores/` are completely untouched (`git diff --stat -- engine/
+services/ stores/` empty).
+
+**Validation — Batch 4**
+
+| Command              | Result                                                                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass (after narrowing `Portfolio.debt`'s asset type, see above)                                                                                                                                                                                                              |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                         |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                         |
+| `pnpm test`          | ✅ Pass, 810/810 (16 net new)                                                                                                                                                                                                                                                   |
+| `pnpm test:coverage` | ✅ 94.91% statements / 88.02% branches / 100% functions / 98.42% lines (project-wide). `app/portfolio/page.tsx`: 94.59%/71.42%/100%/98.33% — branch gaps are the same repetitive per-field hidden-input/error-rendering pattern already accepted in this project's other forms. |
+| `pnpm build`         | ✅ Pass — `/portfolio`'s bundle grew from 1.24 kB to 2.6 kB, confirming real new content                                                                                                                                                                                        |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ stores/`
+empty. No Service file imports from `@/app` or `@/components`. No
+`fetch`/`axios`/`XMLHttpRequest`/`process.env`/`infrastructure/`
+reference in any new/modified file. `app/portfolio/page.tsx` imports
+`calculatePortfolioSummary`/`PortfolioSummary`/`ServiceResult` from
+`@/services` directly (for the preview mechanism) and
+`usePortfolioStore` from `@/stores/portfolioStore` — the allowed UI →
+Store/Services direction, nothing reversed.
+
+**Traceability**: M4-007's "Fields"/"Requirements"/DoD and M4-008's
+"Fields"/"Requirements"/DoD are each addressed field-for-field above,
+with every deviation ("Price"/"Price source" read-only, "Rate type"
+omitted, protocol fields' shared-object handling) documented rather than
+silently decided.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -3960,6 +4109,39 @@ sourced/maintained/kept current) before a preset option can be built.
 
 ---
 
+### 25. M4-008 names "Price" and "Rate type" as debt-position fields, but neither has any counterpart in the actual data model
+
+Found while implementing Milestone 4 Batch 4 (M4-008). The task's own
+"Fields" list is "Asset, Debt amount, Price, Borrow rate, Rate type" —
+mirroring M4-007's collateral fields (which do each have a real
+counterpart: quantity, price source, manual price, LTV, threshold). For
+debt, two of the five have no real counterpart anywhere:
+
+- **"Price"**: `calculateDebtValue` (F-003, `engine/portfolio/calculateDebtValue.ts`)'s
+  own equation is "Debt Value = Borrowed Stablecoins" — a hard 1:1 USD
+  peg, with no price parameter accepted by the formula at all. There is
+  nothing for an editable "Price" field to control.
+- **"Rate type"**: no value domain (Fixed/Variable, or anything else)
+  is defined anywhere in `01_PRD.md`, `02_Formulas.md`,
+  `04_BUILD_GUIDE.md`, or `06_TASKS.md`. The Engine work that would
+  naturally house a fixed-vs-variable interest distinction —
+  M2-013/M2-014, "Implement Compound Interest"/"Implement Variable Rate
+  Projection" — was formally blocked and never implemented (conflict
+  #7). There is no Engine behavior for a "Rate type" control to affect
+  even if one were built.
+
+**Resolution applied**: "Price" is rendered as read-only informational
+text stating the 1:1 peg assumption explicitly (a real, textually-cited
+fact — not an editable field with nothing behind it). "Rate type" is not
+rendered at all, since unlike "Price" there is no grounded value to
+display even informationally. Action needed: a product/engineering
+decision on whether "Price" ever needs to become real (i.e., Version 1
+supports a non-pegged or multi-stablecoin debt model, which would be an
+Engine-level change to F-003 itself) and what "Rate type" is even
+supposed to mean, before either can move past being a documented gap.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -4008,50 +4190,64 @@ sourced/maintained/kept current) before a preset option can be built.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 3
-   (M4-005, M4-006) before committing, per instruction. Do not begin
-   M4-007 until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 4
+   (M4-007, M4-008) before committing, per instruction. Do not begin
+   M4-009 until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   3**:
-   - **Conflict A (positions)**: applied again — both forms collect a
-     single `collateral`/`debt` object each, never an array.
-   - **Conflict B (persistence timing)**: applied again — M4-005's
-     "saved" and M4-006's "automatic saving"/"persist" both mean
-     committed to the in-memory Store, not disk/cloud, consistent since
-     Batch 1.
-   - **Conflict C (M4-008 vs. conflict #20)**: unaffected by this batch;
-     remains resolved (Batch 0).
-4. Once Batch 3 is approved and committed, the next batch is **Batch 4
-   (M4-007, M4-008)** — Collateral Position Management and Debt Position
-   Management — per the approved plan's batch order. This batch depends
-   on conflict #20 being resolved (Batch 0, done) since M4-008 explicitly
-   requires "Support zero-debt portfolios."
-5. **New from Batch 3**: conflict #24 — M4-005's "Protocol parameters or
-   preset" names a preset option, but no concrete Aave V3 parameter
-   values exist anywhere in the documentation. Resolved by offering
-   manual entry only; flagged for a real product decision on what "the"
-   preset values should be and where they'd be sourced from before a
-   preset option can be built.
-6. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+   4**:
+   - **Conflict A (positions)**: reaffirmed — "add/edit/remove" is the
+     one collateral slot's and one debt slot's lifecycle, never an
+     array.
+   - **Conflict B (persistence timing)**: unaffected by this batch's own
+     scope (these forms use an explicit preview+apply flow, not
+     auto-save, so Conflict B's auto-save framing doesn't directly apply
+     here — "Apply" still only commits to the in-memory Store).
+   - **Conflict C (M4-008 vs. conflict #20)**: **now proven reachable
+     end-to-end through real UI**, not just Service/Store-layer tests —
+     this batch's browser verification repaid a live portfolio's debt to
+     zero through the Debt Position Management form and confirmed the
+     Health Factor preview renders "∞" correctly.
+4. Once Batch 4 is approved and committed, the next batch is **Batch 5
+   (M4-009)** — Portfolio Action Preview — per the approved plan's batch
+   order. Note: this batch's own preview mechanism already satisfies
+   M4-007/M4-008's "preview before applying" Requirements directly via
+   `calculatePortfolioSummary`; M4-009's own scope (classifying which
+   changes are "risk-increasing" and requiring confirmation specifically
+   for those) is still meaningfully separate work, not already done.
+5. **New from Batch 4**: conflict #25 — M4-008 names "Price" and "Rate
+   type" as debt fields with no counterpart anywhere in the data model
+   (`calculateDebtValue`'s hard 1:1 peg; no rate-type concept exists,
+   and the Engine work that would house one, M2-013/M2-014, was formally
+   blocked per conflict #7). "Price" shown as read-only informational
+   text; "Rate type" not rendered at all.
+6. **Real bug found and fixed this batch, affecting all four forms
+   built so far**: inline field-error `<span>` elements rendered inside
+   their wrapping `<label>` polluted the label's computed accessible
+   name once an error appeared — breaking both `getByLabelText` queries
+   and real screen-reader semantics. Fixed by moving every error span to
+   be a sibling after `</label>`, not a child of it, across
+   `app/portfolio/page.tsx` and `app/portfolios/new/page.tsx` in full
+   (not just this batch's own two new sections).
+7. **From Batch 3, still open**: conflict #24 — M4-005's "Protocol
+   parameters or preset" names a preset option with no concrete values
+   anywhere in the documentation. Resolved by offering manual entry
+   only.
+8. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
    primary pages" inventory has no room for a Portfolio List page.
    Resolved by keeping `/portfolios` out of the sidebar, reachable only
    via the `AppHeader` switcher.
-7. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+9. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
    names it as a required field with no defined shape anywhere. Resolved
-   conservatively (safety-targets-only) in both M4-001's type and this
-   batch's M4-006 form (which correctly renders no "Default display
-   settings" fields, since none are defined) — still flagged for a real
+   conservatively (safety-targets-only) — still flagged for a real
    decision.
-8. **Conflict #20 remains resolved** (Batch 0) — no longer an open
-   item, unaffected by this batch. M4-007/M4-008 (next batch) will be
-   the first UI surface to actually let a user edit debt down to zero
-   through the interface.
-9. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
-   (conflict #21) has no persistence Service or task to attach to until
-   Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
-   Cloud Synchronization & Import/Export) is reached, not before. Directly
-   relevant to Conflict B above: this is the same underlying gap.
-10. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+10. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+    item. This batch is the first to prove it reachable through real UI,
+    not just tests (see point 3 above).
+11. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+    (conflict #21) has no persistence Service or task to attach to until
+    Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
+    Cloud Synchronization & Import/Export) is reached, not before.
+12. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -4064,17 +4260,18 @@ sourced/maintained/kept current) before a preset option can be built.
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-11. **Revisited in Batch 7, confirmed still open at the specification
+13. **Revisited in Batch 7, confirmed still open at the specification
     level but no longer blocking implementation**: swap-fees/slippage/
     gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
     mechanics (conflict #10), and F-040's exit-collateral-sale
     discrepancy (conflict #13, a known, tested approximation).
-12. **From Milestone 3/4, still open**: "Source status"'s undefined
+14. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 9 above), "Settings"'s
-    undefined shape (conflict #22 — point 7 above), the Portfolio List
+    persistence-adapter gap (conflict #21 — point 11 above), "Settings"'s
+    undefined shape (conflict #22 — point 9 above), the Portfolio List
     page's missing place in 03_UI.md's page inventory (conflict #23 —
-    point 6 above), and the missing protocol-preset values (conflict #24
-    — point 5 above). Conflict #20 (resolved Batch 0) is not counted.
-    **23 open conflicts remain (24 total raised, minus #20, resolved).**
+    point 8 above), the missing protocol-preset values (conflict #24 —
+    point 7 above), and the debt "Price"/"Rate type" gap (conflict #25 —
+    point 5 above). Conflict #20 (resolved Batch 0) is not counted.
+    **24 open conflicts remain (25 total raised, minus #20, resolved).**

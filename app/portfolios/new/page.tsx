@@ -113,18 +113,18 @@ export default function NewPortfolioPage() {
               {...register('name')}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
-            {errors.name && <span className="text-xs text-destructive">{errors.name.message}</span>}
           </label>
+          {errors.name && <span className="text-xs text-destructive">{errors.name.message}</span>}
           <label className="flex flex-col gap-1 text-sm">
             <span>Base currency</span>
             <input
               {...register('baseCurrency')}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
-            {errors.baseCurrency && (
-              <span className="text-xs text-destructive">{errors.baseCurrency.message}</span>
-            )}
           </label>
+          {errors.baseCurrency && (
+            <span className="text-xs text-destructive">{errors.baseCurrency.message}</span>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
@@ -138,10 +138,10 @@ export default function NewPortfolioPage() {
               {...register('collateral.quantity', { valueAsNumber: true })}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
-            {errors.collateral?.quantity && (
-              <span className="text-xs text-destructive">{errors.collateral.quantity.message}</span>
-            )}
           </label>
+          {errors.collateral?.quantity && (
+            <span className="text-xs text-destructive">{errors.collateral.quantity.message}</span>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
@@ -165,10 +165,10 @@ export default function NewPortfolioPage() {
               {...register('debt.balance', { valueAsNumber: true })}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
-            {errors.debt?.balance && (
-              <span className="text-xs text-destructive">{errors.debt.balance.message}</span>
-            )}
           </label>
+          {errors.debt?.balance && (
+            <span className="text-xs text-destructive">{errors.debt.balance.message}</span>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
@@ -181,10 +181,10 @@ export default function NewPortfolioPage() {
               {...register('market.btcPriceUsd', { valueAsNumber: true })}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
-            {errors.market?.btcPriceUsd && (
-              <span className="text-xs text-destructive">{errors.market.btcPriceUsd.message}</span>
-            )}
           </label>
+          {errors.market?.btcPriceUsd && (
+            <span className="text-xs text-destructive">{errors.market.btcPriceUsd.message}</span>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
