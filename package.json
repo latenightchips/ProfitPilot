@@ -17,7 +17,7 @@
     "validate": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.5.7",
+    "@hookform/resolvers": "^5.2.2",
     "@sentry/nextjs": "^10.67.0",
     "@supabase/supabase-js": "^2.110.8",
     "@tanstack/react-table": "^8.21.3",

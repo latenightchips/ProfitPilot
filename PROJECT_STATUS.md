@@ -3014,7 +3014,7 @@ faked.
 
 ### Batch 3 — Portfolio Creation Flow + Portfolio Details Form (M4-005, M4-006)
 
-**New dependency added**: `@hookform/resolvers` (`^5.5.7`). Not
+**New dependency added**: `@hookform/resolvers` (`^5.2.2`). Not
 previously installed — only `react-hook-form` and `zod` themselves were.
 M4-006's own Requirements explicitly mandate "Use React Hook Form. Use
 Zod validation." together; `@hookform/resolvers/zod`'s `zodResolver` is
@@ -3024,7 +3024,28 @@ new infrastructure or a new framework choice. `pnpm add` briefly broke
 re-resolving the dependency tree, unrelated to the package's own
 content) — fixed with `pnpm install --force`; confirmed via `git diff
 --stat pnpm-lock.yaml` that only the new package's own entries were
-added (91 clean insertions, no unrelated package changes).
+added.
+
+**Version corrected after initial commit**: first installed at the
+then-latest `5.5.7`, which failed the project's `minimumReleaseAge`
+policy when the patch was applied outside this sandbox. Re-checked the
+package's full release history (`npm view @hookform/resolvers time`):
+`5.2.2` published 2025-09-14, then an 8-month gap with no `5.3.x` at
+all, then `5.4.0` through `5.5.7` — 10 versions — all published within
+roughly 34 hours ending just before this session's current date. That
+gap-then-burst pattern, immediately adjacent to "now," is exactly the
+kind of signal a `minimumReleaseAge` policy exists to guard against,
+independent of the stated policy failure — so the fix here is not just
+"pick an older version that satisfies a number," it's "avoid the whole
+suspicious release cluster." Repinned to `^5.2.2` (a caret range,
+matching this file's existing convention, not an exact pin — the
+`minimumReleaseAge` policy itself is what protects future `pnpm
+install`s from resolving into the cluster, not the range operator).
+Verified `5.2.2` still exposes the `./zod` subpath export this batch
+uses and satisfies the same `react-hook-form: ^7.55.0` peer requirement
+as `5.5.7` — no behavior change. Full validation pipeline re-run clean;
+`pnpm test`/`test:coverage`/`build` all identical to the original
+Batch 3 results (no source code changed, only the dependency version).
 
 **M4-005 — `app/portfolios/new/page.tsx`** (replaces Batch 2's
 scaffold): collects exactly this task's own "Collect" list via one
@@ -3140,6 +3161,13 @@ still-unbuilt routes, unchanged.
 | `pnpm test`          | ✅ Pass, 794/794 (18 net new)                                                                                                                                                                                                                                                                                                                                                                      |
 | `pnpm test:coverage` | ✅ 95.03% statements / 89.01% branches / 100% functions / 98.45% lines (project-wide). `app/portfolio/page.tsx`: 100%/83.33%/100%/100%. `app/portfolios/new/page.tsx`: 100%/66.66%/100%/100% (remaining branch gaps are the repetitive per-field `setValueAs`/error-rendering branches for individual optional fields — consistent with this project's already-accepted coverage norms elsewhere). |
 | `pnpm build`         | ✅ Pass — `/portfolio` (1.23 kB) and `/portfolios/new` (1.62 kB) both show real bundle sizes, confirming real content replaced the placeholders                                                                                                                                                                                                                                                    |
+
+**Re-validated after the `@hookform/resolvers` version correction**
+(`5.5.7` → `^5.2.2`, see above): `pnpm typecheck`/`lint`/`format:check`
+all pass clean (no hoisting regression this time); `pnpm test` —
+794/794, identical; `pnpm test:coverage` — 95.03%/89.01%/100%/98.45%,
+identical; `pnpm build` — identical bundle sizes. No source file
+changed, only `package.json`/`pnpm-lock.yaml`.
 
 **Architecture audit**: `git diff --stat -- engine/ services/ stores/`
 empty. No Service file imports from `@/app` or `@/components`. No
