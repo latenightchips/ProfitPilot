@@ -15,7 +15,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
-      include: ['engine/**', 'services/**', 'utils/**'],
+      include: ['engine/**', 'services/**', 'utils/**', 'types/**', 'stores/**'],
       exclude: ['**/*.d.ts', '**/tests/**'],
     },
   },

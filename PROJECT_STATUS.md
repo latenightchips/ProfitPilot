@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up, not an M4 task) is implemented and awaiting approval; M4-001 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up) is synchronized to GitHub; Batch 1 (M4-001, M4-002, M4-003) is implemented and awaiting approval; M4-004 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2701,6 +2701,165 @@ Milestone 4 plan approval both called for, positioned before Batch 4
 
 ---
 
+### Batch 1 — Portfolio Application Types + Validation Schemas + Portfolio Store (M4-001, M4-002, M4-003)
+
+First Milestone 4 task batch — the first app-layer code in this
+codebase (`types/`, `stores/`), built on top of the now-complete Service
+layer. Applies Conflicts A and B (approved with the Milestone 4 plan)
+from the start, per instruction.
+
+**M4-001 — `types/portfolio.ts`**: `Portfolio` extends
+`ApplicationPortfolio` (`services/portfolio/models.ts`, M3-004) rather
+than duplicating `collateral`/`debt`/`market`/`protocol` — that file's
+own header comment explicitly anticipated this extension.
+`mapApplicationPortfolioToEngineInput` already reads only the four
+Engine-relevant fields by name, so no Engine-boundary code needed to
+change. Added: `id`, `name`, `description?`, `baseCurrency`, `settings`,
+`archivedAt`, `createdAt`, `updatedAt`.
+
+- **Conflict A applied**: `collateral`/`debt` stay the singular objects
+  `ApplicationPortfolio` already defines. "Collateral positions"/"Debt
+  positions" (plural) in M4-001's own "Include" list is read as
+  lifecycle management of the one slot, not a multi-position collection.
+- **New finding — "Settings" documentation gap (conflict #22)**:
+  M4-001's "Include" list names "Settings" with no field definition
+  anywhere. M4-005/M4-006 corroborate that it holds per-portfolio safety
+  targets but define no concrete fields either. The only concrete field
+  list anywhere resembling this is 03_UI.md's Settings page → "PORTFOLIO"
+  section (Default Target Health Factor, Default Holding Period, Default
+  BTC Target Price, Default Safety Buffer) — described there as
+  _global_ defaults for new portfolios/simulations, not explicitly a
+  per-portfolio override schema. Reused conservatively, scoped
+  per-portfolio, as `PortfolioSafetyTargets` (all fields optional,
+  matching M4-005's "Optional safety targets" wording). "Default display
+  settings" (also named in M4-006) has no field list anywhere and is not
+  modeled — `PortfolioSettings` currently contains only `safetyTargets`.
+- **`archivedAt` added, not in M4-001's own list**: needed so M4-003's
+  required "Archive" action has something to write to. Full archive UX
+  is M4-012's job.
+- **"Owner"/"Version" intentionally omitted**: named in 01_PRD.md's more
+  general "PORTFOLIO MODEL" (REQ-003) but not in M4-001's own task text.
+  No authentication system exists yet (Milestone 8's job) for "Owner" to
+  reference honestly — left out rather than populated with an invented
+  placeholder.
+
+**M4-002 — `types/portfolio.schema.ts`**: Zod schemas mirroring
+`engine/validation/validate.ts`'s own bounds field-for-field (not
+inventing separate rules that could drift from what the Engine already
+enforces) — see the file's own header comment for the full mapping.
+"Supported assets" for debt reuses 01_PRD.md's "PRICING PROVIDER"
+(REQ-010) asset list (USDC/USDT/DAI) — the only concrete asset list
+anywhere in the documentation, written for a different (unbuilt)
+infrastructure concern but the only textual evidence available.
+"Duplicate positions" is structurally satisfied by Conflict A's
+single-position model — no array-dedup logic exists to write.
+`maxLoanToValue <= liquidationThreshold` is enforced via `.refine()`,
+surfacing the same invariant `validateProtocolParameters` already
+enforces, for earlier user feedback.
+
+**M4-003 — `stores/portfolioStore.ts`**: Zustand store with `load`,
+`create`, `update`, `select`, `duplicate`, `archive`, `delete` — this
+task's own "Actions" list exactly.
+
+- **Conflict B applied in full**: no `persist` middleware, no interim
+  persistence mechanism. `loadStatus`/`saveStatus`/`lastSynchronizedAt`
+  exist (the task's own "State" list requires them) but are honestly
+  degenerate: `load()` transitions `'loading'` → `'idle'` synchronously
+  with nothing to load; `saveStatus` never leaves `'idle'` (no external
+  save target to report `'saved'` against — reporting `'saved'` for a
+  purely in-memory write would misrepresent durability); `lastSynchronizedAt`
+  stays `null` always. M4-010's "Retain selection after refresh" and
+  M4-013's real auto-save states cannot be genuinely satisfied by this
+  batch — documented rather than papered over with an interim solution,
+  exactly as instructed.
+- **`calculatePortfolioSummary` (M3-005) usage**: `create`/`update`/
+  `duplicate` compute and cache each portfolio's
+  `ServiceResult<PortfolioSummary>` alongside its raw record, anticipating
+  M4-004's list page needing Net Equity/Health Factor/Debt for every
+  portfolio — the concrete meaning of "delegate calculations... to
+  Services" here, and the concrete reason this task depends on M3-005.
+- **`sourceStatus` hardcoded to `'manual'`**: M4-014/M4-015 (Manual
+  Price/Protocol Controls, later batches) don't exist yet, so every
+  portfolio in this batch is necessarily manually entered — the honest
+  current value, not a guess.
+- **Validation**: `create`/`update` run input through M4-002's schemas
+  before constructing/mutating a `Portfolio`, mapping Zod issues to
+  `ApplicationError` (category `'validation'`, M3-003, reused rather
+  than inventing a parallel error shape) — the concrete mechanism behind
+  M4-002's own DoD. `update` re-validates the fully merged result (not
+  just the changed fields) so a partial update cannot silently produce
+  an overall-invalid portfolio. `MappingResult<Portfolio>` (M3-004/
+  M3-007) is reused as `create`/`update`/`duplicate`'s return shape,
+  since these operations can fail before any Engine calculation runs.
+- **`duplicate`/`archive` implement a minimal, correct version of what
+  M4-011/M4-012 will refine**: `duplicate` generates a new identity,
+  copies positions/settings, and appends " (Copy)" to the name — matching
+  M4-011's own later text ("Generate a new identity... Append a clear
+  copy name") — because M4-003 already requires _some_ working
+  `duplicate` action to exist, not because M4-011 is being started
+  early. `archive` sets `archivedAt`; M4-012's confirmation/explanation
+  UX is not built here.
+
+**Coverage config extended**: `vitest.config.ts`'s `coverage.include`
+only listed `engine/**`/`services/**`/`utils/**` — this is the first
+batch producing code outside those directories. Added `types/**` and
+`stores/**` so the new files are tracked, not silently invisible to
+coverage going forward.
+
+**Test files**: `tests/unit/types/portfolio.schema.test.ts` (24 tests —
+every M4-002 "Validate" item, plus the protocol invariant and the
+baseCurrency default) and `tests/unit/stores/portfolioStore.test.ts` (20
+tests — every action, including a zero-debt `create` case that
+exercises conflict #20's fix end-to-end through the Store, and explicit
+tests pinning Conflict B's degenerate `saveStatus`/`lastSynchronizedAt`
+behavior so a future batch can't accidentally regress the "no interim
+solution" decision without a visible test failure).
+
+**Correction found while writing store tests**: a Zustand
+`setState(state, true)` (replace mode) in the test file's `beforeEach`
+wiped out the store's action functions along with the state fields,
+since actions live on the same state object — every action-calling test
+failed with "is not a function". Fixed by dropping the `replace` flag
+(merge mode), which resets only the listed state fields and leaves the
+actions intact. Caught by running the tests, not asserted blindly.
+
+**Scope discipline**: only M4-001/M4-002/M4-003 were implemented. No UI
+page or component was touched (`git diff --stat -- app/ components/
+features/ hooks/ providers/` empty) — `app/portfolio/page.tsx` remains
+M1's placeholder. `engine/` and `services/` are completely untouched
+(`git diff --stat -- engine/ services/` empty) — zero regression risk to
+Milestones 2–3.
+
+**Validation — Batch 1**
+
+| Command              | Result                                                                                                                                                                                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                         |
+| `pnpm lint`          | ✅ Pass (after `eslint --fix` for import ordering)                                                                                                                                                                                                                                              |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of the two new test files)                                                                                                                                                                                                                                   |
+| `pnpm test`          | ✅ Pass, 760/760 (44 new)                                                                                                                                                                                                                                                                       |
+| `pnpm test:coverage` | ✅ 94.68% statements / 89.73% branches / 100% functions / 98.35% lines (project-wide, now including `types/`/`stores/`). `stores/portfolioStore.ts`: 89.85%/84.21%/100%/89.06%. `types/portfolio.schema.ts`: fully exercised. `types/portfolio.ts`: no runtime code to cover (interfaces only). |
+| `pnpm build`         | ✅ Pass — bundle sizes unchanged, since no page imports the new store/types yet                                                                                                                                                                                                                 |
+
+**Architecture audit**: `git diff --stat -- engine/ services/` empty
+(zero Engine/Service files touched). No Service file imports from
+`@/types` or `@/stores` (UI → Services stays one-way). No React/Next
+import in `services/`. `types/portfolio.ts` and `stores/portfolioStore.ts`
+import from `@/services/portfolio` and `@/services` respectively (the
+allowed UI → Services direction). No `fetch`/`axios`/`XMLHttpRequest`/
+`process.env`/`infrastructure/` reference in the new files —
+`crypto.randomUUID()` is the only platform-primitive call, appropriate
+for the Store/UI layer (unlike Services, which must stay
+platform-primitive-free per M3-013's own audit).
+
+**Traceability**: M4-001's "Include" list, M4-002's "Validate" list, and
+M4-003's "State"/"Actions" lists are each addressed field-for-field
+above, with every deviation (Settings' minimal shape, `archivedAt`'s
+addition, Owner/Version's omission, the degenerate persistence fields)
+documented rather than silently decided.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -3390,6 +3549,35 @@ actually builds one.
 
 ---
 
+### 22. M4-001 names "Settings" as a required Portfolio field, but no task anywhere defines its concrete shape
+
+Found while implementing Milestone 4 Batch 1 (M4-001). M4-001's own
+"Include" list names "Settings" alongside identity/name/description/
+currency/positions/timestamps, with no field definition. M4-005
+("Optional safety targets") and M4-006 ("Default display settings,"
+"Safety target settings") both reference the concept later but define no
+concrete fields either. The only concrete field list anywhere in the
+documentation resembling this is 03_UI.md's Settings page → "PORTFOLIO"
+section (Default Target Health Factor, Default Holding Period, Default
+BTC Target Price, Default Safety Buffer, Default Portfolio Name) —
+explicitly described there as _global application defaults_ for new
+portfolios/simulations, not stated to be a per-portfolio override
+schema.
+
+**Resolution applied**: `PortfolioSettings` (`types/portfolio.ts`)
+models only `safetyTargets` (all fields optional), reusing the four
+numeric field names from that global-defaults list, scoped
+per-portfolio — the most conservative available interpretation (reusing
+already-named fields rather than inventing new ones), matching M4-005's
+own "Optional" wording. "Default display settings" has no field list
+anywhere in the documentation and is not modeled at all. Action needed:
+a product/engineering decision on (a) whether per-portfolio safety
+targets really do mirror the global defaults list 1:1, and (b) what
+"default display settings" concretely contains, before M4-006
+(Portfolio Details Form) needs to render editable fields for either.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -3438,40 +3626,45 @@ actually builds one.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 0 (the
-   standalone Conflict #20 follow-up) before committing, per
-   instruction. Do not begin M4-001 until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 1
+   (M4-001, M4-002, M4-003) before committing, per instruction. Do not
+   begin M4-004 until this is approved.
 3. **Milestone 4 plan approved**, with three conflict decisions locked
-   in before any M4 task starts:
-   - **Conflict A (positions)**: approved as-is — Version 0.1 remains a
-     single collateral position and a single debt position. No
-     multi-position support (arrays, aggregate LTV, weighted liquidation
-     threshold) is to be invented for M4-001/M4-007/M4-008.
-   - **Conflict B (persistence timing)**: no interim persistence
-     infrastructure and no Zustand `persist` middleware before Milestone 8. The M4-003 Portfolio Store stays in-memory. Any M4 task whose
-     text assumes a working persistence backend (M4-003's "delegate
-     persistence to Services," M4-010's "retain selection after
-     refresh," M4-013's auto-save/save-state/retry behaviors) gets its
-     limitation documented in that batch's own write-up rather than an
-     interim solution built to satisfy it.
-   - **Conflict C (M4-008 vs. conflict #20)**: approved — resolve
-     conflict #20 first, standalone, before the M4 batch that needs it
-     (Batch 4: M4-007/M4-008). **Done in this pass** — see "Milestone 4
-     progress" → "Batch 0" above, pending approval per point 2.
-4. Once Batch 0 is approved and committed, the next batch is **Batch 1
-   (M4-001, M4-002, M4-003)** — Portfolio Application Types, Validation
-   Schemas, and the Portfolio Store — per the approved plan's batch
-   order. Batch 1 must apply Conflicts A and B above from the start
-   (single-position types; in-memory store, no persist middleware).
-5. **Conflict #20 is now resolved** (this batch) — no longer the
-   highest-priority open item. See conflict #20's entry below for the
-   full resolution and its "Milestone 4 progress" write-up above.
-6. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+   in and applied starting this batch:
+   - **Conflict A (positions)**: applied — `Portfolio`
+     (`types/portfolio.ts`) keeps the singular `collateral`/`debt`
+     objects `ApplicationPortfolio` already defines. No multi-position
+     support was invented.
+   - **Conflict B (persistence timing)**: applied — the M4-003 Portfolio
+     Store is in-memory only, no `persist` middleware. `loadStatus`/
+     `saveStatus`/`lastSynchronizedAt` exist per the task's own "State"
+     list but stay honestly degenerate (see "Milestone 4 progress" →
+     "Batch 1" above). M4-010's "retain selection after refresh" and
+     M4-013's real auto-save states remain unsatisfiable until Milestone
+     8 — documented, not papered over.
+   - **Conflict C (M4-008 vs. conflict #20)**: resolved in Batch 0,
+     synchronized to GitHub. Batch 4 (M4-007/M4-008) can now proceed
+     without inheriting a known zero-debt failure.
+4. Once Batch 1 is approved and committed, the next batch is **Batch 2
+   (M4-004, M4-010, M4-016)** — Portfolio List Page, Active Portfolio
+   Switching, and Portfolio Empty States — per the approved plan's batch
+   order. This is the first batch that renders any real UI on top of
+   the Batch 1 store/types (`app/portfolio/page.tsx` is still M1's
+   placeholder today).
+5. **New from Batch 1**: "Settings" (conflict #22) — M4-001 names it as
+   a required field with no defined shape anywhere in the documentation.
+   Resolved conservatively (safety-targets-only, reusing the global
+   Settings page's field names) but flagged for a real decision before
+   M4-006 (Portfolio Details Form) needs to render it as editable
+   fields.
+6. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+   item. See conflict #20's entry below for the full resolution.
+7. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
    (conflict #21) has no persistence Service or task to attach to until
    Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
    Cloud Synchronization & Import/Export) is reached, not before. Directly
    relevant to Conflict B above: this is the same underlying gap.
-7. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+8. **Outstanding blockers/conflicts carried forward from Milestone 2**:
    F-026 (Health Factor status classification, conflict #1), compound
    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
    Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -3484,17 +3677,18 @@ actually builds one.
    disagreement plus M2-030's 2 unmapped benchmark categories (conflict
    #16), and M2-031's undocumented public/internal split criteria
    (conflict #17). None of these blocked Milestone 2's own completion.
-8. **Revisited in Batch 7, confirmed still open at the specification
+9. **Revisited in Batch 7, confirmed still open at the specification
    level but no longer blocking implementation**: swap-fees/slippage/
    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
    mechanics (conflict #10), and F-040's exit-collateral-sale
    discrepancy (conflict #13, a known, tested approximation).
-9. **From Milestone 3, still open**: "Source status"'s undefined
-   _generic_ value domain (conflict #18 — confirmed across three
-   Services now to be a genuinely per-Service, not generic, concept),
-   "Formula version" aggregation across a multi-Engine-call Service
-   (conflict #19 — a checked stopgap, reused by three Services, still
-   not a real resolution), and M3-013's persistence-adapter gap
-   (conflict #21 — see point 6 above). Conflict #20 is resolved (point 5
-   above) and no longer counted as open. **20 open conflicts remain; one
-   (#20) resolved this batch.**
+10. **From Milestone 3, still open**: "Source status"'s undefined
+    _generic_ value domain (conflict #18 — confirmed across three
+    Services now to be a genuinely per-Service, not generic, concept),
+    "Formula version" aggregation across a multi-Engine-call Service
+    (conflict #19 — a checked stopgap, reused by three Services, still
+    not a real resolution), and M3-013's persistence-adapter gap
+    (conflict #21 — see point 7 above), and "Settings"'s undefined shape
+    (conflict #22 — see point 5 above). Conflict #20 (resolved Batch 0)
+    is no longer counted. **21 open conflicts remain (22 total raised,
+    minus #20, resolved).**
