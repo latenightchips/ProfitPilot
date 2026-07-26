@@ -92,10 +92,12 @@ describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => 
 
     render(<DashboardPage />);
 
-    // M5-006's own "Cards" list names only Liquidation price, not Distance/Buffer
-    // (those remain in the view model for M5-009's own, later, dedicated panel).
-    expect(screen.getAllByText('N/A (no debt)').length).toBe(1);
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    // 1 from DashboardKpiGrid's own Liquidation Price card (M5-006) + 3 from
+    // LiquidationRiskPanel's price/distance/decline cards (M5-009, Batch 4) —
+    // Distance/Buffer were deliberately left out of the KPI grid itself and
+    // now live in this dedicated panel instead.
+    expect(screen.getAllByText('N/A (no debt)').length).toBe(4);
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
     const record = usePortfolioStore.getState().portfolios[created.data.id];
     expect(record.summary.ok && record.summary.warnings.length > 0).toBe(true);
   });

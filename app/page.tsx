@@ -5,8 +5,12 @@ import { useEffect } from 'react';
 
 import {
   buildDashboardViewModel,
+  buildHealthFactorStatus,
+  buildLiquidationRiskPanel,
   DashboardKpiGrid,
   DashboardSummaryHeader,
+  HealthFactorStatusSection,
+  LiquidationRiskPanel,
 } from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -19,17 +23,20 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  *
  * **Batch scope — Dashboard Foundation (M5-001–M5-003, Batch 1) +
  * Summary Header (M5-004, Batch 2) + KPI Metrics (M5-005, M5-006,
- * Batch 3), per 06_TASKS.md's own "IMPLEMENTATION ORDER"**: "Dashboard
- * Foundation → Summary Header → KPI Metrics → Risk Sections → Portfolio
- * Composition → Recommendations → Responsive and Accessible States →
- * Testing." `DashboardKpiGrid` (built on the new shared `KpiCard`,
- * `features/dashboard/components/`) replaces Batch 1's plain metrics
- * list — that list was always documented as a temporary proof of the
- * Store → Service → View Model → render pipeline, explicitly not a
- * preview of the eventual grid. Health Factor/Liquidation Risk sections
- * (M5-007–M5-010), Portfolio Composition (M5-011), Recommendation
- * Summary (M5-015), and full Dashboard Error Recovery (M5-021) remain
- * later, separate, dependency-gated tasks — not built here.
+ * Batch 3) + Risk Sections (M5-007, M5-009, Batch 4), per
+ * 06_TASKS.md's own "IMPLEMENTATION ORDER"**: "Dashboard Foundation →
+ * Summary Header → KPI Metrics → Risk Sections → Portfolio Composition →
+ * Recommendations → Responsive and Accessible States → Testing."
+ * `HealthFactorStatusSection` (M5-007) and `LiquidationRiskPanel`
+ * (M5-009) are this batch's addition. M5-008 (Health Factor Range
+ * Visualization) and M5-010 (Risk Warning Banner) — the remaining two
+ * "Risk Sections" tasks — are deliberately not built this batch: M5-008
+ * is wholly about the same Critical/Caution/Target zone boundaries
+ * Conflict #1 blocks, and M5-010 needs further threshold research beyond
+ * what this batch resolved (see PROJECT_STATUS.md). Portfolio
+ * Composition (M5-011), Recommendation Summary (M5-015), and full
+ * Dashboard Error Recovery (M5-021) remain later, separate,
+ * dependency-gated tasks — not built here.
  *
  * **Loading state**: calls `load()` on mount, mirroring
  * `app/portfolios/page.tsx`'s own M4-004 pattern exactly. Per Conflict B
@@ -52,6 +59,10 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `features/dashboard/types/viewModel.ts`'s own `DashboardViewModelBase`
  * comment). This means a calculation failure still shows which portfolio
  * and price data are active, not just an error message.
+ *
+ * **`HealthFactorStatusSection`/`LiquidationRiskPanel` render only in the
+ * `ok: true` branch** — both need a successfully-computed
+ * `PortfolioSummary`, unlike the Summary Header above them.
  *
  * **Error state**: `buildDashboardViewModel` can return `{ ok: false }`
  * (`calculatePortfolioSummary` genuinely fails for certain Zod-valid
@@ -129,6 +140,12 @@ export default function DashboardPage() {
 
               <DashboardKpiGrid metrics={viewModel.metrics} />
 
+              {record.summary.ok && (
+                <HealthFactorStatusSection
+                  status={buildHealthFactorStatus(record.portfolio, record.summary.data)}
+                />
+              )}
+
               {viewModel.warnings.length > 0 && (
                 <div className="rounded-md border border-border bg-accent/20 p-3 text-sm">
                   {viewModel.warnings.map((warning) => (
@@ -138,6 +155,14 @@ export default function DashboardPage() {
                   ))}
                 </div>
               )}
+
+              <LiquidationRiskPanel
+                panel={buildLiquidationRiskPanel(
+                  record.portfolio,
+                  viewModel.metrics,
+                  viewModel.freshness.market,
+                )}
+              />
             </div>
           )}
         </div>
