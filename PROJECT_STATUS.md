@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–5 (M5-001–M5-007, M5-009–M5-012) are synchronized to GitHub; Batch 6 (M5-013, M5-014 — Recommendations part 1) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1; M5-015 needs its own scoping review (same gap as conflict #29). **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–6 (M5-001–M5-007, M5-009–M5-014) are synchronized to GitHub; Batch 7 (M5-015 — Recommendation Summary) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5062,6 +5062,116 @@ not new gaps.
 
 ---
 
+### Batch 7 — Recommendations, part 2 (M5-015)
+
+Seventh Milestone 5 batch, completing the "Recommendations"
+Implementation Order step Batch 6 began. Scoped to M5-015 alone — its
+own scoping review (flagged as overdue in Batch 6's "Next task" note)
+turned out to require enough genuine investigation (a Service-reuse
+decision, a documented doc-terminology mismatch, a filtering rule for
+non-actionable recommendations) to fill one focused batch on its own,
+rather than being bundled with an unrelated task.
+
+**Resolved the M5-015/conflict #29 scoping question**: `generateRecommendationSet`
+(M3-012) needs a complete `RecommendationRuleConfig` (7 fields across
+`borrow`/`repayment`/`additionalCollateral`/`loop`), 5 of which have no
+source on `Portfolio` and no documented default (conflict #29, Batch 4).
+Considered the three options conflict #29's own "Action needed" note
+named: (a) scope to only repayment/additionalCollateral, reusing Batch
+4's `calculateTargetHealthFactorActions`; (b) collect the missing fields
+as new portfolio settings; (c) define documented defaults. **(c)** was
+rejected outright (would mean inventing thresholds). **(b)** was
+rejected as disproportionate for this task — it would mean reopening and
+extending Milestone 4's already-shipped, already-approved
+`PortfolioSettings`/`portfolioInputSchema`/`PortfolioDetailsForm` to add
+4 new user-facing fields, a materially larger, more invasive change than
+a Dashboard summary section warrants on its own, and a product-level
+decision this batch does not have standing to make unilaterally. **(a)**
+was chosen — the same scoping decision `HealthFactorStatusSection`
+(M5-007) and `LiquidationRiskPanel` (M5-009) already made for this exact
+gap, applied consistently here rather than re-decided from scratch.
+
+**M5-015 — `features/dashboard/components/RecommendationSummarySection.tsx`**
+(+ `types/recommendationSummary.ts`, `utils/buildRecommendationSummary.ts`):
+reuses `calculateTargetHealthFactorActions`'s two `Recommendation`
+objects (repayment, additional collateral) — already carrying every
+field M5-015's own Display list names (category, decisionPriority
+("Risk level"), triggeringCondition ("Explanation"), suggestedAction,
+expectedEffect, per M2-026's own six-field contract) — and adds only a
+1-based `priority` rank, reusing the same `DECISION_PRIORITY_ORDER` tier
+list `generateRecommendationSet` (M3-012) already defines from
+`02_Formulas.md`'s own "DECISION PRIORITY" chapter.
+
+- **Non-actionable recommendations are filtered out**, not padded into
+  the list: when a configured target is already met, both underlying
+  Engine calls report "No repayment needed." / "No additional collateral
+  needed." (`relevantValues.requiredRepayment === 0` /
+  `requiredUsd === 0`, the Engine's own already-existing conditions, not
+  a new threshold) — excluded rather than shown as inert entries.
+  `items` is legitimately empty both when no target is configured and
+  when the target is already met.
+- **"View all action" — not built.** At most 2 recommendations exist,
+  ever, in this scoped-down universe, and both are always shown — there
+  is no larger set for a "view all" control to reveal. The same
+  "don't build a dead affordance" reasoning M5-012's chart already used.
+- **"Dismiss or acknowledge behavior only if documented" — not built.**
+  Neither term appears anywhere in `01_PRD.md`, `03_UI.md`, or
+  `04_BUILD_GUIDE.md` — read literally as "not documented, don't build."
+- **Documented, not resolved: 03_UI.md's own "PRIMARY RECOMMENDATION"
+  mockup (Section 5) states "Only one recommendation is displayed,"**
+  while M5-015's own Display list names "Top recommendations" (plural)
+  with a "Priority" ranking field — a genuine terminology mismatch
+  between the two documents. Per this engagement's established practice
+  (06_TASKS.md is the authoritative task backlog), M5-015's own plural
+  framing was followed; the practical difference is softened by this
+  section's own recommendation universe being capped at 2 items anyway.
+
+**`Recommendation` type re-exported from `services/recommendation/index.ts`**
+(already public from `@/engine` since M2-031) so this batch's builder
+never needs to import `@/engine` directly — keeping the UI layer inside
+its documented "UI → Services" boundary, the same reason every other
+Service re-exports the Engine types its own return values carry.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/` empty
+— zero Engine/Store/type files touched. `services/` changed only by one
+barrel-export line (`services/recommendation/index.ts`) — no new Service
+logic was needed, since Batch 4's `calculateTargetHealthFactorActions`
+already provided everything this batch required.
+
+**Validation — Batch 7**
+
+| Command                      | Result                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                      |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                      |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                      |
+| `pnpm test` (Vitest)         | ✅ Pass, 1010/1010 (7 net new)                                                                                                               |
+| `pnpm test:coverage`         | ✅ 95.41% statements / 88.87% branches / 100% functions / 98.79% lines (project-wide) — consistent with Batch 6's 95.42%/88.84%/100%/98.78%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                   |
+| `pnpm build`                 | ✅ Pass — `/` grew from 5.35 kB to 5.66 kB (215 kB First Load JS)                                                                            |
+
+**Manual browser verification**: built a portfolio with no target
+configured — confirmed no "Recommendations" heading renders on a
+production build. Set Target Health Factor to 5 via the Portfolio
+Details form, confirmed both recommendations render with matching
+figures already shown elsewhere ("Repay 4000...", "Add 25000 in
+collateral...", identical to Batch 5/6's own verified numbers for the
+same scenario).
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/`
+empty. `buildRecommendationSummary.ts` imports only from `@/services`
+and `@/types/portfolio` — the same allowed UI → Services direction every
+other Dashboard builder already uses; no direct `@/engine` import
+anywhere in `features/dashboard/`.
+
+**Traceability**: M5-015's Display list, Include list, and DoD are each
+addressed by name above, with every deliberately-unbuilt item
+("View all," dismiss/acknowledge, the borrow/loop categories) and the
+one documented terminology mismatch (03_UI.md vs. 06_TASKS.md) explained
+rather than silently dropped.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6093,10 +6203,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 6
-   (M5-013, M5-014 — Recommendations part 1) before committing, per
-   instruction. Batches 1–5 (M5-001–M5-007, M5-009–M5-012) are
-   synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 7
+   (M5-015 — Recommendation Summary) before committing, per instruction.
+   Batches 1–6 (M5-001–M5-007, M5-009–M5-014) are synchronized to
+   GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6110,26 +6220,16 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–5
-   (M5-001–M5-007, M5-009–M5-012) are synchronized; Batch 6
-   (Recommendations part 1: M5-013, M5-014) is implemented and awaiting
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–6
+   (M5-001–M5-007, M5-009–M5-014) are synchronized; Batch 7
+   (Recommendations part 2: M5-015) is implemented and awaiting
    approval, per `06_TASKS.md`'s own "IMPLEMENTATION ORDER." **M5-008
-   remains wholly unbuilt**, still blocked on Conflict #1. The next batch
-   should address M5-015 (Recommendation Summary) — its own scoping
-   review is now overdue (deferred from both Batch 4 and Batch 6): it
-   depends on `generateRecommendationSet` (M3-012), which needs the same
-   `RecommendationRuleConfig` fields conflict #29 already found have no
-   portfolio-level source. A decision is needed on whether to scope
-   M5-015 to only the repayment/additionalCollateral categories the
-   Batch 4 `calculateTargetHealthFactorActions` Service already supports
-   (the same approach Batches 4/5's Health Factor Status/Liquidation
-   Risk Panel already use), collect the missing fields as new portfolio
-   settings, or define documented defaults — see conflict #29's own
-   "Action needed" note. After M5-015, the remaining Milestone 5 tasks
-   are M5-016 through M5-028 (Quick Actions, Data Freshness Indicators,
-   Refresh Workflow, Loading/Empty/Error states, Developer Mode,
-   Responsive Layout, Accessibility, and Testing) — not yet reviewed in
-   detail.
+   remains wholly unbuilt**, still blocked on Conflict #1. M5-015's own
+   scoping review (overdue since Batch 6) is now resolved — see point 11
+   below. The remaining Milestone 5 tasks are M5-016 through M5-028
+   (Quick Actions, Data Freshness Indicators, Refresh Workflow,
+   Loading/Empty/Error states, Developer Mode, Responsive Layout,
+   Accessibility, and Testing) — not yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6212,7 +6312,26 @@ Service already supports).
     `Monthly = Daily × 30` (F-030/F-031) do not equal `Annual / 365` /
     `Annual / 12` — resolved by calling the real, already-public Engine
     functions via a new Service rather than approximating.
-11. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
+11. **Batch 7 raised no new numbered conflict — it resolved the M5-015
+    scoping question conflict #29 itself had left open since Batch 4**,
+    overdue since Batch 6's own note. Three options were on the table:
+    (a) scope M5-015 to only the repayment/additionalCollateral
+    categories the Batch 4 `calculateTargetHealthFactorActions` Service
+    already supports; (b) collect the five missing
+    `RecommendationRuleConfig` fields as new portfolio settings; (c)
+    define documented defaults for them. (c) was rejected as invention;
+    (b) was rejected as disproportionate scope creep into already-shipped
+    Milestone 4 code and a product-level decision beyond a single
+    batch's standing. (a) was chosen, for direct consistency with
+    M5-007/M5-009's own precedent — the same Service, the same
+    conflict, the same resolution. Also noted, without raising it as a
+    conflict: 03_UI.md's "PRIMARY RECOMMENDATION" mockup says "Only one
+    recommendation is displayed," while `06_TASKS.md`'s M5-015 names
+    "Top recommendations" (plural) with a Priority ranking field —
+    followed `06_TASKS.md` as authoritative per established practice; the
+    practical difference is softened since the scoped-down universe never
+    exceeds 2 items anyway.
+12. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6220,7 +6339,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-12. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+13. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6231,44 +6350,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-13. **From Batch 6, still open**: conflict #27 — M4-012 never says
+14. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-14. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+15. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-15. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+16. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-16. **From Batch 3, still open — recurred in Batch 7 with the same
+17. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-17. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+18. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-18. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+19. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-19. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+20. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-20. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+21. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-21. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+22. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6281,13 +6400,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-22. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+23. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-23. **From Milestone 3/4, still open — final tally at Milestone 4's
+24. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

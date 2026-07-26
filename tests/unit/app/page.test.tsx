@@ -199,3 +199,28 @@ describe('DashboardPage — Leverage Summary Section (M5-014, Batch 6)', () => {
     expect(screen.getByText(/This portfolio is leveraged/)).toBeInTheDocument();
   });
 });
+
+describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7)', () => {
+  it('renders nothing when no target is configured', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByText('Recommendations')).not.toBeInTheDocument();
+  });
+
+  it('renders recommendations when Health Factor is below the configured target', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ settings: { safetyTargets: { targetHealthFactor: 5 } } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+  });
+});

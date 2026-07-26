@@ -18,7 +18,9 @@
  * Risk Warning Banner and Portfolio Composition Section (M5-012 has no
  * component — see `types/portfolioComposition.ts`'s own header comment);
  * Batch 6 (M5-013, M5-014) added the Debt and Interest Panel and
- * Leverage Summary Section.
+ * Leverage Summary Section; Batch 7 (M5-015) added the Recommendation
+ * Summary Section, completing the "Recommendations" Implementation
+ * Order step.
  */
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSummaryHeader';
@@ -28,12 +30,14 @@ export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
 export * from './components/LiquidationRiskPanel';
 export * from './components/PortfolioCompositionSection';
+export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
 export * from './types/debtAndInterestPanel';
 export * from './types/healthFactorStatus';
 export * from './types/leverageSummary';
 export * from './types/liquidationRiskPanel';
 export * from './types/portfolioComposition';
+export * from './types/recommendationSummary';
 export * from './types/riskWarnings';
 export * from './types/viewModel';
 export * from './utils/buildDashboardViewModel';
@@ -42,5 +46,6 @@ export * from './utils/buildHealthFactorStatus';
 export * from './utils/buildLeverageSummary';
 export * from './utils/buildLiquidationRiskPanel';
 export * from './utils/buildPortfolioComposition';
+export * from './utils/buildRecommendationSummary';
 export * from './utils/buildRiskWarnings';
 export * from './utils/format';

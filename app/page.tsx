@@ -10,6 +10,7 @@ import {
   buildLeverageSummary,
   buildLiquidationRiskPanel,
   buildPortfolioComposition,
+  buildRecommendationSummary,
   buildRiskWarnings,
   DashboardKpiGrid,
   DashboardSummaryHeader,
@@ -18,6 +19,7 @@ import {
   LeverageSummarySection,
   LiquidationRiskPanel,
   PortfolioCompositionSection,
+  RecommendationSummarySection,
   RiskWarningBanner,
 } from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -32,19 +34,23 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * **Batch scope — Dashboard Foundation (Batch 1) + Summary Header
  * (Batch 2) + KPI Metrics (Batch 3) + Risk Sections part 1 (Batch 4:
  * M5-007, M5-009) + Risk Sections part 2 / Portfolio Composition
- * (Batch 5: M5-010, M5-011, M5-012) + Recommendations, part 1 (Batch 6:
- * M5-013, M5-014), per 06_TASKS.md's own "IMPLEMENTATION ORDER"**:
- * "Dashboard Foundation → Summary Header → KPI Metrics → Risk Sections →
- * Portfolio Composition → Recommendations → Responsive and Accessible
- * States → Testing." `DebtAndInterestPanel` (M5-013) and
- * `LeverageSummarySection` (M5-014) are this batch's addition.
+ * (Batch 5: M5-010, M5-011, M5-012) + Recommendations (Batch 6:
+ * M5-013, M5-014; Batch 7: M5-015), per 06_TASKS.md's own
+ * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header →
+ * KPI Metrics → Risk Sections → Portfolio Composition →
+ * Recommendations → Responsive and Accessible States → Testing."
+ * `RecommendationSummarySection` (M5-015, Batch 7) completes
+ * "Recommendations" — reuses Batch 4's `calculateTargetHealthFactorActions`
+ * rather than `generateRecommendationSet` (M3-012), for the same
+ * conflict #29 reason `HealthFactorStatusSection`/`LiquidationRiskPanel`
+ * already do; see `features/dashboard/types/recommendationSummary.ts`.
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Recommendation Summary (M5-015) and full Dashboard Error
- * Recovery (M5-021) remain later, separate, dependency-gated tasks — not
- * built here.
+ * carried over. Dashboard Quick Actions (M5-016) and full Dashboard
+ * Error Recovery (M5-021) remain later, separate, dependency-gated
+ * tasks — not built here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -195,6 +201,10 @@ export default function DashboardPage() {
               )}
 
               {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
+
+              <RecommendationSummarySection
+                summary={buildRecommendationSummary(record.portfolio)}
+              />
             </div>
           )}
         </div>

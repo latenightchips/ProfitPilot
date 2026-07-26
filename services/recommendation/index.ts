@@ -6,6 +6,10 @@
  * occupant. `calculateTargetHealthFactorActions` was added in Milestone 5
  * Batch 4 — see that file's own header comment for why it exists
  * alongside `generateRecommendationSet` rather than reusing it.
+ * `Recommendation` (M2-026's own type, already public from `@/engine`)
+ * is re-exported here so callers of `TargetHealthFactorActions` never
+ * need to import `@/engine` directly — the UI layer stays within its
+ * documented "UI → Services" boundary (Build Guide "DEPENDENCY RULES").
  */
 export {
   generateRecommendationSet,
@@ -16,3 +20,4 @@ export {
   calculateTargetHealthFactorActions,
   type TargetHealthFactorActions,
 } from './targetHealthFactorActions';
+export type { Recommendation } from '@/engine';
