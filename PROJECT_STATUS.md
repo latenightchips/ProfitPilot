@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 6 complete (pending approval) — M3-001 through M3-007, M3-009, and M3-012 addressed (M3-008, M3-010, M3-011 remain). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 7 complete (pending approval) — M3-001 through M3-007 and M3-009 through M3-012 addressed (only M3-008 remains of the Service-implementation tasks, plus M3-013/M3-014). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2225,6 +2225,120 @@ existing public Engine functions and claims no new Formula ID.
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 7 — Loop Strategy + Exit Planning Services (M3-010, M3-011)
+
+**Revisiting the deferred conflicts, as instructed.** Batch 6 deferred
+M3-010 and M3-011 specifically because their Responsibilities/Include
+lists appear to require resolving conflicts #8 (swap fees/slippage/gas
+estimate), #10 ("Target cash proceeds" ambiguity), and #13 (F-040's
+fixed-collateral assumption). Re-reading each conflict's actual text
+against what the Engine already implements showed all three are already
+resolved _at the Engine layer_ — not by inventing a formula, but by
+**scoping the affected sub-item out and documenting why**, exactly the
+pattern conflict #9 already established for M3-012 in Batch 6:
+
+- **Conflict #8**: `calculateLoopCosts` (M2-017) and
+  `calculateExitPosition` (M2-023) are both fully implemented and
+  tested. Neither fails or blocks on the missing fee/slippage/gas
+  model — each computes what is documented (Borrowing Interest,
+  Break-Even Appreciation for loops; Repayment, BTC Sale Required for
+  exits) and itemizes what is not (`unavailable`/`unavailableCosts`,
+  each with a reason) as part of a normal, successful result.
+- **Conflict #10**: `calculateTargetExit`'s `ExitTarget` union
+  (`debtBalance`/`healthFactor`/`retainedBtc`) already excludes "Target
+  cash proceeds" as a target type — that scoping decision was made at
+  M2-024, not left for a Service to resolve.
+- **Conflict #13**: F-040's fixed-collateral approximation is a known,
+  already-tested Engine behavior (`calculateTargetExit.ts`'s own code
+  comment, `targetHealthFactorInvariant.test.ts`), not something a
+  Service needs to correct.
+
+Because none of the three actually prevents the underlying Engine
+functions from running, M3-010 and M3-011 could be implemented as thin,
+faithful Service-layer wrappers around them — resolving the conflicts
+"without inventing behavior" means passing through the same itemized
+gaps and documented approximations the Engine already reports, the same
+treatment conflict #9 got in Batch 6. Both tasks share the same
+"coordinator Service on an M3-005 baseline" architecture as M3-009/M3-012
+and became simultaneously ready once M3-005 landed; re-confirmed neither
+has a formal or functional dependency on the other, so they were
+implemented together as one batch on that basis (same reasoning as
+Batch 6, not "combined by default").
+
+| Task                                   | Status  | Notes                                                                                                                                                                           |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-010 Implement Loop Strategy Service | ✅ Done | `services/loop/strategy.ts` — `planLoopStrategy`, wrapping `validateLoopStrategySafety` (M2-018) and `calculateLoopCosts` (M2-017) into one Service-ready result.               |
+| M3-011 Implement Exit Planning Service | ✅ Done | `services/exit/plan.ts` — `planExit`, wrapping `calculateTargetExit` (M2-024) and a before/after `calculatePortfolioSummary` (M3-005) comparison into one Service-ready result. |
+
+**M3-010: "Validate strategy settings" and "surface safety warnings"
+reuse `validateLoopStrategySafety` directly** — it already performs
+every documented safety check and returns `viable`/`findings` in
+exactly the shape this Responsibility asks for, so no separate
+validation layer was added. **"Load protocol parameters"**: no Protocol
+Parameter Service (M3-008) exists yet — `protocol` comes from the
+portfolio's own `ProtocolParameters` field (M3-004), the caller supplies
+it, the same "accept what the Service doesn't own" principle as
+`sourceStatus`. When M3-008 exists, its output naturally becomes this
+field's source without any change here.
+
+**M3-011: "Current portfolio baseline" and "Before-and-after comparison"
+reuse `calculatePortfolioSummary` (M3-005) directly**, called once on
+the unmodified portfolio and once on the resulting post-exit portfolio —
+the same reuse pattern M3-006 and M3-009 already established, now used
+a third time. **"Transaction assumptions"** is `calculateExitPosition`'s
+own `unavailableCosts`, passed through unchanged.
+
+**New finding, escalating conflict #20**: constructing M3-011's
+"after" comparison for a **full exit** (`targetDebt: 0`, the single most
+common and important exit type) always produces a zero-debt resulting
+portfolio. `calculatePortfolioSummary` cannot summarize a zero-debt
+portfolio (conflict #20, found in Batch 4) because
+`calculateLiquidationPrice` treats liquidation price as undefined
+without debt. This means **`planExit` currently fails for every full
+exit**, not just the abstract edge case conflict #20 originally
+described — pinned explicitly by
+`tests/unit/services/exit/plan.test.ts`'s "full exit and conflict #20
+interaction" test rather than left as a silent gap. **Not fixed here**:
+a real fix (e.g. making `PortfolioLiquidationSummary`'s `price`/`buffer`
+nullable, mirroring `calculateHealthFactor`'s own zero-debt-as-`Infinity`
+precedent) would mean modifying `services/portfolio/summary.ts`, already
+shipped and depended on by M3-006 and M3-009 — a change with cross-batch
+blast radius deliberately left for its own dedicated decision point
+rather than folded into this batch's scope, the same discipline that
+kept M3-010/M3-011 themselves out of Batch 6. Conflict #20's entry below
+is updated to reflect this escalated severity.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/loop/strategy.ts` imports `@/engine`, `services/shared/
+{formulaStep,result}`, and `services/portfolio/{mapping,models}`.
+`services/exit/plan.ts` imports `@/engine`, `services/shared/
+{formulaStep,result}`, and `services/portfolio/{mapping,models,summary}`.
+No `engine/` file was modified by this batch.
+
+**Traceability audit (pre-commit)**: `planLoopStrategy` and `planExit`,
+plus every exported type from both new files, are reachable through
+`@/services` alone, verified by two new `describe` blocks in
+`tests/unit/services/publicApiSurface.test.ts` (M3-010, M3-011). Every
+Formula ID this batch relies on (F-018, F-013, F-020, F-022, F-032,
+F-037, F-040, F-041, F-042, F-002, F-004) was already implemented and
+traced in Milestone 2 — this batch composes existing public Engine
+functions and claims no new Formula ID.
+
+**Validation — Batch 7 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `pnpm lint`          | ✅ Pass (after autofix of import ordering across the new/changed files)                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of the new Service and index files)                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `pnpm test`          | ✅ Pass, 682/682 (23 new). One test was corrected mid-implementation: an assumed `ok:false` Engine failure for invalid protocol parameters is actually a `viable:false` success (`validateLoopStrategySafety`'s own documented "unsafe as data, not a thrown failure" design) — fixed to assert the real behavior, and a genuine malformed-input failure case (negative collateral) was added in its place.                                                                                                     |
+| `pnpm test:coverage` | ✅ 94.84% statements / 89.76% branches / 100% functions / 98.88% lines. `services/loop/strategy.ts` and `services/exit/plan.ts` each have a small number of uncovered intermediate-failure branches (e.g. `calculateExposure`/`calculateLoopCosts` failing independently of a valid strategy is not constructible from a single input) — the same category of already-documented "defense in depth" gap as `summary.ts`/`scenario.ts`. No coverage threshold is configured, so this does not fail the pipeline. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2354,6 +2468,14 @@ transaction-cost model (fixed vs. percentage swap fee, slippage-vs-size
 curve, gas estimation source) in `02_Formulas.md`, or explicitly descope
 these fields from the tasks that reference them.
 
+**Update — Milestone 3 Batch 7 (M3-010, M3-011)**: revisited as
+instructed. Confirmed this does not block the Service layer either —
+`calculateLoopCosts` and `calculateExitPosition` (M2-023) are both
+already fully implemented and itemize the same gap as a normal,
+successful result rather than failing. `planLoopStrategy` and `planExit`
+pass the itemization straight through. Still open at the specification
+level; no new formula was authored.
+
 ### 9. The entire Recommendation Engine formula chapter (F-060–F-069) has no task assignment anywhere in `06_TASKS.md`
 
 Found while implementing Batch 6 (M2-018): F-065 "Interest Warning" looked
@@ -2401,6 +2523,14 @@ all, since it never reduces debt. No document specifies which is meant.
 Not implemented — see the Batch 9 section above for the fuller reasoning.
 Action needed: specify which execution order "Target cash proceeds"
 means (or both, as separate exit types) before this can be implemented.
+
+**Update — Milestone 3 Batch 7 (M3-011)**: revisited as instructed.
+`calculateTargetExit`'s `ExitTarget` union already excludes "Target cash
+proceeds" as a target type — that scoping decision was made at M2-024,
+so the Service layer simply inherits the same coverage.
+`planExit` accepts `ExitTarget` exactly as the Engine defines it; no new
+target type was invented to work around the gap. Still open at the
+specification level.
 
 ### 11. "Exit readiness" (M2-025) has no Formula ID anywhere in the Recommendation Engine chapter — BLOCKS full M2-025
 
@@ -2487,6 +2617,17 @@ this is specific to the sell-based exit path. Action needed: either
 exit case (or says F-040 is explicitly an approximation here), or the
 approximation is accepted and stated as intended behavior at the
 specification level.
+
+**Update — Milestone 3 Batch 7 (M3-011)**: revisited as instructed. The
+Service layer does not correct or hide the approximation —
+`planExit` calls `calculateTargetExit` as-is and reports whatever Health
+Factor the "after" summary actually computes, so the undershoot remains
+visible in the Service's own before/after comparison exactly as it
+exists in the Engine (verified by
+`tests/unit/services/exit/plan.test.ts`'s healthFactor-target test,
+which asserts the resulting Health Factor is below the requested
+target). Still open at the specification level; no corrective equation
+was invented.
 
 ---
 
@@ -2813,6 +2954,23 @@ for debt-free portfolios) — that would be a Milestone 2 Engine change or
 a Milestone 3 Service-level adaptation, not something to decide inside
 this batch's own scope.
 
+**Severity escalated — Milestone 3 Batch 7 (M3-011)**: this is no
+longer only an edge case. Planning a **full exit**
+(`targetDebt: 0` — the single most common, most important exit type)
+always produces a zero-debt resulting portfolio, so
+`services/exit/plan.ts`'s `planExit` fails on the "after" comparison for
+every full exit today. Pinned explicitly by
+`tests/unit/services/exit/plan.test.ts`'s "full exit and conflict #20
+interaction" test rather than left as a silent gap. A real fix (e.g.
+making `PortfolioLiquidationSummary`'s `price`/`buffer` fields nullable,
+mirroring `calculateHealthFactor`'s own zero-debt-as-`Infinity`
+precedent) would mean modifying `services/portfolio/summary.ts` —
+already shipped and depended on by M3-006 and M3-009 — a
+cross-batch-blast-radius change deliberately left for its own dedicated
+decision point rather than folded into Batch 7's scope. This is now the
+highest-priority open conflict for whoever picks up the next Exit
+Planning-adjacent or Portfolio Summary-adjacent work.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -2863,64 +3021,59 @@ this batch's own scope.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 6 (M3-009,
-   M3-012) before committing, per instruction.
-3. Once approved and committed, three Milestone 3 tasks remain unstarted:
-   - **M3-008 (Protocol Parameter Service)** — depends only on M3-002,
-     unblocked. Its own "Include" list (Maximum LTV, Liquidation
-     threshold, Borrow rate, Asset configuration, Data source, Freshness
-     timestamp) closely parallels M3-007's shape — re-check at the start
-     of that batch whether the same "infrastructure layer is unassigned
-     scope" finding applies (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
+2. **This pass stops here for approval** of Milestone 3 Batch 7 (M3-010,
+   M3-011) before committing, per instruction.
+3. Once approved and committed:
+   - **M3-008 (Protocol Parameter Service)** is the only remaining
+     Service-implementation task. Depends only on M3-002, unblocked. Its
+     own "Include" list (Maximum LTV, Liquidation threshold, Borrow
+     rate, Asset configuration, Data source, Freshness timestamp)
+     closely parallels M3-007's shape — re-check whether the same
+     "infrastructure layer is unassigned scope" finding applies
+     (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
      `ProtocolProvider`/`AaveV3Provider` content looks like the protocol
      counterpart of what M3-007 found for prices).
-   - **M3-010 (Loop Strategy Service)** and **M3-011 (Exit Planning
-     Service)** — both depend only on M3-005 and are technically
-     unblocked, but were deliberately deferred out of Batch 6 because
-     each is entangled with a pre-existing, already-documented
-     conflict: M3-010's "Apply cost assumptions" responsibility meets
-     conflict #8 (swap-fees/slippage/gas-estimate gap); M3-011's exit
-     calculations meet conflicts #10 and #13. Re-read both together at
-     the start of that batch (no formal dependency between them, same
-     "coordinator Service" architecture as M3-009/M3-012) and resolve or
-     document each conflict's impact before implementing, rather than
-     folding conflict resolution into a larger batch.
+   - **Conflict #20's escalated severity** (full exits currently fail
+     in `planExit`) is now the highest-priority open item — worth a
+     dedicated decision before or shortly after M3-008, independent of
+     M3-008's own scope: whether to make `PortfolioLiquidationSummary`'s
+     `price`/`buffer` nullable in `services/portfolio/summary.ts`
+     (M3-005), and how that ripples into M3-006/M3-009's existing
+     consumption of `PortfolioSummary`.
    - Once M3-008 lands, **M3-013 (Service Dependency Injection)**
-     unblocks (depends on M3-007 + M3-008); once M3-008/M3-010/M3-011
-     all land, **M3-014 (Service Integration Tests)** unblocks (depends
-     on M3-005 through M3-012 as one range).
-4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
-   still open**: F-026 (Health Factor status classification, conflict
-   #1), compound interest / M2-013–M2-014 (conflict #7), the
-   swap-fees/slippage/gas-estimate gap (conflict #8), the
-   partially-unassigned Recommendation Engine chapter (conflict #9 —
-   F-061–F-064 implemented; F-060, F-065–F-069 not), "Target cash
-   proceeds"'s ambiguous mechanics (conflict #10), "Exit readiness"'s
-   unmapped Formula ID (conflict #11), F-067's partial documentation
-   (conflict #12), F-040's exit-collateral-sale discrepancy (conflict
-   #13, a known, tested approximation), the unspecified "Target borrow
-   percentage" blocking a post-loop Golden Reference Portfolio fixture
-   (conflict #14), M2-029's DoD-vs-scope tension over the 33
-   unimplemented Formula IDs (conflict #15), the Build-Guide-vs-
-   Formulas.md performance-target disagreement plus M2-030's 2 unmapped
-   benchmark categories (conflict #16), and M2-031's undocumented
-   public/internal split criteria (conflict #17). None of these 17
-   blocked Milestone 2's own completion, but several (especially #1, #7,
-   #8, #9, #10, #13) plausibly gate specific Milestone 3 Services — #8
-   and #10/#13 specifically are why M3-010/M3-011 were deferred out of
-   this batch.
-5. **From Milestone 3 Batches 2–5, all still open**: "Source status"'s
-   undefined _generic_ value domain (conflict #18 — Batch 5 gave Market
-   Data Service its own concrete `PriceFreshness`/`PriceOrigin`
-   vocabulary but deliberately did not fold it into
-   `ServiceMetadata.sourceStatus`; still open at the generic level),
-   "Formula version" aggregation across a multi-Engine-call Service
-   (conflict #19 — Batch 4 implemented a checked stopgap, Batch 6 reused
-   it for a second consumer; still not a real resolution), and
-   `calculatePortfolioSummary`'s inability to summarize a zero-debt
-   portfolio (conflict #20 — needs a product/engineering decision on a
-   `PortfolioSummary`-level convention for debt-free portfolios).
-6. **The `infrastructure/` layer gap** (Batch 5) remains relevant to
-   M3-008 — worth checking whether `04_BUILD_GUIDE.md` describes similarly
-   unassigned infrastructure for protocol parameters before assuming
-   M3-008's real scope boundary.
+     unblocks (depends on M3-007 + M3-008), and **M3-014 (Service
+     Integration Tests)** unblocks (depends on M3-005 through M3-012,
+     all of which are now done).
+4. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+   F-026 (Health Factor status classification, conflict #1), compound
+   interest / M2-013–M2-014 (conflict #7), the partially-unassigned
+   Recommendation Engine chapter (conflict #9 — F-061–F-064
+   implemented; F-060, F-065–F-069 not), "Exit readiness"'s unmapped
+   Formula ID (conflict #11), F-067's partial documentation (conflict
+   #12), the unspecified "Target borrow percentage" blocking a
+   post-loop Golden Reference Portfolio fixture (conflict #14),
+   M2-029's DoD-vs-scope tension over the 33 unimplemented Formula IDs
+   (conflict #15), the Build-Guide-vs-Formulas.md performance-target
+   disagreement plus M2-030's 2 unmapped benchmark categories (conflict
+   #16), and M2-031's undocumented public/internal split criteria
+   (conflict #17). None of these blocked Milestone 2's own completion.
+5. **Revisited in Batch 7, confirmed still open at the specification
+   level but no longer blocking implementation**: swap-fees/slippage/
+   gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
+   mechanics (conflict #10), and F-040's exit-collateral-sale
+   discrepancy (conflict #13, a known, tested approximation) — all three
+   are resolved at the Service layer by faithful pass-through of the
+   Engine's own already-documented scoping/itemization, not by
+   inventing behavior. See each conflict's own "Update — Batch 7" note.
+6. **From Milestone 3 Batches 2–7, still open**: "Source status"'s
+   undefined _generic_ value domain (conflict #18 — still open at the
+   generic level), "Formula version" aggregation across a
+   multi-Engine-call Service (conflict #19 — a checked stopgap, reused
+   by three Services now, still not a real resolution), and
+   **`calculatePortfolioSummary`'s inability to summarize a zero-debt
+   portfolio (conflict #20 — see point 3 above; now blocks every full
+   exit in `planExit`, not just an edge case)**.
+7. **The `infrastructure/` layer gap** (Batch 5) remains relevant to
+   M3-008 — worth checking whether `04_BUILD_GUIDE.md` describes
+   similarly unassigned infrastructure for protocol parameters before
+   assuming M3-008's real scope boundary.

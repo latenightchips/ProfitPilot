@@ -217,3 +217,63 @@ describe('Public Service layer API surface (M3-012)', () => {
     expect(result.data.recommendations).toHaveLength(4);
   });
 });
+
+/**
+ * Loop Strategy Service — 06_TASKS.md M3-010. Verifies it is reachable
+ * through the root `@/services` entry point, not just `@/services/loop`.
+ */
+describe('Public Service layer API surface (M3-010)', () => {
+  it('planLoopStrategy is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).planLoopStrategy).toBe('function');
+  });
+
+  it('a loop strategy can be planned using only @/services imports', () => {
+    const portfolio = {
+      collateral: { asset: 'BTC' as const, quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.5,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = Services.planLoopStrategy(
+      portfolio,
+      { targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.viable).toBe(true);
+  });
+});
+
+/**
+ * Exit Planning Service — 06_TASKS.md M3-011. Verifies it is reachable
+ * through the root `@/services` entry point, not just `@/services/exit`.
+ */
+describe('Public Service layer API surface (M3-011)', () => {
+  it('planExit is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).planExit).toBe('function');
+  });
+
+  it('an exit can be planned using only @/services imports', () => {
+    const portfolio = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = Services.planExit(portfolio, { type: 'debtBalance', targetDebt: 10000 }, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+  });
+});
