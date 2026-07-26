@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-07-25
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 3 complete (pending approval) — M3-001 through M3-004 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-07-26
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 4 complete (pending approval) — M3-001 through M3-006 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1816,6 +1816,139 @@ success).
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 4 — Portfolio Summary + Action Preview Services (M3-005, M3-006)
+
+**Batch scoping, decided before implementation**: `06_TASKS.md` lists
+M3-006 as formally depending on M3-005, and re-reading both together
+(per instruction) confirmed the coupling is functional, not just
+declared: M3-006's DoD — "each preview returns before-and-after values
+and does not mutate the original portfolio" — is exactly the "snapshot,
+apply change, snapshot again" pattern `engine/simulation/simulatePositionChange.ts`
+(M2-021) already uses one layer down, for collateral/debt deltas
+specifically. M3-006 is `calculatePortfolioSummary` called twice around
+a pure portfolio transformation, not an independent calculation.
+Building them apart risked designing M3-005's summary shape without
+knowing the one real consumer that needs to run it twice and diff the
+results. This cohesion finding, the dependency sketch, and four flagged
+specification points (below) were presented and approved before any code
+was written.
+
+| Task                                              | Status  | Notes                                                                                                                                                                                             |
+| ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-005 Implement Portfolio Summary Service        | ✅ Done | `services/portfolio/summary.ts` — `calculatePortfolioSummary`, composing 10 public Engine functions into one `ServiceResult<PortfolioSummary>`, covering M3-005's "Include" list field-for-field. |
+| M3-006 Implement Portfolio Action Preview Service | ✅ Done | `services/portfolio/actionPreview.ts` — `previewPortfolioAction`, applying a `PortfolioAction` to derive a hypothetical portfolio and calling `calculatePortfolioSummary` twice (before/after).   |
+
+**Four points flagged before implementation, all approved as proposed**:
+
+1. **`sourceStatus` is caller-supplied, never fabricated.** Neither
+   Service has any way to know whether the market price it's summarizing
+   is live or manual — that belongs to Market Data Service (M3-007, not
+   yet built). Both `calculatePortfolioSummary` and
+   `previewPortfolioAction` take `sourceStatus: string` as an explicit
+   parameter rather than hardcoding a placeholder like `'unknown'`,
+   extending the same "no fabricated metadata" principle M3-002
+   established for `engineVersion`.
+2. **Conflict #19 (formula-version aggregation) — approved checked
+   stopgap, explicitly not a resolution.** M3-005 is the first Service
+   composing multiple Engine calls (10, in one summary).
+   `calculatePortfolioSummary` takes the first successful call's
+   `engineVersion`/`formulaVersion` and checks every subsequent call
+   against it; a real mismatch (impossible today — every public Engine
+   function reports `formulaVersion: '1.0'`) returns a
+   `ServiceFailure` (`FORMULA_VERSION_MISMATCH`) instead of silently
+   picking one. Conflict #19 stays open in this document — this is a
+   checked stopgap under today's data, not an aggregation algorithm.
+3. **"Interest cost" interpreted as Annual Interest (F-032).**
+   `06_TASKS.md`'s M3-005 "Include" list does not say which of the four
+   interest formulas (Daily/Monthly/Annual/Prorated) is "the" cost
+   figure. Annual was chosen because it pairs directly with `borrowApr`
+   (already an annual rate on the portfolio) and is a point-in-time
+   figure like every other summary field. Documented interpretation, not
+   an invented formula.
+4. **`PortfolioAction` — minimal, six named actions only, no
+   extensibility.** `06_TASKS.md` names six actions with no interface of
+   its own. The approved shape is a discriminated union with exactly one
+   variant per named action, each carrying only its own parameter
+   (`addCollateral`/`withdrawCollateral`: `quantity`;
+   `borrow`/`repay`: `amount`; `changeMarketPrice`: `btcPriceUsd`;
+   `changeProtocolParameters`: a full `ProtocolParameters` replacement,
+   not a partial patch, since no field-level override semantics are
+   documented anywhere to invent).
+
+**"Liquidation information" bundled as one field, not itemized** — M3-005's
+Include list names it as a single bullet. `PortfolioSummary.liquidation`
+groups the three already-public liquidation formulas
+(`calculateLiquidationPrice`/`Distance`/`Buffer`, F-024/F-023/F-025)
+under one object — a structural grouping of existing formulas under the
+label 06_TASKS.md already uses, not a new one.
+
+**`applyAction` duplicates no Engine validation.** It is a pure data
+transform (no Engine call, same category as M3-004's mapping functions)
+— it does not check whether a withdrawal or repayment exceeds what the
+portfolio holds. `calculateCollateralValue`/`calculateDebtValue` already
+reject a negative `quantity`/`balance` via `validateTokenQuantity`, so an
+over-withdrawal or over-repayment surfaces naturally as a
+`ServiceFailure` (`INVALID_NON_NEGATIVE`) when the "after" summary is
+computed. Verified directly by `actionPreview.test.ts`'s over-withdrawal
+and over-repayment cases.
+
+**Sequential dependency, not independent-field validation (unlike
+M3-004).** Every metric in `calculatePortfolioSummary` after
+Collateral/Debt Value consumes an already-computed value from an earlier
+step (e.g. LTV needs Debt Value and Collateral Value). Unlike
+`mapPersistencePortfolioToApplicationPortfolio`'s four independent
+fields, these calculations genuinely depend on each other, so
+`calculatePortfolioSummary` fails fast on the first Engine failure and
+returns a single error — mirroring
+`engine/simulation/simulatePositionChange.ts`'s own `computeSnapshot`
+helper, which composes the same kind of dependent metric chain at the
+Engine layer.
+
+**New finding, documented as conflict #20**: `calculatePortfolioSummary`
+cannot summarize a zero-debt portfolio. `calculateHealthFactor` (F-022)
+succeeds for zero debt (returns `Infinity` with a `NO_DEBT` warning, a
+deliberate Milestone 2 design), but `calculateLiquidationPrice` (F-024)
+treats a zero-debt liquidation price as undefined and returns a
+`FormulaFailure` (`NOT_APPLICABLE_NO_DEBT`) — so a debt-free BTC deposit
+(a valid economic state) cannot get a Portfolio Summary today. This is
+inherited Engine behavior, not something introduced here, and no
+fallback value (e.g. `null` or `Infinity` for `liquidation.price`) was
+invented to paper over it, per "never invent business rules." Verified
+directly by `summary.test.ts`'s zero-debt cases. See conflict #20 below.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/portfolio/summary.ts` imports only `@/engine` (published
+functions/types) and `services/shared/`/`services/portfolio/mapping.ts`
+and `models.ts`; `services/portfolio/actionPreview.ts` imports only
+`@/engine` (type only), `services/shared/result.ts`,
+`services/portfolio/models.ts`, and `services/portfolio/summary.ts` —
+neither imports any other Service subdirectory (`market/`, `protocol/`,
+etc.). No `engine/` file was modified by this batch.
+
+**Traceability audit (pre-commit)**: `calculatePortfolioSummary` and
+`previewPortfolioAction`, plus every exported type from both new files,
+are reachable through `@/services` alone, verified by a new `describe`
+block in `tests/unit/services/publicApiSurface.test.ts` (M3-005,
+M3-006). Every Formula ID this batch relies on (F-002, F-003, F-004,
+F-011, F-020, F-022, F-023, F-024, F-025, F-032) was already implemented
+and traced in Milestone 2 — this batch composes existing public Engine
+functions and claims no new Formula ID.
+
+**Validation — Batch 4 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `pnpm lint`          | ✅ Pass (after autofix of import ordering in `services/portfolio/summary.ts` and its test file)                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of both new test files)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 616/616 (25 new)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 95.04% statements / 90.32% branches / 100% functions / 98.73% lines. `summary.ts` is 87.5%/71.42% — the one uncovered branch is `FORMULA_VERSION_MISMATCH` (conflict #19's stopgap check), genuinely unreachable today since every public Engine function reports `formulaVersion: '1.0'`; kept for defense in depth, the same pattern already used in `engine/simulation/simulatePositionChange.ts`'s own documented unreachable branches. No coverage threshold is configured in `vitest.config.ts`, so this does not fail the pipeline. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2344,6 +2477,50 @@ batch should either find textual guidance elsewhere in `06_TASKS.md` or
 flag this as a decision point before shipping a Portfolio Summary
 Service result.
 
+**Update — Milestone 3 Batch 4 (M3-005)**: reached, as anticipated, and
+still not resolved with a real algorithm. `calculatePortfolioSummary`
+implements a checked stopgap: it takes the first successful Engine
+call's `formulaVersion` and verifies every later call in the same
+summary against it, failing loudly (`FORMULA_VERSION_MISMATCH`) instead
+of silently picking one if they ever disagree. Every public Engine
+function currently reports `formulaVersion: '1.0'`, so this stopgap
+always succeeds today — it is not a real multi-version aggregation rule,
+and this conflict remains open. A future Engine version bump affecting
+only some formulas would surface this immediately as a Service failure,
+which is the intended, honest behavior until the specification defines
+an actual aggregation rule.
+
+---
+
+### 20. `calculatePortfolioSummary` cannot summarize a zero-debt portfolio — `calculateLiquidationPrice` (F-024) treats liquidation price as undefined without debt
+
+Found while implementing Milestone 3 Batch 4 (M3-005). A debt-free BTC
+deposit (collateral > 0, debt = 0) is a valid economic state — someone
+who has deposited collateral but not yet borrowed against it. Composing
+the Engine functions M3-005's own "Include" list requires exposes an
+inconsistency already present in Milestone 2's own formulas:
+`calculateHealthFactor` (F-022) explicitly handles zero debt by
+returning success with `Infinity` and a `NO_DEBT` warning (a deliberate
+M2-009 design decision), but `calculateLiquidationPrice` (F-024) treats
+a zero-debt liquidation price as undefined and returns a `FormulaFailure`
+(`NOT_APPLICABLE_NO_DEBT`). Because `calculatePortfolioSummary` composes
+both, any zero-debt portfolio makes the whole summary fail at the
+liquidation-price step, even though every other field (Collateral Value,
+Net Equity, LTV, Leverage, Health Factor) is perfectly well-defined for
+that portfolio.
+
+**Resolution applied**: none — the Engine's existing F-024 behavior was
+not overridden or special-cased. Inventing a fallback value (e.g.
+`null`, `0`, or `Infinity` for `liquidation.price` when debt is zero)
+would mean guessing at a business rule `02_Formulas.md` doesn't state,
+so `calculatePortfolioSummary` faithfully surfaces the Engine's own
+failure instead. Action needed: a product/engineering decision on
+whether F-024's "undefined for zero debt" semantics should extend to a
+documented `PortfolioSummary`-level convention (e.g. `liquidation: null`
+for debt-free portfolios) — that would be a Milestone 2 Engine change or
+a Milestone 3 Service-level adaptation, not something to decide inside
+this batch's own scope.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -2394,20 +2571,19 @@ Service result.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 3 (M3-004)
-   before committing, per instruction.
-3. Once approved and committed: **Milestone 3 Batch 4 — re-read M3-005
-   (Portfolio Summary Service) and M3-006 (Portfolio Action Preview
-   Service) together**, per explicit instruction, rather than
-   automatically isolating M3-005. Propose that batch's scope — including
-   a `UI → Services → Engine` dependency sketch, per the pattern now
-   established in Batches 2 and 3 — before implementing. M3-005 is the
-   first Service to actually call the Engine (via M3-004's
-   `mapApplicationPortfolioToEngineInput`) and is where conflict #19
-   ("Formula version" aggregation across a multi-Engine-call Service)
-   will need a real answer, not a deferral. Watch for whether M3-006
-   naturally depends on M3-005's output shape or is independent enough to
-   warrant its own batch.
+2. **This pass stops here for approval** of Milestone 3 Batch 4 (M3-005,
+   M3-006) before committing, per instruction.
+3. Once approved and committed: **Milestone 3 Batch 5 — M3-007 (Market
+   Data Service)**, the next task in sequence. M3-007 depends only on
+   M3-002 (done) and is unblocked. It is also the natural place to
+   finally resolve conflict #18 ("Source status" has no documented value
+   domain) — M3-007's own "Support" list (Manual prices, Provider
+   prices, Stale-data detection, Fallback behavior, Price timestamps)
+   reads like the actual source of the `sourceStatus` values every prior
+   batch has deferred defining. Re-read M3-007 and M3-008 (Protocol
+   Parameter Service) together at the start of that batch, per the same
+   grouping judgment used for M3-002/M3-003 and M3-005/M3-006, rather
+   than assuming they're separate or combined by default.
 4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
    still open**: F-026 (Health Factor status classification, conflict
    #1), compound interest / M2-013–M2-014 (conflict #7), the
@@ -2426,10 +2602,15 @@ Service result.
    public/internal split criteria (conflict #17). None of these 17
    blocked Milestone 2's own completion, but several (especially #1, #7,
    #8, #9) plausibly gate specific Milestone 3 Services.
-5. **New from this batch, both open**: "Source status"'s undefined value
-   domain (conflict #18 — likely relevant again at M3-007 Market Data
-   Service or M3-008 Protocol Parameter Service) and "Formula version"
-   aggregation across a multi-Engine-call Service being unspecified
-   (conflict #19 — will need an answer no later than M3-005, Portfolio
-   Summary Service). Revisit each as the Service that depends on it is
-   actually built, rather than resolving all nineteen speculatively now.
+5. **From Milestone 3 Batch 2, both still open**: "Source status"'s
+   undefined value domain (conflict #18 — see point 3 above, M3-007 is
+   likely where this finally gets resolved) and "Formula version"
+   aggregation across a multi-Engine-call Service (conflict #19 — Batch
+   4 implemented a checked stopgap, not a resolution; still open).
+6. **New from this batch, open**: `calculatePortfolioSummary` cannot
+   summarize a zero-debt portfolio, because `calculateLiquidationPrice`
+   (F-024) treats liquidation price as undefined without debt (conflict
+   #20). Needs a product/engineering decision on whether a
+   `PortfolioSummary`-level convention for debt-free portfolios (e.g.
+   `liquidation: null`) should be introduced, and at which layer
+   (Engine or Service).

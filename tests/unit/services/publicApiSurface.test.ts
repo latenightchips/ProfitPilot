@@ -70,3 +70,44 @@ describe('Public Service layer API surface (M3-004)', () => {
     expect(engineInput.collateral.asset).toBe('BTC');
   });
 });
+
+/**
+ * Portfolio Summary + Action Preview Services — 06_TASKS.md M3-005,
+ * M3-006. Verifies both are reachable through the root `@/services`
+ * entry point, not just `@/services/portfolio`.
+ */
+describe('Public Service layer API surface (M3-005, M3-006)', () => {
+  const expectedFunctionNames = ['calculatePortfolioSummary', 'previewPortfolioAction'];
+
+  it.each(expectedFunctionNames)('%s is reachable through @/services alone', (name) => {
+    expect(typeof (Services as Record<string, unknown>)[name]).toBe('function');
+  });
+
+  it('a full summary and action preview can be computed using only @/services imports', () => {
+    const portfolio = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+
+    const summaryResult = Services.calculatePortfolioSummary(portfolio, 'live');
+    expect(summaryResult.ok).toBe(true);
+    if (!summaryResult.ok) return;
+    expect(summaryResult.data.collateralValue).toBe(100000);
+
+    const previewResult = Services.previewPortfolioAction(
+      portfolio,
+      { type: 'addCollateral', quantity: 1 },
+      'live',
+    );
+    expect(previewResult.ok).toBe(true);
+    if (!previewResult.ok) return;
+    expect(previewResult.data.after.collateralValue).toBe(150000);
+  });
+});
