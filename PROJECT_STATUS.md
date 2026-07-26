@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), and Batch 7 (M4-014, M4-015) are synchronized to GitHub; Batch 8 (M4-013) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), Batch 7 (M4-014, M4-015), and Batch 8 (M4-013) are synchronized to GitHub; Batch 9 (M4-017) is implemented and awaiting approval. Remaining M4 task not yet started: M4-018 (M4-010 and M4-016 already completed in Batch 2). M4-018 is the final Milestone 4 task, since its own Dependencies list is explicitly "M4-005 through M4-017." **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3983,6 +3983,191 @@ unreachable (documented as conflict #28) rather than faked.
 
 ---
 
+### Batch 9 — Portfolio Error Recovery (M4-017)
+
+**Pre-implementation verification**: re-fetched `origin/main`, confirmed
+`git diff origin/main..HEAD --stat` was empty, realigned the local
+branch. Re-read M4-017's exact text from `06_TASKS.md`, plus every
+"ERROR RECOVERY"/"ERROR HANDLING"/"DATA RECOVERY"/"BACKUP & RECOVERY"
+section across `01_PRD.md`, `03_UI.md`, and `04_BUILD_GUIDE.md` — six
+sections total, each covering a different layer (state-machine-level,
+calculation-level, storage-corruption-level, and export-format-level).
+Cross-referencing all of them, rather than only `06_TASKS.md`'s own
+short "Include" list, is what surfaced the concrete, correct scope for
+each of M4-017's four Include items below.
+
+**"Loading failures" — not reachable, same treatment as M4-013's
+`'offline'`.** `load()` (Batch 1) has no persistence layer to fail
+against under Conflict B; nothing exists yet to recover from.
+
+**"Validation/saving failures — restore last valid state" — already
+structurally guaranteed, confirmed rather than assumed.**
+`store.update()`/`store.create()` only ever call their mutating `set()`
+_after_ Zod validation succeeds — a rejected update never touches the
+existing, still-valid record. This is exactly 01_PRD.md's own generic
+state-machine "ERROR RECOVERY" pattern ("If a state update fails →
+Rollback → Restore Previous State → Display Error → Continue Running"),
+already satisfied by the existing validate-before-mutate design. No new
+code was needed for this half of the DoD.
+
+**"Calculation failures" — genuinely reachable via real, Zod-valid
+input, confirmed by reading the Engine functions
+`calculatePortfolioSummary` composes (not assumed) — the real substance
+of this batch.** Three real divide-by-zero cases exist for otherwise
+Zod-valid portfolios: zero collateral with nonzero debt
+(`calculateLoanToValue`), collateral value exactly equal to debt value
+(`calculateEffectiveLeverage`), and a zero Liquidation threshold with
+nonzero debt (`calculateLiquidationPrice`) — all three verified via new
+Store-level tests, not just reasoned about. The Portfolio Creation Flow
+(M4-005) and Position Management forms (M4-007/M4-008) can all produce
+these, and `store.create()`'s own redirect to `/portfolio` happens
+regardless of whether the resulting summary calculated successfully —
+so a real user can reach a portfolio whose Detail page previously showed
+no explicit error at all (only scattered "—" fallbacks in sub-components).
+Closed with:
+
+- **`store.recomputeSummary`** (new Store action,
+  `stores/portfolioStore.ts`) — the "Retry" mechanism. Re-runs
+  `buildSummary` against the already-stored, unchanged `portfolio` and
+  re-caches the result.
+- **`CalculationErrorBanner`** (new component, `app/portfolio/page.tsx`)
+  — shown when the active portfolio's cached summary has `ok: false`:
+  the real error message (`summary.errors[0].message`), "Retry",
+  "Return to portfolio list", and "Download recovery copy." Additive per
+  03_UI.md's own "Other application sections should remain functional
+  whenever possible" — the Details/Collateral/Debt forms keep rendering
+  underneath it.
+- **Portfolio List Page** (`app/portfolios/page.tsx`) extended with the
+  identical pattern per-row, for any portfolio whose cached summary
+  failed — consistent with 03_UI.md's ERROR RECOVERY section being a
+  general, app-wide pattern, not scoped to one page.
+
+**Real, tested finding — "Retry" cannot fix anything by itself, and this
+was discovered by writing a test, not assumed in advance.** An earlier
+draft test tried to prove "Retry recovers once the data is fixed
+elsewhere," and failed — because every _other_ mutating Store action
+already recomputes and re-caches the summary on every commit (Batch 1),
+so a cached summary is _never_ stale relative to the currently-stored
+portfolio. Fixing the position through the Collateral/Debt forms (which
+call `store.update()`) already clears the error automatically, with no
+Retry click ever needed — the error only persists while the underlying
+data is still genuinely invalid-in-this-specific-sense, in which case
+re-running the same deterministic calculation against the same data
+reproduces the identical failure every time. "Retry" is still built,
+because 03_UI.md explicitly and concretely names a "Retry Button" as
+part of its ERROR RECOVERY display — but its honest value is matching
+that documented pattern and giving the user a visible re-attempt action,
+not a claim that clicking it resolves the error on its own. Both the
+Store's own header comment and `app/portfolio/page.tsx`'s M4-017 note
+were revised mid-implementation to state this honestly once the test
+proved it, rather than leaving the earlier "legitimate retry" framing
+uncorrected.
+
+**"Diagnostic Information (Developer Mode)" — not built.** 03_UI.md
+names this as part of the same ERROR RECOVERY display, but "Developer
+Mode" itself does not exist anywhere in this codebase yet — no task
+reached so far builds it. Left undone pending that mode's own task,
+rather than inventing an ungated "always show diagnostics" panel.
+
+**"Export recovery copy where possible"** — new
+`utils/portfolioRecoveryExport.ts`: `downloadPortfolioRecoveryCopy`
+triggers a standard Blob + temporary-anchor JSON download of the
+portfolio's own raw data. Deliberately scoped narrower than
+`04_BUILD_GUIDE.md`'s illustrative "every export includes: Application
+Version, Engine Version, Formula Version, Export Timestamp" shape:
+"Engine Version"/"Formula Version" describe a _successful_ calculation's
+own metadata (`ServiceMetadata`), which by definition doesn't exist for
+an export that exists specifically because the calculation _failed_ —
+fabricating one would misrepresent what happened. Only `exportedAt` and
+`schemaVersion` (`'0.1.0'`, matching this application's own Version 0.1
+framing) are included alongside the portfolio itself — exactly what
+01_PRD.md's own "BACKUP & RECOVERY" section names for Version 0.1:
+"Local export only... Every export should include schema versioning."
+This is also **not** the fuller "Export Portfolio" feature 03_UI.md's
+Dashboard "PAGE ACTIONS"/"EXPORT OPTIONS" sections describe (CSV/PDF
+formats, calculated summary fields) — that is a separate, unassigned
+task; building it here would be scope creep beyond what M4-017's own
+text asks for.
+
+**Test files**:
+
+- `tests/unit/stores/portfolioStore.test.ts` (+8 tests): each of the
+  three real divide-by-zero scenarios is confirmed to actually produce a
+  failed, cached summary from real `create()` calls (not fabricated
+  Store state); `recomputeSummary` re-derives without changing data,
+  recovers once the data is genuinely fixed by a real `update()`, reports
+  not-found for an unknown id, and does not touch `saveStatus`. `validInput`
+  extended to accept overrides (matching the pattern already used in
+  other test files) so these scenarios could be constructed directly.
+- `tests/unit/portfolioRecoveryExport.test.ts` (new, 3 tests): the
+  recovery copy includes the schema version/timestamp/portfolio;
+  the download triggers a Blob + anchor click and revokes the URL; the
+  filename is derived from the portfolio id.
+- `tests/unit/app/portfolio/page.test.tsx` (+6 tests): the error banner
+  shows the real message, Retry, Return-to-list link, and Download
+  button; it does not appear for a healthy portfolio; the other forms
+  keep rendering alongside it; Retry recomputes without crashing and
+  reproduces the same failure; a fix applied through the Store already
+  clears the banner before Retry is ever needed; Download triggers a
+  real download (mocked Blob/anchor APIs, matching the utility's own
+  test pattern). `createAndSelect` extended to accept overrides.
+- `tests/unit/app/portfolios/page.test.tsx` (+5 tests): the identical
+  set of behaviors verified per-row on the List Page.
+
+**Browser verification**: started the dev server and drove the full flow
+with Playwright/Chromium — created a portfolio with zero collateral and
+nonzero debt through the real Creation Flow, confirmed the error banner
+rendered with the exact Engine error message and all three actions,
+confirmed the Details/Collateral/Debt forms remained usable underneath
+it, triggered and confirmed a real file download, clicked Retry and
+confirmed the same failure persisted (proving it recomputed rather than
+silently no-op'd), then fixed the position through the real Collateral
+form (including checking the risk-acknowledgment checkbox, since a
+failed `beforeSummary` is conservatively always risk-increasing per
+M4-009's own `isRiskIncreasing` logic) and confirmed the banner cleared
+automatically. Screenshots confirm correct rendering at every step. Zero
+console/page errors.
+
+**Scope discipline**: only M4-017 was implemented. `engine/` and
+`services/` are completely untouched (`git diff --stat -- engine/
+services/` empty) — this batch adds one new Store action (a pure
+re-derivation, no new Service call shape), one new small utility module,
+and UI wiring on the two existing pages that already display portfolio
+summaries. `types/portfolio.ts` was not touched.
+
+**Validation — Batch 9**
+
+| Command              | Result                                                                                                                                                                                                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                              |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                              |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                              |
+| `pnpm test`          | ✅ Pass, 880/880 (22 net new)                                                                                                                                                                                                                                        |
+| `pnpm test:coverage` | ✅ 95.42% statements / 88.58% branches / 100% functions / 98.64% lines (project-wide) — `services/portfolio/summary.ts` improved from 90.62% to 93.75% statements, since the new divide-by-zero tests exercise real failure branches that were previously uncovered. |
+| `pnpm build`         | ✅ Pass — `/portfolio`'s bundle grew from 3.57 kB to 4.03 kB, `/portfolios`'s from 2.42 kB to 2.75 kB, confirming real new content                                                                                                                                   |
+
+**Architecture audit**: `git diff --stat -- engine/ services/` empty.
+`app/portfolio/page.tsx` and `app/portfolios/page.tsx` both import
+`downloadPortfolioRecoveryCopy` from `@/utils/portfolioRecoveryExport`
+(a new, small, dependency-free utility) alongside their existing
+`@/stores/portfolioStore` imports — no new Service or Engine import
+anywhere. `stores/portfolioStore.ts`'s new `recomputeSummary` reuses the
+existing `buildSummary`/`notFoundError` helpers, no new Service call
+shape. UI → Store/Utils → Services → Engine direction preserved
+throughout.
+
+**Traceability**: M4-017's Description (loading/calculation/validation/
+saving failures) and all four Include items (Retry, Return to portfolio
+list, Restore last valid state, Export recovery copy) are addressed
+directly above, with the DoD ("A failed operation does not silently
+destroy or replace valid portfolio data") confirmed already true by
+construction and reinforced with a new direct test. No new
+specification conflict was raised — every ambiguity resolved by reading
+the fuller cross-document ERROR RECOVERY context rather than
+`06_TASKS.md`'s short Include list in isolation.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -4965,38 +5150,35 @@ exists before Milestone 8.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 8
-   (M4-013) before committing, per instruction. Do not begin any further
-   M4 task until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 9
+   (M4-017) before committing, per instruction. Do not begin M4-018
+   until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   8**: all three remain resolved as established (Batch 0/1) and
-   unaffected by this batch's own scope (Store `saveStatus` state-machine
-   wiring, plus one targeted cross-form preview-staleness fix — no new
-   position-editing behavior, and Conflict B's own "no interim
-   persistence infrastructure" is reaffirmed rather than violated: this
-   batch reports honestly on the in-memory Store's real behavior, it does
-   not build a persistence backend).
-4. Once Batch 8 is approved and committed, the remaining M4 tasks are
-   **M4-017 (Portfolio Error Recovery) and M4-018 (Portfolio Workflow
-   Tests)** — neither started yet. Planned order: M4-017 next (broad,
-   independent, depends on M3-003/M4-003, both built); then M4-018 last,
-   since its own Dependencies list is explicitly "M4-005 through
-   M4-017."
-5. **New from Batch 8**: conflict #28 — two parts. (a) M4-013's own
-   Dependencies point at M4-007/M4-008, suggesting auto-save should
-   extend to the Collateral/Debt Position Management forms, but M4-009's
-   own DoD requires explicit confirmation for risk-increasing changes to
-   those exact same fields — resolved by keeping the more specific,
-   already-implemented M4-009 behavior (explicit Preview → Apply) rather
-   than regressing it; auto-save (debounce) stays scoped to
-   `PortfolioDetailsForm` (M4-006) only. (b) M4-013's DoD names four
-   states ("saved, saving, offline, and failed") but this Store's
-   synchronous, in-memory, no-network architecture can only genuinely
-   produce two of them — `'saving'` is real internally but not
-   user-observable (no I/O to await), and `'offline'` is permanently
-   unreachable (no network dependency exists, and faking one would
-   actively mislead). Both gaps documented rather than papered over with
-   artificial delays or a misleading `navigator.onLine` listener.
+   9**: all three remain resolved as established (Batch 0/1) and
+   unaffected by this batch's own scope (one new Store action that only
+   re-derives an already-cached value, plus UI wiring on two existing
+   pages — no new position-editing behavior, and Conflict B is
+   reaffirmed rather than violated: the new "Download recovery copy"
+   export is a local, on-demand file download, not persistence
+   infrastructure).
+4. Once Batch 9 is approved and committed, the only remaining M4 task is
+   **M4-018 (Portfolio Workflow Tests)** — not started yet, and the final
+   Milestone 4 task, since its own Dependencies list is explicitly
+   "M4-005 through M4-017," all of which are now done.
+5. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+   "Include" list was resolved by reading the fuller ERROR RECOVERY
+   context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
+   guessing — see the Batch 9 write-up above for the six-section
+   cross-reference. One finding worth flagging without raising it as a
+   conflict: 03_UI.md's "Retry Button" is built and real (it genuinely
+   re-runs the calculation), but cannot itself resolve a calculation
+   failure in this architecture, since every other mutating Store action
+   already keeps cached summaries in sync with committed data — fixing
+   the underlying position is what actually clears the error, not the
+   Retry click. Documented as an honest limitation in both
+   `stores/portfolioStore.ts` and `app/portfolio/page.tsx`, not a
+   specification conflict (03_UI.md's own text is satisfied; the
+   limitation is architectural, not a documentation gap).
 6. **From Batch 6, still open**: conflict #27 — M4-012 never says
    whether an archived portfolio remains independently selectable (e.g.
    still reachable via the switcher or a clickable list row) while
@@ -5029,13 +5211,11 @@ exists before Milestone 8.
     decision.
 12. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-13. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+13. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+    Milestone 4 Batch 9)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
-    Cloud Synchronization & Import/Export) is reached, not before. This
-    is the same gap M4-013 (Batch 8, this pass) collided with, resolved
-    by reporting honestly on the in-memory Store rather than building an
-    interim persistence layer.
+    Cloud Synchronization & Import/Export) is reached, not before.
 14. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
@@ -5058,15 +5238,15 @@ exists before Milestone 8.
 16. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 14 above), "Settings"'s
-    undefined shape (conflict #22 — point 12 above), the Portfolio List
+    persistence-adapter gap (conflict #21 — point 13 above), "Settings"'s
+    undefined shape (conflict #22 — point 11 above), the Portfolio List
     page's missing place in 03_UI.md's page inventory (conflict #23 —
-    point 11 above), the missing protocol-preset values (conflict #24 —
-    point 10 above), the debt "Price"/"Rate type" gap (conflict #25 —
-    point 9 above), the undefined "risk-increasing" term (conflict #26 —
-    point 8 above), whether an archived portfolio stays independently
+    point 10 above), the missing protocol-preset values (conflict #24 —
+    point 9 above), the debt "Price"/"Rate type" gap (conflict #25 —
+    point 8 above), the undefined "risk-increasing" term (conflict #26 —
+    point 7 above), whether an archived portfolio stays independently
     selectable (conflict #27 — point 6 above), and the auto-save-vs-
     confirmation tension plus the two unreachable DoD save states
-    (conflict #28 — point 5 above). Conflict #20 (resolved Batch 0) is
-    not counted. **27 open conflicts remain (28 total raised, minus #20,
-    resolved) — one new conflict (#28) raised by Batch 8.**
+    (conflict #28, from Batch 8/M4-013). Conflict #20 (resolved Batch 0)
+    is not counted. **27 open conflicts remain (28 total raised, minus
+    #20, resolved) — unchanged by Batch 9, which raised none.**

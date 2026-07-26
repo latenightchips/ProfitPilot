@@ -152,6 +152,30 @@
  * See `app/portfolio/page.tsx`'s own M4-013 note for the one genuinely
  * *reachable* staleness gap this batch found and fixed — a stale
  * *preview* (UI-local state), not a stale Store write.
+ *
+ * **`recomputeSummary` (added in M4-017, "Implement Portfolio Error
+ * Recovery")** — the concrete mechanism behind that task's "Retry"
+ * Include item for **calculation** failures. Unlike every other action
+ * here, it changes no portfolio data at all — it only re-runs
+ * `buildSummary` against the already-stored, already-Zod-valid
+ * `portfolio` and re-caches the result. `calculatePortfolioSummary` can
+ * genuinely fail for Zod-valid input — e.g. zero collateral with
+ * nonzero debt, collateral value exactly equal to debt value, or a zero
+ * liquidation threshold with nonzero debt all divide by zero at the
+ * Engine layer (`calculateLoanToValue`/`calculateEffectiveLeverage`/
+ * `calculateLiquidationPrice`) — so this is a real recomputation, not a
+ * UI-only toggle. **Honestly, though, it cannot fix anything by
+ * itself**: every other mutating action already recomputes and re-caches
+ * the summary on every commit, so a cached summary is never stale
+ * relative to the currently-stored portfolio — re-running the identical,
+ * deterministic calculation against *unchanged* data reproduces the
+ * identical failure every time (confirmed via test, not assumed). Its
+ * value is matching 03_UI.md's explicit "Retry Button" ERROR RECOVERY
+ * item, not a claim that clicking it resolves the underlying issue —
+ * only fixing the position itself (via `update`, which already clears
+ * the failure automatically once applied) does that. Does not touch
+ * `saveStatus`: nothing is being saved, only re-derived from data that
+ * was already saved.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -200,6 +224,7 @@ export interface PortfolioStoreActions {
   archive: (id: string) => void;
   unarchive: (id: string) => void;
   delete: (id: string) => void;
+  recomputeSummary: (id: string) => void;
 }
 
 export type PortfolioStore = PortfolioStoreState & PortfolioStoreActions;
@@ -461,5 +486,20 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         saveStatus: 'saved',
       };
     });
+  },
+
+  recomputeSummary: (id) => {
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      set({ errors: [notFoundError(id)] });
+      return;
+    }
+    set((state) => ({
+      portfolios: {
+        ...state.portfolios,
+        [id]: { portfolio: existing.portfolio, summary: buildSummary(existing.portfolio) },
+      },
+      errors: [],
+    }));
   },
 }));

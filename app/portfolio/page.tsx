@@ -23,6 +23,7 @@ import {
   type PortfolioDetailsInput,
   portfolioDetailsSchema,
 } from '@/types/portfolio.schema';
+import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
 
 /**
  * Portfolio Details Form — 06_TASKS.md M4-006 ("Implement Portfolio
@@ -330,6 +331,81 @@ import {
  * `portfolio.updatedAt` changes for any reason, closing this gap. This is
  * a stale *preview* (component-local UI state), not a stale *Store
  * write* — the Store itself was never at risk of losing an update.
+ *
+ * ---
+ *
+ * **Portfolio Error Recovery — 06_TASKS.md M4-017.** Description:
+ * "Handle portfolio loading, calculation, validation, and saving
+ * failures." Include: "Retry. Return to portfolio list. Restore last
+ * valid state. Export recovery copy where possible." DoD: "A failed
+ * operation does not silently destroy or replace valid portfolio data."
+ *
+ * **Loading failures — not reachable, same as M4-013's `'offline'`.**
+ * `load()` (Batch 1) has no persistence layer to fail against under
+ * Conflict B; nothing to recover from here yet.
+ *
+ * **Validation/saving failures — "restore last valid state" already
+ * structurally guaranteed, confirmed rather than assumed.**
+ * `store.update()`/`store.create()` only ever call their mutating
+ * `set()` *after* Zod validation succeeds (`stores/portfolioStore.ts`)
+ * — a rejected update never touches the existing, still-valid record.
+ * This is exactly 01_PRD.md's own generic state-machine "ERROR RECOVERY"
+ * pattern ("If a state update fails → Rollback → Restore Previous
+ * State → Display Error → Continue Running"), already satisfied by the
+ * existing validate-before-mutate design, not new code.
+ *
+ * **Calculation failures — genuinely reachable via real, Zod-valid
+ * input, confirmed by reading the Engine functions
+ * `calculatePortfolioSummary` composes, not assumed.** Three real
+ * divide-by-zero cases exist for otherwise-valid portfolios: zero
+ * collateral with nonzero debt (`calculateLoanToValue`), collateral
+ * value exactly equal to debt value (`calculateEffectiveLeverage`), and
+ * a zero Liquidation threshold with nonzero debt
+ * (`calculateLiquidationPrice`). The Portfolio Creation Flow (M4-005)
+ * and Position Management forms (M4-007/M4-008) can all produce these —
+ * `store.create()`'s own redirect to this page happens regardless of
+ * whether the resulting summary calculated successfully, so this is a
+ * real, user-reachable gap this batch closes with
+ * `CalculationErrorBanner` (below): a clear error message
+ * (`summary.errors[0].message`), a "Retry" button, and a "Return to
+ * portfolio list" link.
+ *
+ * **"Retry" (`store.recomputeSummary`) — genuinely re-runs the
+ * calculation, but honestly cannot "fix" anything by itself, confirmed
+ * by testing rather than assumed.** Every mutating Store action already
+ * recomputes and re-caches the summary on every commit
+ * (`stores/portfolioStore.ts`, Batch 1), so a cached summary is *never*
+ * stale relative to the currently-stored portfolio — unlike M4-013's
+ * rejected "Retry" (there, the block was "no transient failure exists to
+ * retry"), here the calculation is real and reachable, but deterministic:
+ * re-running it against *unchanged* data reproduces the identical
+ * failure every time (verified in
+ * `tests/unit/app/portfolio/page.test.tsx`). Its honest value is
+ * matching 03_UI.md's explicit "ERROR RECOVERY" spec item and giving the
+ * user an explicit, visible re-attempt action, not a claim that clicking
+ * it can resolve the error on its own — fixing the underlying position
+ * (via the Collateral/Debt forms below, which already clear the banner
+ * automatically once applied, with no Retry click needed) is what
+ * actually resolves it.
+ *
+ * Per 03_UI.md's own "ERROR RECOVERY" section ("Other application
+ * sections should remain functional whenever possible"), the banner is
+ * additive — the Details/Collateral/Debt forms keep rendering underneath
+ * it; they already degrade gracefully for a failed `beforeSummary`
+ * (`PreviewDiff`'s "—" fallbacks, Batch 4).
+ *
+ * **"Diagnostic Information (Developer Mode)" — not built.** 03_UI.md
+ * names this as part of the same ERROR RECOVERY display, but "Developer
+ * Mode" itself does not exist anywhere in this codebase yet (no task
+ * reached so far builds it) — there is no mode to gate diagnostic
+ * output behind. Left undone pending that mode's own task, rather than
+ * inventing an ungated "always show diagnostics" panel no task asked
+ * for.
+ *
+ * **"Export recovery copy where possible"**: `downloadPortfolioRecoveryCopy`
+ * (`utils/portfolioRecoveryExport.ts`, new this batch) — see that file's
+ * own header comment for why its scope is deliberately narrower than
+ * 04_BUILD_GUIDE.md's fuller illustrative export shape.
  */
 const AUTOSAVE_DEBOUNCE_MS = 600;
 
@@ -441,6 +517,60 @@ function canApply(
   if (preview === null) return false;
   if (!preview.ok) return true;
   return !isRiskIncreasing(beforeSummary, preview.data) || riskAcknowledged;
+}
+
+/**
+ * M4-017 ("Implement Portfolio Error Recovery") — see this file's own
+ * M4-017 header note for the full reasoning. Additive, not a
+ * replacement: the caller keeps rendering the Details/Collateral/Debt
+ * forms underneath this regardless ("Other application sections should
+ * remain functional whenever possible," 03_UI.md).
+ */
+function CalculationErrorBanner({
+  portfolioId,
+  portfolio,
+  summary,
+}: {
+  portfolioId: string;
+  portfolio: Portfolio;
+  summary: ServiceResult<PortfolioSummary>;
+}) {
+  const recomputeSummary = usePortfolioStore((state) => state.recomputeSummary);
+
+  if (summary.ok) return null;
+
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
+      <p className="font-medium text-destructive">
+        {summary.errors[0]?.message ?? "This portfolio's summary could not be calculated."}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Your portfolio data is unchanged. Other sections of this page remain usable.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => recomputeSummary(portfolioId)}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+        >
+          Retry
+        </button>
+        <Link
+          href="/portfolios"
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+        >
+          Return to portfolio list
+        </Link>
+        <button
+          type="button"
+          onClick={() => downloadPortfolioRecoveryCopy(portfolio)}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+        >
+          Download recovery copy
+        </button>
+      </div>
+    </div>
+  );
 }
 
 type PortfolioDetailsFormValues = z.input<typeof portfolioDetailsSchema>;
@@ -1010,6 +1140,11 @@ export default function PortfolioPage() {
           <p className="text-xs text-muted-foreground" role="status">
             {formatSaveStatus(saveStatus)}
           </p>
+          <CalculationErrorBanner
+            portfolioId={activePortfolioId}
+            portfolio={record.portfolio}
+            summary={record.summary}
+          />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <CollateralPositionForm
             portfolioId={activePortfolioId}

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { type PortfolioRecord, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
+import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
 
 /**
  * Portfolio List Page — 06_TASKS.md M4-004 ("Implement Portfolio List
@@ -98,6 +99,17 @@ import type { Portfolio } from '@/types/portfolio';
  *   `delete` already nulls `activePortfolioId` in that case, and
  *   `app/portfolio/page.tsx` already renders a graceful "No portfolio is
  *   currently selected" state for it).
+ *
+ * **M4-017 ("Implement Portfolio Error Recovery") — added this batch**:
+ * a row whose cached `summary` failed (a real, reachable calculation
+ * failure — see `stores/portfolioStore.ts`'s own M4-017 note for the
+ * specific Zod-valid-but-divide-by-zero cases) now shows the actual
+ * error message plus "Retry" (`store.recomputeSummary`) and "Download
+ * recovery copy" (`utils/portfolioRecoveryExport.ts`) actions — the same
+ * pattern `app/portfolio/page.tsx`'s `CalculationErrorBanner` uses,
+ * applied per-row here since this page can show many portfolios at
+ * once. "Return to portfolio list" is trivially already satisfied: this
+ * *is* that list.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -130,6 +142,8 @@ interface PortfolioRowProps {
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
   onReplacementChange: (id: string) => void;
+  onRetrySummary: () => void;
+  onDownloadRecoveryCopy: () => void;
 }
 
 function PortfolioRow({
@@ -148,6 +162,8 @@ function PortfolioRow({
   onCancelDelete,
   onConfirmDelete,
   onReplacementChange,
+  onRetrySummary,
+  onDownloadRecoveryCopy,
 }: PortfolioRowProps) {
   const { portfolio, summary } = record;
   const needsReplacement = isActive && replacementOptions.length > 0;
@@ -169,16 +185,12 @@ function PortfolioRow({
         </span>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-        {summary.ok ? (
+        {summary.ok && (
           <>
             <span>Net Equity: {formatCurrency(summary.data.netEquity)}</span>
             <span>Health Factor: {formatHealthFactor(summary.data.healthFactor)}</span>
             <span>Debt: {formatCurrency(summary.data.debtValue)}</span>
           </>
-        ) : (
-          <span className="text-destructive">
-            Unable to calculate this portfolio&rsquo;s summary.
-          </span>
         )}
         <span>Storage: {saveStatus}</span>
       </div>
@@ -242,6 +254,30 @@ function PortfolioRow({
           Delete
         </button>
       </div>
+
+      {!summary.ok && (
+        <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <p className="font-medium text-destructive">
+            {summary.errors[0]?.message ?? "Unable to calculate this portfolio's summary."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onRetrySummary}
+              className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadRecoveryCopy}
+              className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              Download recovery copy
+            </button>
+          </div>
+        </div>
+      )}
 
       {isConfirmingDelete && (
         <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
@@ -310,6 +346,7 @@ export default function PortfoliosPage() {
   const archive = usePortfolioStore((state) => state.archive);
   const unarchive = usePortfolioStore((state) => state.unarchive);
   const deletePortfolio = usePortfolioStore((state) => state.delete);
+  const recomputeSummary = usePortfolioStore((state) => state.recomputeSummary);
   const router = useRouter();
 
   const [showArchived, setShowArchived] = useState(false);
@@ -372,6 +409,8 @@ export default function PortfoliosPage() {
         onCancelDelete={cancelDelete}
         onConfirmDelete={() => confirmDelete(portfolio.id)}
         onReplacementChange={setReplacementId}
+        onRetrySummary={() => recomputeSummary(portfolio.id)}
+        onDownloadRecoveryCopy={() => downloadPortfolioRecoveryCopy(portfolio)}
       />
     );
   }

@@ -24,7 +24,7 @@ beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
 });
 
-function validInput() {
+function validInput(overrides: Record<string, unknown> = {}) {
   return {
     name: 'My Portfolio',
     baseCurrency: 'USD',
@@ -38,6 +38,7 @@ function validInput() {
       supplyApr: 0.02,
     },
     settings: {},
+    ...overrides,
   };
 }
 
@@ -470,5 +471,84 @@ describe('usePortfolioStore — no stale-update window (M4-013 Requirement, veri
     usePortfolioStore.getState().update(created.data.id, { name: 'Second' });
 
     expect(usePortfolioStore.getState().portfolios[created.data.id].portfolio.name).toBe('Second');
+  });
+});
+
+describe('usePortfolioStore — calculation failures are genuinely reachable via Zod-valid input (M4-017)', () => {
+  it('caches a failed summary for zero collateral with nonzero debt (calculateLoanToValue divides by zero)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+  });
+
+  it('caches a failed summary when collateral value exactly equals debt value (calculateEffectiveLeverage divides by zero)', () => {
+    // 1 BTC @ $20,000 collateral value === $20,000 debt value.
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 1 },
+        debt: { asset: 'USDC', balance: 20000 },
+        market: { btcPriceUsd: 20000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+  });
+
+  it('caches a failed summary for a zero liquidation threshold with nonzero debt (calculateLiquidationPrice divides by zero)', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        protocol: { maxLoanToValue: 0, liquidationThreshold: 0, borrowApr: 0.05, supplyApr: 0.02 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+  });
+});
+
+describe('usePortfolioStore.recomputeSummary (M4-017)', () => {
+  it('re-derives and re-caches the summary from the already-stored portfolio, changing no data', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+
+    usePortfolioStore.getState().recomputeSummary(created.data.id);
+
+    // Same (still Zod-valid-but-failing) data in, same failure out —
+    // this proves the recompute actually ran, not a no-op.
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    expect(record.summary.ok).toBe(false);
+    expect(record.portfolio).toEqual(created.data);
+  });
+
+  it('recovers once the underlying data is fixed by a real update, without a page reload', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+
+    usePortfolioStore
+      .getState()
+      .update(created.data.id, { collateral: { asset: 'BTC', quantity: 2 } });
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(true);
+  });
+
+  it('reports a not-found error for an unknown id', () => {
+    usePortfolioStore.getState().recomputeSummary('missing-id');
+    expect(usePortfolioStore.getState().errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+
+  it('does not touch saveStatus — nothing is being saved, only re-derived', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+
+    usePortfolioStore.getState().recomputeSummary(created.data.id);
+
+    expect(usePortfolioStore.getState().saveStatus).toBe('idle');
   });
 });

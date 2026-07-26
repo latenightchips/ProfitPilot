@@ -327,3 +327,83 @@ describe('PortfoliosPage — Delete (M4-012)', () => {
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
   });
 });
+
+describe('PortfoliosPage — Calculation Error Recovery (M4-017)', () => {
+  it('shows the real error message plus Retry and Download recovery copy for a row whose summary failed', () => {
+    // Zero collateral with nonzero debt — a real, Zod-valid input that
+    // fails at calculateLoanToValue (divide by zero).
+    usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'Broken', collateral: { asset: 'BTC', quantity: 0 } }));
+    render(<PortfoliosPage />);
+
+    const row = screen.getByText('Broken').closest('li')!;
+    const section = within(row);
+    expect(section.getByText(/cannot compute/i)).toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Download recovery copy' })).toBeInTheDocument();
+  });
+
+  it('does not show the recovery block for a row whose summary calculates successfully', () => {
+    usePortfolioStore.getState().create(validInput({ name: 'Healthy' }));
+    render(<PortfoliosPage />);
+    const row = screen.getByText('Healthy').closest('li')!;
+    expect(within(row).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('a fix applied through the Store already clears the recovery block (summaries are never stale relative to committed data)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'Broken', collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    render(<PortfoliosPage />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+
+    act(() => {
+      usePortfolioStore
+        .getState()
+        .update(created.data.id, { collateral: { asset: 'BTC', quantity: 2 } });
+    });
+
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('Retry recomputes without crashing — same still-failing data in, same failure out', async () => {
+    usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'Broken', collateral: { asset: 'BTC', quantity: 0 } }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(screen.getByText(/cannot compute/i)).toBeInTheDocument();
+  });
+
+  it('Download recovery copy triggers a download for the failing portfolio', async () => {
+    usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'Broken', collateral: { asset: 'BTC', quantity: 0 } }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    const click = vi.fn();
+    const realCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = realCreateElement(tagName);
+      if (tagName === 'a') element.click = click;
+      return element;
+    });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:mock-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Download recovery copy' }));
+    expect(click).toHaveBeenCalledTimes(1);
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+});

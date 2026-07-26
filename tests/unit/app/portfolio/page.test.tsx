@@ -40,8 +40,8 @@ function validInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createAndSelect() {
-  const result = usePortfolioStore.getState().create(validInput());
+function createAndSelect(overrides: Record<string, unknown> = {}) {
+  const result = usePortfolioStore.getState().create(validInput(overrides));
   if (!result.ok) throw new Error('setup failed');
   usePortfolioStore.getState().select(result.data.id);
   return result.data;
@@ -580,5 +580,94 @@ describe('PortfolioPage — Auto-Save (M4-013)', () => {
     // at all — it isn't rendered here — so the open preview survives.
     usePortfolioStore.getState().update(second.data.id, { name: 'Second Renamed' });
     expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+  });
+});
+
+describe('PortfolioPage — Calculation Error Recovery (M4-017)', () => {
+  it('shows the real error message when the active portfolio’s summary fails to calculate', () => {
+    // Zero collateral with nonzero debt — a real, Zod-valid input that
+    // fails at calculateLoanToValue (divide by zero), not a fabricated
+    // test-only state.
+    createAndSelect({ collateral: { asset: 'BTC', quantity: 0 } });
+    render(<PortfolioPage />);
+
+    expect(screen.getByText(/cannot compute/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Return to portfolio list' })).toHaveAttribute(
+      'href',
+      '/portfolios',
+    );
+    expect(screen.getByRole('button', { name: 'Download recovery copy' })).toBeInTheDocument();
+  });
+
+  it('does not show the error banner for a portfolio whose summary calculates successfully', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the Details/Collateral/Debt forms rendered and usable alongside the error banner', () => {
+    createAndSelect({ collateral: { asset: 'BTC', quantity: 0 } });
+    render(<PortfolioPage />);
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Portfolio name')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Collateral' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Debt' })).toBeInTheDocument();
+  });
+
+  it('Retry recomputes without crashing — same still-failing data in, same failure out', async () => {
+    createAndSelect({ collateral: { asset: 'BTC', quantity: 0 } });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    expect(screen.getByText(/cannot compute/i)).toBeInTheDocument();
+
+    // Nothing about the underlying data changed, so the same
+    // deterministic failure recurs — Retry recomputing is not a no-op
+    // internally (it re-runs `buildSummary`), but with unchanged input
+    // it cannot produce a different result. This test proves clicking
+    // it does not crash or clear the banner incorrectly.
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(screen.getByText(/cannot compute/i)).toBeInTheDocument();
+  });
+
+  it('a fix applied through the Store already clears the error before Retry is ever needed (summaries are never stale relative to committed data)', () => {
+    const created = createAndSelect({ collateral: { asset: 'BTC', quantity: 0 } });
+    render(<PortfolioPage />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+
+    act(() => {
+      usePortfolioStore
+        .getState()
+        .update(created.id, { collateral: { asset: 'BTC', quantity: 2 } });
+    });
+
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('Download recovery copy triggers a download for the failing portfolio', async () => {
+    createAndSelect({ collateral: { asset: 'BTC', quantity: 0 } });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+
+    const click = vi.fn();
+    const realCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = realCreateElement(tagName);
+      if (tagName === 'a') element.click = click;
+      return element;
+    });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:mock-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Download recovery copy' }));
+    expect(click).toHaveBeenCalledTimes(1);
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 });
