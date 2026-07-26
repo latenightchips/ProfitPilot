@@ -184,13 +184,60 @@ describe('usePortfolioStore.duplicate (M4-003)', () => {
   });
 });
 
-describe('usePortfolioStore.archive (M4-003)', () => {
+describe('usePortfolioStore.archive (M4-003, extended M4-012)', () => {
   it('sets archivedAt without removing the portfolio', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().archive(created.data.id);
     const record = usePortfolioStore.getState().portfolios[created.data.id];
     expect(record.portfolio.archivedAt).not.toBeNull();
+  });
+
+  it('clears activePortfolioId when archiving the active portfolio (M4-012: "Hide from active lists")', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().archive(created.data.id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBeNull();
+  });
+
+  it('leaves activePortfolioId unchanged when archiving a different portfolio', () => {
+    const first = usePortfolioStore.getState().create(validInput());
+    const second = usePortfolioStore.getState().create(validInput());
+    if (!first.ok || !second.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(first.data.id);
+    usePortfolioStore.getState().archive(second.data.id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(first.data.id);
+  });
+
+  it('reports a not-found error for an unknown id', () => {
+    usePortfolioStore.getState().archive('missing-id');
+    expect(usePortfolioStore.getState().errors[0]?.code).toBe('PORTFOLIO_NOT_FOUND');
+  });
+});
+
+describe('usePortfolioStore.unarchive (M4-012)', () => {
+  it('clears archivedAt, restoring the portfolio to the active list', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().archive(created.data.id);
+    usePortfolioStore.getState().unarchive(created.data.id);
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    expect(record.portfolio.archivedAt).toBeNull();
+  });
+
+  it('does not by itself restore activePortfolioId (archiving already cleared it)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().archive(created.data.id);
+    usePortfolioStore.getState().unarchive(created.data.id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBeNull();
+  });
+
+  it('reports a not-found error for an unknown id', () => {
+    usePortfolioStore.getState().unarchive('missing-id');
+    expect(usePortfolioStore.getState().errors[0]?.code).toBe('PORTFOLIO_NOT_FOUND');
   });
 });
 

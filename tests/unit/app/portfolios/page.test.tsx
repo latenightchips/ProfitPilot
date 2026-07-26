@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -141,7 +141,7 @@ describe('PortfoliosPage — with portfolios (M4-004)', () => {
     }));
 
     render(<PortfoliosPage />);
-    const buttons = screen.getAllByRole('button');
+    const buttons = screen.getAllByRole('button', { name: /^(First|Second)/ });
     const names = buttons.map((button) => button.textContent);
     expect(names[0]).toContain('Second');
     expect(names[1]).toContain('First');
@@ -170,5 +170,160 @@ describe('PortfoliosPage — loading state (M4-004)', () => {
       usePortfolioStore.setState({ loadStatus: 'loading' });
     });
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
+  });
+});
+
+describe('PortfoliosPage — Duplication (M4-011)', () => {
+  it('creates an independent copy with an appended name when Duplicate is clicked', async () => {
+    usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    expect(screen.getByText('Alpha')).toBeInTheDocument();
+    expect(screen.getByText('Alpha (Copy)')).toBeInTheDocument();
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(2);
+  });
+});
+
+describe('PortfoliosPage — Archive and Unarchive (M4-012)', () => {
+  it('moves an archived portfolio out of the main list and into "Show archived"', async () => {
+    usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+
+    expect(screen.queryByRole('button', { name: /^Alpha/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Show archived (1)')).toBeInTheDocument();
+  });
+
+  it('reveals archived portfolios as non-selectable rows once expanded', async () => {
+    const created = usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().archive(created.data.id);
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+
+    expect(screen.getByText('Alpha')).toBeInTheDocument();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    // Archived rows are not a select control — no button carries the
+    // portfolio's own name as its accessible name.
+    expect(screen.queryByRole('button', { name: /^Alpha/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unarchive' })).toBeInTheDocument();
+  });
+
+  it('restores an archived portfolio to the active list when Unarchive is clicked', async () => {
+    const created = usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().archive(created.data.id);
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+
+    await user.click(screen.getByRole('button', { name: 'Unarchive' }));
+
+    expect(screen.getByRole('button', { name: /^Alpha/ })).toBeInTheDocument();
+    expect(screen.queryByText('Show archived')).not.toBeInTheDocument();
+  });
+
+  it('shows an "all archived" message instead of the main list when every portfolio is archived', () => {
+    const created = usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().archive(created.data.id);
+    render(<PortfoliosPage />);
+
+    expect(screen.getByText(/All portfolios are archived/)).toBeInTheDocument();
+  });
+});
+
+describe('PortfoliosPage — Delete (M4-012)', () => {
+  it('requires confirmation and explains consequences before deleting', async () => {
+    usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(screen.getByText(/Delete .Alpha.\?/)).toBeInTheDocument();
+    expect(screen.getByText(/permanently removes the portfolio/)).toBeInTheDocument();
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(1);
+  });
+
+  it('cancels without deleting', async () => {
+    usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText(/Delete .Alpha.\?/)).not.toBeInTheDocument();
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(1);
+  });
+
+  it('deletes a non-active portfolio directly, with no replacement selector shown', async () => {
+    const active = usePortfolioStore.getState().create(validInput({ name: 'Active' }));
+    usePortfolioStore.getState().create(validInput({ name: 'Other' }));
+    if (!active.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(active.data.id);
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    const otherRow = screen.getByText('Other').closest('li');
+    if (otherRow === null) throw new Error('row not found');
+    await user.click(within(otherRow).getByRole('button', { name: 'Delete' }));
+
+    expect(screen.queryByLabelText('Replacement portfolio')).not.toBeInTheDocument();
+    await user.click(within(otherRow).getByRole('button', { name: 'Confirm Delete' }));
+
+    expect(screen.queryByText('Other')).not.toBeInTheDocument();
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(active.data.id);
+  });
+
+  it('requires selecting a replacement before deleting the active portfolio, when another exists', async () => {
+    const active = usePortfolioStore.getState().create(validInput({ name: 'Active' }));
+    const other = usePortfolioStore.getState().create(validInput({ name: 'Other' }));
+    if (!active.ok || !other.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(active.data.id);
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    const activeRow = screen.getByText('Active').closest('li');
+    if (activeRow === null) throw new Error('row not found');
+    await user.click(within(activeRow).getByRole('button', { name: 'Delete' }));
+
+    const confirmButton = within(activeRow).getByRole('button', { name: 'Confirm Delete' });
+    expect(confirmButton).toBeDisabled();
+
+    await user.selectOptions(
+      within(activeRow).getByLabelText('Replacement portfolio'),
+      other.data.id,
+    );
+    expect(confirmButton).toBeEnabled();
+    await user.click(confirmButton);
+
+    expect(screen.queryByText('Active')).not.toBeInTheDocument();
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(other.data.id);
+  });
+
+  it('allows deleting the active portfolio directly when no other active portfolio exists', async () => {
+    const created = usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    render(<PortfoliosPage />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(screen.getByText(/no other active portfolio is available/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Replacement portfolio')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
+
+    expect(usePortfolioStore.getState().activePortfolioId).toBeNull();
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
   });
 });

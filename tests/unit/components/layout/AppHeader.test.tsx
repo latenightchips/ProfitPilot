@@ -54,13 +54,23 @@ describe('AppHeader — no portfolios (M4-010)', () => {
 });
 
 describe('AppHeader — with portfolios (M4-010)', () => {
-  it('lists every portfolio in the switcher', () => {
+  it('lists every active (non-archived) portfolio in the switcher', () => {
     usePortfolioStore.getState().create(validInput('Alpha'));
     usePortfolioStore.getState().create(validInput('Beta'));
     render(<AppHeader />);
     const select = screen.getByLabelText('Active portfolio');
     expect(select).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Alpha' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Beta' })).toBeInTheDocument();
+  });
+
+  it('excludes archived portfolios from the switcher (M4-012: "Hide from active lists")', () => {
+    const alpha = usePortfolioStore.getState().create(validInput('Alpha'));
+    usePortfolioStore.getState().create(validInput('Beta'));
+    if (!alpha.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().archive(alpha.data.id);
+    render(<AppHeader />);
+    expect(screen.queryByRole('option', { name: 'Alpha' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Beta' })).toBeInTheDocument();
   });
 

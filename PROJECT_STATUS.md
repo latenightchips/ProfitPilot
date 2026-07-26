@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), and Batch 4 (M4-007, M4-008) are synchronized to GitHub; Batch 5 (M4-009) is implemented and awaiting approval; M4-011 has not started (M4-010 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), and Batch 5 (M4-009) are synchronized to GitHub; Batch 6 (M4-011, M4-012) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-013 through M4-015, M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3465,6 +3465,163 @@ with an invented threshold.
 
 ---
 
+### Batch 6 — Portfolio Duplication + Portfolio Archive and Delete (M4-011, M4-012)
+
+**Pre-implementation verification (per instruction)**: re-fetched
+`origin/main`, confirmed `git diff origin/main..HEAD --stat` was empty
+(Batch 5's commit had already landed there under a different local hash
+from the manual synchronization), then realigned the local branch onto
+`origin/main` before starting. Re-read M4-011/M4-012's exact text
+directly from `06_TASKS.md`, plus 03_UI.md's Portfolio Page section —
+which documents no Duplicate/Archive/Delete UI details at all, confirming
+these two tasks are governed entirely by `06_TASKS.md`'s own text with no
+separate UI specification to reconcile.
+
+**Both tasks' core mechanism already existed (Batch 1).** M4-003 itself
+required _some_ working `duplicate`/`archive` Store actions (see
+`stores/portfolioStore.ts`'s own header comment), so this batch is
+primarily UI wiring on `/portfolios` plus the specific Store additions
+M4-012's own DoD requires — not new position-editing logic.
+
+**M4-011 (Portfolio Duplication)**: added a "Duplicate" action to every
+row on the Portfolio List Page, calling the Store's pre-existing
+`duplicate(id)`. No confirmation shown — duplication is non-destructive
+and immediately reversible via Delete, matching 03_UI.md's "Every action
+is reversible whenever possible" principle. All four Requirements were
+already satisfied by the Batch 1 Store implementation (new identity,
+copied positions/settings, no synchronization metadata to copy since
+`Portfolio` has no such field, appended " (Copy)" name); this batch only
+needed to expose the action and verify the DoD ("can be edited
+independently") end-to-end through the real UI, which the browser
+verification below confirms.
+
+**M4-012 (Portfolio Archive and Delete) — two Store additions plus the
+UI**:
+
+- **`archive` now also clears `activePortfolioId`** when the archived
+  record was the active one (`stores/portfolioStore.ts`), mirroring
+  `delete`'s existing identical fallback. Necessary because M4-012's own
+  text requires archiving to "Hide from active lists" — if the archived
+  record stayed selected, `/portfolio` would keep showing a hidden
+  portfolio as the primary active view, which is a direct contradiction.
+- **New `unarchive` Store action** (`stores/portfolioStore.ts`), the
+  direct symmetric inverse of `archive`. Justification: M4-012
+  distinguishes Archive ("Hide from active lists **while retaining
+  data**") from Delete (no such retention language), and its own DoD
+  requires archive/delete actions to be "recoverable **where
+  documented**." Read literally, this means Archive's documented data
+  retention must be reachable by the user, not merely true internally to
+  the Store — `unarchive` is that reachability, not a new business rule.
+- **Portfolio List Page**: the main list now shows only non-archived
+  portfolios; a "Show archived (N)" disclosure (collapsed by default)
+  reveals archived rows with "Unarchive" in place of "Archive." Archived
+  rows render their name/summary as plain text, not a clickable "select"
+  control — selecting (making active) an archived portfolio would itself
+  contradict "hide from active lists," so it must be unarchived first.
+  This is a genuine specification gap, not obvious from the task text —
+  documented as **conflict #27** below.
+- **`AppHeader`'s active-portfolio switcher** (M4-010, Batch 2) also now
+  excludes archived portfolios — the same "active list" the task's own
+  words describe, extended consistently rather than left as a second,
+  contradictory active-portfolio surface.
+- **Delete**: clicking "Delete" opens an inline, per-row confirmation
+  panel — no new global Dialog/Modal component was introduced. None is
+  defined anywhere in 03_UI.md's design system, and the only "no modal"
+  rule in 03_UI.md ("No modal dialogs on page load") is explicitly scoped
+  to the Dashboard's page-load behavior, not a blanket ban on
+  user-initiated confirmations elsewhere — an inline expand-to-confirm
+  panel satisfies "Require confirmation. Explain consequences." without
+  inventing a component this codebase has no other use for yet. The panel
+  states plainly that deletion is permanent. If the portfolio being
+  deleted is the active one, the panel additionally requires selecting a
+  replacement from the other _active_ (non-archived) portfolios before
+  "Confirm Delete" enables — the literal text of "Prevent accidental
+  deletion of the active portfolio without selecting a replacement." When
+  no other active portfolio exists, no replacement can be offered; the
+  panel says so and allows the delete to proceed directly (the Store's
+  `delete` already nulls `activePortfolioId` in that case, and
+  `app/portfolio/page.tsx` already renders a graceful "No portfolio is
+  currently selected" state for it, unchanged from earlier batches).
+
+**Test files**:
+
+- `tests/unit/stores/portfolioStore.test.ts` (+8 tests): `archive`
+  clearing/not-clearing `activePortfolioId`, `archive`'s not-found error,
+  and the full `unarchive` suite (clears `archivedAt`, does not
+  independently restore `activePortfolioId`, not-found error).
+- `tests/unit/components/layout/AppHeader.test.tsx` (+1 test, 1 renamed):
+  confirms archived portfolios are excluded from the switcher.
+- `tests/unit/app/portfolios/page.test.tsx` (+11 tests): Duplicate
+  creates an independent, appended-name copy; Archive moves a row out of
+  the main list into "Show archived"; the archived section renders a
+  non-selectable row with "Unarchive"; Unarchive restores it; an
+  "all portfolios are archived" message replaces the main list when
+  appropriate; Delete's confirmation text and cancel path; deleting a
+  non-active portfolio directly (no replacement selector shown); deleting
+  the active portfolio requires a replacement selection before "Confirm
+  Delete" enables, and applies it; deleting the active portfolio when no
+  replacement exists proceeds directly and leaves `activePortfolioId`
+  null. One pre-existing test (`lists more recently updated portfolios
+first`) was fixed: `getAllByRole('button')` now also matches the new
+  Duplicate/Archive/Delete buttons on every row, so the assertion was
+  narrowed to `{ name: /^(First|Second)/ }` to target the two select-row
+  buttons specifically — a real, necessary update caused by legitimate
+  new UI, not a workaround.
+
+**Browser verification**: started the dev server and drove the full
+flow with Playwright/Chromium — created two portfolios (using in-app
+link navigation rather than `page.goto` for the second, since a real
+top-level navigation reloads the document and would wipe the in-memory
+Zustand store per Conflict B); duplicated one, archived the copy,
+confirmed it left the main list and appeared under "Show archived (1)"
+with a non-clickable name area, unarchived it back; selected a portfolio
+as active via the switcher, opened its Delete confirmation, confirmed
+"Confirm Delete" was disabled until a replacement was chosen from the
+offered list (excluding itself, including only active portfolios),
+enabled once selected, and completed the deletion, leaving the
+replacement as the new active portfolio. Screenshots confirm correct
+rendering at every step. Zero console/page errors throughout.
+
+**Scope discipline**: only M4-011 and M4-012 were implemented. `engine/`,
+`services/` are completely untouched (`git diff --stat -- engine/
+services/` empty); `types/` is untouched (`Portfolio.archivedAt` already
+existed from Batch 1). The only non-test files touched are
+`stores/portfolioStore.ts`, `app/portfolios/page.tsx`, and
+`components/layout/AppHeader.tsx` — the last only for the minimal
+archived-filter consistency fix M4-012's own text requires.
+
+**Validation — Batch 6**
+
+| Command              | Result                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 833/833 (17 net new)                                                                                                              |
+| `pnpm test:coverage` | ✅ 95.16% statements / 88.49% branches / 100% functions / 98.65% lines (project-wide). `app/portfolios/page.tsx`: 98.63%/97.77%/100%/100%. |
+| `pnpm build`         | ✅ Pass — `/portfolios`'s bundle grew from 1.38 kB to 2.42 kB, confirming real new content                                                 |
+
+**Architecture audit**: `git diff --stat -- engine/ services/` empty.
+`app/portfolios/page.tsx` imports only `usePortfolioStore`/
+`PortfolioRecord` from `@/stores/portfolioStore` and `Portfolio` (type
+only) from `@/types/portfolio` — no direct Service or Engine import.
+`stores/portfolioStore.ts`'s new `unarchive` action reuses the same
+`buildSummary`/`notFoundError` helpers `archive` already used — no new
+Service call shape introduced. UI → Store → Services → Engine direction
+preserved throughout.
+
+**Traceability**: M4-011's four Requirements and its DoD are each
+satisfied by the pre-existing Batch 1 Store logic, now reachable through
+the UI and verified end-to-end in the browser. M4-012's Archive
+(hide-while-retaining), Delete (confirm + explain consequences +
+prevent-accidental-active-deletion), and DoD
+(predictable-and-recoverable-where-documented) are each addressed
+directly above, with the one genuine specification gap (whether an
+archived portfolio remains independently selectable) resolved
+conservatively and documented as conflict #27 rather than guessed at.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -4303,6 +4460,37 @@ required, versus this directional check being sufficient permanently.
 
 ---
 
+### 27. M4-012 never says whether an archived portfolio remains independently selectable
+
+Found while implementing Milestone 4 Batch 6 (M4-012). The task's own
+text says Archive should "Hide from active lists while retaining data,"
+and its DoD requires archive/delete actions to be "recoverable where
+documented." Neither `06_TASKS.md` nor 03_UI.md says whether a user can
+still directly select (make active) an archived portfolio while it
+remains archived — e.g. by leaving it reachable in the `AppHeader`
+switcher, or by making its Portfolio List row still clickable to
+navigate to `/portfolio`.
+
+**Resolution applied**: resolved conservatively in favor of internal
+consistency with "hide from active lists" — an archived portfolio is
+**not** independently selectable. `AppHeader`'s switcher excludes
+archived portfolios (matching the Portfolio List Page's own main-list
+filtering), and an archived row's name/summary renders as plain text,
+not a clickable select control, in `app/portfolios/page.tsx`. The Store
+itself doesn't prevent calling `select()` on an archived portfolio's id
+directly (no restriction was added to `select` itself, to avoid
+scope-creeping a business rule into a Store action M4-003 already
+defined), but no UI path in this batch offers that as a click target.
+Restoring access requires "Unarchive" first, then the normal switcher/
+list selection — the only way M4-012's text itself names ("Hide... while
+retaining data" implies data comes back via an explicit un-hide, not a
+side door). Action needed: a product decision on whether users should
+ever be able to _view_ (not edit) an archived portfolio's detail page
+without unarchiving it first — nothing in the current documentation asks
+for or against this.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -4351,50 +4539,58 @@ required, versus this directional check being sufficient permanently.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 5
-   (M4-009) before committing, per instruction. Do not begin M4-011
-   until this is approved (M4-010 was already completed in Batch 2).
+2. **This pass stops here for approval** of Milestone 4 Batch 6
+   (M4-011, M4-012) before committing, per instruction. Do not begin any
+   further M4 task until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   5**: all three remain resolved as established (Batch 0/1) and
-   unaffected by this batch's own scope (a display/UX extension of the
-   already-built preview mechanism, no new position-editing behavior).
-4. Once Batch 5 is approved and committed, the next batch per the
-   approved plan is **Batch 6 (M4-011, M4-012)** — Portfolio
-   Duplication and Portfolio Archive/Delete. Note: Batch 1's
-   `store.duplicate()`/`store.archive()` actions already implement the
-   core mechanism for both (built early since M4-003 itself required
-   _some_ working versions) — this batch is primarily UI wiring
-   (buttons on `/portfolios`) plus M4-012's own confirmation/explanation
-   requirements, not new Store logic.
-5. **New from Batch 5**: conflict #26 — M4-009's DoD requires
+   6**: all three remain resolved as established (Batch 0/1) and
+   unaffected by this batch's own scope (list-page action wiring plus two
+   small, symmetric Store additions — no new position-editing behavior,
+   no persistence infrastructure introduced).
+4. Once Batch 6 is approved and committed, the next tasks per the
+   originally-approved 9-batch M4 plan's remaining scope are **M4-013
+   (Portfolio Auto-Save), M4-014 (Manual Price Controls), M4-015
+   (Protocol Configuration Controls), M4-017, and M4-018** — none started
+   yet. M4-013 in particular depends on M4-006/M4-007 (already built) but
+   also inherits Conflict B (no interim persistence infrastructure before
+   Milestone 8) — expect it to need its own scoped conflict/limitation
+   writeup before implementation, not a real persistence backend.
+5. **New from Batch 6**: conflict #27 — M4-012 never says whether an
+   archived portfolio remains independently selectable (e.g. still
+   reachable via the switcher or a clickable list row) while archived.
+   Resolved conservatively for internal consistency: archived portfolios
+   are excluded from `AppHeader`'s switcher and rendered as non-clickable
+   rows on the Portfolio List Page; unarchiving is the only documented
+   path back to selectability.
+6. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
    confirmation for "risk-increasing" changes, but no such term is
-   defined anywhere in the documentation (no threshold, band, or
-   scoring rule). Resolved with the most conservative possible
-   directional comparison (`after.healthFactor < before.healthFactor`),
-   not an invented threshold or classification system.
-6. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
+   defined anywhere in the documentation (no threshold, band, or scoring
+   rule). Resolved with the most conservative possible directional
+   comparison (`after.healthFactor < before.healthFactor`), not an
+   invented threshold or classification system.
+7. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
    "Rate type" as debt fields with no counterpart anywhere in the data
    model. "Price" shown as read-only informational text; "Rate type" not
    rendered at all.
-7. **From Batch 3, still open**: conflict #24 — M4-005's "Protocol
+8. **From Batch 3, still open**: conflict #24 — M4-005's "Protocol
    parameters or preset" names a preset option with no concrete values
    anywhere in the documentation. Resolved by offering manual entry
    only.
-8. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+9. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
    primary pages" inventory has no room for a Portfolio List page.
    Resolved by keeping `/portfolios` out of the sidebar, reachable only
    via the `AppHeader` switcher.
-9. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
-   names it as a required field with no defined shape anywhere. Resolved
-   conservatively (safety-targets-only) — still flagged for a real
-   decision.
-10. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+10. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+    names it as a required field with no defined shape anywhere. Resolved
+    conservatively (safety-targets-only) — still flagged for a real
+    decision.
+11. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-11. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+12. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-12. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+13. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -4407,20 +4603,21 @@ required, versus this directional check being sufficient permanently.
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-13. **Revisited in Batch 7, confirmed still open at the specification
+14. **Revisited in Batch 7, confirmed still open at the specification
     level but no longer blocking implementation**: swap-fees/slippage/
     gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
     mechanics (conflict #10), and F-040's exit-collateral-sale
     discrepancy (conflict #13, a known, tested approximation).
-14. **From Milestone 3/4, still open**: "Source status"'s undefined
+15. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 11 above), "Settings"'s
-    undefined shape (conflict #22 — point 9 above), the Portfolio List
+    persistence-adapter gap (conflict #21 — point 12 above), "Settings"'s
+    undefined shape (conflict #22 — point 10 above), the Portfolio List
     page's missing place in 03_UI.md's page inventory (conflict #23 —
-    point 8 above), the missing protocol-preset values (conflict #24 —
-    point 7 above), the debt "Price"/"Rate type" gap (conflict #25 —
-    point 6 above), and the undefined "risk-increasing" term (conflict
-    #26 — point 5 above). Conflict #20 (resolved Batch 0) is not
-    counted. **25 open conflicts remain (26 total raised, minus #20,
-    resolved).**
+    point 9 above), the missing protocol-preset values (conflict #24 —
+    point 8 above), the debt "Price"/"Rate type" gap (conflict #25 —
+    point 7 above), the undefined "risk-increasing" term (conflict #26 —
+    point 6 above), and whether an archived portfolio stays independently
+    selectable (conflict #27 — point 5 above). Conflict #20 (resolved
+    Batch 0) is not counted. **26 open conflicts remain (27 total
+    raised, minus #20, resolved).**

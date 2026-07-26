@@ -26,13 +26,22 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * - "Update page context" is satisfied by Zustand's own reactivity: every
  *   component reading `usePortfolioStore` re-renders when
  *   `activePortfolioId` changes, with no additional wiring needed here.
+ *
+ * **Archived portfolios excluded from the switcher (M4-012, added this
+ * batch)**: M4-012's own text requires archiving to "Hide from active
+ * lists." This switcher is exactly such a list — the active portfolio
+ * store action (`select`) already can't land here on an archived
+ * portfolio, since the Store's own `archive` action (M4-012) clears
+ * `activePortfolioId` when the archived record was the active one.
  */
 export function AppHeader() {
   const portfolios = usePortfolioStore((state) => state.portfolios);
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const select = usePortfolioStore((state) => state.select);
 
-  const entries = Object.values(portfolios);
+  const entries = Object.values(portfolios).filter(
+    ({ portfolio }) => portfolio.archivedAt === null,
+  );
   const activeName =
     activePortfolioId !== null ? portfolios[activePortfolioId]?.portfolio.name : undefined;
 

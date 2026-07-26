@@ -71,6 +71,24 @@
  * action, not because M4-011 is being started early. `archive` sets
  * `archivedAt`; M4-012's own confirmation/explanation UX is not built
  * here.
+ *
+ * **`archive` also clears `activePortfolioId` when archiving the active
+ * portfolio (added in M4-012)**: M4-012's own text requires archiving to
+ * "Hide from active lists" — if the archived record stayed selected, the
+ * Portfolio page would keep showing a hidden portfolio as the primary
+ * active view, contradicting "hidden". Mirrors `delete`'s existing
+ * identical fallback (`activePortfolioId` -> `null`), which the Portfolio
+ * page (`app/portfolio/page.tsx`) already renders gracefully as "No
+ * portfolio is currently selected."
+ *
+ * **`unarchive` (added in M4-012)**: M4-012 documents Archive as
+ * "retaining data" (as distinct from Delete, which has no such language)
+ * and its own DoD requires archive/delete actions to be "recoverable
+ * where documented" — read as: Archive's documented data retention must
+ * be reachable by the user, not merely true internally to the Store.
+ * `unarchive` is the direct, symmetric inverse of `archive` (sets
+ * `archivedAt` back to `null`); it is not a new business rule, only the
+ * necessary counterpart to the one M4-012 itself already names.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -117,6 +135,7 @@ export interface PortfolioStoreActions {
   select: (id: string | null) => void;
   duplicate: (id: string) => MappingResult<Portfolio>;
   archive: (id: string) => void;
+  unarchive: (id: string) => void;
   delete: (id: string) => void;
 }
 
@@ -296,6 +315,24 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const portfolio: Portfolio = {
       ...existing.portfolio,
       archivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      activePortfolioId: state.activePortfolioId === id ? null : state.activePortfolioId,
+      errors: [],
+    }));
+  },
+
+  unarchive: (id) => {
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      set({ errors: [notFoundError(id)] });
+      return;
+    }
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      archivedAt: null,
       updatedAt: new Date().toISOString(),
     };
     set((state) => ({
