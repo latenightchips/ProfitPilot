@@ -111,3 +111,33 @@ describe('Public Service layer API surface (M3-005, M3-006)', () => {
     expect(previewResult.data.after.collateralValue).toBe(150000);
   });
 });
+
+/**
+ * Market Data Service — 06_TASKS.md M3-007. Verifies it is reachable
+ * through the root `@/services` entry point, not just
+ * `@/services/market`.
+ */
+describe('Public Service layer API surface (M3-007)', () => {
+  it('normalizeMarketQuote is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).normalizeMarketQuote).toBe('function');
+  });
+
+  it('a market quote can be normalized using only @/services imports', () => {
+    const result = Services.normalizeMarketQuote({
+      asset: 'BTC',
+      currency: 'USD',
+      candidates: [{ origin: 'provider', price: 65000, timestamp: '2026-01-01T00:00:00.000Z' }],
+      now: '2026-01-01T00:01:00.000Z',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toEqual({
+      asset: 'BTC',
+      currency: 'USD',
+      freshness: 'fresh',
+      price: 65000,
+      origin: 'provider',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+  });
+});

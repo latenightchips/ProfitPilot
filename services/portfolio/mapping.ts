@@ -28,10 +28,17 @@
  * (M3-005 onward) can pass a mapping failure's `errors` straight into a
  * real `ServiceResult` failure at the point it actually does have Engine
  * metadata to report.
+ *
+ * `MappingResult<T>` itself now lives in `services/shared/mappingResult.ts`
+ * (relocated at M3-007, Market Data Service — the second consumer that
+ * needed the identical type, the promotion trigger this file originally
+ * anticipated). Re-exported here unchanged so nothing importing it from
+ * this module's public API needs to change.
  */
 import type { PortfolioInput } from '@/engine';
 
 import { type ApplicationError, createApplicationError } from '../shared/errors';
+import type { MappingResult } from '../shared/mappingResult';
 import type {
   ApplicationPortfolio,
   PersistenceCollateralPosition,
@@ -41,17 +48,7 @@ import type {
   PersistenceProtocolParameters,
 } from './models';
 
-export interface MappingSuccess<T> {
-  ok: true;
-  data: T;
-}
-
-export interface MappingFailure {
-  ok: false;
-  errors: ApplicationError[];
-}
-
-export type MappingResult<T> = MappingSuccess<T> | MappingFailure;
+export type { MappingFailure, MappingResult, MappingSuccess } from '../shared/mappingResult';
 
 function readRequiredNumber(
   value: number | null | undefined,

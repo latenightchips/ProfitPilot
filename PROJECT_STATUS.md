@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 4 complete (pending approval) — M3-001 through M3-006 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 5 complete (pending approval) — M3-001 through M3-007 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -1949,6 +1949,118 @@ functions and claims no new Formula ID.
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 5 — Market Data Service (M3-007)
+
+**Batch scoping, decided before implementation**: M3-007 and M3-008
+(Protocol Parameter Service) both depend only on M3-002, not on each
+other — no formal or functional dependency links them, unlike
+M3-002/M3-003 (a real field dependency) or M3-005/M3-006 (a real "call
+twice" dependency). They live in separate Service subdirectories
+(`services/market/` vs `services/protocol/`) covering genuinely distinct
+domains. Sharing a topical pattern ("data provenance") is not the same
+kind of cohesion that justified prior groupings, so M3-007 was
+implemented alone, the same call made for M3-004.
+
+**Major finding, presented and approved before implementation**:
+`04_BUILD_GUIDE.md`'s "PRICE SERVICE" / "PROTOCOL SERVICE" sections
+describe a full external-integration design — a `PriceProvider`
+interface, a CoinGecko adapter, an `infrastructure/` directory
+(`infrastructure/pricing/CoinGeckoProvider.ts`, etc.), API client
+timeout/retry/caching, Zod response validation, environment variables —
+that **no task in `06_TASKS.md` ever assigns**. `06_TASKS.md` never
+mentions `infrastructure/`, `PriceProvider`, `ProtocolProvider`,
+`CoinGecko`, or `PriceQuote`, and no task before M3-007 (including
+M1-003, which enumerated the directory tree actually built) creates an
+`infrastructure/` directory; the repository has none today. Per explicit
+instruction, this batch builds **only** the Service-layer normalization
+logic — no `infrastructure/`, no provider adapters, no HTTP client, no
+CoinGecko/Aave integration, no caching layer, no retry logic, no
+environment variables, no network code.
+
+| Task                                 | Status  | Notes                                                                                                                                                                                                  |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M3-007 Implement Market Data Service | ✅ Done | `services/market/quote.ts` — `normalizeMarketQuote`, classifying candidate prices by the documented freshness rule and picking one by the documented fallback order. No network, no Engine dependency. |
+
+**Two rules implemented verbatim from `04_BUILD_GUIDE.md`, not
+invented**:
+
+- **Price Freshness** ("PRICE FRESHNESS"): Fresh — updated within 5
+  minutes. Stale — older than 5 minutes. Unavailable — no valid price
+  exists. "When price data is stale: display a warning, continue
+  calculations only after clearly labeling the data as stale." "When
+  price data is unavailable: use manual input or the last confirmed
+  value. Do not silently invent a price."
+- **Service Fallback Order** ("SERVICE FALLBACK ORDER", prices): Live
+  provider → Last valid cached value → Manual input. "Every fallback
+  must be visible to the user."
+
+**Approved design implemented as specified**: `PriceFreshness = 'fresh'
+| 'stale' | 'unavailable'`, `PriceOrigin = 'provider' | 'cache' |
+'manual'`, both owned by `MarketQuote`. `ServiceResult`/`ServiceMetadata`
+(M3-002/M3-003) were not modified.
+
+**`MarketQuote` is a discriminated union on `freshness`, returned inside
+`MappingResult<T>`, not `ServiceResult<T>`.** `normalizeMarketQuote`
+makes no Engine call, so it has the identical "no real
+`engineVersion`/`formulaVersion` to report" problem M3-004's mapping
+functions already solved — reusing `MappingResult<T>` rather than
+fabricating Engine provenance metadata. "No valid price exists" is
+modeled as a **successful** `MarketQuoteUnavailable` result (a
+legitimate domain state — the Service correctly determined there is no
+price, it did not fail to compute one), the same way
+`engine/health/calculateHealthFactor.ts` treats zero debt as a
+successful `Infinity` rather than an error. `MappingFailure` is reserved
+for genuinely malformed input (a non-finite/non-positive price, an
+unparseable timestamp) — data integrity problems, not "no price
+available." No separate `ServiceWarning`-style channel was added for
+"stale must be labeled" or "fallback must be visible": both are already
+visible directly on the returned `MarketQuote` (`freshness === 'stale'`,
+`origin !== 'provider'`), so a future caller can act on them without a
+parallel warnings array repeating the same information.
+
+**Structural decision: `MappingResult<T>` relocated to
+`services/shared/mappingResult.ts`.** M3-004's own write-up (Batch 3)
+named the promotion trigger explicitly: "the first time a second mapping
+utility needs it." `normalizeMarketQuote` is that second utility. The
+type definition moved from `services/portfolio/mapping.ts` to
+`services/shared/mappingResult.ts`; `mapping.ts` now re-exports the same
+three names from the new location, so M3-004's already-committed public
+API (`@/services`) is unchanged — verified by `mapping.test.ts` (Batch
+3's tests) continuing to pass unmodified. This is a mechanical
+relocation, not a semantic or contract change, so it was made directly
+rather than raised as a separate pre-approval question — it was already
+anticipated and documented in Batch 3.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/market/quote.ts` imports only `services/shared/errors.ts` and
+`services/shared/mappingResult.ts` — no `@/engine` import at all (Market
+Data Service performs no calculation), and no dependency on any other
+Service subdirectory. Grepped the new files for `fetch(`, `axios`,
+`XMLHttpRequest`, `process.env`, and `infrastructure` as directory
+references — none found outside doc comments explaining what was
+deliberately not built. No `engine/` file was modified by this batch.
+
+**Traceability audit (pre-commit)**: `normalizeMarketQuote` and every
+exported type from `services/market/` are reachable through `@/services`
+alone, verified by a new `describe` block in
+`tests/unit/services/publicApiSurface.test.ts` (M3-007). This batch
+introduces no Formula ID and makes no Engine claim.
+
+**Validation — Batch 5 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass (after narrowing `MarketQuote`'s discriminated union on `freshness`, not just `ok`, in tests that read `origin`/`price`)                                                  |
+| `pnpm lint`          | ✅ Pass (after autofix of import ordering in the new test file, and removing two now-unused type imports in `services/portfolio/mapping.ts` after the `MappingResult` relocation) |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of `services/market/quote.ts`, `services/shared/index.ts`, and the new test file)                                                              |
+| `pnpm test`          | ✅ Pass, 636/636 (20 new)                                                                                                                                                         |
+| `pnpm test:coverage` | ✅ 95.17% statements / 90.62% branches / 100% functions / 98.77% lines — `services/market/` is fully, 100%-covered (it does not appear as a partial-coverage row).                |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                           |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2453,6 +2565,22 @@ domain, or `06_TASKS.md` should clarify whether "Source status" is
 meant to be populated at all by Services that have no notion of a data
 source (e.g. a purely Engine-calculation-driven result).
 
+**Update — Milestone 3 Batch 5 (M3-007)**: reached, and partially
+clarified without being fully resolved. `04_BUILD_GUIDE.md` (found while
+implementing M3-007, see that batch's write-up) turns out to document a
+real, concrete vocabulary for exactly this kind of concept — "PRICE
+FRESHNESS" (Fresh/Stale/Unavailable) and "SERVICE FALLBACK ORDER"
+(Live provider/Last valid cached value/Manual input). M3-007 uses this
+real vocabulary (`PriceFreshness`, `PriceOrigin`), but deliberately as
+`MarketQuote`'s own concrete fields, **not** by giving
+`ServiceMetadata.sourceStatus` a literal-union type — `sourceStatus`
+remains exactly as generic as M3-002 defined it, per instruction not to
+modify it. So the _generic_, cross-cutting `sourceStatus` field's value
+domain is still undefined; what changed is that a concrete,
+non-speculative example of what a per-Service source/freshness
+vocabulary looks like now exists to model any future resolution on, if
+one is ever decided.
+
 ---
 
 ### 19. "Formula version" (M3-002) is singular; how a multi-Engine-call Service aggregates it is unspecified
@@ -2571,19 +2699,20 @@ this batch's own scope.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 4 (M3-005,
-   M3-006) before committing, per instruction.
-3. Once approved and committed: **Milestone 3 Batch 5 — M3-007 (Market
-   Data Service)**, the next task in sequence. M3-007 depends only on
-   M3-002 (done) and is unblocked. It is also the natural place to
-   finally resolve conflict #18 ("Source status" has no documented value
-   domain) — M3-007's own "Support" list (Manual prices, Provider
-   prices, Stale-data detection, Fallback behavior, Price timestamps)
-   reads like the actual source of the `sourceStatus` values every prior
-   batch has deferred defining. Re-read M3-007 and M3-008 (Protocol
-   Parameter Service) together at the start of that batch, per the same
-   grouping judgment used for M3-002/M3-003 and M3-005/M3-006, rather
-   than assuming they're separate or combined by default.
+2. **This pass stops here for approval** of Milestone 3 Batch 5 (M3-007)
+   before committing, per instruction.
+3. Once approved and committed: **Milestone 3 Batch 6 — M3-008 (Protocol
+   Parameter Service)**, the next task in sequence. M3-008 depends only
+   on M3-002 (done) and is unblocked; Batch 5 already established that it
+   does _not_ need to be combined with M3-007 (no dependency either
+   direction). M3-008's own "Include" list (Maximum LTV, Liquidation
+   threshold, Borrow rate, Asset configuration, Data source, Freshness
+   timestamp) closely parallels M3-007's shape — re-check at the start of
+   that batch whether the same "infrastructure layer is unassigned scope"
+   finding applies (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
+   `ProtocolProvider`/`AaveV3Provider` content looks like the protocol
+   counterpart of what M3-007 found for prices) before assuming the scope
+   boundary needs re-litigating from scratch.
 4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
    still open**: F-026 (Health Factor status classification, conflict
    #1), compound interest / M2-013–M2-014 (conflict #7), the
@@ -2602,15 +2731,21 @@ this batch's own scope.
    public/internal split criteria (conflict #17). None of these 17
    blocked Milestone 2's own completion, but several (especially #1, #7,
    #8, #9) plausibly gate specific Milestone 3 Services.
-5. **From Milestone 3 Batch 2, both still open**: "Source status"'s
-   undefined value domain (conflict #18 — see point 3 above, M3-007 is
-   likely where this finally gets resolved) and "Formula version"
-   aggregation across a multi-Engine-call Service (conflict #19 — Batch
-   4 implemented a checked stopgap, not a resolution; still open).
-6. **New from this batch, open**: `calculatePortfolioSummary` cannot
-   summarize a zero-debt portfolio, because `calculateLiquidationPrice`
-   (F-024) treats liquidation price as undefined without debt (conflict
-   #20). Needs a product/engineering decision on whether a
-   `PortfolioSummary`-level convention for debt-free portfolios (e.g.
-   `liquidation: null`) should be introduced, and at which layer
-   (Engine or Service).
+5. **From Milestone 3 Batches 2–4, all still open**: "Source status"'s
+   undefined _generic_ value domain (conflict #18 — Batch 5 gave
+   Market Data Service its own concrete `PriceFreshness`/`PriceOrigin`
+   vocabulary but deliberately did not fold it into
+   `ServiceMetadata.sourceStatus`; still open at the generic level),
+   "Formula version" aggregation across a multi-Engine-call Service
+   (conflict #19 — Batch 4 implemented a checked stopgap, not a
+   resolution; still open), and `calculatePortfolioSummary`'s inability
+   to summarize a zero-debt portfolio (conflict #20 — needs a
+   product/engineering decision on a `PortfolioSummary`-level convention
+   for debt-free portfolios).
+6. **New from this batch**: the `infrastructure/` layer gap itself
+   (documented inline in Batch 5's write-up, not given its own numbered
+   conflict entry since it was resolved by explicit instruction rather
+   than left open) — worth remembering when M3-008, M3-009, or M3-010 are
+   scoped, since `04_BUILD_GUIDE.md` likely describes similarly
+   unassigned infrastructure for protocol parameters and possibly other
+   integrations.
