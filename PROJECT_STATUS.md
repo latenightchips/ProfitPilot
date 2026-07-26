@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is complete pending final approval**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), Batch 7 (M4-014, M4-015), Batch 8 (M4-013), and Batch 9 (M4-017) are synchronized to GitHub; Batch 10 (M4-018, the final Milestone 4 task) is implemented and awaiting approval. All 18 M4 tasks (M4-001 through M4-018) are now addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batch 1 (M5-001, M5-002, M5-003 — Dashboard Foundation) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -4293,6 +4293,166 @@ Management is complete pending this batch's approval.
 
 ---
 
+## Milestone 5 progress
+
+Milestone 4 was confirmed synchronized to GitHub, and a permanent
+`MILESTONE_4_COMPLETION.md` snapshot was committed before this milestone
+began — the same Batch-0-style documentation review used at the start of
+Milestone 4 (re-reading `06_TASKS.md`'s own Milestone 5 section fresh,
+not assuming continuity from Milestone 4's numbering) preceded any code
+in this section.
+
+### Batch 1 — Dashboard Foundation (M5-001, M5-002, M5-003)
+
+First Milestone 5 task batch, following 06_TASKS.md's own
+"IMPLEMENTATION ORDER" ("Dashboard Foundation → Summary Header → KPI
+Metrics → Risk Sections → Portfolio Composition → Recommendations →
+Responsive and Accessible States → Testing") literally — this batch is
+exactly that first named step. Mirrors Milestone 4 Batch 1's own
+precedent (types/schema/store before any page content) one layer up:
+route + feature structure + view model before any Summary Header/KPI
+Grid UI.
+
+**M5-002 — `features/dashboard/`**: created the full suggested directory
+skeleton (`components/`, `hooks/`, `services/`, `types/`, `utils/`) plus
+`index.ts`, mirroring M1-003's own precedent of pre-creating the full
+top-level layout with `.gitkeep` placeholders before every subdirectory
+has content. `components/`, `hooks/`, `services/` remain empty
+placeholders — no task in this batch needs them yet (M5-004 onward for
+components; M5-018 Refresh Workflow for a hook/service).
+
+- **`features/dashboard/tests/` deliberately not created** — a minor,
+  mechanical deviation from M5-002's own "Suggested structure" (which
+  lists a local `tests/` folder): this project's actually-enforced
+  convention, used by every test in this codebase so far, is a top-level
+  `tests/unit/<mirror-of-source-path>/` tree (`vitest.config.ts`'s own
+  `include` pattern), not co-located per-feature test folders. Following
+  the milestone doc's generic suggestion here would fragment coverage
+  reporting and break the one-test-tree pattern every other batch has
+  used. Tests for this batch live at `tests/unit/features/dashboard/` and
+  `tests/unit/app/page.test.tsx` instead.
+
+**M5-003 — `features/dashboard/types/viewModel.ts` +
+`utils/buildDashboardViewModel.ts` + `utils/format.ts`**:
+`buildDashboardViewModel(portfolio, summaryResult)` converts an
+already-computed `ServiceResult<PortfolioSummary>` (M3-005) into a
+`DashboardViewModel` — every "Include" item addressed:
+
+- **Raw values / Formatted values / Labels**: `DashboardMetric` bundles
+  all three per field (`netPortfolioValue`, `totalCollateral`,
+  `totalDebt`, `healthFactor`, `loanToValue`, `leverage`,
+  `annualInterestCost`, `liquidationPrice`, `liquidationDistance`,
+  `liquidationBuffer`) — directly matching M5-006's later "Cards" list,
+  giving that task a ready-made data source without pre-building its UI.
+  Units were read directly from `docs/02_Formulas.md`, not assumed: F-023
+  Distance to Liquidation is a raw `healthFactor − 1.0` ratio, not a
+  percentage; F-025 Liquidation Buffer's own equation already multiplies
+  by 100 before the Engine returns it, so displaying it needed a distinct
+  `formatPercentagePoints` helper (divide by 100 once, not twice) rather
+  than reusing the 0–1-fraction `formatPercent` used for F-020 LTV.
+- **Status classifications — deliberately scoped narrower than 03_UI.md's
+  own mockups, to avoid Conflict #1**: 03_UI.md's Dashboard "Market
+  Snapshot"/"Health & Risk" sections show a `Portfolio Status`/`Risk
+Category` field (example values "Healthy"/"Low") — exactly the Health
+  Factor risk-band classification Conflict #1 blocks (thresholds disagree
+  across four documents). `DashboardMetric.status` is `'ok' | 'unavailable'`
+  only, derived structurally (unavailable only when `rawValue` is `null`
+  — currently just the liquidation trio on a zero-debt portfolio, per
+  Conflict #20), never from an invented risk-band rule. The full Health
+  Factor risk classification remains M5-007's own, later, still-blocked
+  task.
+- **Warnings**: `ServiceResult.warnings` (M3-002) passed through
+  unchanged as a flat top-level list — not attributed to individual
+  metrics. M5-003's own "Include" list names "Status classifications" and
+  "Warnings" as two separate items; no documented rule anywhere maps a
+  given warning code to a specific metric, so inventing an attribution
+  heuristic was avoided rather than guessed at.
+- **Data freshness**: reuses `normalizeMarketQuote` (M3-007) /
+  `normalizeProtocolQuote` (M3-008) exactly as `app/portfolio/page.tsx`'s
+  own `getMarketQuote`/`getProtocolQuote` already do (M4-014/M4-015) —
+  same single-manual-candidate shape, same Service-owned staleness
+  threshold, duplicated locally rather than extracted to a shared helper
+  (matching this codebase's established per-page/per-feature composition
+  convention, not a premature shared abstraction).
+- **Formula references**: `formulaId` on each `DashboardMetric` is not
+  invented — it is the exact Formula ID `services/portfolio/summary.ts`'s
+  own header comment already documents for that field (F-002, F-003,
+  F-004, F-011, F-020, F-022, F-023, F-024, F-025, F-032).
+  `PortfolioSummary` itself carries no per-field Formula ID (only a
+  singular `ServiceMetadata.formulaVersion`, Conflict #19), so this is a
+  static mapping copied from already-existing documentation, not new
+  Service-layer plumbing.
+- **"Do not calculate financial metrics. Do not mutate Service
+  results."**: verified, not just intended — a dedicated test
+  (`buildDashboardViewModel.test.ts`) deep-clones a `ServiceResult`
+  before calling the builder and asserts it is unchanged afterward.
+
+**M5-001 — `app/page.tsx`**: replaces the Milestone 1 `PlaceholderPage`
+at `/`. Renders every documented portfolio state for real: loading
+(`load()` on mount, mirroring `app/portfolios/page.tsx`'s own M4-004
+pattern), no-active-portfolio (guides via a link, matching
+`app/portfolio/page.tsx`'s own established choice over a hard redirect),
+calculation failure (`viewModel.ok === false` — a minimal, honest message
+and a link back to `/portfolio` to fix the data, **not** the full "Retry
+calculation / Retry refresh / Use last valid data / Export recovery
+copy" flow M5-021, a separate later task, is responsible for), and
+success (portfolio name, calculation timestamp, and a plain metrics list
+proving the Store → Service → View Model → render pipeline end-to-end).
+The eventual Summary Header (M5-004), Shared KPI Card component (M5-005)
+and Core KPI Grid (M5-006), and every risk/composition/recommendation
+section (M5-007–M5-015) are explicitly not built in this batch — each is
+its own later, dependency-gated task.
+
+**Coverage config extended**: `vitest.config.ts`'s `coverage.include`
+gained `'app/page.tsx'` (previously absent — the placeholder had no logic
+worth covering) and `'features/dashboard/**'`.
+
+**Manual browser verification**: built a portfolio via `/portfolios/new`,
+navigated to `/` via the sidebar's in-app `<Link>` (not `page.goto()`,
+per the established Conflict-B-safe navigation pattern), and confirmed
+every metric renders with the correct, real calculated value against a
+production build (`pnpm start`) — Net Portfolio Value $80,000.00, Total
+Collateral $100,000.00, Total Debt $20,000.00, Health Factor 4,
+Loan-to-Value 20%, Effective Leverage 1.25x, Annual Interest Cost
+$1,000.00, Liquidation Price $12,500.00, Distance to Liquidation 3,
+Liquidation Buffer 75%.
+
+**Scope discipline**: `git diff --stat -- engine/ services/ stores/
+types/` empty — zero Engine/Service/Store/type files touched. Only
+`app/page.tsx` (route), `vitest.config.ts` (coverage scope), and the new
+`features/dashboard/` module were added/changed.
+
+**Validation — Batch 1**
+
+| Command                      | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `pnpm lint`                  | ✅ Pass (after `eslint --fix` for import ordering)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `pnpm format:check`          | ✅ Pass (after Prettier formatting of the new files)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm test` (Vitest)         | ✅ Pass, 901/901 (9 net new)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `pnpm test:coverage`         | ✅ 95.12% statements / 88.20% branches / 100% functions / 98.68% lines (project-wide). New `app/page.tsx`: 100%/93.33%. New `features/dashboard/utils/`: 79.41%/73.07% — the uncovered branches are the same class of structurally-necessary-but-practically-unreachable defensive code already accepted elsewhere (e.g. `app/portfolio/page.tsx`'s own `getMarketQuote` `MappingFailure` branch): the `Infinity`/`NaN` guards in `format.ts` and the `normalizeMarketQuote`/`normalizeProtocolQuote` failure branches in `buildDashboardViewModel.ts`. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged — `navigation.spec.ts`'s "dashboard is the default landing page" test already covered the route at the heading level; no new Playwright spec added this batch)                                                                                                                                                                                                                                                                                                                                                                |
+| `pnpm build`                 | ✅ Pass — `/` grew from a 0 B placeholder to 1.97 kB (208 kB First Load JS)                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ stores/
+types/` empty. No new file imports `fetch`/`axios`/`XMLHttpRequest`/
+`process.env`/`infrastructure/`. `features/dashboard/` imports only from
+`@/services` and `@/types/portfolio` (the allowed UI-layer → Services
+direction); nothing in `@/services` or `@/engine` imports from
+`@/features`. `app/page.tsx` imports only from `@/features/dashboard`
+(the module's own `index.ts` barrel) and `@/stores/portfolioStore`, never
+reaching into a `features/dashboard/*` subpath directly — the concrete
+mechanism behind M5-002's own DoD ("Dashboard-specific implementation
+remains isolated from generic shared components").
+
+**Traceability**: M5-001's Requirements/DoD, M5-002's DoD, and M5-003's
+Include list/Requirements/DoD are each addressed by name above, with
+every scoping decision (Conflict #1 avoidance, warning-attribution
+avoidance, formula ID sourcing, the `tests/` folder deviation) documented
+rather than silently decided.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -5275,36 +5435,39 @@ exists before Milestone 8.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 10
-   (M4-018) before committing, per instruction. This is the **final**
-   Milestone 4 batch — once approved and committed, Milestone 4 —
-   Portfolio Management is complete (all 18 tasks, M4-001 through
-   M4-018, addressed).
-3. **Milestone 4 plan's three conflict decisions, final status**: all
-   three remain resolved exactly as established in Batch 0/1 through the
-   milestone's completion — Conflict A (single collateral/single debt
-   position) was never violated by any of the 18 tasks; Conflict B (no
-   interim persistence) was upheld throughout, including by this final
-   batch's own tests, which verify the in-memory Store's real behavior
-   rather than assuming a persistence layer; Conflict C (resolve
-   Conflict #20 before any M4 batch needing zero-debt support) was
-   satisfied by Batch 0 before any dependent batch began.
-4. **Milestone 4 is complete pending this pass's approval.** No further
-   M4 batches remain. The next milestone per `docs/06_TASKS.md` is
-   **Milestone 5**, not yet reviewed in this session — its own task list
-   should be re-read fresh (matching the same Batch 0 kickoff-review
-   process this milestone began with) before any implementation starts,
-   per this engagement's established workflow.
-5. **Batch 10 raised no new conflict.** M4-018 was purely test
-   infrastructure (`git diff --stat -- ':!tests/**' ':!*.test.ts'
-':!*.spec.ts'` empty) — every "Cover" item named an already-built
-   feature, so no new specification gap was reachable. One real
-   regression was found and fixed: `tests/e2e/navigation.spec.ts`
-   (Milestone 1) had never actually been run before this batch executed
-   the full Playwright suite for the first time, and had been silently
-   broken since Batch 2 (M4-010's `AppHeader` links made its sidebar
-   locator ambiguous) — fixed with a one-line locator scope, not an
-   application change.
+2. **This pass stops here for approval** of Milestone 5 Batch 1
+   (M5-001, M5-002, M5-003 — Dashboard Foundation) before committing, per
+   instruction.
+3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
+   (M4-001 through M4-018) addressed; a permanent snapshot lives in
+   `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
+   before this milestone's own work began). Its three conflict decisions
+   remain resolved exactly as established: Conflict A (single
+   collateral/single debt position) was never violated across all 18
+   tasks; Conflict B (no interim persistence) was upheld throughout;
+   Conflict C (resolve Conflict #20 before any M4 batch needing zero-debt
+   support) was satisfied by Batch 0 before any dependent batch began.
+   Both conflicts continue to apply unchanged to Milestone 5's own work —
+   the Dashboard reads the Store's existing single-position,
+   in-memory-only `Portfolio` records, adding no new position model or
+   persistence mechanism.
+4. **Milestone 5 — Dashboard is in progress.** Batch 1 (Dashboard
+   Foundation) implements M5-001–M5-003 only, per `06_TASKS.md`'s own
+   "IMPLEMENTATION ORDER." The next batch should continue with the
+   Summary Header (M5-004) and/or the KPI Grid work (M5-005, M5-006), the
+   next two steps that same ordering names, once approved.
+5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
+   scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
+   name a `Portfolio Status`/`Risk Category` field (example values
+   "Healthy"/"Low") that is exactly the Health Factor risk-band
+   classification Conflict #1 already blocks — not built here.
+   `DashboardMetric.status` was scoped to a structural `'ok' |
+'unavailable'` value instead (derived only from whether a raw value is
+   `null`), avoiding both inventing risk-band thresholds and silently
+   dropping M5-003's own "Status classifications" Include item. Conflict
+   #1 is very likely to become directly blocking once M5-007 (Health
+   Factor Status Component) or M5-010 (Risk Warning Banner) is reached —
+   flagged for the next batch that touches either.
 6. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
    suggested auto-save should extend to the Collateral/Debt Position
    Management forms, but M4-009's own DoD requires explicit confirmation

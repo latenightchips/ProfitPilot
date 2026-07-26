@@ -23,6 +23,8 @@ export default defineConfig({
         'stores/**',
         'app/portfolio/**',
         'app/portfolios/**',
+        'app/page.tsx',
+        'features/dashboard/**',
         'components/layout/AppHeader.tsx',
       ],
       exclude: ['**/*.d.ts', '**/tests/**'],

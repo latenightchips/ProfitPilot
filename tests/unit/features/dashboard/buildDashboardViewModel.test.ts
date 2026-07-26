@@ -1,0 +1,137 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { buildDashboardViewModel } from '@/features/dashboard';
+import { usePortfolioStore } from '@/stores/portfolioStore';
+import type { Portfolio } from '@/types/portfolio';
+
+/**
+ * Dashboard View Model — 06_TASKS.md M5-003 ("Create Dashboard View
+ * Model"). Builds portfolios through the real Store (`create`) rather
+ * than constructing `Portfolio` objects by hand, so every test exercises
+ * the same `ServiceResult<PortfolioSummary>` shape the Dashboard route
+ * will actually receive — the same convention `tests/unit/stores/
+ * portfolioStore.test.ts` and `app/portfolio/page.test.tsx` already use.
+ */
+beforeEach(() => {
+  usePortfolioStore.setState({
+    portfolios: {},
+    activePortfolioId: null,
+    loadStatus: 'idle',
+    saveStatus: 'idle',
+    errors: [],
+    lastSynchronizedAt: null,
+  });
+});
+
+function validInput(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'My Portfolio',
+    baseCurrency: 'USD',
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 20000 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+    },
+    settings: {},
+    ...overrides,
+  };
+}
+
+function createPortfolio(overrides: Record<string, unknown> = {}): Portfolio {
+  const result = usePortfolioStore.getState().create(validInput(overrides));
+  if (!result.ok) throw new Error('setup failed');
+  return result.data;
+}
+
+describe('buildDashboardViewModel — valid portfolio (M5-003)', () => {
+  it('converts a Portfolio Summary Service result into UI-ready metrics without mutating it', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+    const summaryBefore = JSON.parse(JSON.stringify(record.summary));
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(record.summary).toEqual(summaryBefore);
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+
+    expect(viewModel.portfolioName).toBe('My Portfolio');
+    expect(viewModel.metrics.netPortfolioValue.rawValue).toBe(80000);
+    expect(viewModel.metrics.netPortfolioValue.formattedValue).toBe('$80,000.00');
+    expect(viewModel.metrics.netPortfolioValue.status).toBe('ok');
+    expect(viewModel.metrics.netPortfolioValue.formulaId).toBe('F-004');
+    expect(viewModel.metrics.healthFactor.formattedValue).toBe('4');
+    expect(viewModel.metrics.loanToValue.formattedValue).toBe('20%');
+    expect(viewModel.metrics.leverage.formattedValue).toBe('1.25x');
+    expect(viewModel.metrics.liquidationPrice.rawValue).toBe(12500);
+    expect(viewModel.metrics.liquidationDistance.rawValue).toBe(3);
+    expect(viewModel.metrics.liquidationBuffer.formattedValue).toBe('75%');
+  });
+
+  it('carries Service warnings through unchanged, without attributing them to a specific metric', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    expect(viewModel.warnings).toEqual(record.summary.ok ? record.summary.warnings : []);
+  });
+
+  it('reports market and protocol freshness sourced from the portfolio record, not invented', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    expect(viewModel.freshness.market).not.toBeNull();
+    expect(viewModel.freshness.market?.origin).toBe('manual');
+    expect(viewModel.freshness.market?.price).toBe(50000);
+    expect(viewModel.freshness.protocol).not.toBeNull();
+    expect(viewModel.freshness.protocol?.origin).toBe('manual');
+  });
+});
+
+describe('buildDashboardViewModel — zero-debt portfolio (Conflict #20)', () => {
+  it('marks the liquidation metrics unavailable instead of failing the whole view model', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDC', balance: 0 } });
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    expect(viewModel.metrics.liquidationPrice.status).toBe('unavailable');
+    expect(viewModel.metrics.liquidationPrice.rawValue).toBeNull();
+    expect(viewModel.metrics.liquidationPrice.formattedValue).toBe('N/A (no debt)');
+    expect(viewModel.metrics.liquidationPrice.formulaId).toBeNull();
+    // Health Factor is genuinely Infinity at zero debt (M2-009) — not unavailable.
+    expect(viewModel.metrics.healthFactor.status).toBe('ok');
+    expect(viewModel.metrics.healthFactor.formattedValue).toBe('∞');
+  });
+});
+
+describe('buildDashboardViewModel — calculation failure (M4-017 precedent)', () => {
+  it('returns an ok:false view model carrying the Service errors, without inventing partial metrics', () => {
+    const portfolio = createPortfolio({
+      collateral: { asset: 'BTC', quantity: 0 },
+      debt: { asset: 'USDC', balance: 20000 },
+    });
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+    expect(record.summary.ok).toBe(false);
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.ok).toBe(false);
+    if (viewModel.ok) return;
+    expect(viewModel.portfolioName).toBe('My Portfolio');
+    expect(viewModel.errors.length).toBeGreaterThan(0);
+  });
+});
