@@ -6,7 +6,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
-import { calculatePortfolioSummary, type PortfolioSummary, type ServiceResult } from '@/services';
+import {
+  calculatePortfolioSummary,
+  normalizeMarketQuote,
+  normalizeProtocolQuote,
+  type PortfolioSummary,
+  type ServiceResult,
+} from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import {
@@ -185,6 +191,78 @@ import {
  * `ProtocolParameters` object is always submitted together. The fuller
  * "preset selection"/"freshness status" UX is M4-015's own, later,
  * dedicated task.
+ *
+ * ---
+ *
+ * **Manual Price Controls — 06_TASKS.md M4-014.** Include: "Price input,
+ * Timestamp, Manual-data indicator, Reset action, Stale-data warning."
+ * "Price input" already existed (Batch 4's "Manual price (USD)" field).
+ * This batch adds the other four, in `CollateralPositionForm`:
+ * - **Timestamp / Manual-data indicator**: `Portfolio.marketUpdatedAt`
+ *   (new field, `types/portfolio.ts`) is displayed as "Last updated," next
+ *   to a "Manual" badge — the Store never has anything but a manually
+ *   entered price (no live provider exists anywhere in this codebase; see
+ *   M3-007's own header comment), so "Manual" is always correct, not a
+ *   guess.
+ * - **Stale-data warning**: reuses `normalizeMarketQuote` (M3-007, Market
+ *   Data Service) — its own already-documented, non-invented 5-minute
+ *   Fresh/Stale rule (`04_BUILD_GUIDE.md` "PRICE FRESHNESS"), the actual
+ *   reason M4-014 names M3-007 as a Dependency. Never wired into any UI
+ *   before this batch. `getMarketQuote` below calls it with the one
+ *   candidate this app can ever produce (`origin: 'manual'`,
+ *   `timestamp: portfolio.marketUpdatedAt`) — reusing the Service's own
+ *   threshold rather than re-implementing "5 minutes" inline.
+ * - **Reset action**: reverts the *unsaved* price field back to the
+ *   currently-applied value (`resetField('market.btcPriceUsd')`) — the
+ *   only sensible meaning of "reset" here, since there is no live/cached
+ *   price to reset *to* (no provider, no cache candidate ever exists).
+ *
+ * **Manual-data indicator / Freshness display placed on
+ * `Portfolio`, not `MarketPrices`/`ProtocolParameters`** — see
+ * `types/portfolio.ts`'s own header comment for why `marketUpdatedAt`/
+ * `protocolUpdatedAt` had to be added there: neither Engine type
+ * (`engine/shared/types.ts`, M2-002) carries a timestamp at all.
+ *
+ * ---
+ *
+ * **Protocol Configuration Controls — 06_TASKS.md M4-015.** Include:
+ * "Maximum LTV, Liquidation threshold, Borrow rate, Parameter source,
+ * Freshness status." The three parameter fields already existed (Batch
+ * 4). This batch adds "Parameter source" and "Freshness status" — shown
+ * identically in both `CollateralPositionForm` (which edits Maximum
+ * LTV/Liquidation threshold) and `DebtPositionForm` (which edits Borrow
+ * rate), since both edit the same shared `portfolio.protocol` object;
+ * M4-015's own Dependencies list only M4-007, but "Borrow rate" is one of
+ * its own named fields and that field's control lives in M4-008's form —
+ * a minor pre-existing inconsistency in the task's own Dependencies, not
+ * a new conflict, resolved by showing the shared status wherever a
+ * protocol field is actually edited.
+ *
+ * **"Parameter source"**: always "Manual," for the same reason as the
+ * price ("Protocol Data" providers were never built — see M3-008's own
+ * header comment). **"Freshness status"**: reuses `normalizeProtocolQuote`
+ * (M3-008, Protocol Parameter Service) via `getProtocolQuote` below —
+ * deliberately *not* a fresh/stale classification. M3-008's own header
+ * comment explains why no such threshold exists: `04_BUILD_GUIDE.md`
+ * defines a concrete staleness rule for prices but no equivalent one for
+ * protocol parameters, only a raw timestamp — inventing one here would
+ * contradict that Service's own already-made decision. Displayed as
+ * "Last updated" with no stale/fresh language, matching the Service's
+ * exact behavior.
+ *
+ * **"Preset selection" — still not offered, same root cause as conflict
+ * #24 (M4-005, Batch 3)**: M4-015's own Description repeats "select a
+ * supported protocol preset or enter parameters manually," but no
+ * concrete Aave V3 preset values exist anywhere in the documentation.
+ * Not a new conflict — the same one recurring, resolved identically:
+ * manual entry only.
+ *
+ * **"Changes trigger recalculation and clearly identify manual
+ * assumptions" (M4-015 DoD)**: satisfied by mechanisms that already
+ * existed before this batch — the preview hard gate (any field change
+ * clears a stale preview, Batch 4) covers "trigger recalculation"; the
+ * "Manual"/"Parameter source: Manual" badges cover "identify manual
+ * assumptions." No new logic was needed for the DoD itself.
  */
 const AUTOSAVE_DEBOUNCE_MS = 600;
 
@@ -201,6 +279,51 @@ function formatPercent(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(
     value,
   );
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(value),
+  );
+}
+
+/**
+ * M4-014's stale-data warning — reuses `normalizeMarketQuote` (M3-007)
+ * rather than re-implementing its 5-minute threshold. Returns `null` on
+ * the (practically unreachable) `MappingFailure` case, since
+ * `portfolio.market.btcPriceUsd` is already Zod-validated and
+ * `marketUpdatedAt` is always a Store-generated ISO string.
+ */
+function getMarketQuote(portfolio: Portfolio) {
+  const result = normalizeMarketQuote({
+    asset: portfolio.collateral.asset,
+    currency: 'USD',
+    candidates: [
+      {
+        origin: 'manual',
+        price: portfolio.market.btcPriceUsd,
+        timestamp: portfolio.marketUpdatedAt,
+      },
+    ],
+    now: new Date().toISOString(),
+  });
+  return result.ok ? result.data : null;
+}
+
+/**
+ * M4-015's "Parameter source"/"Freshness status" — reuses
+ * `normalizeProtocolQuote` (M3-008) rather than re-deriving the same
+ * `origin`/`timestamp` pair inline.
+ */
+function getProtocolQuote(portfolio: Portfolio) {
+  const result = normalizeProtocolQuote({
+    collateralAsset: portfolio.collateral.asset,
+    borrowAsset: portfolio.debt.asset,
+    candidates: [
+      { origin: 'manual', parameters: portfolio.protocol, timestamp: portfolio.protocolUpdatedAt },
+    ],
+  });
+  return result.ok ? result.data : null;
 }
 
 /**
@@ -454,6 +577,7 @@ function CollateralPositionForm({
     handleSubmit,
     watch,
     reset,
+    resetField,
     formState: { errors },
   } = useForm<CollateralManagementFormValues, unknown, CollateralManagementInput>({
     resolver: zodResolver(collateralManagementSchema),
@@ -487,6 +611,9 @@ function CollateralPositionForm({
     }
   });
 
+  const marketQuote = getMarketQuote(portfolio);
+  const protocolQuote = getProtocolQuote(portfolio);
+
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
       <fieldset className="flex flex-col gap-3">
@@ -505,7 +632,10 @@ function CollateralPositionForm({
         {errors.collateral?.quantity && (
           <span className="text-xs text-destructive">{errors.collateral.quantity.message}</span>
         )}
-        <p className="text-xs text-muted-foreground">Price source: Manual</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5">Manual</span>
+          <span>Last updated: {formatDateTime(portfolio.marketUpdatedAt)}</span>
+        </div>
         <label className="flex flex-col gap-1 text-sm">
           <span>Manual price (USD)</span>
           <input
@@ -517,6 +647,18 @@ function CollateralPositionForm({
         </label>
         {errors.market?.btcPriceUsd && (
           <span className="text-xs text-destructive">{errors.market.btcPriceUsd.message}</span>
+        )}
+        <button
+          type="button"
+          onClick={() => resetField('market.btcPriceUsd')}
+          className="self-start rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+        >
+          Reset price
+        </button>
+        {marketQuote?.freshness === 'stale' && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            ⚠ This price was last updated over 5 minutes ago and may be stale.
+          </p>
         )}
         <label className="flex flex-col gap-1 text-sm">
           <span>Maximum LTV (0–1)</span>
@@ -539,6 +681,12 @@ function CollateralPositionForm({
         {errors.protocol?.maxLoanToValue && (
           <span className="text-xs text-destructive">{errors.protocol.maxLoanToValue.message}</span>
         )}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5">Parameter source: Manual</span>
+          {protocolQuote?.available && (
+            <span>Last updated: {formatDateTime(protocolQuote.timestamp)}</span>
+          )}
+        </div>
         <input
           type="hidden"
           {...register('protocol.borrowApr', { valueAsNumber: true })}
@@ -633,6 +781,8 @@ function DebtPositionForm({
     }
   });
 
+  const protocolQuote = getProtocolQuote(portfolio);
+
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
       <fieldset className="flex flex-col gap-3">
@@ -673,6 +823,12 @@ function DebtPositionForm({
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
         </label>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5">Parameter source: Manual</span>
+          {protocolQuote?.available && (
+            <span>Last updated: {formatDateTime(protocolQuote.timestamp)}</span>
+          )}
+        </div>
         <input
           type="hidden"
           {...register('protocol.maxLoanToValue', { valueAsNumber: true })}

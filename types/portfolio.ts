@@ -53,6 +53,18 @@
  *   A minimal `archivedAt: string | null` gives that action something to
  *   write to; the full archive UX (hiding from lists, confirmation,
  *   "explain consequences") is M4-012's job, not built here.
+ * - `marketUpdatedAt` / `protocolUpdatedAt` (added Milestone 4 Batch 7,
+ *   M4-014/M4-015) — neither task names a field this specific, but both
+ *   name "Timestamp" (M4-014) / "Freshness status" (M4-015) as required
+ *   UI display items, and the Engine's own `MarketPrices`/
+ *   `ProtocolParameters` types (`engine/shared/types.ts`, M2-002) carry
+ *   no timestamp at all — there is nowhere else for one to live. Scoped
+ *   per-field (not a single portfolio-wide timestamp) so editing the
+ *   price doesn't misrepresent the protocol parameters as freshly
+ *   changed, and vice versa; both are Store-managed bookkeeping fields,
+ *   set only by `stores/portfolioStore.ts` (`create`/`update`), never
+ *   part of `portfolioInputSchema` — the same pattern already used for
+ *   `id`/`createdAt`/`updatedAt`/`archivedAt`.
  *
  * **Fields named in 01_PRD.md's own "PORTFOLIO MODEL" (REQ-003) but
  * intentionally not included here**: "Owner" and "Version". Neither
@@ -101,6 +113,10 @@ export interface Portfolio extends ApplicationPortfolio {
   settings: PortfolioSettings;
   /** `null` unless archived — see this file's header comment. */
   archivedAt: string | null;
+  /** ISO 8601 — see this file's header comment. */
+  marketUpdatedAt: string;
+  /** ISO 8601 — see this file's header comment. */
+  protocolUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -194,7 +194,7 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     const section = within(screen.getByRole('group', { name: 'Collateral' }));
     expect(section.getByText('Asset: BTC')).toBeInTheDocument();
     expect(section.getByLabelText('Quantity')).toHaveValue(2);
-    expect(section.getByText(/Price source: Manual/)).toBeInTheDocument();
+    expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
     expect(section.getByLabelText('Manual price (USD)')).toHaveValue(50000);
     expect(section.getByLabelText('Maximum LTV (0–1)')).toHaveValue(0.75);
     expect(section.getByLabelText('Liquidation threshold (0–1)')).toHaveValue(0.8);
@@ -422,5 +422,96 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     // Editing again clears both the preview and the acknowledgment.
     await user.type(section.getByLabelText('Quantity'), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+});
+
+describe('PortfolioPage — Manual Price Controls (M4-014)', () => {
+  it('shows a Manual badge and the last-updated timestamp for the price', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
+    // Two "Last updated:" lines exist in this fieldset — price and
+    // protocol (M4-015) — so this only checks at least one renders.
+    expect(section.getAllByText(/Last updated:/).length).toBeGreaterThan(0);
+  });
+
+  it('does not show a stale-data warning for a freshly created portfolio', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.queryByText(/may be stale/)).not.toBeInTheDocument();
+  });
+
+  it('shows a stale-data warning when the price was last updated over 5 minutes ago (reuses Market Data Service, M3-007)', () => {
+    const created = createAndSelect();
+    const staleTimestamp = new Date(Date.now() - 10 * 60_000).toISOString();
+    usePortfolioStore.setState((state) => ({
+      portfolios: {
+        ...state.portfolios,
+        [created.id]: {
+          ...state.portfolios[created.id],
+          portfolio: { ...state.portfolios[created.id].portfolio, marketUpdatedAt: staleTimestamp },
+        },
+      },
+    }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.getByText(/may be stale/)).toBeInTheDocument();
+  });
+
+  it('resets an unsaved price edit back to the currently-applied value', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Manual price (USD)'));
+    await user.type(section.getByLabelText('Manual price (USD)'), '99999');
+    expect(section.getByLabelText('Manual price (USD)')).toHaveValue(99999);
+
+    await user.click(section.getByRole('button', { name: 'Reset price' }));
+    expect(section.getByLabelText('Manual price (USD)')).toHaveValue(50000);
+  });
+
+  it('clears an existing preview when the price is reset (still under the preview hard gate)', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Manual price (USD)'));
+    await user.type(section.getByLabelText('Manual price (USD)'), '60000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    expect(section.getByText('Health Factor', { selector: 'dt' })).toBeInTheDocument();
+
+    await user.click(section.getByRole('button', { name: 'Reset price' }));
+    expect(section.queryByText('Health Factor', { selector: 'dt' })).not.toBeInTheDocument();
+  });
+});
+
+describe('PortfolioPage — Protocol Configuration Controls (M4-015)', () => {
+  it('shows a Parameter source badge and last-updated timestamp on the Collateral form', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.getByText('Parameter source: Manual')).toBeInTheDocument();
+    expect(section.getAllByText(/Last updated:/).length).toBeGreaterThan(0);
+  });
+
+  it('shows a Parameter source badge and last-updated timestamp on the Debt form', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Parameter source: Manual')).toBeInTheDocument();
+    expect(section.getByText(/Last updated:/)).toBeInTheDocument();
+  });
+
+  it('does not offer a protocol preset selector (conflict #24 recurrence)', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    expect(screen.queryByText(/preset/i)).not.toBeInTheDocument();
   });
 });

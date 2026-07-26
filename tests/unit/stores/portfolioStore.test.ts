@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -133,6 +133,94 @@ describe('usePortfolioStore.update (M4-003)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+});
+
+describe('usePortfolioStore.create — marketUpdatedAt/protocolUpdatedAt (M4-014/M4-015)', () => {
+  it('sets both timestamps to the creation time', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    expect(created.data.marketUpdatedAt).toBe(created.data.createdAt);
+    expect(created.data.protocolUpdatedAt).toBe(created.data.createdAt);
+  });
+});
+
+describe('usePortfolioStore.update — marketUpdatedAt/protocolUpdatedAt (M4-014/M4-015)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('bumps marketUpdatedAt when the price actually changes, and leaves protocolUpdatedAt alone', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.data.marketUpdatedAt) + 60_000));
+    const result = usePortfolioStore
+      .getState()
+      .update(created.data.id, { market: { btcPriceUsd: created.data.market.btcPriceUsd + 1000 } });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.marketUpdatedAt).not.toBe(created.data.marketUpdatedAt);
+    expect(result.data.protocolUpdatedAt).toBe(created.data.protocolUpdatedAt);
+  });
+
+  it('bumps protocolUpdatedAt when a protocol field actually changes, and leaves marketUpdatedAt alone', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.data.protocolUpdatedAt) + 60_000));
+    const result = usePortfolioStore.getState().update(created.data.id, {
+      protocol: { ...created.data.protocol, borrowApr: created.data.protocol.borrowApr + 0.01 },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.protocolUpdatedAt).not.toBe(created.data.protocolUpdatedAt);
+    expect(result.data.marketUpdatedAt).toBe(created.data.marketUpdatedAt);
+  });
+
+  it('leaves both timestamps unchanged when neither market nor protocol is part of the update', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.data.updatedAt) + 60_000));
+    const result = usePortfolioStore.getState().update(created.data.id, { name: 'Renamed' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.marketUpdatedAt).toBe(created.data.marketUpdatedAt);
+    expect(result.data.protocolUpdatedAt).toBe(created.data.protocolUpdatedAt);
+  });
+
+  it('does not bump marketUpdatedAt when the submitted price equals the current price', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.data.marketUpdatedAt) + 60_000));
+    const result = usePortfolioStore
+      .getState()
+      .update(created.data.id, { market: { btcPriceUsd: created.data.market.btcPriceUsd } });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.marketUpdatedAt).toBe(created.data.marketUpdatedAt);
+  });
+});
+
+describe('usePortfolioStore.duplicate — marketUpdatedAt/protocolUpdatedAt (M4-014/M4-015)', () => {
+  it('carries both timestamps over unchanged, since the copied values are unchanged', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    const result = usePortfolioStore.getState().duplicate(created.data.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.marketUpdatedAt).toBe(created.data.marketUpdatedAt);
+    expect(result.data.protocolUpdatedAt).toBe(created.data.protocolUpdatedAt);
   });
 });
 

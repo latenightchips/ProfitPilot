@@ -89,6 +89,22 @@
  * `unarchive` is the direct, symmetric inverse of `archive` (sets
  * `archivedAt` back to `null`); it is not a new business rule, only the
  * necessary counterpart to the one M4-012 itself already names.
+ *
+ * **`update` now bumps `marketUpdatedAt`/`protocolUpdatedAt` (added in
+ * M4-014/M4-015)**: M4-014 names "Timestamp" and M4-015 names "Freshness
+ * status" as required display items, but neither the Engine's
+ * `MarketPrices`/`ProtocolParameters` types nor this Store previously
+ * tracked when either was last set — see `types/portfolio.ts`'s own
+ * header comment for the field-level reasoning. `update` compares the
+ * merged, revalidated `market`/`protocol` against the existing record
+ * field-by-field (`marketPricesEqual`/`protocolParametersEqual`) and only
+ * bumps the corresponding timestamp when the value actually changed —
+ * editing the portfolio name, for instance, must not make the price look
+ * freshly re-entered. `create` sets both to the creation timestamp (a
+ * portfolio's initial price/protocol values are exactly as fresh as the
+ * portfolio itself); `duplicate`/`archive`/`unarchive` all pass them
+ * through unchanged via `...existing.portfolio`, since none of those
+ * operations changes the price or protocol values themselves.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -163,6 +179,20 @@ function notFoundError(id: string): ApplicationError {
   );
 }
 
+/** Field-by-field, not `JSON.stringify` — small flat objects, no key-order risk either way. */
+function marketPricesEqual(a: Portfolio['market'], b: Portfolio['market']): boolean {
+  return a.btcPriceUsd === b.btcPriceUsd;
+}
+
+function protocolParametersEqual(a: Portfolio['protocol'], b: Portfolio['protocol']): boolean {
+  return (
+    a.maxLoanToValue === b.maxLoanToValue &&
+    a.liquidationThreshold === b.liquidationThreshold &&
+    a.borrowApr === b.borrowApr &&
+    a.supplyApr === b.supplyApr
+  );
+}
+
 export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   portfolios: {},
   activePortfolioId: null,
@@ -200,6 +230,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       protocol: data.protocol,
       settings: data.settings,
       archivedAt: null,
+      marketUpdatedAt: now,
+      protocolUpdatedAt: now,
       createdAt: now,
       updatedAt: now,
     };
@@ -252,10 +284,19 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       return { ok: false, errors };
     }
 
+    const now = new Date().toISOString();
+    const marketChanged = !marketPricesEqual(revalidated.data.market, existing.portfolio.market);
+    const protocolChanged = !protocolParametersEqual(
+      revalidated.data.protocol,
+      existing.portfolio.protocol,
+    );
+
     const portfolio: Portfolio = {
       ...existing.portfolio,
       ...revalidated.data,
-      updatedAt: new Date().toISOString(),
+      marketUpdatedAt: marketChanged ? now : existing.portfolio.marketUpdatedAt,
+      protocolUpdatedAt: protocolChanged ? now : existing.portfolio.protocolUpdatedAt,
+      updatedAt: now,
     };
 
     set((state) => ({

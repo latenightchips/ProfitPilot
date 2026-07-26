@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), and Batch 5 (M4-009) are synchronized to GitHub; Batch 6 (M4-011, M4-012) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-013 through M4-015, M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), and Batch 6 (M4-011, M4-012) are synchronized to GitHub; Batch 7 (M4-014, M4-015) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-013, M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3622,6 +3622,192 @@ conservatively and documented as conflict #27 rather than guessed at.
 
 ---
 
+### Batch 7 — Manual Price Controls + Protocol Configuration Controls (M4-014, M4-015)
+
+**Batch selection reasoning (this batch's own kickoff had no
+user-specified task list, unlike Batches 1–6)**: re-read all remaining
+M4 tasks (M4-013 through M4-018) directly from `06_TASKS.md` before
+choosing scope. M4-013 (Auto-Save) has a real, deep collision with
+Conflict B (no persistence infrastructure before Milestone 8) — its own
+DoD asks for "saved/saving/offline/failed" states with nothing durable
+to report on, deserving its own isolated batch with a dedicated
+conflict writeup, the same treatment Batch 0 gave Conflict #20.
+M4-017 (Error Recovery) is broad and independent. M4-018 (Workflow
+Tests) explicitly depends on "M4-005 through M4-017" and must come
+last. M4-014 and M4-015 were chosen as the next batch because they are
+structurally parallel — both are direct, small extensions of the
+already-built Collateral/Debt Position Management forms (M4-007/M4-008,
+Batch 4), both have every Dependency already satisfied (M3-007, M3-008,
+M4-007 — all built in Milestone 3 / Batch 4), and neither collides with
+Conflict B, mirroring the precedent of pairing M4-007+M4-008 in Batch 4
+itself.
+
+**Pre-implementation verification**: re-fetched `origin/main`, confirmed
+`git diff origin/main..HEAD --stat` was empty, realigned the local
+branch. Re-read M4-014/M4-015's exact text from `06_TASKS.md`. Grepped
+03_UI.md for "manual price"/"protocol configuration"/"freshness"/"stale"
+— found nothing beyond the Settings page's _global_ Data Sources section
+(Price Provider, Protocol Data, Connection Status, "Display a warning if
+data becomes stale") — confirmed these two tasks are governed entirely
+by `06_TASKS.md`'s own text, no separate per-portfolio UI spec exists.
+Read `services/market/quote.ts` (M3-007) and `services/protocol/quote.ts`
+(M3-008) in full: both `normalizeMarketQuote`/`normalizeProtocolQuote`
+were fully implemented in Milestone 3 but **never once called from any
+UI or Store code** before this batch — confirmed via
+`grep -rn "normalizeMarketQuote\|normalizeProtocolQuote" app/ stores/
+services/`. Wiring them in is the concrete substance of both tasks.
+
+**Real specification gap found before writing code — neither Engine type
+carries a timestamp.** `MarketPrices` (`engine/shared/types.ts`) is
+`{ btcPriceUsd: number }`; `ProtocolParameters` has no timestamp field
+either. M4-014 names "Timestamp" and M4-015 names "Freshness status" as
+required display items with nowhere to read one from. Resolved the same
+way `archivedAt` was added in Batch 1: two new Store-managed bookkeeping
+fields on `Portfolio` (not the Engine types, which stay exactly as
+`02_Formulas.md`/`04_BUILD_GUIDE.md` document them) —
+`marketUpdatedAt`/`protocolUpdatedAt` (`types/portfolio.ts`), ISO 8601,
+scoped per-field so editing the price doesn't misrepresent the protocol
+parameters as freshly changed and vice versa. Never part of
+`portfolioInputSchema` — set only by the Store, the same pattern already
+used for `id`/`createdAt`/`updatedAt`/`archivedAt`.
+
+**Store changes** (`stores/portfolioStore.ts`): `create` sets both
+timestamps to the creation instant. `update` now compares the merged,
+revalidated `market`/`protocol` against the existing record
+field-by-field (new `marketPricesEqual`/`protocolParametersEqual`
+helpers) and only bumps the corresponding timestamp when the value
+actually changed — editing the portfolio name must not make the price
+look freshly re-entered, and submitting the _same_ price back (e.g. an
+unrelated field edit that still round-trips the whole form) correctly
+does not bump it either. `duplicate`/`archive`/`unarchive` all pass both
+timestamps through unchanged via `...existing.portfolio`, since none of
+those operations changes the underlying price/protocol values.
+
+**M4-014 (Manual Price Controls)** — Include: "Price input, Timestamp,
+Manual-data indicator, Reset action, Stale-data warning." "Price input"
+already existed (Batch 4). Added to `CollateralPositionForm`:
+
+- **Manual-data indicator / Timestamp**: a "Manual" badge plus "Last
+  updated: <formatted `marketUpdatedAt`>" — always "Manual" because no
+  live price provider exists anywhere in this codebase (M3-007's own
+  header comment), not a guess.
+- **Stale-data warning**: reuses `normalizeMarketQuote` (`getMarketQuote`
+  helper) rather than re-implementing its already-documented, non-invented
+  5-minute Fresh/Stale rule (`04_BUILD_GUIDE.md` "PRICE FRESHNESS") —
+  the concrete reason M4-014 names M3-007 as a Dependency. Shown only
+  when `freshness === 'stale'`.
+- **Reset action**: `resetField('market.btcPriceUsd')` reverts an
+  _unsaved_ edit back to the currently-applied price — the only coherent
+  meaning of "reset" here, since there is no live/cached price to reset
+  _to_ (no provider or cache candidate is ever producible in this app).
+  Clears any open preview automatically, via the same `watch()`
+  subscription Batch 4 already used.
+
+**M4-015 (Protocol Configuration Controls)** — Include: "Maximum LTV,
+Liquidation threshold, Borrow rate, Parameter source, Freshness status."
+The three parameter fields already existed (Batch 4). Added "Parameter
+source: Manual" badge and "Last updated" to **both**
+`CollateralPositionForm` (edits Maximum LTV/Liquidation threshold) and
+`DebtPositionForm` (edits Borrow rate) — both operate on the same shared
+`portfolio.protocol` object, and M4-015's own Dependencies list only
+M4-007 despite naming "Borrow rate," a field that actually lives in
+M4-008's form — a minor pre-existing inconsistency in the task's own
+Dependencies, not a new conflict. "Freshness status" reuses
+`normalizeProtocolQuote` (`getProtocolQuote` helper) — deliberately
+_not_ a fresh/stale classification: M3-008's own header comment already
+explains why no such threshold was invented for protocol data (no
+documented rule exists, unlike prices), so this batch reused that
+existing decision rather than contradicting it with a UI-invented one.
+Displayed as a plain "Last updated" timestamp with no stale/fresh
+language.
+
+**"Preset selection" still not offered — same root cause as conflict
+#24 (Batch 3), not a new conflict.** M4-015's Description repeats
+"select a supported protocol preset or enter parameters manually," but
+(as already established in Batch 3) no concrete Aave V3 preset values
+exist anywhere in the documentation. Resolved identically: manual entry
+only.
+
+**DoD ("Changes trigger recalculation and clearly identify manual
+assumptions")**: satisfied entirely by mechanisms that predate this
+batch — the preview hard gate (Batch 4) covers "trigger recalculation";
+the "Manual"/"Parameter source: Manual" badges cover "identify manual
+assumptions." No new logic was needed for the DoD itself.
+
+**Test files**:
+
+- `tests/unit/stores/portfolioStore.test.ts` (+7 tests): `create` sets
+  both timestamps to the creation time; `update` bumps `marketUpdatedAt`
+  on an actual price change while leaving `protocolUpdatedAt` alone (and
+  the symmetric case for a protocol change); both stay unchanged when
+  neither `market` nor `protocol` is part of the update; `marketUpdatedAt`
+  stays unchanged when the submitted price equals the current price (not
+  just "market wasn't in the payload," but "market was resubmitted
+  unchanged"); `duplicate` carries both timestamps over unchanged. Used
+  `vi.useFakeTimers()`/`vi.setSystemTime()` for deterministic,
+  collision-free before/after timestamps rather than relying on real
+  elapsed wall-clock time between two fast calls.
+- `tests/unit/app/portfolio/page.test.tsx` (+8 tests): Manual badge and
+  timestamp render for the price; no stale warning on a freshly created
+  portfolio; stale warning appears once `marketUpdatedAt` is set more
+  than 5 minutes in the past (via direct Store manipulation, mirroring
+  the fake-timers precision concern above); Reset reverts an unsaved
+  price edit and clears any open preview; Parameter source/timestamp
+  render on both the Collateral and Debt forms; no preset selector is
+  offered. One pre-existing test (`renders exactly this task's own
+"Fields" list, prefilled`, M4-007) updated: the old plain-text "Price
+  source: Manual" assertion no longer matches the new badge markup,
+  replaced with `getByText('Manual', { selector: 'span' })` — a real,
+  necessary update caused by legitimate new UI, not a workaround.
+
+**Browser verification**: started the dev server and drove the full
+flow with Playwright/Chromium — created a portfolio, confirmed the
+"Manual" badge and "Parameter source: Manual" badges (with their
+timestamps) render on both forms, edited the price field, previewed the
+change, clicked "Reset price," and confirmed both the field reverted to
+the applied value and the open preview cleared. Screenshot confirms
+correct rendering of every new element. Zero console/page errors.
+
+**Scope discipline**: only M4-014 and M4-015 were implemented. `engine/`
+is completely untouched (`git diff --stat -- engine/` empty) — both
+Engine types (`MarketPrices`/`ProtocolParameters`) are exactly as
+`02_Formulas.md`/`04_BUILD_GUIDE.md` document them, with the new
+timestamps living one layer up on `Portfolio` instead. The only
+non-test files touched are `types/portfolio.ts`,
+`stores/portfolioStore.ts`, and `app/portfolio/page.tsx`.
+
+**Validation — Batch 7**
+
+| Command              | Result                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                     |
+| `pnpm lint`          | ✅ Pass                                                                                                                                     |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                     |
+| `pnpm test`          | ✅ Pass, 847/847 (14 net new)                                                                                                               |
+| `pnpm test:coverage` | ✅ 95.20% statements / 88.61% branches / 100% functions / 98.67% lines (project-wide). `app/portfolio/page.tsx`: 94.05%/75.60%/100%/98.83%. |
+| `pnpm build`         | ✅ Pass — `/portfolio`'s bundle grew from 2.95 kB to 3.44 kB, confirming real new content                                                   |
+
+**Architecture audit**: `git diff --stat -- engine/` empty.
+`app/portfolio/page.tsx` imports `normalizeMarketQuote`/
+`normalizeProtocolQuote`/`calculatePortfolioSummary` from `@/services`
+(the Service layer's own public entry point) and `usePortfolioStore`
+from `@/stores/portfolioStore` — no direct Engine import anywhere.
+`stores/portfolioStore.ts` still imports only from `@/services` and
+`@/types/portfolio`, unchanged. UI → Store/Services → Engine direction
+preserved throughout; two already-built, previously-unused Services
+(M3-007, M3-008) are now actually wired to a UI for the first time,
+which is the whole substance of this batch.
+
+**Traceability**: M4-014's five Include items (1 pre-existing, 4 added)
+and its DoD ("ProfitPilot remains fully functional without external
+price providers" — already true, since "Manual" was always the only
+reachable value) are addressed directly above. M4-015's five Include
+items (3 pre-existing, 2 added) and its DoD are addressed directly
+above, with the one root cause it shares with conflict #24 (no preset
+values exist) resolved identically rather than treated as new.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -4539,29 +4725,32 @@ for or against this.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 6
-   (M4-011, M4-012) before committing, per instruction. Do not begin any
+2. **This pass stops here for approval** of Milestone 4 Batch 7
+   (M4-014, M4-015) before committing, per instruction. Do not begin any
    further M4 task until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   6**: all three remain resolved as established (Batch 0/1) and
-   unaffected by this batch's own scope (list-page action wiring plus two
-   small, symmetric Store additions — no new position-editing behavior,
-   no persistence infrastructure introduced).
-4. Once Batch 6 is approved and committed, the next tasks per the
-   originally-approved 9-batch M4 plan's remaining scope are **M4-013
-   (Portfolio Auto-Save), M4-014 (Manual Price Controls), M4-015
-   (Protocol Configuration Controls), M4-017, and M4-018** — none started
-   yet. M4-013 in particular depends on M4-006/M4-007 (already built) but
-   also inherits Conflict B (no interim persistence infrastructure before
-   Milestone 8) — expect it to need its own scoped conflict/limitation
-   writeup before implementation, not a real persistence backend.
-5. **New from Batch 6**: conflict #27 — M4-012 never says whether an
-   archived portfolio remains independently selectable (e.g. still
-   reachable via the switcher or a clickable list row) while archived.
-   Resolved conservatively for internal consistency: archived portfolios
-   are excluded from `AppHeader`'s switcher and rendered as non-clickable
-   rows on the Portfolio List Page; unarchiving is the only documented
-   path back to selectability.
+   7**: all three remain resolved as established (Batch 0/1) and
+   unaffected by this batch's own scope (wiring two already-built,
+   previously-unused Services into existing forms, plus two small
+   Store-managed timestamp fields — no new position-editing behavior, no
+   persistence infrastructure introduced).
+4. Once Batch 7 is approved and committed, the remaining M4 tasks are
+   **M4-013 (Portfolio Auto-Save), M4-017 (Portfolio Error Recovery), and
+   M4-018 (Portfolio Workflow Tests)** — none started yet. Planned order:
+   M4-013 next, as its own batch — it depends on M4-006/M4-007/M4-008
+   (all built) but also inherits Conflict B (no interim persistence
+   infrastructure before Milestone 8), so its "saved/saving/offline/
+   failed" DoD will need its own scoped conflict/limitation writeup
+   before implementation, the same treatment Batch 0 gave Conflict #20;
+   then M4-017 (broad, independent); then M4-018 last, since its own
+   Dependencies list is explicitly "M4-005 through M4-017."
+5. **From Batch 6, still open**: conflict #27 — M4-012 never says
+   whether an archived portfolio remains independently selectable (e.g.
+   still reachable via the switcher or a clickable list row) while
+   archived. Resolved conservatively for internal consistency: archived
+   portfolios are excluded from `AppHeader`'s switcher and rendered as
+   non-clickable rows on the Portfolio List Page; unarchiving is the
+   only documented path back to selectability.
 6. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
    confirmation for "risk-increasing" changes, but no such term is
    defined anywhere in the documentation (no threshold, band, or scoring
@@ -4572,10 +4761,11 @@ for or against this.
    "Rate type" as debt fields with no counterpart anywhere in the data
    model. "Price" shown as read-only informational text; "Rate type" not
    rendered at all.
-8. **From Batch 3, still open**: conflict #24 — M4-005's "Protocol
+8. **From Batch 3, still open — recurred in Batch 7 with the same
+   resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
    parameters or preset" names a preset option with no concrete values
-   anywhere in the documentation. Resolved by offering manual entry
-   only.
+   anywhere in the documentation. Resolved both times by offering manual
+   entry only.
 9. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
    primary pages" inventory has no room for a Portfolio List page.
    Resolved by keeping `/portfolios` out of the sidebar, reachable only
@@ -4589,7 +4779,8 @@ for or against this.
 12. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
-    Cloud Synchronization & Import/Export) is reached, not before.
+    Cloud Synchronization & Import/Export) is reached, not before. This
+    is the same gap M4-013 (planned next) will collide with.
 13. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
@@ -4603,11 +4794,12 @@ for or against this.
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-14. **Revisited in Batch 7, confirmed still open at the specification
-    level but no longer blocking implementation**: swap-fees/slippage/
-    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
-    mechanics (conflict #10), and F-040's exit-collateral-sale
-    discrepancy (conflict #13, a known, tested approximation).
+14. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+    specification level but no longer blocking implementation**:
+    swap-fees/slippage/gas-estimate (conflict #8), "Target cash
+    proceeds"'s ambiguous mechanics (conflict #10), and F-040's
+    exit-collateral-sale discrepancy (conflict #13, a known, tested
+    approximation).
 15. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
@@ -4620,4 +4812,5 @@ for or against this.
     point 6 above), and whether an archived portfolio stays independently
     selectable (conflict #27 — point 5 above). Conflict #20 (resolved
     Batch 0) is not counted. **26 open conflicts remain (27 total
-    raised, minus #20, resolved).**
+    raised, minus #20, resolved) — unchanged by Batch 7, which recurred
+    an existing conflict (#24) rather than raising a new one.**
