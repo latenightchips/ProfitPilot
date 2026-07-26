@@ -71,16 +71,23 @@ describe('calculatePortfolioSummary (M3-005)', () => {
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'NEGATIVE_EQUITY' }));
   });
 
-  it('propagates a single Engine failure without inventing a fallback value (zero-debt liquidation price is undefined)', () => {
+  it('computes a full summary for a zero-debt portfolio instead of failing (conflict #20 resolved)', () => {
+    // calculateLiquidationPrice (F-024) and calculateLiquidationBuffer
+    // (F-025) are undefined for zero debt by design and would fail if
+    // called directly; calculatePortfolioSummary now skips them for a
+    // zero-debt portfolio and reports `liquidation: null` instead of
+    // failing the whole summary. See PROJECT_STATUS.md conflict #20.
     const debtFree = basePortfolio({ debt: { asset: 'USDC', balance: 0 } });
     const result = calculatePortfolioSummary(debtFree, 'live');
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatchObject({
-      category: 'calculation',
-      code: 'NOT_APPLICABLE_NO_DEBT',
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.collateralValue).toBe(100000);
+    expect(result.data.debtValue).toBe(0);
+    expect(result.data.netEquity).toBe(100000);
+    expect(result.data.healthFactor).toBe(Infinity);
+    expect(result.data.liquidation).toBeNull();
+    expect(result.data.interestCost).toBe(0);
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'NO_DEBT' }));
   });
 
   it('does not have a data field on a failure result (discriminated union, not a nullable envelope)', () => {
@@ -107,14 +114,14 @@ describe('calculatePortfolioSummary (M3-005)', () => {
     });
   });
 
-  it('handles a zero-debt Health Factor as Infinity before failing on liquidation price', () => {
-    // Documents the exact point of failure: calculateHealthFactor succeeds
-    // (Infinity, NO_DEBT warning) but calculateLiquidationPrice fails
-    // first in call order for a nonzero-debt check further down the
-    // chain — this test pins the zero-debt case to the liquidation-price
-    // step specifically, not an earlier one.
+  it('skips the liquidation steps entirely for zero debt rather than calling and discarding a failure', () => {
+    // debtValue is checked before any liquidation-family Engine call is
+    // made — calculateLiquidationPrice/Buffer are never invoked for a
+    // zero-debt portfolio, not called-then-ignored.
     const debtFree = basePortfolio({ debt: { asset: 'USDC', balance: 0 } });
     const result = calculatePortfolioSummary(debtFree, 'live');
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.liquidation).toBeNull();
   });
 });

@@ -90,6 +90,19 @@ describe('previewPortfolioAction (M3-006)', () => {
     expect(result.data.after.interestCost).toBe(500);
   });
 
+  it('repay to exactly zero debt succeeds with a null liquidation summary (conflict #20 resolved)', () => {
+    const portfolio = basePortfolio();
+    const action: PortfolioAction = { type: 'repay', amount: 20000 };
+    const result = previewPortfolioAction(portfolio, action, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.healthFactor).toBe(Infinity);
+    expect(result.data.after.liquidation).toBeNull();
+    expect(result.data.after.interestCost).toBe(0);
+  });
+
   it('changeMarketPrice recalculates every price-derived metric', () => {
     const portfolio = basePortfolio();
     const action: PortfolioAction = { type: 'changeMarketPrice', btcPriceUsd: 40000 };

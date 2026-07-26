@@ -67,6 +67,28 @@
  * the same promotion trigger already used for `MappingResult<T>` at
  * M3-007). Imported here under its original local names so the rest of
  * this file is unchanged.
+ *
+ * **Conflict #20 resolution (Milestone 4 Batch 0 follow-up)**: a
+ * zero-debt portfolio (collateral > 0, debt = 0) is a valid economic
+ * state, but `calculateLiquidationPrice` (F-024) treats "the price that
+ * triggers liquidation" as undefined when there is no debt and returns a
+ * `NOT_APPLICABLE_NO_DEBT` failure — by design, documented in that
+ * formula's own file, not a defect. `calculateLiquidationBuffer` (F-025)
+ * calls F-024 internally and inherits the same failure.
+ * `calculateLiquidationDistance` (F-023) does not: it derives Distance
+ * from `calculateHealthFactor` (F-022) directly, which already succeeds
+ * with `Infinity` for zero debt (a deliberate M2-009 design decision).
+ *
+ * Rather than overriding F-024/F-025's own documented Engine-layer
+ * behavior (a Milestone 2, already-shipped formula contract, and a
+ * larger blast radius — `engine/simulation/simulatePositionChange.ts`
+ * and `simulatePriceScenario.ts` also call these functions), this
+ * Service adapts at its own boundary: `liquidation` becomes `null` for a
+ * zero-debt portfolio instead of failing the whole summary, mirroring
+ * `calculateHealthFactor`'s own zero-debt-as-`Infinity` precedent one
+ * layer up. The existing `NO_DEBT` warning already produced by the
+ * Health Factor step (line below) carries the explanation; no duplicate
+ * warning is invented here. See PROJECT_STATUS.md conflict #20.
  */
 import {
   calculateAnnualInterest,
@@ -100,7 +122,8 @@ export interface PortfolioSummary {
   loanToValue: number;
   leverage: number;
   healthFactor: number;
-  liquidation: PortfolioLiquidationSummary;
+  /** `null` for a zero-debt portfolio — see this file's conflict #20 note. */
+  liquidation: PortfolioLiquidationSummary | null;
   interestCost: number;
 }
 
@@ -165,49 +188,60 @@ export function calculatePortfolioSummary(
   warnings.push(...healthFactorStep.warnings);
   const healthFactor = healthFactorStep.value;
 
-  const liquidationPriceStep = step(
-    calculateLiquidationPrice(
-      engineInput.market.btcPriceUsd,
-      debtValue,
-      collateralValue,
-      engineInput.protocol.liquidationThreshold,
-    ),
-    tracked,
-    sourceStatus,
-  );
-  if (!liquidationPriceStep.ok) return liquidationPriceStep.failure;
-  tracked = liquidationPriceStep.tracked;
-  warnings.push(...liquidationPriceStep.warnings);
-  const liquidationPrice = liquidationPriceStep.value;
+  let liquidation: PortfolioLiquidationSummary | null;
+  if (debtValue === 0) {
+    // Conflict #20: F-024/F-025 are undefined for zero debt by design —
+    // see this file's header comment. No liquidation is possible at any
+    // price, so `liquidation` is `null` rather than a failed summary.
+    liquidation = null;
+  } else {
+    const liquidationPriceStep = step(
+      calculateLiquidationPrice(
+        engineInput.market.btcPriceUsd,
+        debtValue,
+        collateralValue,
+        engineInput.protocol.liquidationThreshold,
+      ),
+      tracked,
+      sourceStatus,
+    );
+    if (!liquidationPriceStep.ok) return liquidationPriceStep.failure;
+    tracked = liquidationPriceStep.tracked;
+    warnings.push(...liquidationPriceStep.warnings);
 
-  const liquidationDistanceStep = step(
-    calculateLiquidationDistance(
-      collateralValue,
-      engineInput.protocol.liquidationThreshold,
-      debtValue,
-    ),
-    tracked,
-    sourceStatus,
-  );
-  if (!liquidationDistanceStep.ok) return liquidationDistanceStep.failure;
-  tracked = liquidationDistanceStep.tracked;
-  warnings.push(...liquidationDistanceStep.warnings);
-  const liquidationDistance = liquidationDistanceStep.value;
+    const liquidationDistanceStep = step(
+      calculateLiquidationDistance(
+        collateralValue,
+        engineInput.protocol.liquidationThreshold,
+        debtValue,
+      ),
+      tracked,
+      sourceStatus,
+    );
+    if (!liquidationDistanceStep.ok) return liquidationDistanceStep.failure;
+    tracked = liquidationDistanceStep.tracked;
+    warnings.push(...liquidationDistanceStep.warnings);
 
-  const liquidationBufferStep = step(
-    calculateLiquidationBuffer(
-      engineInput.market.btcPriceUsd,
-      debtValue,
-      collateralValue,
-      engineInput.protocol.liquidationThreshold,
-    ),
-    tracked,
-    sourceStatus,
-  );
-  if (!liquidationBufferStep.ok) return liquidationBufferStep.failure;
-  tracked = liquidationBufferStep.tracked;
-  warnings.push(...liquidationBufferStep.warnings);
-  const liquidationBuffer = liquidationBufferStep.value;
+    const liquidationBufferStep = step(
+      calculateLiquidationBuffer(
+        engineInput.market.btcPriceUsd,
+        debtValue,
+        collateralValue,
+        engineInput.protocol.liquidationThreshold,
+      ),
+      tracked,
+      sourceStatus,
+    );
+    if (!liquidationBufferStep.ok) return liquidationBufferStep.failure;
+    tracked = liquidationBufferStep.tracked;
+    warnings.push(...liquidationBufferStep.warnings);
+
+    liquidation = {
+      price: liquidationPriceStep.value,
+      distance: liquidationDistanceStep.value,
+      buffer: liquidationBufferStep.value,
+    };
+  }
 
   const interestCostStep = step(
     calculateAnnualInterest(debtValue, engineInput.protocol.borrowApr),
@@ -227,11 +261,7 @@ export function calculatePortfolioSummary(
       loanToValue,
       leverage,
       healthFactor,
-      liquidation: {
-        price: liquidationPrice,
-        distance: liquidationDistance,
-        buffer: liquidationBuffer,
-      },
+      liquidation,
       interestCost,
     },
     optionsFrom(sourceStatus, tracked),

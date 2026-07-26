@@ -56,6 +56,22 @@ describe('simulateScenario — price scenarios (M3-009)', () => {
     expect(result.data.scenario.leverage).toBeCloseTo(1.333333, 6);
   });
 
+  it('reports a zero-debt baseline liquidationDistance as Infinity rather than failing (conflict #20 resolved)', () => {
+    const debtFree: ApplicationPortfolio = {
+      ...basePortfolio(),
+      debt: { asset: 'USDC', balance: 0 },
+    };
+    const scenario: SimulationScenario = {
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+    };
+    const result = simulateScenario(debtFree, scenario, 'BTC drops to $40,000', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.baseline.liquidationDistance).toBe(Infinity);
+    expect(result.data.baseline.healthFactor).toBe(Infinity);
+  });
+
   it('produces a comparison-ready result via compareScenarios', () => {
     const scenario: SimulationScenario = {
       type: 'price',

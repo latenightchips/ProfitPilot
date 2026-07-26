@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete (pending final approval)** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up, not an M4 task) is implemented and awaiting approval; M4-001 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2577,6 +2577,130 @@ tasks (M3-001 through M3-014) addressed.
 
 ---
 
+## Milestone 4 progress
+
+### Batch 0 — Resolve Conflict #20 (standalone follow-up, not an M4 task)
+
+Per approved Milestone 4 plan: Conflict A (single collateral/single debt
+position, Version 0.1 locked scope — no multi-position support to be
+invented), Conflict B (no interim persistence infrastructure before
+Milestone 8 — the M4 store stays in-memory; any M4 task that depends on
+persistence gets its limitation documented rather than an interim
+solution), and Conflict C (resolve conflict #20 first, standalone,
+before any M4 batch that depends on zero-debt portfolio support) were
+all approved. This batch resolves Conflict C only — no M4 task
+(M4-001 onward) is touched.
+
+**Root cause, precisely located**: `calculatePortfolioSummary`
+(`services/portfolio/summary.ts`, M3-005) composes
+`calculateLiquidationPrice` (F-024) and `calculateLiquidationBuffer`
+(F-025, which calls F-024 internally) — both explicitly, by design,
+return a `NOT_APPLICABLE_NO_DEBT` failure for zero debt ("the price that
+triggers liquidation" is undefined when there's no debt to liquidate).
+`calculateLiquidationDistance` (F-023) does **not** share this problem —
+it derives Distance from `calculateHealthFactor` (F-022) directly, which
+already succeeds with `Infinity` for zero debt (a deliberate, documented
+M2-009 design decision). So the summary's failure was narrower than it
+first appeared: only the price/buffer pair is genuinely undefined for
+zero debt, not the whole liquidation concept.
+
+**Resolution — Service-layer adaptation, Engine untouched**: rather than
+overriding F-024/F-025's own documented Engine-layer behavior (a
+Milestone 2, already-shipped, already-audited formula contract, with a
+larger blast radius — `engine/simulation/simulatePositionChange.ts` and
+`simulatePriceScenario.ts` also call these functions directly),
+`calculatePortfolioSummary` now checks `debtValue === 0` **before**
+calling any of the three liquidation formulas and sets
+`liquidation: null` directly, skipping all three calls rather than
+calling-then-discarding a failure. `PortfolioSummary.liquidation`'s type
+changed from `PortfolioLiquidationSummary` to
+`PortfolioLiquidationSummary | null`. This mirrors
+`calculateHealthFactor`'s own zero-debt-as-`Infinity` precedent one
+layer up, applied at the Service boundary instead of the Engine. The
+existing `NO_DEBT` warning the Health Factor step already produces
+carries the explanation; no duplicate warning was invented.
+`git diff --stat -- engine/` is empty — confirmed zero Engine files
+touched.
+
+**Consumers updated**:
+
+- `services/simulation/scenario.ts` (M3-009) — `toScenarioSummary`
+  read `portfolioSummary.liquidation.distance` directly; changed to
+  `portfolioSummary.liquidation?.distance ?? Infinity`, consistent with
+  what `calculateLiquidationDistance` would have produced directly for
+  the same zero-debt input (the scenario/interest code paths in this
+  same file already call it directly and already handle zero debt
+  correctly — this fallback keeps the baseline path consistent with
+  them, not a new invented convention).
+- `services/portfolio/actionPreview.ts` (M3-006) and
+  `services/exit/plan.ts` (M3-011) — **zero code changes**. Both consume
+  `PortfolioSummary` opaquely (as `before`/`after` fields) without
+  touching `.liquidation` directly, so a `repay`-to-zero action and a
+  full exit (`targetDebt: 0`) now both succeed automatically.
+
+**Test changes**:
+
+- `tests/unit/services/portfolio/summary.test.ts` — the two tests that
+  pinned the old failure (`'propagates a single Engine failure...'` and
+  `'handles a zero-debt Health Factor as Infinity before failing...'`)
+  now assert the fixed success behavior: `liquidation: null`,
+  `healthFactor: Infinity`, `interestCost: 0`, and the `NO_DEBT` warning
+  present.
+- `tests/unit/services/exit/plan.test.ts` — the pinned "full exit and
+  conflict #20 interaction" test flipped from asserting failure
+  (`NOT_APPLICABLE_NO_DEBT`) to asserting success (`feasible: true`,
+  `after.liquidation: null`, `after.healthFactor: Infinity`,
+  `after.netEquity: 80000`). One unrelated line (`after?.liquidation.distance`,
+  a non-zero-debt partial-exit case) needed a null-safety
+  `?.` added for the new type, no behavior change.
+- `tests/unit/services/portfolio/actionPreview.test.ts` — added one new
+  test: `repay` for the full outstanding balance succeeds with
+  `liquidation: null`.
+- `tests/unit/services/simulation/scenario.test.ts` — added one new
+  test: a zero-debt baseline portfolio reports
+  `liquidationDistance: Infinity` rather than failing.
+
+**Correction found while writing the exit-plan test**: first guessed the
+post-full-exit `netEquity` would be `100000` (the full pre-exit
+collateral value); actual computed value is `80000` (1.6 BTC retained
+after selling 0.4 BTC to repay $20,000 debt, × $50,000 = $80,000).
+Verified by running the test rather than asserting the guessed figure —
+caught before commit.
+
+**Scope discipline**: only `services/portfolio/summary.ts` and
+`services/simulation/scenario.ts` (both already-shipped Milestone 3
+Service files) were modified, plus their four test files. No M4 task
+(M4-001 through M4-018) was started. `engine/` is untouched.
+
+**Validation — Batch 0**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `pnpm test`          | ✅ Pass, 716/716 (2 net new; 3 rewritten)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 94.91% statements / 90.08% branches / 100% functions / 98.92% lines. Slight dip from Batch 9's 95.08%/90.34% is the new `debtValue === 0` branch's pre-existing sibling branches (the individual `!xStep.ok` early-return failure arms for `netEquityStep`/`loanToValueStep`/`leverageStep`/the liquidation steps) remaining untested — a pre-existing gap (never covered before this batch either), not a regression this batch introduced. No coverage threshold is enforced in `vitest.config.ts` (informational only). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**Architecture audit**: `git diff --stat -- engine/` empty (zero Engine
+files touched, confirming the fix stayed at the Service boundary).
+`services/portfolio/index.ts`, `services/exit/index.ts`,
+`services/simulation/index.ts` all unchanged (no public API surface
+change beyond `PortfolioSummary.liquidation`'s own type, which was
+already exported). `serviceFoundation.test.ts`'s M3-013
+hardcoded-infrastructure and React/Next import checks still pass
+unmodified. Services → Engine one-way dependency preserved; no UI code
+touched (Milestone 4 UI work has not started).
+
+**Traceability**: this batch implements no `06_TASKS.md` task — it is
+the dedicated Conflict #20 follow-up the Batch 7 approval and the
+Milestone 4 plan approval both called for, positioned before Batch 4
+(M4-007/M4-008), which is the first M4 batch whose own Requirement
+("Support zero-debt portfolios") depends on it.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -3172,7 +3296,7 @@ an actual aggregation rule.
 
 ---
 
-### 20. `calculatePortfolioSummary` cannot summarize a zero-debt portfolio — `calculateLiquidationPrice` (F-024) treats liquidation price as undefined without debt
+### 20. `calculatePortfolioSummary` cannot summarize a zero-debt portfolio — `calculateLiquidationPrice` (F-024) treats liquidation price as undefined without debt — ✅ RESOLVED, Milestone 4 Batch 0
 
 Found while implementing Milestone 3 Batch 4 (M3-005). A debt-free BTC
 deposit (collateral > 0, debt = 0) is a valid economic state — someone
@@ -3217,6 +3341,22 @@ cross-batch-blast-radius change deliberately left for its own dedicated
 decision point rather than folded into Batch 7's scope. This is now the
 highest-priority open conflict for whoever picks up the next Exit
 Planning-adjacent or Portfolio Summary-adjacent work.
+
+**Resolved — Milestone 4 Batch 0** (standalone follow-up, approved
+before any M4 task, per the Milestone 4 plan's Conflict C): implemented
+exactly the Service-level adaptation anticipated above.
+`calculatePortfolioSummary` now checks `debtValue === 0` before calling
+`calculateLiquidationPrice`/`calculateLiquidationBuffer` at all and sets
+`liquidation: null` instead (not the individual `price`/`buffer`
+fields — the whole `PortfolioLiquidationSummary` triple, since
+`distance` is also only meaningful together with a defined price).
+Engine's F-024/F-025 were left untouched. `services/simulation/scenario.ts`
+updated its one direct `.liquidation.distance` read to
+`?.liquidation?.distance ?? Infinity`; `services/portfolio/actionPreview.ts`
+and `services/exit/plan.ts` needed no changes (opaque `PortfolioSummary`
+consumers). The full-exit test in `tests/unit/services/exit/plan.test.ts`
+now asserts success instead of the pinned failure. See "Milestone 4
+progress" → "Batch 0" above for full detail.
 
 ---
 
@@ -3298,34 +3438,40 @@ actually builds one.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 9 (M3-013,
-   M3-014) before committing, per instruction. **Milestone 3 — Core
-   Services is complete pending this approval**: all 14 tasks
-   (M3-001–M3-014) addressed.
-3. Once approved and committed, the next milestone is **Milestone 4 —
-   Portfolio Management** (`06_TASKS.md`): implementing the complete
-   portfolio-management experience (create, view, edit, duplicate,
-   switch, archive, delete portfolios; multiple portfolios supported).
-   Before starting: re-read Milestone 4's own task list fresh, the same
-   "verify before assuming scope" discipline used throughout Milestone
-   3 — Milestone 4 is the first milestone to build real UI/application
-   state on top of the now-complete Service layer, a different kind of
-   work than anything built so far.
-4. **Highest-priority open architectural item, independent of any
-   specific milestone's scope**: conflict #20's escalated severity
-   (`planExit` currently fails for every full exit) — worth a dedicated
-   decision on whether to make `PortfolioLiquidationSummary`'s
-   `price`/`buffer` nullable in `services/portfolio/summary.ts`
-   (M3-005), and how that ripples into M3-006/M3-009's existing
-   consumption of `PortfolioSummary`. Per repeated instruction, never
-   folded into an unrelated batch — treat as its own dedicated
-   follow-up whenever it is picked up, likely before or during Milestone
-   4/5 UI work that will actually need to render exit plans.
-5. **New from Batch 9**: M3-013's "persistence adapters" mention
+2. **This pass stops here for approval** of Milestone 4 Batch 0 (the
+   standalone Conflict #20 follow-up) before committing, per
+   instruction. Do not begin M4-001 until this is approved.
+3. **Milestone 4 plan approved**, with three conflict decisions locked
+   in before any M4 task starts:
+   - **Conflict A (positions)**: approved as-is — Version 0.1 remains a
+     single collateral position and a single debt position. No
+     multi-position support (arrays, aggregate LTV, weighted liquidation
+     threshold) is to be invented for M4-001/M4-007/M4-008.
+   - **Conflict B (persistence timing)**: no interim persistence
+     infrastructure and no Zustand `persist` middleware before Milestone 8. The M4-003 Portfolio Store stays in-memory. Any M4 task whose
+     text assumes a working persistence backend (M4-003's "delegate
+     persistence to Services," M4-010's "retain selection after
+     refresh," M4-013's auto-save/save-state/retry behaviors) gets its
+     limitation documented in that batch's own write-up rather than an
+     interim solution built to satisfy it.
+   - **Conflict C (M4-008 vs. conflict #20)**: approved — resolve
+     conflict #20 first, standalone, before the M4 batch that needs it
+     (Batch 4: M4-007/M4-008). **Done in this pass** — see "Milestone 4
+     progress" → "Batch 0" above, pending approval per point 2.
+4. Once Batch 0 is approved and committed, the next batch is **Batch 1
+   (M4-001, M4-002, M4-003)** — Portfolio Application Types, Validation
+   Schemas, and the Portfolio Store — per the approved plan's batch
+   order. Batch 1 must apply Conflicts A and B above from the start
+   (single-position types; in-memory store, no persist middleware).
+5. **Conflict #20 is now resolved** (this batch) — no longer the
+   highest-priority open item. See conflict #20's entry below for the
+   full resolution and its "Milestone 4 progress" write-up above.
+6. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
    (conflict #21) has no persistence Service or task to attach to until
    Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
-   Cloud Synchronization & Import/Export) is reached, not before.
-6. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+   Cloud Synchronization & Import/Export) is reached, not before. Directly
+   relevant to Conflict B above: this is the same underlying gap.
+7. **Outstanding blockers/conflicts carried forward from Milestone 2**:
    F-026 (Health Factor status classification, conflict #1), compound
    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
    Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -3338,17 +3484,17 @@ actually builds one.
    disagreement plus M2-030's 2 unmapped benchmark categories (conflict
    #16), and M2-031's undocumented public/internal split criteria
    (conflict #17). None of these blocked Milestone 2's own completion.
-7. **Revisited in Batch 7, confirmed still open at the specification
+8. **Revisited in Batch 7, confirmed still open at the specification
    level but no longer blocking implementation**: swap-fees/slippage/
    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
    mechanics (conflict #10), and F-040's exit-collateral-sale
    discrepancy (conflict #13, a known, tested approximation).
-8. **From Milestone 3, still open**: "Source status"'s undefined
+9. **From Milestone 3, still open**: "Source status"'s undefined
    _generic_ value domain (conflict #18 — confirmed across three
    Services now to be a genuinely per-Service, not generic, concept),
    "Formula version" aggregation across a multi-Engine-call Service
    (conflict #19 — a checked stopgap, reused by three Services, still
-   not a real resolution), `calculatePortfolioSummary`'s inability to
-   summarize a zero-debt portfolio (conflict #20 — see point 4 above),
-   and M3-013's persistence-adapter gap (conflict #21 — see point 5
-   above). **21 total open conflicts carried into Milestone 4.**
+   not a real resolution), and M3-013's persistence-adapter gap
+   (conflict #21 — see point 6 above). Conflict #20 is resolved (point 5
+   above) and no longer counted as open. **20 open conflicts remain; one
+   (#20) resolved this batch.**

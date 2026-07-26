@@ -14,12 +14,14 @@ import type { ApplicationPortfolio } from '@/services/portfolio/models';
  *
  * Revisits conflicts #10 and #13 (both already resolved at the Engine
  * layer by scoping/documented approximation, not by inventing behavior
- * — see `plan.ts`'s header comment) and discovers a new interaction
- * with conflict #20 (`calculatePortfolioSummary` cannot summarize a
- * zero-debt portfolio): a full exit (`targetDebt: 0`) always produces a
- * zero-debt "after" portfolio, so `planExit` currently fails for full
- * exits specifically — pinned explicitly by a test below rather than
- * left as an undiscovered gap.
+ * — see `plan.ts`'s header comment). Also exercises conflict #20
+ * (`calculatePortfolioSummary` could not summarize a zero-debt
+ * portfolio): a full exit (`targetDebt: 0`) always produces a zero-debt
+ * "after" portfolio, so `planExit` used to fail for full exits
+ * specifically. Resolved as its own dedicated follow-up (Milestone 4
+ * Batch 0) — `services/portfolio/summary.ts` now reports
+ * `liquidation: null` for zero debt instead of failing; the test below
+ * now pins the fixed, successful behavior.
  */
 function basePortfolio(): ApplicationPortfolio {
   return {
@@ -50,7 +52,7 @@ describe('planExit — partial exits (M3-011)', () => {
     expect(result.data.after?.debtValue).toBe(10000);
     expect(result.data.after?.netEquity).toBe(80000);
     expect(result.data.after?.healthFactor).toBe(7.2);
-    expect(result.data.after?.liquidation.distance).toBe(6.2);
+    expect(result.data.after?.liquidation?.distance).toBe(6.2);
     expect(result.data.after?.interestCost).toBe(500);
     expect(result.data.after?.leverage).toBe(1.125);
   });
@@ -127,16 +129,15 @@ describe('planExit — partial exits (M3-011)', () => {
 });
 
 describe('planExit — full exit and conflict #20 interaction (M3-011)', () => {
-  it('a full exit (targetDebt: 0) currently fails because the resulting zero-debt portfolio cannot be summarized (conflict #20)', () => {
+  it('a full exit (targetDebt: 0) now succeeds and reports a null liquidation summary (conflict #20 resolved)', () => {
     const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
     const result = planExit(basePortfolio(), target, 'live');
-    // This pins the known, documented limitation rather than silently
-    // hiding it: calculatePortfolioSummary's liquidation-price step
-    // fails for zero debt (NOT_APPLICABLE_NO_DEBT), so the "after"
-    // summary for the single most common exit type cannot be computed
-    // today. See PROJECT_STATUS.md conflict #20's Batch 7 update.
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors[0]).toMatchObject({ code: 'NOT_APPLICABLE_NO_DEBT' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.after?.debtValue).toBe(0);
+    expect(result.data.after?.healthFactor).toBe(Infinity);
+    expect(result.data.after?.liquidation).toBeNull();
+    expect(result.data.after?.netEquity).toBe(80000);
   });
 });

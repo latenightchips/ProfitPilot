@@ -96,7 +96,11 @@ function toScenarioSummary(
     equity: portfolioSummary.netEquity,
     profitOrLoss,
     healthFactor: portfolioSummary.healthFactor,
-    liquidationDistance: portfolioSummary.liquidation.distance,
+    // `liquidation` is `null` for a zero-debt portfolio (conflict #20);
+    // `Infinity` mirrors calculateLiquidationDistance's (F-023) own
+    // zero-debt behavior, which this baseline would otherwise have
+    // produced if `calculatePortfolioSummary` hadn't already computed it.
+    liquidationDistance: portfolioSummary.liquidation?.distance ?? Infinity,
     debtCost: portfolioSummary.interestCost,
     leverage: portfolioSummary.leverage,
   };
