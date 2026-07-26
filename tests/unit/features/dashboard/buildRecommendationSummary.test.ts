@@ -45,28 +45,33 @@ function createPortfolio(overrides: Record<string, unknown> = {}) {
 }
 
 describe('buildRecommendationSummary — no target configured', () => {
-  it('returns an empty list', () => {
+  it('returns an empty list with emptyReason "no_target" (M5-020, Batch 9)', () => {
     const portfolio = createPortfolio();
-    expect(buildRecommendationSummary(portfolio).items).toEqual([]);
+    const summary = buildRecommendationSummary(portfolio);
+    expect(summary.items).toEqual([]);
+    expect(summary.emptyReason).toBe('no_target');
   });
 });
 
 describe('buildRecommendationSummary — target already met', () => {
-  it('returns an empty list rather than "no action needed" entries', () => {
+  it('returns an empty list with emptyReason "target_met" rather than "no action needed" entries (M5-020, Batch 9)', () => {
     // Current HF = 4; target of 1 is already exceeded.
     const portfolio = createPortfolio({ settings: { safetyTargets: { targetHealthFactor: 1 } } });
-    expect(buildRecommendationSummary(portfolio).items).toEqual([]);
+    const summary = buildRecommendationSummary(portfolio);
+    expect(summary.items).toEqual([]);
+    expect(summary.emptyReason).toBe('target_met');
   });
 });
 
 describe('buildRecommendationSummary — target below current Health Factor', () => {
-  it('returns both recommendations, ranked 1 and 2, with the full Display field set', () => {
+  it('returns both recommendations, ranked 1 and 2, with the full Display field set and a null emptyReason', () => {
     const portfolio = createPortfolio({
       settings: { safetyTargets: { targetHealthFactor: 5 } },
     });
     const summary = buildRecommendationSummary(portfolio);
 
     expect(summary.items).toHaveLength(2);
+    expect(summary.emptyReason).toBeNull();
     expect(summary.items[0].priority).toBe(1);
     expect(summary.items[1].priority).toBe(2);
     expect(summary.items[0].category).toBe('debtManagement');

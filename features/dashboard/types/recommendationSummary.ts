@@ -65,6 +65,26 @@
  * engagement). In practice this section's own real recommendation
  * universe is capped at 2 items regardless, softening the practical
  * difference.
+ *
+ * **`emptyReason` — added Batch 9 (M5-020, "Implement Dashboard Empty
+ * States"), "No recommendations" Include item.** Batch 7 originally left
+ * an empty `items` list to render nothing at all, reasoning "neither
+ * [case] warrants an error or a misleading message" — that was a decision
+ * not to fabricate an explanation without a concrete task asking for one.
+ * M5-020 now asks for exactly that: "Each empty state explains the
+ * missing requirement and provides a clear action." `emptyReason`
+ * distinguishes the two real, already-established causes of an empty
+ * `items` list (see `buildRecommendationSummary.ts`) so the component can
+ * render an honest, case-specific explanation instead of silence:
+ * `'no_target'` (no target Health Factor configured — actionable: set
+ * one) and `'target_met'` (a target is configured and already satisfied —
+ * informational, not actionable; nothing is "missing" in this case, so
+ * the component does not force an artificial call-to-action onto it).
+ * `'unavailable'` covers the practically-unreachable case where
+ * `calculateTargetHealthFactorActions` itself fails despite a
+ * successfully-computed `PortfolioSummary` (mirrors the same
+ * "documented, not assumed reachable" caveat other Dashboard builders
+ * already carry for their own edge cases).
  */
 export interface RecommendationSummaryItem {
   priority: number;
@@ -75,6 +95,10 @@ export interface RecommendationSummaryItem {
   expectedEffect: string;
 }
 
+export type RecommendationSummaryEmptyReason = 'no_target' | 'target_met' | 'unavailable';
+
 export interface RecommendationSummary {
   items: RecommendationSummaryItem[];
+  /** `null` whenever `items` is non-empty. */
+  emptyReason: RecommendationSummaryEmptyReason | null;
 }

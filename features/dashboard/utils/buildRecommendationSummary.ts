@@ -26,10 +26,10 @@ function toItem(recommendation: Recommendation, priority: number): Recommendatio
 
 export function buildRecommendationSummary(portfolio: Portfolio): RecommendationSummary {
   const target = portfolio.settings.safetyTargets?.targetHealthFactor ?? null;
-  if (target === null) return { items: [] };
+  if (target === null) return { items: [], emptyReason: 'no_target' };
 
   const actionsResult = calculateTargetHealthFactorActions(portfolio, target, SOURCE_STATUS);
-  if (!actionsResult.ok) return { items: [] };
+  if (!actionsResult.ok) return { items: [], emptyReason: 'unavailable' };
 
   const items: RecommendationSummaryItem[] = [];
   const { repayment, additionalCollateral } = actionsResult.data;
@@ -41,5 +41,5 @@ export function buildRecommendationSummary(portfolio: Portfolio): Recommendation
     items.push(toItem(additionalCollateral, items.length + 1));
   }
 
-  return { items };
+  return { items, emptyReason: items.length === 0 ? 'target_met' : null };
 }

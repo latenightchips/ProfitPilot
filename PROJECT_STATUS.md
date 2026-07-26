@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–7 (M5-001–M5-007, M5-009–M5-015) are synchronized to GitHub; Batch 8 (M5-017 — Data Freshness Indicators, resolving M5-018) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–8 (M5-001–M5-007, M5-009–M5-015, M5-017) are synchronized to GitHub; Batch 9 (M5-019, M5-020 — Dashboard States) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5286,6 +5286,152 @@ named individually.
 
 ---
 
+### Batch 9 — Dashboard States (M5-019, M5-020)
+
+Ninth Milestone 5 batch. `06_TASKS.md`'s task-level dependency graph
+places M5-016 and M5-019 through M5-022 between "Recommendations" and
+"Responsive and Accessible States" (M5-023 depends on "M5-006 through
+M5-021"). Scoped to M5-019 (Loading States) + M5-020 (Empty States) —
+the same "loading/empty" UI-states pairing Milestone 4 kept distinct
+from its own Error Recovery task (M4-016 "Portfolio Empty States" was
+bundled into Batch 2 alongside unrelated work; M4-017 "Portfolio Error
+Recovery" got its own dedicated batch). M5-021 (Dashboard Error
+Recovery) is reserved for its own future batch on the same precedent —
+it is P0/Effort M, materially larger than either task here, and (per
+the investigation below) needs to draw on M4-017's own "Restore last
+valid state" finding rather than being a quick addition to this one.
+M5-016 (Quick Actions) is unrelated to either "state" task and left for
+a later batch, the same reasoning Batch 8 already used to leave it out.
+
+**M5-019 — `features/dashboard/components/DashboardSkeleton.tsx`**:
+a single composite skeleton (Summary/KPI/Table/Recommendation blocks,
+matching this task's own Include list literally) rendered in place of
+the entire page body while `loadStatus === 'loading'`
+(`stores/portfolioStore.ts`'s own `load()`, real but synchronous under
+Conflict B — no persistence layer exists yet to actually await). The KPI
+skeleton row reuses `KpiCard`'s own `loading` prop, added back in M5-005
+(Batch 3) and unused until now — it already established the exact
+`bg-accent/40` shimmer treatment this batch's other three blocks now
+match for visual consistency, rather than inventing a second style.
+
+- **Found and fixed a real, pre-existing "layout shift" bug while
+  investigating this task**: before this batch, `app/page.tsx` rendered
+  a bare "Loading…" paragraph _and_ the no-portfolio/portfolio branch
+  below it simultaneously whenever `loadStatus === 'loading'` — exactly
+  the kind of simultaneous, contradictory content this task's own "Avoid
+  layout shifts" Requirement warns against. Restructured into one
+  mutually-exclusive three-way branch (loading → no-portfolio → portfolio)
+  so only one state is ever visible.
+- **"Do not display misleading placeholder values"**: every skeleton
+  block is an unlabeled, valueless `animate-pulse` bar (or an unlabeled
+  `KpiCard` with `loading`) — no fabricated numbers, currency symbols, or
+  portfolio name anywhere in the skeleton.
+- **Reachability, tested honestly**: `loadStatus === 'loading'` is not
+  observable through a normal `render()` in this synchronous
+  architecture (both `set()` calls in `load()` happen before any
+  assertion can run) — the same characteristic already documented for
+  `saveStatus`'s own `'saving'` transition. The new route-level test sets
+  `loadStatus: 'loading'` directly via `usePortfolioStore.setState`
+  after the initial render (wrapped in `act()`) to exercise the real
+  branch, rather than fabricating an artificial delay that does not
+  exist in this codebase.
+
+**M5-020 — investigated each of the 6 documented Include items
+individually** (the same per-case discipline Batch 5 used for M5-010's
+6 Warning cases), rather than assuming which were buildable:
+
+- **"No portfolio"** — already fully satisfied by Batch 1's existing
+  "No portfolio is currently selected." message + link. No change.
+- **"Portfolio without collateral" — not a distinguishable empty state,
+  confirmed by reading the Engine, not assumed.** Zero collateral with
+  nonzero debt already fails at `calculateLoanToValue` (`DIVISION_BY_ZERO`
+  — M4-017's own finding). Zero collateral _and_ zero debt succeeds at
+  `calculateLoanToValue` (`LTV = 0`, a documented `ZERO_COLLATERAL_ZERO_DEBT`
+  warning) but then fails at `calculateEffectiveLeverage` — `netWorth`
+  is also zero in that case, and `engine/portfolio/calculateEffectiveLeverage.ts`
+  explicitly returns `DIVISION_BY_ZERO` for zero net worth. Every
+  zero-collateral scenario therefore always collapses into the existing
+  calculation-failure error branch (Batch 1, refined since) — there is
+  no reachable state where collateral is missing but the Dashboard still
+  renders normally. Nothing new was built for this item; nothing new
+  could honestly be built for it.
+- **"Portfolio without debt" — the one genuinely reachable, buildable
+  case.** Nonzero collateral with zero debt succeeds (Conflict #20,
+  resolved in Milestone 4) — `PortfolioSummary.liquidation` is `null` by
+  design, and every affected card already shows "N/A (no debt)"/
+  "Unavailable" (Batches 1, 4). What was missing was one overarching
+  explanation, not per-card labels — closed with a new
+  `features/dashboard/components/NoDebtNotice.tsx`, gated on the exact
+  same `summary.liquidation === null` signal every other zero-debt-aware
+  Dashboard builder already uses, additive alongside the existing labels
+  rather than replacing them.
+- **"Missing prices" / "Missing protocol parameters" — structurally
+  unreachable, confirmed via the Zod schema, not assumed.**
+  `types/portfolio.schema.ts`'s `portfolioInputSchema` requires `market`
+  (`btcPriceUsd: z.number().finite().positive()`) and `protocol`
+  (`protocolParametersSchema`, itself all-required fields) unconditionally
+  on every portfolio — `store.create()`/`store.update()` reject anything
+  that omits them before a record ever exists. A Portfolio without a
+  price or protocol parameters cannot exist in this Store. Nothing was
+  built for either item; nothing could be.
+- **"No recommendations" — buildable, and revisits Batch 7's own
+  decision.** Batch 7 originally rendered nothing when `items` was
+  empty, reasoning "neither [case] warrants... a misleading message" —
+  a decision not to fabricate an explanation without a concrete task
+  asking for one. M5-020 now asks for exactly that. Extended
+  `RecommendationSummary` with a new `emptyReason: 'no_target' |
+'target_met' | 'unavailable'` field (see
+  `features/dashboard/types/recommendationSummary.ts`'s own updated
+  header comment) so `RecommendationSummarySection` can render an
+  honest, case-specific explanation: `'no_target'` gets an action link
+  to `/portfolio`; `'target_met'` is deliberately left without one, since
+  nothing is missing in that case and forcing a call-to-action would
+  misrepresent a satisfied state as a problem.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/` empty
+— zero Engine/Store/type files touched. `git diff --stat -- services/`
+also empty, matching Batch 8 — no new Service call was needed for
+either task; both reuse `PortfolioSummary.liquidation` and
+`RecommendationSummary`, values already fully computed by earlier
+batches.
+
+**Validation — Batch 9**
+
+| Command                      | Result                                                                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                   |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                   |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                   |
+| `pnpm test` (Vitest)         | ✅ Pass, 1023/1023 (13 net new)                                                                                                           |
+| `pnpm test:coverage`         | ✅ 95.46% statements / 89.2% branches / 100% functions / 98.81% lines (project-wide) — consistent with Batch 8's 95.44%/89.1%/100%/98.8%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                |
+| `pnpm build`                 | ✅ Pass — `/` grew from 6.1 kB to 6.54 kB (215 kB First Load JS)                                                                          |
+
+**Manual browser verification**: created a zero-debt portfolio through
+the real Creation Flow — confirmed the No-Debt Notice renders with its
+explanatory text and "Add a debt position" link, positioned above the
+KPI grid, and that the Recommendations section's new empty-state message
+renders beneath it (screenshot captured, no console errors). The loading
+skeleton's real-browser imperceptibility was confirmed rather than
+worked around — matching `loadStatus`'s own documented synchronous
+transition, the same characteristic already established for
+`saveStatus`'s `'saving'` state.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/
+services/` empty. `DashboardSkeleton.tsx` and `NoDebtNotice.tsx` both
+import only from within `features/dashboard/` (or `next/link`) — no
+`@/services` or `@/engine` import in either.
+
+**Traceability**: M5-019's Include list (four named skeletons) and both
+Requirements (avoid layout shifts, no misleading placeholders) are
+addressed by name above, with the pre-existing layout-shift bug this
+investigation found and fixed called out explicitly. M5-020's 6 Include
+items are each addressed individually — 2 already satisfied
+pre-existing, 1 newly built, 2 confirmed structurally unreachable, 1
+newly built by extending an existing section — none silently dropped.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6317,10 +6463,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 8
-   (M5-017 — Data Freshness Indicators, resolving M5-018) before
-   committing, per instruction. Batches 1–7 (M5-001–M5-007,
-   M5-009–M5-015) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 9
+   (M5-019, M5-020 — Dashboard States) before committing, per
+   instruction. Batches 1–8 (M5-001–M5-007, M5-009–M5-015, M5-017) are
+   synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6334,14 +6480,14 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–7
-   (M5-001–M5-007, M5-009–M5-015) are synchronized; Batch 8 (Data
-   Freshness: M5-017, resolving M5-018) is implemented and awaiting
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–8
+   (M5-001–M5-007, M5-009–M5-015, M5-017) are synchronized; Batch 9
+   (Dashboard States: M5-019, M5-020) is implemented and awaiting
    approval. **M5-008 remains wholly unbuilt**, still blocked on
-   Conflict #1. The remaining Milestone 5 tasks are M5-016 and
-   M5-019 through M5-028 (Quick Actions, Loading/Empty States, Error
-   Recovery, Developer Mode, Responsive Layout, Accessibility, and
-   Testing) — not yet reviewed in detail.
+   Conflict #1. The remaining Milestone 5 tasks are M5-016, M5-021,
+   M5-022, and M5-023 through M5-028 (Quick Actions, Error Recovery,
+   Developer Mode, Responsive Layout, Accessibility, and Testing) — not
+   yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6461,7 +6607,27 @@ Service already supports).
     already true for free, since `recomputeSummary` never fetches and so
     cannot lose or overwrite valid data. See the Batch 8 write-up above
     for the full field-by-field reasoning.
-13. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+13. **Milestone 5 Batch 9 raised no new numbered conflict.** M5-019
+    (Loading States) found and fixed a real, pre-existing "layout shift"
+    bug (the old "Loading…" line and the no-portfolio/portfolio branch
+    below it rendered simultaneously) rather than just adding a skeleton
+    on top of it. M5-020 (Empty States) investigated each of its 6
+    Include items individually: "No portfolio" was already satisfied;
+    "Portfolio without collateral" was confirmed structurally unreachable
+    by tracing both `calculateLoanToValue` and `calculateEffectiveLeverage`
+    (every zero-collateral scenario fails calculation, never renders as a
+    distinguishable empty state); "Missing prices"/"Missing protocol
+    parameters" were confirmed structurally unreachable via
+    `types/portfolio.schema.ts`'s own required (non-optional) `market`/
+    `protocol` fields; "Portfolio without debt" (a new `NoDebtNotice`
+    component) and "No recommendations" (extending
+    `RecommendationSummary` with a new `emptyReason` field) were the two
+    genuinely buildable items, and were built. The "No recommendations"
+    build revisits, rather than contradicts, Batch 7's own decision to
+    render nothing — Batch 7 had no task asking for an explanation yet;
+    M5-020 now does. See the Batch 9 write-up above for the full
+    per-item reasoning.
+14. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6469,7 +6635,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-14. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+15. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6480,44 +6646,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-15. **From Batch 6, still open**: conflict #27 — M4-012 never says
+16. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-16. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+17. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-17. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+18. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-18. **From Batch 3, still open — recurred in Batch 7 with the same
+19. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-19. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+20. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-20. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+21. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-21. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+22. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-22. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+23. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-23. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+24. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6530,13 +6696,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-24. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+25. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-25. **From Milestone 3/4, still open — final tally at Milestone 4's
+26. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

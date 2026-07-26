@@ -42,13 +42,26 @@ function createPortfolio(overrides: Record<string, unknown> = {}) {
   return created.data;
 }
 
-describe('RecommendationSummarySection — no recommendations', () => {
-  it('renders nothing when the list is empty', () => {
+describe('RecommendationSummarySection — empty states (M5-020, Batch 9)', () => {
+  it('explains that no target is configured, with a link to set one', () => {
     const portfolio = createPortfolio();
-    const { container } = render(
-      <RecommendationSummarySection summary={buildRecommendationSummary(portfolio)} />,
+    render(<RecommendationSummarySection summary={buildRecommendationSummary(portfolio)} />);
+
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    expect(screen.getByText(/No target Health Factor is configured/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Set a target Health Factor' })).toHaveAttribute(
+      'href',
+      '/portfolio',
     );
-    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('explains that the target is already met, with no action link', () => {
+    // Current Health Factor = 4 (2 BTC * $50,000 * 0.8 threshold / $20,000 debt); target of 1 is already exceeded.
+    const portfolio = createPortfolio({ settings: { safetyTargets: { targetHealthFactor: 1 } } });
+    render(<RecommendationSummarySection summary={buildRecommendationSummary(portfolio)} />);
+
+    expect(screen.getByText(/already meets or exceeds your configured target/)).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
 

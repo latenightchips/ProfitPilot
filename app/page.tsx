@@ -14,12 +14,14 @@ import {
   buildRecommendationSummary,
   buildRiskWarnings,
   DashboardKpiGrid,
+  DashboardSkeleton,
   DashboardSummaryHeader,
   DataFreshnessSection,
   DebtAndInterestPanel,
   HealthFactorStatusSection,
   LeverageSummarySection,
   LiquidationRiskPanel,
+  NoDebtNotice,
   PortfolioCompositionSection,
   RecommendationSummarySection,
   RiskWarningBanner,
@@ -57,14 +59,20 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * already renders) and also resolves M5-018 without new workflow code —
  * see `features/dashboard/types/dataFreshnessIndicators.ts` for the full
  * reasoning on both.
+ * `DashboardSkeleton` (M5-019, Batch 9) replaces the loading branch, and
+ * `NoDebtNotice`/`RecommendationSummarySection`'s new empty-state
+ * messaging (M5-020, Batch 9) close 4 of that task's 6 documented empty
+ * states — see `features/dashboard/components/DashboardSkeleton.tsx` and
+ * `features/dashboard/components/NoDebtNotice.tsx` for the full reasoning
+ * on both, including why "Portfolio without collateral"/"Missing
+ * prices"/"Missing protocol parameters" are not built.
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Dashboard Quick Actions (M5-016), Loading/Empty States
- * (M5-019/M5-020), full Dashboard Error Recovery (M5-021), and Developer
- * Mode (M5-022) remain later, separate, dependency-gated tasks — not
- * built here.
+ * carried over. Dashboard Quick Actions (M5-016), full Dashboard Error
+ * Recovery (M5-021), and Developer Mode (M5-022) remain later, separate,
+ * dependency-gated tasks — not built here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -78,6 +86,11 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `'loading'` branch below is real and reachable via a direct Zustand
  * `subscribe` (same caveat already documented for `saveStatus`'s
  * `'saving'` in `stores/portfolioStore.ts`), not fabricated latency.
+ * **Renders `DashboardSkeleton` exclusively** while `loadStatus ===
+ * 'loading'` — previously a bare "Loading…" line rendered *alongside*
+ * the no-portfolio/portfolio branch below it; restructured (Batch 9,
+ * M5-019) into one mutually-exclusive three-way branch so only one state
+ * is ever visible at a time.
  *
  * **No-portfolio state**: "Redirect or guide users when no portfolio
  * exists" — guides, matching `app/portfolio/page.tsx`'s own established
@@ -155,13 +168,9 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">&ldquo;Am I safe?&rdquo;</p>
       </div>
 
-      {loadStatus === 'loading' && (
-        <p className="text-sm text-muted-foreground" role="status">
-          Loading…
-        </p>
-      )}
-
-      {activePortfolioId === null || record === undefined || viewModel === null ? (
+      {loadStatus === 'loading' ? (
+        <DashboardSkeleton />
+      ) : activePortfolioId === null || record === undefined || viewModel === null ? (
         <p className="text-sm text-muted-foreground">
           No portfolio is currently selected.{' '}
           <Link href="/portfolios" className="underline">
@@ -197,6 +206,8 @@ export default function DashboardPage() {
               </p>
 
               <RiskWarningBanner warnings={riskWarnings} />
+
+              <NoDebtNotice hasDebt={summary !== null && summary.liquidation !== null} />
 
               <DashboardKpiGrid metrics={viewModel.metrics} />
 

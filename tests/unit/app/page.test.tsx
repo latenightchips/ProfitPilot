@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import DashboardPage from '@/app/page';
@@ -102,6 +102,36 @@ describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => 
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
     const record = usePortfolioStore.getState().portfolios[created.data.id];
     expect(record.summary.ok && record.summary.warnings.length > 0).toBe(true);
+  });
+
+  it('shows the No-Debt Notice explaining the empty state (M5-020, Batch 9)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/This portfolio has no debt position/)).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Loading Skeleton (M5-019, Batch 9)', () => {
+  it('renders the skeleton exclusively while loadStatus is "loading", never alongside other content', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+    expect(screen.getByText('My Portfolio')).toBeInTheDocument();
+
+    act(() => {
+      usePortfolioStore.setState({ loadStatus: 'loading' });
+    });
+
+    expect(screen.getByRole('status', { name: 'Loading Dashboard' })).toBeInTheDocument();
+    expect(screen.queryByText('My Portfolio')).not.toBeInTheDocument();
   });
 });
 
@@ -226,15 +256,19 @@ describe('DashboardPage — Data Freshness Section (M5-017, Batch 8)', () => {
   });
 });
 
-describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7)', () => {
-  it('renders nothing when no target is configured', () => {
+describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7; empty state Batch 9)', () => {
+  it('explains the empty state when no target is configured, per M5-020', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
 
     render(<DashboardPage />);
 
-    expect(screen.queryByText('Recommendations')).not.toBeInTheDocument();
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    // "No target Health Factor is configured" alone also matches
+    // HealthFactorStatusSection's own explanation text (M5-007, Batch 4) —
+    // this substring is unique to the Recommendations empty state.
+    expect(screen.getByText(/so no recommendations can be generated/)).toBeInTheDocument();
   });
 
   it('renders recommendations when Health Factor is below the configured target', () => {

@@ -24,9 +24,12 @@
  * Leverage Summary Section; Batch 7 (M5-015) added the Recommendation
  * Summary Section, completing the "Recommendations" Implementation
  * Order step; Batch 8 (M5-017) added the Data Freshness Indicators
- * section, and resolved M5-018 with no new component.
+ * section, and resolved M5-018 with no new component; Batch 9 (M5-019,
+ * M5-020) added the Dashboard Skeleton and the No-Debt Notice, and
+ * extended the Recommendation Summary Section with empty-state messaging.
  */
 export * from './components/DashboardKpiGrid';
+export * from './components/DashboardSkeleton';
 export * from './components/DashboardSummaryHeader';
 export * from './components/DataFreshnessSection';
 export * from './components/DebtAndInterestPanel';
@@ -34,6 +37,7 @@ export * from './components/HealthFactorStatusSection';
 export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
 export * from './components/LiquidationRiskPanel';
+export * from './components/NoDebtNotice';
 export * from './components/PortfolioCompositionSection';
 export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
