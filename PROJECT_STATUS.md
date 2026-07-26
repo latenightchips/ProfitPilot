@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batch 1 (M5-001–M5-003 — Dashboard Foundation), Batch 2 (M5-004 — Dashboard Summary Header), and Batch 3 (M5-005, M5-006 — KPI Metrics) are synchronized to GitHub; Batch 4 (M5-007, M5-009 — Risk Sections, part 1) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–4 (M5-001–M5-007, M5-009) are synchronized to GitHub; Batch 5 (M5-010, M5-011, M5-012 — Risk Sections part 2 + Portfolio Composition) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1, re-confirmed in Batch 5. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -4810,6 +4810,149 @@ silently skipped.
 
 ---
 
+### Batch 5 — Risk Sections, part 2 + Portfolio Composition (M5-010, M5-011, M5-012)
+
+Fifth Milestone 5 batch. Per instruction, began by re-reading M5-008 and
+M5-010 fresh and re-verifying whether Conflict #1 (or anything else)
+still blocks them, rather than assuming Batch 4's conclusion still held:
+
+- **M5-008 (Health Factor Range Visualization) — confirmed still wholly
+  blocked, not attempted.** Every one of its "Show" items (Critical
+  zone, Caution zone, Target zone, "Current position" plotted against
+  them) requires the same zone boundaries Conflict #1's own four
+  disagreeing sources never converge on. Unlike M5-007/M5-010, there is
+  no partial subset — the entire task is the blocked content itself.
+  Still not built.
+- **M5-010 (Risk Warning Banner) — re-investigated each of the 6
+  "Warning cases" individually, not assumed from Batch 4's summary**:
+  - **"Health Factor near liquidation" — confirmed still blocked**, and
+    for a more specific reason than Conflict #1 alone: searched for any
+    documented "near liquidation" proximity threshold distinct from the
+    risk-band boundaries Conflict #1 already catalogs (checked
+    `01_PRD.md`'s "Near Liquidation" reference — a named test-dataset
+    category with no numeric definition; `03_UI.md`'s C-008 "Health
+    Factor Gauge" — names a "Warning Zone" with no numbers). The only
+    codebase usage of proximity-to-liquidation logic,
+    `LIQUIDATION_PROXIMITY` (`engine/loop/validateLoopStrategySafety.ts`),
+    turned out to check `healthFactor <= 1.0` — the liquidation boundary
+    itself, not a "near it" buffer — and is scoped to Loop Strategy
+    inputs, not reusable generically. No threshold invented.
+  - **"Invalid protocol parameters" — confirmed structurally
+    unreachable**, not blocked: `types/portfolio.schema.ts`'s
+    `.refine()` cross-field check runs on every `create` and `update`
+    (`stores/portfolioStore.ts` re-validates the fully merged portfolio
+    on every mutation), so a stored `Portfolio` can never carry invalid
+    protocol parameters. Nothing to warn about, ever — not built.
+  - **"High interest burden" — confirmed still blocked**, the same class
+    of gap as conflict #29: no "acceptable" interest-cost threshold
+    exists on `Portfolio`/`PortfolioSettings`, and the only place this
+    concept is documented (`RecommendationRuleConfig.loop.
+maxAcceptableAnnualInterestCost`) has no default value anywhere.
+  - **The other 3 — "Health Factor below configured target," "Missing or
+    stale price data," "Calculation warnings" — confirmed buildable**,
+    each from already-real fields (`HealthFactorStatus.distanceFromTarget`,
+    `DashboardFreshness.market.freshness`, `DashboardViewModelOk.warnings`).
+    Built this batch.
+
+Having confirmed M5-008 has no buildable subset and M5-010 only a
+partial one, selected the **next largest cohesive, unblocked batch**:
+M5-010 (the 3-item subset) plus the entire next Implementation Order
+step, "Portfolio Composition" (M5-011, M5-012) — both cleanly buildable
+with no new blockers found during review.
+
+**M5-010 — `features/dashboard/components/RiskWarningBanner.tsx`**
+(+ `types/riskWarnings.ts`, `utils/buildRiskWarnings.ts`): renders 0..N
+active warnings, each with a `reason` and `recommendedAction` (M5-010's
+own DoD, literally). Renders nothing when no warning is active — an
+empty banner would itself violate "must not block valid analysis
+unnecessarily" by occupying space with no information. **Replaces the
+old raw `viewModel.warnings` list** previously rendered inline in
+`app/page.tsx` — `buildRiskWarnings`'s "Calculation warnings" case
+already folds those same `ServiceWarning`s in, so keeping both would
+duplicate them.
+
+**M5-011 — `features/dashboard/components/PortfolioCompositionSection.tsx`**
+(+ `types/portfolioComposition.ts`, `utils/buildPortfolioComposition.ts`):
+covers the Include list field-for-field (Collateral/Debt positions,
+Asset quantity, Current price, Position value, Portfolio percentage,
+Protocol parameters) and the "Use" list (a `<table>` for `sm:` and up, a
+stacked compact-card list below `sm:`, both rendering the identical two
+rows via Tailwind's `hidden`/`sm:hidden` utilities, not two separate
+formatting paths).
+
+- **"Portfolio percentage" is always 100% for each row** — not computed,
+  a structural consequence of Conflict A (single collateral position +
+  single debt position): with exactly one asset per side, each
+  necessarily makes up 100% of its own side. Documented as such, not
+  presented as a real statistic that happens to always equal 100%.
+- **Debt row's "Current price"**: `"N/A (stablecoin, 1:1 — F-003)"` —
+  `calculateDebtValue`'s own equation (F-003: "Debt Value = Borrowed
+  Stablecoins") has no price-lookup step at all; stating a fabricated
+  "$1.00 (assumed)" would invent a computation the Engine itself never
+  performs.
+
+**M5-012 — no new component; satisfied by documented reasoning.** That
+task's own Requirement — "Hide the chart when it provides no additional
+value" — is unconditionally true under Conflict A: a chart visualizing
+"100% BTC" / "100% USDC" allocation adds nothing beyond the table M5-011
+already renders. `PortfolioComposition.showAllocationChart` is `false`
+(not a computed condition — there is no multi-asset data in this data
+model to check a count against). Building a chart component whose own
+documented rule means it can never render anything in Version 0.1 would
+be dead code with no way to exercise it meaningfully; none was written.
+If Conflict A is ever revisited for multi-asset support, this field is
+the concrete place a real condition and real per-asset percentages would
+go.
+
+**Scope discipline**: `git diff --stat -- engine/ services/ stores/
+types/` empty — zero Engine/Service/Store/type files touched, unlike
+Batch 4. This batch reuses Batch 4's `calculateTargetHealthFactorActions`
+indirectly (via `HealthFactorStatus`, already computed) and needed no new
+Service capability of its own.
+
+**Test fix required by the Risk Warning Banner's own addition**: the
+below-target-warning route test initially matched two elements
+(`RiskWarningBanner`'s reason text and `HealthFactorStatusSection`'s own,
+separately-worded explanation both contain "is below your configured
+target") — scoped the assertion to `within(screen.getByRole('alert'))`
+rather than loosening the match, since both texts are intentionally
+similar but serve different sections.
+
+**Validation — Batch 5**
+
+| Command                      | Result                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                    |
+| `pnpm lint`                  | ✅ Pass (after `eslint --fix` for import ordering)                                                                                         |
+| `pnpm format:check`          | ✅ Pass (after Prettier formatting)                                                                                                        |
+| `pnpm test` (Vitest)         | ✅ Pass, 985/985 (21 net new)                                                                                                              |
+| `pnpm test:coverage`         | ✅ 95.51% statements / 89.14% branches / 100% functions / 98.76% lines (project-wide) — improved over Batch 4's 95.50%/88.98%/100%/98.73%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                 |
+| `pnpm build`                 | ✅ Pass — `/` grew from 3.83 kB to 4.89 kB (214 kB First Load JS)                                                                          |
+
+**Manual browser verification**: built a portfolio, set Target Health
+Factor to 5 (above the portfolio's actual Health Factor of 4), navigated
+to `/` via the sidebar's in-app `<Link>`, and confirmed against a
+production build that the Risk Warning Banner shows "Health Factor (4)
+is below your configured target (5)." with its recommended action, and
+that Portfolio Composition renders both positions (BTC/USDC, correct
+quantities, values, 100% each) plus all four protocol parameters —
+consistent with the same numbers already shown in Batches 3–4's
+sections.
+
+**Architecture audit**: `git diff --stat -- engine/ services/ stores/
+types/` empty. `buildRiskWarnings`/`buildPortfolioComposition` import
+only from `@/services`/`@/types/portfolio` and this feature module's own
+types — the same allowed UI → Services direction every other Dashboard
+builder already uses. No new dependency direction introduced.
+
+**Traceability**: M5-010's Warning cases, Requirements, and DoD (3 of 6
+cases built, 3 documented as blocked/unreachable), M5-011's Include
+list, Use list, and DoD, and M5-012's Requirements and DoD are each
+addressed by name above.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -5841,10 +5984,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 4
-   (M5-007, M5-009 — Risk Sections, part 1) before committing, per
-   instruction. Batch 1 (M5-001–M5-003), Batch 2 (M5-004), and Batch 3
-   (M5-005, M5-006) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 5
+   (M5-010, M5-011, M5-012 — Risk Sections part 2 + Portfolio
+   Composition) before committing, per instruction. Batches 1–4
+   (M5-001–M5-007, M5-009) are synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -5858,17 +6001,21 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–3 (M5-001–M5-006)
-   are synchronized; Batch 4 (Risk Sections part 1: M5-007, M5-009) is
-   implemented and awaiting approval, per `06_TASKS.md`'s own
-   "IMPLEMENTATION ORDER." The next batch should complete the remaining
-   two Risk Sections tasks: M5-008 (Health Factor Range Visualization —
-   wholly blocked on Conflict #1's zone boundaries; likely needs a
-   product decision before it can start at all) and M5-010 (Risk Warning
-   Banner — partially buildable now using Batch 4's new
-   `calculateTargetHealthFactorActions`/existing freshness fields, but
-   "Health Factor near liquidation" and "High interest burden" need their
-   own threshold research first — see Batch 4's write-up).
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–4
+   (M5-001–M5-007, M5-009) are synchronized; Batch 5 (Risk Sections part
+   2 + Portfolio Composition: M5-010, M5-011, M5-012) is implemented and
+   awaiting approval, per `06_TASKS.md`'s own "IMPLEMENTATION ORDER."
+   **M5-008 remains wholly unbuilt** — re-confirmed blocked in Batch 5,
+   not just carried over from Batch 4's conclusion; needs a product
+   decision on Conflict #1 before any part of it can start. The next
+   batch should continue with the "Recommendations" step: M5-013 (Debt
+   and Interest Panel — mostly buildable; "Projected debt where
+   available" is likely blocked by the existing Conflict #7, compound
+   interest has no documented formula), M5-014 (Leverage Summary
+   Section — looks fully buildable from already-real Service outputs),
+   and M5-015 (Recommendation Summary — likely hits the same
+   `RecommendationRuleConfig` gap conflict #29 already documents; needs
+   its own review before starting).
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -5920,15 +6067,31 @@ Service already supports).
    attempted partially — see the Batch 4 write-up's own opening
    paragraph for why each is scoped out this batch specifically, not
    silently dropped.
-9. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
-   suggested auto-save should extend to the Collateral/Debt Position
-   Management forms, but M4-009's own DoD requires explicit confirmation
-   for risk-increasing changes to those same fields; resolved by keeping
-   the more specific, already-implemented M4-009 behavior. Also: two of
-   M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
-   genuinely, honestly built in this synchronous, no-network
-   architecture.
-10. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+9. **Milestone 5 Batch 5 raised no new conflict — it independently
+   re-confirmed Batch 4's M5-008/M5-010 conclusions, per instruction, by
+   re-researching each Warning case individually rather than trusting
+   the prior summary.** M5-008 remains wholly blocked (no partial
+   subset). M5-010's "Health Factor near liquidation" was traced all the
+   way to `LIQUIDATION_PROXIMITY` (`engine/loop/validateLoopStrategySafety.ts`)
+   to check whether it offered a reusable proximity threshold — it
+   turned out to check `healthFactor <= 1.0` (the liquidation boundary
+   itself, not a "near" buffer) and is scoped to Loop Strategy inputs,
+   confirming no invented threshold could be avoided there either.
+   "Invalid protocol parameters" was confirmed structurally unreachable
+   (not merely blocked) by tracing the Zod `.refine()` cross-field check
+   through every Store mutation path. M5-011/M5-012 raised no gaps at
+   all — "Portfolio percentage" (always 100%) and M5-012's "hide the
+   chart" condition are both direct, mechanical consequences of Conflict
+   A already approved in Milestone 4, not new interpretation.
+10. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
+    suggested auto-save should extend to the Collateral/Debt Position
+    Management forms, but M4-009's own DoD requires explicit confirmation
+    for risk-increasing changes to those same fields; resolved by keeping
+    the more specific, already-implemented M4-009 behavior. Also: two of
+    M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
+    genuinely, honestly built in this synchronous, no-network
+    architecture.
+11. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -5939,44 +6102,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-11. **From Batch 6, still open**: conflict #27 — M4-012 never says
+12. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-12. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+13. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-13. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+14. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-14. **From Batch 3, still open — recurred in Batch 7 with the same
+15. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-15. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+16. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-16. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+17. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-17. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+18. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-18. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+19. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-19. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+20. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -5989,13 +6152,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-20. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+21. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-21. **From Milestone 3/4, still open — final tally at Milestone 4's
+22. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

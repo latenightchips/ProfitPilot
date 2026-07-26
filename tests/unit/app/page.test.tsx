@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import DashboardPage from '@/app/page';
@@ -130,5 +130,43 @@ describe('DashboardPage — calculation failure', () => {
 
     expect(screen.getByText('My Portfolio')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Risk Warning Banner (M5-010, Batch 5)', () => {
+  it('shows no banner when nothing is wrong', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('warns when Health Factor is below the configured target', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ settings: { safetyTargets: { targetHealthFactor: 5 } } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(within(alert).getByText(/is below your configured target/)).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Portfolio Composition Section (M5-011, Batch 5)', () => {
+  it('renders the composition section with both positions', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Portfolio Composition')).toBeInTheDocument();
   });
 });

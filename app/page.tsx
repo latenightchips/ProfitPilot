@@ -7,10 +7,14 @@ import {
   buildDashboardViewModel,
   buildHealthFactorStatus,
   buildLiquidationRiskPanel,
+  buildPortfolioComposition,
+  buildRiskWarnings,
   DashboardKpiGrid,
   DashboardSummaryHeader,
   HealthFactorStatusSection,
   LiquidationRiskPanel,
+  PortfolioCompositionSection,
+  RiskWarningBanner,
 } from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -21,22 +25,29 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `/` (03_UI.md: the Dashboard is the default landing page, answering
  * "Am I safe?" among its five objective questions).
  *
- * **Batch scope — Dashboard Foundation (M5-001–M5-003, Batch 1) +
- * Summary Header (M5-004, Batch 2) + KPI Metrics (M5-005, M5-006,
- * Batch 3) + Risk Sections (M5-007, M5-009, Batch 4), per
- * 06_TASKS.md's own "IMPLEMENTATION ORDER"**: "Dashboard Foundation →
- * Summary Header → KPI Metrics → Risk Sections → Portfolio Composition →
- * Recommendations → Responsive and Accessible States → Testing."
- * `HealthFactorStatusSection` (M5-007) and `LiquidationRiskPanel`
- * (M5-009) are this batch's addition. M5-008 (Health Factor Range
- * Visualization) and M5-010 (Risk Warning Banner) — the remaining two
- * "Risk Sections" tasks — are deliberately not built this batch: M5-008
- * is wholly about the same Critical/Caution/Target zone boundaries
- * Conflict #1 blocks, and M5-010 needs further threshold research beyond
- * what this batch resolved (see PROJECT_STATUS.md). Portfolio
- * Composition (M5-011), Recommendation Summary (M5-015), and full
- * Dashboard Error Recovery (M5-021) remain later, separate,
- * dependency-gated tasks — not built here.
+ * **Batch scope — Dashboard Foundation (Batch 1) + Summary Header
+ * (Batch 2) + KPI Metrics (Batch 3) + Risk Sections, part 1 (Batch 4:
+ * M5-007, M5-009) + Risk Sections, part 2 / Portfolio Composition
+ * (Batch 5: M5-010, M5-011, M5-012), per 06_TASKS.md's own
+ * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header →
+ * KPI Metrics → Risk Sections → Portfolio Composition → Recommendations
+ * → Responsive and Accessible States → Testing." This batch finishes
+ * "Risk Sections" (`RiskWarningBanner`, M5-010 — only 3 of 6 documented
+ * warning cases; see `features/dashboard/types/riskWarnings.ts`) and
+ * completes "Portfolio Composition" (`PortfolioCompositionSection`,
+ * M5-011; M5-012 needs no component — see
+ * `features/dashboard/types/portfolioComposition.ts`). **M5-008 (Health
+ * Factor Range Visualization) remains wholly unbuilt** — every one of
+ * its "Show" items is a Critical/Caution/Target zone boundary, exactly
+ * Conflict #1's own blocked content, with no partial subset the way
+ * M5-007/M5-010 had. Recommendation Summary (M5-015) and full Dashboard
+ * Error Recovery (M5-021) remain later, separate, dependency-gated
+ * tasks — not built here.
+ *
+ * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
+ * (previously rendered inline) — `buildRiskWarnings` already folds
+ * `calculationWarnings` in as one of its three warning cases, so
+ * rendering both would duplicate the same Service warnings twice.
  *
  * **Loading state**: calls `load()` on mount, mirroring
  * `app/portfolios/page.tsx`'s own M4-004 pattern exactly. Per Conflict B
@@ -60,9 +71,9 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * comment). This means a calculation failure still shows which portfolio
  * and price data are active, not just an error message.
  *
- * **`HealthFactorStatusSection`/`LiquidationRiskPanel` render only in the
- * `ok: true` branch** — both need a successfully-computed
- * `PortfolioSummary`, unlike the Summary Header above them.
+ * **Every other section renders only in the `ok: true` branch** — all
+ * need a successfully-computed `PortfolioSummary`, unlike the Summary
+ * Header above them.
  *
  * **Error state**: `buildDashboardViewModel` can return `{ ok: false }`
  * (`calculatePortfolioSummary` genuinely fails for certain Zod-valid
@@ -92,6 +103,20 @@ export default function DashboardPage() {
 
   const viewModel =
     record !== undefined ? buildDashboardViewModel(record.portfolio, record.summary) : null;
+
+  const summary = record !== undefined && record.summary.ok ? record.summary.data : null;
+  const healthFactorStatus =
+    record !== undefined && summary !== null
+      ? buildHealthFactorStatus(record.portfolio, summary)
+      : null;
+  const riskWarnings =
+    healthFactorStatus !== null && viewModel !== null && viewModel.ok
+      ? buildRiskWarnings(healthFactorStatus, viewModel.freshness, viewModel.warnings)
+      : [];
+  const portfolioComposition =
+    record !== undefined && summary !== null && viewModel !== null
+      ? buildPortfolioComposition(record.portfolio, summary, viewModel.freshness.market)
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -138,22 +163,12 @@ export default function DashboardPage() {
                 Calculated {viewModel.formattedCalculationTimestamp}
               </p>
 
+              <RiskWarningBanner warnings={riskWarnings} />
+
               <DashboardKpiGrid metrics={viewModel.metrics} />
 
-              {record.summary.ok && (
-                <HealthFactorStatusSection
-                  status={buildHealthFactorStatus(record.portfolio, record.summary.data)}
-                />
-              )}
-
-              {viewModel.warnings.length > 0 && (
-                <div className="rounded-md border border-border bg-accent/20 p-3 text-sm">
-                  {viewModel.warnings.map((warning) => (
-                    <p key={warning.code} className="text-muted-foreground">
-                      {warning.message}
-                    </p>
-                  ))}
-                </div>
+              {healthFactorStatus !== null && (
+                <HealthFactorStatusSection status={healthFactorStatus} />
               )}
 
               <LiquidationRiskPanel
@@ -163,6 +178,10 @@ export default function DashboardPage() {
                   viewModel.freshness.market,
                 )}
               />
+
+              {portfolioComposition !== null && (
+                <PortfolioCompositionSection composition={portfolioComposition} />
+              )}
             </div>
           )}
         </div>

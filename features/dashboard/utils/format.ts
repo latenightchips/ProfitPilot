@@ -51,6 +51,12 @@ export function formatLeverage(value: number): string {
   return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}x`;
 }
 
+/** Asset quantity (e.g. BTC holdings) — up to 8 fraction digits, matching BTC's own on-chain precision; trailing zeros are not forced. */
+export function formatQuantity(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value);
+}
+
 export function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
