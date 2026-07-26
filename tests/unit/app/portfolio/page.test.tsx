@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -513,5 +513,72 @@ describe('PortfolioPage — Protocol Configuration Controls (M4-015)', () => {
     createAndSelect();
     render(<PortfolioPage />);
     expect(screen.queryByText(/preset/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('PortfolioPage — Auto-Save (M4-013)', () => {
+  it('displays "Saved" once a portfolio is created and selected', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+  });
+
+  it('reactively displays an error state when the Store reports one', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+
+    // `saveStatus` is one global Store field (Batch 1) — updating it via
+    // any Store action, even targeting an unrelated id, must be reflected
+    // here immediately, since this page reads it live via `usePortfolioStore`.
+    act(() => {
+      usePortfolioStore.getState().update('missing-id', { name: 'X' });
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Error saving/);
+  });
+
+  it('clears a stale preview on the Collateral form when the Debt form applies a change to the same portfolio', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+
+    const collateralForm = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const collateralSection = within(collateralForm);
+    await user.clear(collateralSection.getByLabelText('Quantity'));
+    await user.type(collateralSection.getByLabelText('Quantity'), '3');
+    await user.click(collateralSection.getByRole('button', { name: 'Preview Changes' }));
+    expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+
+    const debtForm = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const debtSection = within(debtForm);
+    await user.clear(debtSection.getByLabelText('Debt amount'));
+    await user.type(debtSection.getByLabelText('Debt amount'), '15000');
+    await user.click(debtSection.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(debtSection.getByRole('button', { name: 'Apply Changes' }));
+
+    // The Collateral form's own preview, computed before the Debt edit
+    // landed, is now stale — confirm it was cleared, not left applyable.
+    expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+
+  it('does not clear a stale preview across unrelated portfolios (each form only reacts to its own portfolio prop)', async () => {
+    const first = usePortfolioStore.getState().create(validInput({ name: 'First' }));
+    const second = usePortfolioStore.getState().create(validInput({ name: 'Second' }));
+    if (!first.ok || !second.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(first.data.id);
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+
+    const collateralForm = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const collateralSection = within(collateralForm);
+    await user.clear(collateralSection.getByLabelText('Quantity'));
+    await user.type(collateralSection.getByLabelText('Quantity'), '3');
+    await user.click(collateralSection.getByRole('button', { name: 'Preview Changes' }));
+    expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+
+    // Editing a completely different portfolio must not touch this page
+    // at all — it isn't rendered here — so the open preview survives.
+    usePortfolioStore.getState().update(second.data.id, { name: 'Second Renamed' });
+    expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
   });
 });

@@ -17,18 +17,21 @@
  *   Where a real `services/persistence` call will go once Milestone 8
  *   builds one.
  * - `saveStatus` — every mutation is a synchronous in-memory write with
- *   no external save target, so this never leaves `'idle'`. It does not
- *   report `'saved'`, since nothing is actually durable — that would
- *   misrepresent what happened. Real transitions ('saving', 'saved',
- *   'offline', 'failed') are M4-013's job, once there is something real
- *   to report on.
+ *   no external save target. **Updated in Batch 8 (M4-013)**: every
+ *   mutating action now transitions `'saving'` → `'saved'`/`'error'` for
+ *   real (see this file's own M4-013 note below) — `'saved'` correctly
+ *   means "committed to the Store's in-memory state," not "written to
+ *   disk/cloud," which stays honest under Conflict B without claiming
+ *   durability that doesn't exist. `'offline'` remains permanently
+ *   unreachable — see the M4-013 note for why building it would be
+ *   actively misleading, not merely unbuilt.
  * - `lastSynchronizedAt` — stays `null` always; there is no
  *   synchronization target yet (that is Milestone 8's cloud layer).
  *
- * This also means M4-010's "Retain selection after refresh" and
- * M4-013's auto-save behaviors cannot be genuinely satisfied by this
- * batch — documented here and in PROJECT_STATUS.md rather than papered
- * over with an interim solution, per instruction.
+ * This also means M4-010's "Retain selection after refresh" cannot be
+ * genuinely satisfied by this batch — documented here and in
+ * PROJECT_STATUS.md rather than papered over with an interim solution,
+ * per instruction.
  *
  * **`calculatePortfolioSummary` (M3-005) usage — the concrete reason
  * this task depends on it**: M4-004 (Portfolio List Page, a later batch)
@@ -105,6 +108,50 @@
  * portfolio itself); `duplicate`/`archive`/`unarchive` all pass them
  * through unchanged via `...existing.portfolio`, since none of those
  * operations changes the price or protocol values themselves.
+ *
+ * **`saveStatus` transitions (added in M4-013, "Implement Portfolio
+ * Auto-Save")** — every mutating action (`create`/`update`/`duplicate`/
+ * `archive`/`unarchive`/`delete`) now sets `'saving'` before doing its
+ * work, then `'saved'` on success or `'error'` on a validation/not-found
+ * failure. `select`/`load` leave it untouched — neither persists
+ * anything. Three of M4-013's four DoD-named states are genuinely
+ * reachable this way; the fourth (`'offline'`) is not, and building it
+ * anyway would misrepresent this app's actual behavior — see
+ * PROJECT_STATUS.md's conflict #28 for the full reasoning:
+ * - **`'saving'` is real but not paintable.** Every mutation here is a
+ *   synchronous in-memory write — there is no I/O to await, so
+ *   `'saving'` is set and then immediately overwritten by `'saved'`/
+ *   `'error'` within the same synchronous call, before React ever gets a
+ *   chance to render the intermediate value. It is still implemented as
+ *   a real, distinct `set()` call (verifiable via direct
+ *   `usePortfolioStore.subscribe`, not just `getState()` after the
+ *   fact) rather than skipped, because the state machine itself should
+ *   be complete and correct — but no `setTimeout`/artificial delay was
+ *   added to make it visibly renderable, since that would fabricate
+ *   latency this in-memory Store does not have.
+ * - **`'offline'` is not wired to `navigator.onLine`.** Doing so would be
+ *   real code with a false meaning: this Store makes zero network
+ *   requests, so nothing about its behavior actually depends on
+ *   connectivity — implying otherwise (e.g. "your changes aren't saved
+ *   because you're offline") would be inventing a failure mode that
+ *   cannot occur here, not merely leaving one unbuilt.
+ * - **No "Retry transient failures" mechanism was added.** The only
+ *   failure mode this Store has is Zod validation (deterministic, not
+ *   transient) — resubmitting identical invalid input fails identically
+ *   every time. The correct response is fixing the input, which the
+ *   existing inline field-level errors (M4-002/M4-006/M4-007/M4-008)
+ *   already support; a "Retry" button here would either be a no-op or
+ *   silently misleading.
+ *
+ * **"Prevent stale updates from overwriting newer state" — already
+ * structurally guaranteed at the Store layer, verified rather than
+ * assumed.** Every action reads `get().portfolios[id]` fresh at call
+ * time (not from a stale closure) and JS's single-threaded execution
+ * means no two `set()`/`get()` calls can interleave — there is no window
+ * in which an older write could land after, and overwrite, a newer one.
+ * See `app/portfolio/page.tsx`'s own M4-013 note for the one genuinely
+ * *reachable* staleness gap this batch found and fixed — a stale
+ * *preview* (UI-local state), not a stale Store write.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -210,10 +257,12 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   },
 
   create: (input) => {
+    set({ saveStatus: 'saving' });
+
     const parsed = portfolioInputSchema.safeParse(input);
     if (!parsed.success) {
       const errors = zodErrorToErrors(parsed.error);
-      set({ errors });
+      set({ errors, saveStatus: 'error' });
       return { ok: false, errors };
     }
 
@@ -242,23 +291,26 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [portfolio.id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
+      saveStatus: 'saved',
     }));
 
     return { ok: true, data: portfolio };
   },
 
   update: (id, input) => {
+    set({ saveStatus: 'saving' });
+
     const existing = get().portfolios[id];
     if (existing === undefined) {
       const errors = [notFoundError(id)];
-      set({ errors });
+      set({ errors, saveStatus: 'error' });
       return { ok: false, errors };
     }
 
     const parsed = portfolioInputUpdateSchema.safeParse(input);
     if (!parsed.success) {
       const errors = zodErrorToErrors(parsed.error);
-      set({ errors });
+      set({ errors, saveStatus: 'error' });
       return { ok: false, errors };
     }
 
@@ -280,7 +332,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const revalidated = portfolioInputSchema.safeParse(merged);
     if (!revalidated.success) {
       const errors = zodErrorToErrors(revalidated.error);
-      set({ errors });
+      set({ errors, saveStatus: 'error' });
       return { ok: false, errors };
     }
 
@@ -305,6 +357,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
+      saveStatus: 'saved',
     }));
 
     return { ok: true, data: portfolio };
@@ -319,10 +372,12 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   },
 
   duplicate: (id) => {
+    set({ saveStatus: 'saving' });
+
     const existing = get().portfolios[id];
     if (existing === undefined) {
       const errors = [notFoundError(id)];
-      set({ errors });
+      set({ errors, saveStatus: 'error' });
       return { ok: false, errors };
     }
 
@@ -342,15 +397,18 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [portfolio.id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
+      saveStatus: 'saved',
     }));
 
     return { ok: true, data: portfolio };
   },
 
   archive: (id) => {
+    set({ saveStatus: 'saving' });
+
     const existing = get().portfolios[id];
     if (existing === undefined) {
-      set({ errors: [notFoundError(id)] });
+      set({ errors: [notFoundError(id)], saveStatus: 'error' });
       return;
     }
     const portfolio: Portfolio = {
@@ -362,13 +420,16 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       activePortfolioId: state.activePortfolioId === id ? null : state.activePortfolioId,
       errors: [],
+      saveStatus: 'saved',
     }));
   },
 
   unarchive: (id) => {
+    set({ saveStatus: 'saving' });
+
     const existing = get().portfolios[id];
     if (existing === undefined) {
-      set({ errors: [notFoundError(id)] });
+      set({ errors: [notFoundError(id)], saveStatus: 'error' });
       return;
     }
     const portfolio: Portfolio = {
@@ -379,12 +440,15 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     set((state) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       errors: [],
+      saveStatus: 'saved',
     }));
   },
 
   delete: (id) => {
+    set({ saveStatus: 'saving' });
+
     if (get().portfolios[id] === undefined) {
-      set({ errors: [notFoundError(id)] });
+      set({ errors: [notFoundError(id)], saveStatus: 'error' });
       return;
     }
     set((state) => {
@@ -394,6 +458,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         portfolios,
         activePortfolioId: state.activePortfolioId === id ? null : state.activePortfolioId,
         errors: [],
+        saveStatus: 'saved',
       };
     });
   },

@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), and Batch 6 (M4-011, M4-012) are synchronized to GitHub; Batch 7 (M4-014, M4-015) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-013, M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), and Batch 7 (M4-014, M4-015) are synchronized to GitHub; Batch 8 (M4-013) is implemented and awaiting approval. Remaining M4 tasks not yet started: M4-017, M4-018 (M4-010 and M4-016 already completed in Batch 2). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3808,6 +3808,181 @@ values exist) resolved identically rather than treated as new.
 
 ---
 
+### Batch 8 — Portfolio Auto-Save (M4-013)
+
+**Pre-implementation verification**: re-fetched `origin/main`, confirmed
+`git diff origin/main..HEAD --stat` was empty, realigned the local
+branch. Re-read M4-013's exact text from `06_TASKS.md`, plus
+`04_BUILD_GUIDE.md`'s "AUTO SAVE" section (the only other place auto-save
+is discussed at all: "ProfitPilot automatically saves Portfolio
+changes... Auto-save should occur after meaningful changes. No manual
+save button is required"). Cross-referenced every M4-013 Requirement
+against what Batches 1–7 already built, since M4-013's own Dependencies
+(M4-003, M4-006, M4-007, M4-008) are all already-implemented — this
+batch's real content is auditing and closing gaps in existing code, not
+building new forms.
+
+**Conflict #28 (new) — M4-013's DoD requires "auto-save," but Batches
+4–5 already require the exact opposite for the Collateral/Debt Position
+Management forms.** `04_BUILD_GUIDE.md`'s auto-save principle is stated
+with no field-level carve-out, and M4-013 names M4-007/M4-008 as
+Dependencies — a literal reading suggests extending debounced auto-save
+to position/protocol/price edits too. But M4-009's own DoD
+("Risk-increasing changes require explicit confirmation after preview")
+was implemented, approved, and tested across two batches specifically
+for those same fields, via an explicit Preview → Apply → (conditional)
+risk-acknowledgment gate. Auto-saving those fields would silently apply
+changes — including risk-increasing ones — the instant a keystroke
+lands, deleting the confirmation mechanism M4-009 required. **Resolved
+in favor of the more specific, later-established, already-implemented
+rule**: auto-save (debounce) continues to apply only to
+`PortfolioDetailsForm` (M4-006, unchanged since Batch 3, whose fields —
+name/description/currency/safety targets — carry no risk-increasing
+meaning). This is a genuine tension between two documented principles,
+not an invented rule, and resolving it by keeping the more specific,
+already-approved behavior (rather than regressing M4-009 to satisfy a
+looser general statement) matches how every other conflict in this
+project has been resolved.
+
+**"Display save state"**: `stores/portfolioStore.ts`'s `saveStatus`
+field (Batch 1) previously never left `'idle'` — a deliberate,
+documented Conflict B stub with nothing real to report on. This batch
+makes it real: every mutating action (`create`/`update`/`duplicate`/
+`archive`/`unarchive`/`delete`) now transitions `'saving'` → `'saved'`
+on success or `'error'` on a validation/not-found failure.
+`select`/`load` are left untouched — neither persists anything.
+`app/portfolio/page.tsx` now renders this one global value once, at the
+top of the page (`formatSaveStatus`), the same "one global field, shown
+plainly" pattern the Portfolio List Page (Batch 2) already used for this
+exact field — that page's own existing `Storage: {saveStatus}` text now
+correctly shows "saved"/"error" instead of a permanent "idle", with no
+code change needed there.
+
+**Two of the DoD's four named states are real; the other two are
+deliberately not built, for reasons beyond "not yet done":**
+
+- **`'saving'` is implemented as a real, distinct state-machine
+  transition** (verifiable via `usePortfolioStore.subscribe`, not just
+  `getState()` after the fact) but is **not user-observable** in
+  practice: every mutation here is a synchronous in-memory write with no
+  I/O to await, so `'saving'` is set and overwritten by `'saved'`/
+  `'error'` within the same synchronous call, before React ever renders
+  it. No `setTimeout`/artificial delay was added to fake a visible
+  "Saving…" moment — doing so would misrepresent this Store's actual
+  (instantaneous) behavior, the same honesty principle Batch 1 already
+  applied to `loadStatus`.
+- **`'offline'` is permanently unreachable, and deliberately not wired to
+  `navigator.onLine`.** This Store makes zero network requests, so
+  nothing about its behavior depends on connectivity. Adding an
+  online/offline listener would be real, working code with a false
+  meaning — implying "your changes aren't saved because you're offline,"
+  which is untrue in this architecture (saves succeed identically either
+  way, since "save" means "commit to memory," not "reach a server").
+- **No "Retry transient failures" mechanism was built.** The only failure
+  mode this Store has is Zod validation, which is deterministic —
+  resubmitting the same invalid input fails identically every time,
+  making "retry" meaningless. The existing inline field-level errors
+  (M4-002/M4-006/M4-007/M4-008) already give the correct response:
+  let the user fix their input.
+
+**"Avoid saving invalid drafts"**: already true everywhere on this page
+before this batch (every form's data passes its own Zod schema before
+`store.update()` is ever called, and the Store re-validates again
+independently) — confirmed, no new code needed.
+
+**"Prevent stale updates from overwriting newer state" — verified at the
+Store layer, and one genuinely reachable gap found and fixed at the UI
+layer.** The Store itself already guarantees this structurally: every
+action reads `get().portfolios[id]` fresh at call time, and JavaScript's
+single-threaded execution means no two `set()`/`get()` calls can
+interleave — added a direct test proving two synchronous back-to-back
+`update()` calls always leave the later one in effect. Auditing the same
+Requirement across the three forms on this page surfaced a real,
+previously-unaddressed gap: `CollateralPositionForm`/`DebtPositionForm`
+only cleared an open preview when _their own_ fields changed (`watch()`,
+Batch 4) — not when a _sibling_ form applied a change to the same
+portfolio. A user could preview a Collateral edit, then apply a Debt
+edit in the other form, and the Collateral form's now-stale preview
+would still show "Apply Changes" enabled. Both forms now also clear
+their preview/risk-acknowledgment whenever `portfolio.updatedAt` changes
+for any reason (`useEffect(() => {...}, [portfolio.updatedAt])`),
+closing this gap. This is a stale _preview_ (component-local UI state),
+not a stale _Store write_ — the Store was never actually at risk.
+
+**Test files**:
+
+- `tests/unit/stores/portfolioStore.test.ts` (+11 tests): `saveStatus`
+  reaches `'saved'`/`'error'` for every mutating action's success/failure
+  path (including the not-found path for `update`/`archive`/`unarchive`/
+  `delete`/`duplicate`); the `'saving'` transition is observable via
+  direct `subscribe`, not just the final `getState()`; `'offline'` is
+  never reached; `select`/`load` leave `saveStatus` untouched; two
+  back-to-back synchronous updates always leave the later one in effect.
+  One pre-existing test (`saveStatus stays idle after a successful
+create`) removed — its own premise (Batch 1's documented stub) is
+  exactly what this batch replaces with real behavior; replaced with a
+  dedicated `saveStatus transitions (M4-013)` describe block.
+- `tests/unit/app/portfolio/page.test.tsx` (+4 tests): the save-state
+  line displays "Saved" once a portfolio exists; it reactively updates
+  to an error message when the Store reports one (triggered directly via
+  the Store, since RHF's own Zod resolver already blocks every UI path
+  that would submit a Store-invalid combination — confirmed while writing
+  this test, not assumed); the cross-form stale-preview fix (Collateral
+  preview clears when Debt applies a change, and vice versa is
+  structurally identical); and a negative-space test confirming an
+  update to an _unrelated_ portfolio does not clear a preview open on the
+  currently-rendered one (each form only reacts to its own `portfolio`
+  prop, not global Store churn).
+- `tests/unit/app/portfolios/page.test.tsx` (1 test updated): the
+  existing `Storage: idle` assertion updated to `Storage: saved`, since
+  `saveStatus` legitimately no longer stays permanently `'idle'` once any
+  portfolio has been created.
+
+**Browser verification**: started the dev server and drove the flow with
+Playwright/Chromium — created a portfolio, confirmed the page displays
+"Saved"; opened a preview on the Collateral form, then applied a change
+via the Debt form, and confirmed the Collateral form's "Apply Changes"
+button became disabled again (the stale-preview fix) with the save
+status still correctly reading "Saved" after the Debt form's own Apply.
+Screenshot confirms correct rendering. Zero console/page errors.
+
+**Scope discipline**: only M4-013 was implemented. `engine/` and
+`services/` are completely untouched (`git diff --stat -- engine/
+services/` empty) — this batch is entirely Store state-machine wiring
+and two small, targeted UI fixes. `types/portfolio.ts` was not touched
+(no new fields were needed for this task). The only non-test files
+touched are `stores/portfolioStore.ts` and `app/portfolio/page.tsx`.
+
+**Validation — Batch 8**
+
+| Command              | Result                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                    |
+| `pnpm lint`          | ✅ Pass                                                                                                                                    |
+| `pnpm format:check`  | ✅ Pass                                                                                                                                    |
+| `pnpm test`          | ✅ Pass, 859/859 (16 net new; 1 removed and replaced)                                                                                      |
+| `pnpm test:coverage` | ✅ 95.20% statements / 88.44% branches / 100% functions / 98.61% lines (project-wide). `stores/portfolioStore.ts`: 96.55%/94%/100%/96.29%. |
+| `pnpm build`         | ✅ Pass — `/portfolio`'s bundle grew from 3.44 kB to 3.57 kB, confirming real new content                                                  |
+
+**Architecture audit**: `git diff --stat -- engine/ services/` empty.
+`app/portfolio/page.tsx` imports only `PortfolioSaveStatus`/
+`usePortfolioStore` (type + hook) from `@/stores/portfolioStore`, plus
+the same `@/services` imports as before — no new Service or Engine
+import. `stores/portfolioStore.ts`'s new `set({ saveStatus: ... })`
+calls are pure Zustand state transitions, no new Service call shape. UI
+→ Store/Services → Engine direction preserved throughout.
+
+**Traceability**: M4-013's five Requirements and its four-state DoD are
+each addressed directly above — three Requirements fully satisfied
+("Debounce rapid edits" pre-existing, "Avoid saving invalid drafts"
+confirmed pre-existing, "Prevent stale updates" verified plus one real
+gap fixed), one Requirement ("Retry transient failures") correctly
+not-applicable given no transient failure mode exists, and the DoD's
+four named states resolved as two real + two deliberately, honestly
+unreachable (documented as conflict #28) rather than faked.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -4677,6 +4852,71 @@ for or against this.
 
 ---
 
+### 28. M4-013 requires "auto-save," but M4-009 requires the opposite (explicit confirmation) for the same fields — and two of M4-013's four DoD states cannot be genuinely built
+
+Found while implementing Milestone 4 Batch 8 (M4-013). Two distinct
+problems, both resolved without inventing new behavior:
+
+**(a) Auto-save vs. confirmation.** `04_BUILD_GUIDE.md`'s "AUTO SAVE"
+section states broadly that "ProfitPilot automatically saves Portfolio
+changes," with no field-level exception, and M4-013 names M4-007/M4-008
+(Collateral/Debt Position Management) as Dependencies — suggesting
+auto-save should extend there. But M4-009's own DoD ("Risk-increasing
+changes require explicit confirmation after preview"), already
+implemented and approved across Batches 4–5, requires an explicit
+Preview → Apply → (conditional) risk-acknowledgment step for exactly
+those same fields. Auto-saving them would silently apply changes —
+including risk-increasing ones — before any confirmation, deleting the
+mechanism M4-009 required.
+
+**Resolution applied**: kept auto-save (debounce) scoped to
+`PortfolioDetailsForm` (M4-006) only, unchanged since Batch 3 — its
+fields (name/description/currency/safety targets) carry no
+risk-increasing meaning. The Collateral/Debt Position Management forms
+keep their explicit Preview/Apply gate. This resolves a genuine tension
+between two documented principles by keeping the more specific,
+already-implemented, already-approved rule rather than regressing it to
+satisfy a more general statement — the same kind of resolution applied
+throughout this project (specific, tested behavior over an unqualified
+general one). Action needed: a product decision on whether M4-013's
+Dependencies list should be corrected to drop M4-007/M4-008, since
+auto-save was never actually extended to them and — given M4-009 — never
+should be without a further, explicit product decision to relax the
+confirmation requirement.
+
+**(b) Two of the DoD's four named states ("saved, saving, offline, and
+failed") cannot be genuinely built.** `'saving'` and `'error'`/`'failed'`
+are real and implemented (`stores/portfolioStore.ts`'s `saveStatus`
+field now transitions through both). `'offline'` and a fully
+user-observable `'saving'` are not:
+
+- This Store makes no network requests at all — "offline" has no actual
+  effect on its behavior (saves are equally instantaneous online or
+  offline, since "save" means committing to in-memory state, not
+  reaching a server). Wiring `navigator.onLine` to `saveStatus` would be
+  real, working code that tells the user something false ("your changes
+  aren't saved because you're offline"). Not built, because building it
+  would actively mislead, not merely because it was skipped.
+- Every mutation is a synchronous in-memory write with no I/O to await,
+  so `'saving'` is set and then immediately overwritten by `'saved'`/
+  `'error'` within the same JavaScript call, before React ever paints
+  it. It is implemented as a real state-machine transition (verifiable
+  via direct Store subscription) for correctness, but no artificial
+  delay was added to make it visibly renderable — that would fabricate
+  latency this Store does not have.
+
+**Resolution applied**: implemented exactly the two DoD states that are
+real (`'saved'`, `'error'`), left `'offline'` permanently unreachable,
+and implemented `'saving'` as a real-but-typically-unobservable
+transition — all documented rather than faked, the same treatment
+`loadStatus`/`lastSynchronizedAt` already received under Conflict B in
+Batch 1. Action needed: a product decision on whether M4-013's DoD
+should be revised to name only the states this synchronous, in-memory
+architecture can actually produce, given no real persistence layer
+exists before Milestone 8.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -4725,63 +4965,78 @@ for or against this.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 7
-   (M4-014, M4-015) before committing, per instruction. Do not begin any
-   further M4 task until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 8
+   (M4-013) before committing, per instruction. Do not begin any further
+   M4 task until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   7**: all three remain resolved as established (Batch 0/1) and
-   unaffected by this batch's own scope (wiring two already-built,
-   previously-unused Services into existing forms, plus two small
-   Store-managed timestamp fields — no new position-editing behavior, no
-   persistence infrastructure introduced).
-4. Once Batch 7 is approved and committed, the remaining M4 tasks are
-   **M4-013 (Portfolio Auto-Save), M4-017 (Portfolio Error Recovery), and
-   M4-018 (Portfolio Workflow Tests)** — none started yet. Planned order:
-   M4-013 next, as its own batch — it depends on M4-006/M4-007/M4-008
-   (all built) but also inherits Conflict B (no interim persistence
-   infrastructure before Milestone 8), so its "saved/saving/offline/
-   failed" DoD will need its own scoped conflict/limitation writeup
-   before implementation, the same treatment Batch 0 gave Conflict #20;
-   then M4-017 (broad, independent); then M4-018 last, since its own
-   Dependencies list is explicitly "M4-005 through M4-017."
-5. **From Batch 6, still open**: conflict #27 — M4-012 never says
+   8**: all three remain resolved as established (Batch 0/1) and
+   unaffected by this batch's own scope (Store `saveStatus` state-machine
+   wiring, plus one targeted cross-form preview-staleness fix — no new
+   position-editing behavior, and Conflict B's own "no interim
+   persistence infrastructure" is reaffirmed rather than violated: this
+   batch reports honestly on the in-memory Store's real behavior, it does
+   not build a persistence backend).
+4. Once Batch 8 is approved and committed, the remaining M4 tasks are
+   **M4-017 (Portfolio Error Recovery) and M4-018 (Portfolio Workflow
+   Tests)** — neither started yet. Planned order: M4-017 next (broad,
+   independent, depends on M3-003/M4-003, both built); then M4-018 last,
+   since its own Dependencies list is explicitly "M4-005 through
+   M4-017."
+5. **New from Batch 8**: conflict #28 — two parts. (a) M4-013's own
+   Dependencies point at M4-007/M4-008, suggesting auto-save should
+   extend to the Collateral/Debt Position Management forms, but M4-009's
+   own DoD requires explicit confirmation for risk-increasing changes to
+   those exact same fields — resolved by keeping the more specific,
+   already-implemented M4-009 behavior (explicit Preview → Apply) rather
+   than regressing it; auto-save (debounce) stays scoped to
+   `PortfolioDetailsForm` (M4-006) only. (b) M4-013's DoD names four
+   states ("saved, saving, offline, and failed") but this Store's
+   synchronous, in-memory, no-network architecture can only genuinely
+   produce two of them — `'saving'` is real internally but not
+   user-observable (no I/O to await), and `'offline'` is permanently
+   unreachable (no network dependency exists, and faking one would
+   actively mislead). Both gaps documented rather than papered over with
+   artificial delays or a misleading `navigator.onLine` listener.
+6. **From Batch 6, still open**: conflict #27 — M4-012 never says
    whether an archived portfolio remains independently selectable (e.g.
    still reachable via the switcher or a clickable list row) while
    archived. Resolved conservatively for internal consistency: archived
    portfolios are excluded from `AppHeader`'s switcher and rendered as
    non-clickable rows on the Portfolio List Page; unarchiving is the
    only documented path back to selectability.
-6. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+7. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
    confirmation for "risk-increasing" changes, but no such term is
    defined anywhere in the documentation (no threshold, band, or scoring
    rule). Resolved with the most conservative possible directional
    comparison (`after.healthFactor < before.healthFactor`), not an
    invented threshold or classification system.
-7. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
+8. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
    "Rate type" as debt fields with no counterpart anywhere in the data
    model. "Price" shown as read-only informational text; "Rate type" not
    rendered at all.
-8. **From Batch 3, still open — recurred in Batch 7 with the same
+9. **From Batch 3, still open — recurred in Batch 7 with the same
    resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
    parameters or preset" names a preset option with no concrete values
    anywhere in the documentation. Resolved both times by offering manual
    entry only.
-9. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
-   primary pages" inventory has no room for a Portfolio List page.
-   Resolved by keeping `/portfolios` out of the sidebar, reachable only
-   via the `AppHeader` switcher.
-10. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+10. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+    primary pages" inventory has no room for a Portfolio List page.
+    Resolved by keeping `/portfolios` out of the sidebar, reachable only
+    via the `AppHeader` switcher.
+11. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-11. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+12. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-12. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+13. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before. This
-    is the same gap M4-013 (planned next) will collide with.
-13. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+    is the same gap M4-013 (Batch 8, this pass) collided with, resolved
+    by reporting honestly on the in-memory Store rather than building an
+    interim persistence layer.
+14. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -4794,23 +5049,24 @@ for or against this.
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-14. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+15. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-15. **From Milestone 3/4, still open**: "Source status"'s undefined
+16. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 12 above), "Settings"'s
-    undefined shape (conflict #22 — point 10 above), the Portfolio List
+    persistence-adapter gap (conflict #21 — point 14 above), "Settings"'s
+    undefined shape (conflict #22 — point 12 above), the Portfolio List
     page's missing place in 03_UI.md's page inventory (conflict #23 —
-    point 9 above), the missing protocol-preset values (conflict #24 —
-    point 8 above), the debt "Price"/"Rate type" gap (conflict #25 —
-    point 7 above), the undefined "risk-increasing" term (conflict #26 —
-    point 6 above), and whether an archived portfolio stays independently
-    selectable (conflict #27 — point 5 above). Conflict #20 (resolved
-    Batch 0) is not counted. **26 open conflicts remain (27 total
-    raised, minus #20, resolved) — unchanged by Batch 7, which recurred
-    an existing conflict (#24) rather than raising a new one.**
+    point 11 above), the missing protocol-preset values (conflict #24 —
+    point 10 above), the debt "Price"/"Rate type" gap (conflict #25 —
+    point 9 above), the undefined "risk-increasing" term (conflict #26 —
+    point 8 above), whether an archived portfolio stays independently
+    selectable (conflict #27 — point 6 above), and the auto-save-vs-
+    confirmation tension plus the two unreachable DoD save states
+    (conflict #28 — point 5 above). Conflict #20 (resolved Batch 0) is
+    not counted. **27 open conflicts remain (28 total raised, minus #20,
+    resolved) — one new conflict (#28) raised by Batch 8.**

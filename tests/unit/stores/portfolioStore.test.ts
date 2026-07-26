@@ -367,14 +367,108 @@ describe('usePortfolioStore.load (M4-003, Conflict B)', () => {
   });
 });
 
-describe('usePortfolioStore — saveStatus/lastSynchronizedAt honesty (M4-003, Conflict B)', () => {
-  it('saveStatus stays idle after a successful create (no real persistence to report on)', () => {
-    usePortfolioStore.getState().create(validInput());
-    expect(usePortfolioStore.getState().saveStatus).toBe('idle');
-  });
-
+describe('usePortfolioStore — lastSynchronizedAt honesty (M4-003, Conflict B)', () => {
   it('lastSynchronizedAt stays null after a successful create', () => {
     usePortfolioStore.getState().create(validInput());
     expect(usePortfolioStore.getState().lastSynchronizedAt).toBeNull();
+  });
+});
+
+describe('usePortfolioStore — saveStatus transitions (M4-013)', () => {
+  it('reports "saved" after a successful create', () => {
+    usePortfolioStore.getState().create(validInput());
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+
+  it('reports "error" after a create that fails validation', () => {
+    usePortfolioStore.getState().create({ name: '' });
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+
+  it('transitions through "saving" before settling — observable via direct subscription, not just the final getState()', () => {
+    const seen: string[] = [];
+    const unsubscribe = usePortfolioStore.subscribe((state) => seen.push(state.saveStatus));
+    usePortfolioStore.getState().create(validInput());
+    unsubscribe();
+    expect(seen).toContain('saving');
+    expect(seen[seen.length - 1]).toBe('saved');
+  });
+
+  it('reports "saved" after a successful update, and "error" after one that fails validation', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    usePortfolioStore.getState().update(created.data.id, { name: 'Renamed' });
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+
+    usePortfolioStore.getState().update(created.data.id, {
+      protocol: {
+        maxLoanToValue: 0.9,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+
+  it('reports "error" for update/archive/unarchive/delete/duplicate on an unknown id', () => {
+    usePortfolioStore.getState().update('missing-id', { name: 'X' });
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+    usePortfolioStore.getState().archive('missing-id');
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+    usePortfolioStore.getState().unarchive('missing-id');
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+    usePortfolioStore.getState().delete('missing-id');
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+    usePortfolioStore.getState().duplicate('missing-id');
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+
+  it('reports "saved" after a successful duplicate/archive/unarchive/delete', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    const duplicated = usePortfolioStore.getState().duplicate(created.data.id);
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+    if (!duplicated.ok) throw new Error('setup failed');
+
+    usePortfolioStore.getState().archive(duplicated.data.id);
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+
+    usePortfolioStore.getState().unarchive(duplicated.data.id);
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+
+    usePortfolioStore.getState().delete(duplicated.data.id);
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+
+  it('never reaches "offline" — no network dependency exists to go offline from (conflict #28)', () => {
+    usePortfolioStore.getState().create(validInput());
+    expect(usePortfolioStore.getState().saveStatus).not.toBe('offline');
+  });
+
+  it('select/load never change saveStatus — neither one persists anything', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+
+    usePortfolioStore.getState().select(created.data.id);
+    expect(usePortfolioStore.getState().saveStatus).toBe('idle');
+
+    usePortfolioStore.getState().load();
+    expect(usePortfolioStore.getState().saveStatus).toBe('idle');
+  });
+});
+
+describe('usePortfolioStore — no stale-update window (M4-013 Requirement, verified not just assumed)', () => {
+  it('two synchronous back-to-back updates always leave the later one in effect, never the earlier', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    usePortfolioStore.getState().update(created.data.id, { name: 'First' });
+    usePortfolioStore.getState().update(created.data.id, { name: 'Second' });
+
+    expect(usePortfolioStore.getState().portfolios[created.data.id].portfolio.name).toBe('Second');
   });
 });

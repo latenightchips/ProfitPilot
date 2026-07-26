@@ -70,10 +70,10 @@ describe('PortfoliosPage — with portfolios (M4-004)', () => {
     expect(screen.getByText(/Updated/)).toBeInTheDocument();
   });
 
-  it('displays the global storage status on every row (Conflict B)', () => {
+  it('displays the global storage status on every row (Conflict B; real "saved" transitions added in M4-013)', () => {
     usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
     render(<PortfoliosPage />);
-    expect(screen.getByText(/Storage: idle/)).toBeInTheDocument();
+    expect(screen.getByText(/Storage: saved/)).toBeInTheDocument();
   });
 
   it('selecting a portfolio updates the store and navigates to /portfolio', async () => {

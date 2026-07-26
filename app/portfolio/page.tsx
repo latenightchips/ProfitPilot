@@ -13,7 +13,7 @@ import {
   type PortfolioSummary,
   type ServiceResult,
 } from '@/services';
-import { usePortfolioStore } from '@/stores/portfolioStore';
+import { type PortfolioSaveStatus, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import {
   type CollateralManagementInput,
@@ -263,6 +263,73 @@ import {
  * clears a stale preview, Batch 4) covers "trigger recalculation"; the
  * "Manual"/"Parameter source: Manual" badges cover "identify manual
  * assumptions." No new logic was needed for the DoD itself.
+ *
+ * ---
+ *
+ * **Portfolio Auto-Save — 06_TASKS.md M4-013.** Requirements: "Debounce
+ * rapid edits. Display save state. Retry transient failures. Avoid
+ * saving invalid drafts. Prevent stale updates from overwriting newer
+ * state." DoD: "Users receive clear saved, saving, offline, and failed
+ * states."
+ *
+ * **Auto-save (debounce) applies only to `PortfolioDetailsForm`
+ * (M4-006), unchanged from Batch 3 — deliberately not extended to the
+ * Collateral/Debt Position Management forms (M4-007/M4-008).**
+ * `04_BUILD_GUIDE.md`'s "AUTO SAVE" section broadly says "ProfitPilot
+ * automatically saves Portfolio changes" with no field-level carve-out,
+ * and M4-013 names M4-007/M4-008 as Dependencies — read naively, this
+ * suggests position/protocol/price edits should auto-save too. But
+ * M4-009's own DoD ("Risk-increasing changes require explicit
+ * confirmation after preview") — implemented across Batches 4–5,
+ * approved, and tested — requires exactly the opposite for those same
+ * fields: an explicit Preview → Apply step, with a required
+ * risk-acknowledgment checkbox for risk-increasing changes. Auto-saving
+ * a position edit the instant it's typed would silently apply it before
+ * any preview or confirmation ever happens, deleting the mechanism
+ * M4-009 required. Resolved in favor of the more specific, later,
+ * already-implemented rule over the general auto-save principle — not a
+ * new invented behavior, a conflict between two existing ones, resolved
+ * without regressing already-approved work. Documented as conflict #28.
+ *
+ * **"Display save state"**: a single status line (`formatSaveStatus`,
+ * below) reads the Store's one *global* `saveStatus` field (Batch 1) —
+ * real transitions added this batch in `stores/portfolioStore.ts`
+ * (`'saving'` → `'saved'`/`'error'` for every mutating action). Shown
+ * once per page, not per form, since it is one Store-wide value, the
+ * same reasoning the Portfolio List Page (Batch 2) already used for
+ * this identical field.
+ *
+ * **"Retry transient failures" — not built; no transient failure mode
+ * exists.** The only failure mode this Store has is Zod validation
+ * (deterministic — the same invalid input fails the same way every
+ * time), which the existing inline field errors already let the user
+ * correct. See `stores/portfolioStore.ts`'s own M4-013 note for the
+ * fuller reasoning, including why `'offline'` was not wired to
+ * `navigator.onLine` either (it would be real code with a false
+ * meaning, not merely an unbuilt feature).
+ *
+ * **"Avoid saving invalid drafts"**: already true everywhere on this
+ * page before this batch — every form runs its data through a Zod
+ * schema (`portfolioDetailsSchema`/`collateralManagementSchema`/
+ * `debtManagementSchema`) before `store.update()` is ever called, and
+ * the Store re-validates again on its own (M4-002's own DoD). No new
+ * code was needed for this Requirement.
+ *
+ * **"Prevent stale updates from overwriting newer state"** — the Store
+ * layer already guarantees this structurally (see
+ * `stores/portfolioStore.ts`'s own M4-013 note). Auditing this
+ * Requirement across all three forms on this page surfaced one genuinely
+ * reachable gap this batch fixes: `CollateralPositionForm`/
+ * `DebtPositionForm` previously only cleared an open preview when *their
+ * own* fields changed (`watch()`, Batch 4) — not when a *sibling* form
+ * applied a change to the same portfolio. A user could preview a
+ * Collateral edit, then apply a Debt edit in the other form, and the
+ * Collateral form's now-stale preview (computed against the
+ * pre-Debt-edit portfolio) would still show "Apply Changes" enabled. Both
+ * forms now also clear their preview/acknowledgment whenever
+ * `portfolio.updatedAt` changes for any reason, closing this gap. This is
+ * a stale *preview* (component-local UI state), not a stale *Store
+ * write* — the Store itself was never at risk of losing an update.
  */
 const AUTOSAVE_DEBOUNCE_MS = 600;
 
@@ -285,6 +352,27 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
+}
+
+/**
+ * M4-013's "Display save state" — see this file's own M4-013 header note
+ * for why `'saving'` is real but practically never observed by a user
+ * (every Store mutation is synchronous), and why `'offline'` never
+ * occurs at all (no network dependency exists to go offline from).
+ */
+function formatSaveStatus(status: PortfolioSaveStatus): string {
+  switch (status) {
+    case 'idle':
+      return 'No changes yet';
+    case 'saving':
+      return 'Saving…';
+    case 'saved':
+      return 'Saved';
+    case 'error':
+      return 'Error saving — see messages below';
+    case 'offline':
+      return 'Offline';
+  }
 }
 
 /**
@@ -597,6 +685,17 @@ function CollateralPositionForm({
     return () => subscription.unsubscribe();
   }, [watch]);
 
+  // M4-013 ("Prevent stale updates from overwriting newer state") — see
+  // this file's own M4-013 header note. `portfolio.updatedAt` changes
+  // whenever *any* form on this page (including this one's own Apply)
+  // commits a change to the Store; clearing the preview here covers the
+  // one case the `watch()` effect above cannot — a sibling form applying
+  // a change to this same portfolio while this form's preview is open.
+  useEffect(() => {
+    setPreview(null);
+    setRiskAcknowledged(false);
+  }, [portfolio.updatedAt]);
+
   const onPreview = handleSubmit((data) => {
     setPreview(calculatePortfolioSummary({ ...portfolio, ...data }, 'manual'));
   });
@@ -767,6 +866,14 @@ function DebtPositionForm({
     return () => subscription.unsubscribe();
   }, [watch]);
 
+  // M4-013 — see `CollateralPositionForm`'s identical note above for the
+  // full reasoning: clears a stale preview when a sibling form on this
+  // same page applies a change to this same portfolio.
+  useEffect(() => {
+    setPreview(null);
+    setRiskAcknowledged(false);
+  }, [portfolio.updatedAt]);
+
   const onPreview = handleSubmit((data) => {
     setPreview(calculatePortfolioSummary({ ...portfolio, ...data }, 'manual'));
   });
@@ -881,6 +988,7 @@ export default function PortfolioPage() {
   const record = usePortfolioStore((state) =>
     state.activePortfolioId !== null ? state.portfolios[state.activePortfolioId] : undefined,
   );
+  const saveStatus = usePortfolioStore((state) => state.saveStatus);
 
   return (
     <div className="flex flex-col gap-6">
@@ -899,6 +1007,9 @@ export default function PortfolioPage() {
         </p>
       ) : (
         <div key={activePortfolioId} className="flex flex-col gap-8">
+          <p className="text-xs text-muted-foreground" role="status">
+            {formatSaveStatus(saveStatus)}
+          </p>
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <CollateralPositionForm
             portfolioId={activePortfolioId}
