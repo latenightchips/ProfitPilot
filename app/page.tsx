@@ -5,13 +5,17 @@ import { useEffect } from 'react';
 
 import {
   buildDashboardViewModel,
+  buildDebtAndInterestPanel,
   buildHealthFactorStatus,
+  buildLeverageSummary,
   buildLiquidationRiskPanel,
   buildPortfolioComposition,
   buildRiskWarnings,
   DashboardKpiGrid,
   DashboardSummaryHeader,
+  DebtAndInterestPanel,
   HealthFactorStatusSection,
+  LeverageSummarySection,
   LiquidationRiskPanel,
   PortfolioCompositionSection,
   RiskWarningBanner,
@@ -26,23 +30,21 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * "Am I safe?" among its five objective questions).
  *
  * **Batch scope — Dashboard Foundation (Batch 1) + Summary Header
- * (Batch 2) + KPI Metrics (Batch 3) + Risk Sections, part 1 (Batch 4:
- * M5-007, M5-009) + Risk Sections, part 2 / Portfolio Composition
- * (Batch 5: M5-010, M5-011, M5-012), per 06_TASKS.md's own
- * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header →
- * KPI Metrics → Risk Sections → Portfolio Composition → Recommendations
- * → Responsive and Accessible States → Testing." This batch finishes
- * "Risk Sections" (`RiskWarningBanner`, M5-010 — only 3 of 6 documented
- * warning cases; see `features/dashboard/types/riskWarnings.ts`) and
- * completes "Portfolio Composition" (`PortfolioCompositionSection`,
- * M5-011; M5-012 needs no component — see
- * `features/dashboard/types/portfolioComposition.ts`). **M5-008 (Health
- * Factor Range Visualization) remains wholly unbuilt** — every one of
- * its "Show" items is a Critical/Caution/Target zone boundary, exactly
- * Conflict #1's own blocked content, with no partial subset the way
- * M5-007/M5-010 had. Recommendation Summary (M5-015) and full Dashboard
- * Error Recovery (M5-021) remain later, separate, dependency-gated
- * tasks — not built here.
+ * (Batch 2) + KPI Metrics (Batch 3) + Risk Sections part 1 (Batch 4:
+ * M5-007, M5-009) + Risk Sections part 2 / Portfolio Composition
+ * (Batch 5: M5-010, M5-011, M5-012) + Recommendations, part 1 (Batch 6:
+ * M5-013, M5-014), per 06_TASKS.md's own "IMPLEMENTATION ORDER"**:
+ * "Dashboard Foundation → Summary Header → KPI Metrics → Risk Sections →
+ * Portfolio Composition → Recommendations → Responsive and Accessible
+ * States → Testing." `DebtAndInterestPanel` (M5-013) and
+ * `LeverageSummarySection` (M5-014) are this batch's addition.
+ * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
+ * every one of its "Show" items is a Critical/Caution/Target zone
+ * boundary, exactly Conflict #1's own blocked content, with no partial
+ * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
+ * carried over. Recommendation Summary (M5-015) and full Dashboard Error
+ * Recovery (M5-021) remain later, separate, dependency-gated tasks — not
+ * built here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -117,6 +119,11 @@ export default function DashboardPage() {
     record !== undefined && summary !== null && viewModel !== null
       ? buildPortfolioComposition(record.portfolio, summary, viewModel.freshness.market)
       : null;
+  const debtAndInterestPanel =
+    record !== undefined && summary !== null && viewModel !== null
+      ? buildDebtAndInterestPanel(record.portfolio, summary, viewModel.freshness.protocol)
+      : null;
+  const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -182,6 +189,12 @@ export default function DashboardPage() {
               {portfolioComposition !== null && (
                 <PortfolioCompositionSection composition={portfolioComposition} />
               )}
+
+              {debtAndInterestPanel !== null && (
+                <DebtAndInterestPanel panel={debtAndInterestPanel} />
+              )}
+
+              {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
             </div>
           )}
         </div>

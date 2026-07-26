@@ -8,12 +8,16 @@
  * implemented together as one cohesive unit — M3-006 is
  * `calculatePortfolioSummary` called twice around a pure portfolio
  * transformation, not an independent calculation.
+ * `calculateDebtInterestBreakdown` was added in Milestone 5 Batch 6 to
+ * support M5-013's Monthly/Daily interest cost Display items — see that
+ * file's own header comment.
  */
 export {
   type PortfolioAction,
   type PortfolioActionPreview,
   previewPortfolioAction,
 } from './actionPreview';
+export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,

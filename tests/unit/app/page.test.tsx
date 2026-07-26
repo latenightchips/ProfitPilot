@@ -62,7 +62,9 @@ describe('DashboardPage — valid portfolio (M5-003 pipeline)', () => {
 
     expect(screen.getByText('My Portfolio')).toBeInTheDocument();
     expect(screen.getByText('Net Portfolio Value')).toBeInTheDocument();
-    expect(screen.getByText('$80,000.00')).toBeInTheDocument();
+    // Also rendered by Leverage Summary's own "Net Equity" (M5-014, Batch 6),
+    // the identical Service value under a second, separately-worded label.
+    expect(screen.getAllByText('$80,000.00').length).toBeGreaterThan(0);
     expect(screen.getByText('Health Factor')).toBeInTheDocument();
   });
 
@@ -168,5 +170,32 @@ describe('DashboardPage — Portfolio Composition Section (M5-011, Batch 5)', ()
     render(<DashboardPage />);
 
     expect(screen.getByText('Portfolio Composition')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Debt and Interest Panel (M5-013, Batch 6)', () => {
+  it('renders the panel with total debt and interest cost figures', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Debt and Interest')).toBeInTheDocument();
+    expect(screen.getByText('Monthly Interest Cost')).toBeInTheDocument();
+    expect(screen.getByText('Daily Interest Cost')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Leverage Summary Section (M5-014, Batch 6)', () => {
+  it('renders the leverage summary with a plain-language explanation', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Leverage Summary')).toBeInTheDocument();
+    expect(screen.getByText(/This portfolio is leveraged/)).toBeInTheDocument();
   });
 });

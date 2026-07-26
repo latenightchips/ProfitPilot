@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–4 (M5-001–M5-007, M5-009) are synchronized to GitHub; Batch 5 (M5-010, M5-011, M5-012 — Risk Sections part 2 + Portfolio Composition) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1, re-confirmed in Batch 5. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–5 (M5-001–M5-007, M5-009–M5-012) are synchronized to GitHub; Batch 6 (M5-013, M5-014 — Recommendations part 1) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1; M5-015 needs its own scoping review (same gap as conflict #29). **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -4953,6 +4953,115 @@ addressed by name above.
 
 ---
 
+### Batch 6 — Recommendations, part 1 (M5-013, M5-014)
+
+Sixth Milestone 5 batch, the "Recommendations" step in 06_TASKS.md's own
+"IMPLEMENTATION ORDER." Selected M5-013 (Debt and Interest Panel) and
+M5-014 (Leverage Summary Section) — both depend only on M5-003, both
+cleanly buildable with one already-known blocked sub-item each, unlike
+M5-015 (Recommendation Summary), which depends on M3-012
+(`generateRecommendationSet`) — the same Service conflict #29 (Batch 4)
+already found needs 5 undocumented threshold fields. Left for its own,
+separately-scoped batch rather than bundled in.
+
+**New Service — `services/portfolio/interestBreakdown.ts`
+(`calculateDebtInterestBreakdown`)**: M5-013 needs Monthly and Daily
+interest cost, not just the Annual figure `calculatePortfolioSummary`
+already provides. Discovered while implementing that these are **not**
+simple divisions of the annual amount — `02_Formulas.md`'s own equations
+are `Daily = Debt × APR / 365` and `Monthly = Daily × 30`, which do not
+equal `Annual / 365` / `Annual / 12` (30/365 ≈ 0.0822, not 1/12 ≈
+0.0833; confirmed numerically in this batch's own tests). Rather than
+approximate, added a new Service composing the real, already-public
+Engine functions `calculateDailyInterest` (F-030) and
+`calculateMonthlyInterest` (F-031) — both exported from `@/engine`'s
+M2-031 curated barrel since Milestone 2, never previously called by any
+Service. The second batch (after Batch 4) to add new `services/` code
+rather than stay UI-layer-only, for the same reason: the UI genuinely
+needed a capability that didn't exist yet.
+
+**M5-013 — `features/dashboard/components/DebtAndInterestPanel.tsx`**
+(+ `types/debtAndInterestPanel.ts`, `utils/buildDebtAndInterestPanel.ts`):
+covers Total debt, Current borrow rate, Annual/Monthly/Daily interest
+cost, and Rate source. **"Projected debt where available" — not built**,
+not a new conflict: Conflict #7 (compound interest, M2-013/M2-014 have
+no documented formula) already blocks any real debt projection over
+time. The Requirement ("clearly distinguish current rate from projected
+assumptions") is satisfied structurally — with no projected figure
+anywhere in this component, there is nothing to conflate the current
+rate with.
+
+**M5-014 — `features/dashboard/components/LeverageSummarySection.tsx`**
+(+ `types/leverageSummary.ts`, `utils/buildLeverageSummary.ts`): covers
+Gross exposure, Net equity, Leverage ratio, Effective BTC exposure, and
+a plain-language explanation.
+
+- **"Debt-to-equity ratio" — not built, and not a new gap.** M2-008
+  ("Implement Leverage Calculations"), the Engine-layer task this
+  section's own Include list mirrors almost exactly, already skipped
+  this exact sub-item in Milestone 2 for the documented reason "no
+  Formula ID in `02_Formulas.md`, would mean inventing a formula." That
+  already-approved decision is carried forward unchanged, not
+  re-litigated at the Dashboard layer.
+- **"Gross exposure" and "Effective BTC exposure" render the identical
+  value** (`PortfolioSummary.collateralValue`) — not a display bug.
+  `engine/portfolio/calculateExposure.ts` (F-010) documents itself as
+  numerically identical to Collateral Value (F-002) under Version 1's
+  single-collateral-asset scope, and its own comment states it "also
+  serves 06_TASKS.md M2-008's 'Effective BTC exposure' ... no separate
+  calculation exists for it" — reusing that already-approved Milestone 2
+  interpretation, not reinterpreting the term now.
+- **Leverage is always finite at this point** — `calculatePortfolioSummary`
+  itself fails (`DIVISION_BY_ZERO`) if net worth is zero, the only way
+  leverage could be non-finite, so a `PortfolioSummary` this builder
+  receives always carries a real value; at zero debt, leverage is
+  exactly `1`, not `Infinity` (net worth equals exposure). Verified, not
+  assumed — a dead "not finite" branch was written first, then removed
+  once this was confirmed, rather than left in as unreachable
+  defense-in-depth for a case that provably cannot occur.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/` empty
+— zero Engine/Store/type files touched. `services/` changed only by the
+one new file plus its barrel export (`services/portfolio/index.ts`) —
+every other existing Service file is untouched.
+
+**Validation — Batch 6**
+
+| Command                      | Result                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass (after renaming the `types/debtAndInterestPanel.ts` interface to `DebtAndInterestPanelData`, resolving a name collision with the same-named component)                                                                                                                                                                                                                |
+| `pnpm lint`                  | ✅ Pass (after `eslint --fix` for import/export ordering)                                                                                                                                                                                                                                                                                                                     |
+| `pnpm format:check`          | ✅ Pass (after Prettier formatting)                                                                                                                                                                                                                                                                                                                                           |
+| `pnpm test` (Vitest)         | ✅ Pass, 1003/1003 (18 net new)                                                                                                                                                                                                                                                                                                                                               |
+| `pnpm test:coverage`         | ✅ 95.42% statements / 88.84% branches / 100% functions / 98.78% lines (project-wide) — branch coverage dipped slightly from Batch 5's 89.14%, entirely from the new Service's own failure-path branches (practically unreachable given an already-successful summary), the same class of gap already accepted elsewhere (e.g. `services/shared/formulaStep.ts`'s own 87.5%). |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                                                                                                                                                                                                                                                    |
+| `pnpm build`                 | ✅ Pass — `/` grew from 4.89 kB to 5.35 kB (215 kB First Load JS)                                                                                                                                                                                                                                                                                                             |
+
+**Manual browser verification**: built a portfolio, navigated to `/` via
+the sidebar's in-app `<Link>`, and confirmed against a production build
+that Debt and Interest Panel shows Monthly $82.19 / Daily $2.74 (not the
+naive Annual/12 = $83.33 approximation), Rate source "manual", and
+Leverage Summary shows Gross Exposure and Effective BTC Exposure both as
+$100,000.00 with a 1.25x leverage ratio and matching plain-language
+explanation.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/`
+empty. The new Service (`services/portfolio/interestBreakdown.ts`)
+imports only from `@/engine` and this Service layer's own shared
+modules — no React/Next import, no `fetch`/`process.env`, matching every
+other Service file's own audited constraint.
+`buildDebtAndInterestPanel.ts`/`buildLeverageSummary.ts` import only
+from `@/services` and `@/types/portfolio` — the same allowed UI →
+Services direction every other Dashboard builder already uses.
+
+**Traceability**: M5-013's Display list, Requirements, and DoD, and
+M5-014's Include list and DoD are each addressed by name above, with
+both deliberately-unbuilt items ("Projected debt," "Debt-to-equity
+ratio") documented as carrying forward already-established decisions,
+not new gaps.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -5984,10 +6093,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 5
-   (M5-010, M5-011, M5-012 — Risk Sections part 2 + Portfolio
-   Composition) before committing, per instruction. Batches 1–4
-   (M5-001–M5-007, M5-009) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 6
+   (M5-013, M5-014 — Recommendations part 1) before committing, per
+   instruction. Batches 1–5 (M5-001–M5-007, M5-009–M5-012) are
+   synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6001,21 +6110,26 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–4
-   (M5-001–M5-007, M5-009) are synchronized; Batch 5 (Risk Sections part
-   2 + Portfolio Composition: M5-010, M5-011, M5-012) is implemented and
-   awaiting approval, per `06_TASKS.md`'s own "IMPLEMENTATION ORDER."
-   **M5-008 remains wholly unbuilt** — re-confirmed blocked in Batch 5,
-   not just carried over from Batch 4's conclusion; needs a product
-   decision on Conflict #1 before any part of it can start. The next
-   batch should continue with the "Recommendations" step: M5-013 (Debt
-   and Interest Panel — mostly buildable; "Projected debt where
-   available" is likely blocked by the existing Conflict #7, compound
-   interest has no documented formula), M5-014 (Leverage Summary
-   Section — looks fully buildable from already-real Service outputs),
-   and M5-015 (Recommendation Summary — likely hits the same
-   `RecommendationRuleConfig` gap conflict #29 already documents; needs
-   its own review before starting).
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–5
+   (M5-001–M5-007, M5-009–M5-012) are synchronized; Batch 6
+   (Recommendations part 1: M5-013, M5-014) is implemented and awaiting
+   approval, per `06_TASKS.md`'s own "IMPLEMENTATION ORDER." **M5-008
+   remains wholly unbuilt**, still blocked on Conflict #1. The next batch
+   should address M5-015 (Recommendation Summary) — its own scoping
+   review is now overdue (deferred from both Batch 4 and Batch 6): it
+   depends on `generateRecommendationSet` (M3-012), which needs the same
+   `RecommendationRuleConfig` fields conflict #29 already found have no
+   portfolio-level source. A decision is needed on whether to scope
+   M5-015 to only the repayment/additionalCollateral categories the
+   Batch 4 `calculateTargetHealthFactorActions` Service already supports
+   (the same approach Batches 4/5's Health Factor Status/Liquidation
+   Risk Panel already use), collect the missing fields as new portfolio
+   settings, or define documented defaults — see conflict #29's own
+   "Action needed" note. After M5-015, the remaining Milestone 5 tasks
+   are M5-016 through M5-028 (Quick Actions, Data Freshness Indicators,
+   Refresh Workflow, Loading/Empty/Error states, Developer Mode,
+   Responsive Layout, Accessibility, and Testing) — not yet reviewed in
+   detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6083,7 +6197,22 @@ Service already supports).
    all — "Portfolio percentage" (always 100%) and M5-012's "hide the
    chart" condition are both direct, mechanical consequences of Conflict
    A already approved in Milestone 4, not new interpretation.
-10. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
+10. **Batch 6 raised no new conflict — both of its two deliberately
+    unbuilt items carry forward already-established decisions, not new
+    gaps.** M5-013's "Projected debt where available" reuses Conflict
+    #7's existing block (compound interest has no documented formula).
+    M5-014's "Debt-to-equity ratio" reuses M2-008's own already-approved
+    Milestone 2 decision to skip that exact sub-item ("no Formula ID ...
+    would mean inventing a formula") — found by checking whether M2-008
+    (the Engine-layer task this Dashboard section's Include list mirrors
+    almost exactly) had already made this call, rather than
+    re-deciding it from scratch. Also discovered, while implementing
+    Monthly/Daily interest cost, that they are not simple divisions of
+    the annual figure — `Daily = Debt × APR / 365` and
+    `Monthly = Daily × 30` (F-030/F-031) do not equal `Annual / 365` /
+    `Annual / 12` — resolved by calling the real, already-public Engine
+    functions via a new Service rather than approximating.
+11. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6091,7 +6220,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-11. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+12. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6102,44 +6231,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-12. **From Batch 6, still open**: conflict #27 — M4-012 never says
+13. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-13. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+14. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-14. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+15. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-15. **From Batch 3, still open — recurred in Batch 7 with the same
+16. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-16. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+17. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-17. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+18. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-18. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+19. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-19. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+20. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-20. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+21. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6152,13 +6281,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-21. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+22. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-22. **From Milestone 3/4, still open — final tally at Milestone 4's
+23. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-
