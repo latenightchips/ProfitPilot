@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), Batch 7 (M4-014, M4-015), and Batch 8 (M4-013) are synchronized to GitHub; Batch 9 (M4-017) is implemented and awaiting approval. Remaining M4 task not yet started: M4-018 (M4-010 and M4-016 already completed in Batch 2). M4-018 is the final Milestone 4 task, since its own Dependencies list is explicitly "M4-005 through M4-017." **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is complete pending final approval**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), Batch 2 (M4-004, M4-010, M4-016), Batch 3 (M4-005, M4-006, plus the `@hookform/resolvers` dependency correction), Batch 4 (M4-007, M4-008), Batch 5 (M4-009), Batch 6 (M4-011, M4-012), Batch 7 (M4-014, M4-015), Batch 8 (M4-013), and Batch 9 (M4-017) are synchronized to GitHub; Batch 10 (M4-018, the final Milestone 4 task) is implemented and awaiting approval. All 18 M4 tasks (M4-001 through M4-018) are now addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -4168,6 +4168,131 @@ the fuller cross-document ERROR RECOVERY context rather than
 
 ---
 
+### Batch 10 — Portfolio Workflow Tests (M4-018) — FINAL MILESTONE 4 BATCH
+
+**Pre-implementation verification**: re-fetched `origin/main`, confirmed
+`git diff origin/main..HEAD --stat` was empty, realigned the local
+branch. Re-read M4-018's exact text from `06_TASKS.md`. Dependencies
+list "M4-005 through M4-017" — every other Milestone 4 UI/Store task —
+confirming this is the final M4 batch by construction, not by
+assumption. DoD: "Critical portfolio workflows pass in integration and
+Playwright tests" — two named test layers, taken literally as two
+distinct test suites, not one.
+
+**No new application code — this batch is entirely test infrastructure,
+confirmed by `git diff --stat -- ':!tests/**' ':!*.test.ts'
+':!*.spec.ts'` being empty.** M4-018's own Description ("Test complete
+portfolio-management workflows") and DoD name only tests; every feature
+its "Cover" list exercises (create, switch, edit, duplicate, archive,
+delete, recover) was already built in Batches 1–9.
+
+**Two files, one per DoD-named layer**:
+
+- `tests/integration/portfolio/portfolioWorkflows.test.ts` (new,
+  Vitest, 12 tests) — follows the exact precedent
+  `tests/integration/services/coreWorkflows.test.ts` (M3-014) already
+  established: chain real, non-mocked `usePortfolioStore` actions
+  across multiple steps in one continuous test, one `describe` per
+  "Cover" item, in order. Deliberately does **not** render React
+  components — the ~180 tests already spread across the five per-page
+  unit test files (Batches 1–9) exhaustively cover individual field
+  validation, error rendering, and single-action behavior in isolation;
+  re-rendering pages here would test nothing new. What this file adds
+  that nothing else does: multi-step sequences spanning several Store
+  actions in one test (create → edit → duplicate → archive → delete,
+  asserting state at each step), proving the _workflow_ holds, not just
+  each action individually.
+- `tests/e2e/portfolioWorkflows.spec.ts` (new, Playwright, 10 tests) —
+  drives the actual compiled app in Chromium: real navigation, real
+  clicks, the full stack (Next.js routing, React Hook Form, Zustand,
+  Services, Engine) working together, the one layer no other Milestone 4
+  test exercises (every prior batch's "browser verification" was an
+  ad-hoc scratchpad script, run once and discarded — this is the first
+  time equivalent coverage is committed as a permanent, re-runnable
+  spec). One `test()` per "Cover" item; "Recover from invalid input" is
+  covered twice (a plain Zod validation error, and M4-017's calculation-
+  failure banner), since both are real, distinct "invalid input"
+  scenarios in this codebase.
+
+**In-app link navigation, not `page.goto()`, for every multi-portfolio
+Playwright scenario** — the exact fix Batch 6's manual browser
+verification already found and applied (a real top-level navigation
+reloads the document and wipes the in-memory Zustand store, Conflict B),
+now encoded permanently in a `createPortfolio` test helper instead of
+re-discovered informally each time.
+
+**Real regression found and fixed — `tests/e2e/navigation.spec.ts`
+(Milestone 1) had never actually been run until this batch executed the
+full Playwright suite for the first time.** `getByRole('link', { name:
+'Portfolio' })` became ambiguous once `AppHeader`'s portfolio switcher
+(M4-010, Batch 2) added its own "View portfolios"/"No portfolios yet —
+create one" links, both of which also match "Portfolio" as a
+case-insensitive substring — Playwright's default (non-exact) role-name
+matching. This had been silently broken since Batch 2 with nothing to
+catch it, since `pnpm test:e2e` was never part of any prior batch's
+validation pipeline (only `pnpm test`, the Vitest unit/integration
+suite, was). Fixed by scoping the locator to the sidebar's own already-
+existing `<nav aria-label="Primary">` landmark
+(`components/layout/AppSidebar.tsx`) — a one-line locator fix, not an
+application change; the sidebar's "Portfolio" link was never actually
+ambiguous to a real user, only to Playwright's unscoped role-name
+matching once more same-named links existed on the page.
+
+**Locator-precision bugs found and fixed while writing the Playwright
+spec — all test-script issues, not application bugs**, the same
+recurring class of mistake already documented across this project's own
+ad-hoc browser-verification scripts in prior batches: unscoped
+`getByRole`/`getByText` matching more elements than intended once a
+page has several similarly-worded controls (e.g. a row's own
+accessible name containing "Updated Jul 26..." also matching a plain
+`{ name: 'Archive' }` substring search intended for the row's dedicated
+"Archive" button; an archived row's name span also containing the
+"Archived" badge text, breaking an exact-text match). Resolved with
+`exact: true` where appropriate and a shared `rowByExactName` helper
+mirroring the identical fix already applied in
+`app/portfolios/page.tsx`'s own test file during Batch 6.
+
+**Browser verification**: this batch's own Playwright suite _is_ the
+browser verification — no separate ad-hoc script was needed, since the
+committed spec now exercises every workflow directly. All 12 Playwright
+tests (10 new + 2 pre-existing, including the fixed regression) pass
+against a real production build (`pnpm build` + `pnpm start`, the
+project's existing `playwright.config.ts`), not the dev server.
+
+**Scope discipline**: only M4-018 was implemented — three test files
+touched/added, zero application source files. `git diff --stat --
+':!tests/**' ':!*.test.ts' ':!*.spec.ts'` confirms this precisely.
+
+**Validation — Batch 10**
+
+| Command                      | Result                                                                                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                                                                            |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                                                                            |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                                                                            |
+| `pnpm test` (Vitest)         | ✅ Pass, 892/892 (12 net new)                                                                                                                                                                      |
+| `pnpm test:coverage`         | ✅ 95.42% statements / 88.58% branches / 100% functions / 98.64% lines (project-wide) — unchanged from Batch 9, since the new integration tests exercise already-covered Store/Service code paths. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (10 new + 2 pre-existing, one of which was a real regression fixed this batch)                                                                                                      |
+| `pnpm build`                 | ✅ Pass — bundle sizes unchanged from Batch 9 (no application code touched)                                                                                                                        |
+
+**Architecture audit**: `git diff --stat -- ':!tests/**' ':!*.test.ts'
+':!*.spec.ts'` empty — zero non-test files changed except the one-line
+locator fix in `tests/e2e/navigation.spec.ts` itself (a test file). No
+new Service, Engine, or Store code; the integration tests call only the
+already-public `usePortfolioStore` API, the same one every other
+Milestone 4 test file already uses.
+
+**Traceability**: M4-018's Description and all ten "Cover" items are
+each addressed by name across the two new test files (one `describe`/
+`test` block per item, matching the task's own list order), and the DoD
+("Critical portfolio workflows pass in integration and Playwright
+tests") is satisfied literally — both named layers exist, are committed,
+and pass. **This is the final Milestone 4 task** (Dependencies:
+"M4-005 through M4-017," all now complete) — Milestone 4 — Portfolio
+Management is complete pending this batch's approval.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -5150,73 +5275,93 @@ exists before Milestone 8.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 9
-   (M4-017) before committing, per instruction. Do not begin M4-018
-   until this is approved.
-3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   9**: all three remain resolved as established (Batch 0/1) and
-   unaffected by this batch's own scope (one new Store action that only
-   re-derives an already-cached value, plus UI wiring on two existing
-   pages — no new position-editing behavior, and Conflict B is
-   reaffirmed rather than violated: the new "Download recovery copy"
-   export is a local, on-demand file download, not persistence
-   infrastructure).
-4. Once Batch 9 is approved and committed, the only remaining M4 task is
-   **M4-018 (Portfolio Workflow Tests)** — not started yet, and the final
-   Milestone 4 task, since its own Dependencies list is explicitly
-   "M4-005 through M4-017," all of which are now done.
-5. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+2. **This pass stops here for approval** of Milestone 4 Batch 10
+   (M4-018) before committing, per instruction. This is the **final**
+   Milestone 4 batch — once approved and committed, Milestone 4 —
+   Portfolio Management is complete (all 18 tasks, M4-001 through
+   M4-018, addressed).
+3. **Milestone 4 plan's three conflict decisions, final status**: all
+   three remain resolved exactly as established in Batch 0/1 through the
+   milestone's completion — Conflict A (single collateral/single debt
+   position) was never violated by any of the 18 tasks; Conflict B (no
+   interim persistence) was upheld throughout, including by this final
+   batch's own tests, which verify the in-memory Store's real behavior
+   rather than assuming a persistence layer; Conflict C (resolve
+   Conflict #20 before any M4 batch needing zero-debt support) was
+   satisfied by Batch 0 before any dependent batch began.
+4. **Milestone 4 is complete pending this pass's approval.** No further
+   M4 batches remain. The next milestone per `docs/06_TASKS.md` is
+   **Milestone 5**, not yet reviewed in this session — its own task list
+   should be re-read fresh (matching the same Batch 0 kickoff-review
+   process this milestone began with) before any implementation starts,
+   per this engagement's established workflow.
+5. **Batch 10 raised no new conflict.** M4-018 was purely test
+   infrastructure (`git diff --stat -- ':!tests/**' ':!*.test.ts'
+':!*.spec.ts'` empty) — every "Cover" item named an already-built
+   feature, so no new specification gap was reachable. One real
+   regression was found and fixed: `tests/e2e/navigation.spec.ts`
+   (Milestone 1) had never actually been run before this batch executed
+   the full Playwright suite for the first time, and had been silently
+   broken since Batch 2 (M4-010's `AppHeader` links made its sidebar
+   locator ambiguous) — fixed with a one-line locator scope, not an
+   application change.
+6. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
+   suggested auto-save should extend to the Collateral/Debt Position
+   Management forms, but M4-009's own DoD requires explicit confirmation
+   for risk-increasing changes to those same fields; resolved by keeping
+   the more specific, already-implemented M4-009 behavior. Also: two of
+   M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
+   genuinely, honestly built in this synchronous, no-network
+   architecture.
+7. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
    "Include" list was resolved by reading the fuller ERROR RECOVERY
    context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
-   guessing — see the Batch 9 write-up above for the six-section
-   cross-reference. One finding worth flagging without raising it as a
+   guessing. One finding worth flagging without raising it as a
    conflict: 03_UI.md's "Retry Button" is built and real (it genuinely
    re-runs the calculation), but cannot itself resolve a calculation
    failure in this architecture, since every other mutating Store action
    already keeps cached summaries in sync with committed data — fixing
    the underlying position is what actually clears the error, not the
-   Retry click. Documented as an honest limitation in both
-   `stores/portfolioStore.ts` and `app/portfolio/page.tsx`, not a
-   specification conflict (03_UI.md's own text is satisfied; the
-   limitation is architectural, not a documentation gap).
-6. **From Batch 6, still open**: conflict #27 — M4-012 never says
+   Retry click. Documented as an honest limitation, not a specification
+   conflict.
+8. **From Batch 6, still open**: conflict #27 — M4-012 never says
    whether an archived portfolio remains independently selectable (e.g.
    still reachable via the switcher or a clickable list row) while
    archived. Resolved conservatively for internal consistency: archived
    portfolios are excluded from `AppHeader`'s switcher and rendered as
    non-clickable rows on the Portfolio List Page; unarchiving is the
    only documented path back to selectability.
-7. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+9. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
    confirmation for "risk-increasing" changes, but no such term is
    defined anywhere in the documentation (no threshold, band, or scoring
    rule). Resolved with the most conservative possible directional
    comparison (`after.healthFactor < before.healthFactor`), not an
    invented threshold or classification system.
-8. **From Batch 4, still open**: conflict #25 — M4-008 names "Price" and
-   "Rate type" as debt fields with no counterpart anywhere in the data
-   model. "Price" shown as read-only informational text; "Rate type" not
-   rendered at all.
-9. **From Batch 3, still open — recurred in Batch 7 with the same
-   resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
-   parameters or preset" names a preset option with no concrete values
-   anywhere in the documentation. Resolved both times by offering manual
-   entry only.
-10. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+10. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+    and "Rate type" as debt fields with no counterpart anywhere in the
+    data model. "Price" shown as read-only informational text; "Rate
+    type" not rendered at all.
+11. **From Batch 3, still open — recurred in Batch 7 with the same
+    resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
+    parameters or preset" names a preset option with no concrete values
+    anywhere in the documentation. Resolved both times by offering
+    manual entry only.
+12. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-11. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+13. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-12. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+14. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-13. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
-    Milestone 4 Batch 9)**: M3-013's "persistence adapters" mention
+15. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+    Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-14. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+16. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -5229,24 +5374,28 @@ exists before Milestone 8.
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-15. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+17. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-16. **From Milestone 3/4, still open**: "Source status"'s undefined
-    _generic_ value domain (conflict #18), "Formula version" aggregation
-    across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 13 above), "Settings"'s
-    undefined shape (conflict #22 — point 11 above), the Portfolio List
-    page's missing place in 03_UI.md's page inventory (conflict #23 —
-    point 10 above), the missing protocol-preset values (conflict #24 —
-    point 9 above), the debt "Price"/"Rate type" gap (conflict #25 —
-    point 8 above), the undefined "risk-increasing" term (conflict #26 —
-    point 7 above), whether an archived portfolio stays independently
-    selectable (conflict #27 — point 6 above), and the auto-save-vs-
-    confirmation tension plus the two unreachable DoD save states
-    (conflict #28, from Batch 8/M4-013). Conflict #20 (resolved Batch 0)
-    is not counted. **27 open conflicts remain (28 total raised, minus
-    #20, resolved) — unchanged by Batch 9, which raised none.**
+18. **From Milestone 3/4, still open — final tally at Milestone 4's
+    completion**: "Source status"'s undefined _generic_ value domain
+    (conflict #18), "Formula version" aggregation across a
+    multi-Engine-call Service (conflict #19), M3-013's persistence-
+    adapter gap (conflict #21 — point 15 above), "Settings"'s undefined
+    shape (conflict #22 — point 13 above), the Portfolio List page's
+    missing place in 03_UI.md's page inventory (conflict #23 — point 12
+    above), the missing protocol-preset values (conflict #24 — point 11
+    above), the debt "Price"/"Rate type" gap (conflict #25 — point 10
+    above), the undefined "risk-increasing" term (conflict #26 — point 9
+    above), whether an archived portfolio stays independently selectable
+    (conflict #27 — point 8 above), and the auto-save-vs-confirmation
+    tension plus the two unreachable DoD save states (conflict #28 —
+    point 6 above). Conflict #20 (resolved Batch 0) is not counted.
+    **27 open conflicts remain (28 total raised across the entire
+    Milestone 4 review, minus #20, resolved) — unchanged by Batch 10,
+    which raised none. All 27 are handed off for a future
+    product/engineering decision; none blocked Milestone 4's own
+    completion.**
