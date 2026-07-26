@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
-import { buildDashboardViewModel, DashboardSummaryHeader } from '@/features/dashboard';
+import {
+  buildDashboardViewModel,
+  DashboardKpiGrid,
+  DashboardSummaryHeader,
+} from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -14,19 +18,18 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * "Am I safe?" among its five objective questions).
  *
  * **Batch scope — Dashboard Foundation (M5-001–M5-003, Batch 1) +
- * Summary Header (M5-004, Batch 2), per 06_TASKS.md's own
- * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header → KPI
- * Metrics → Risk Sections → Portfolio Composition → Recommendations →
- * Responsive and Accessible States → Testing." `DashboardSummaryHeader`
- * (`features/dashboard/components/`) is this batch's addition; the
- * Shared KPI Card component (M5-005) and Core KPI Grid (M5-006),
- * Health Factor/Liquidation Risk sections (M5-007–M5-010), Portfolio
- * Composition (M5-011), Recommendation Summary (M5-015), and full
- * Dashboard Error Recovery (M5-021) are each later, separate,
- * dependency-gated tasks — not built here. The plain metrics list below
- * (unchanged since Batch 1) remains a real-data proof of the
- * Store → Service → View Model → render pipeline, not a preview of the
- * eventual KPI grid's visual design.
+ * Summary Header (M5-004, Batch 2) + KPI Metrics (M5-005, M5-006,
+ * Batch 3), per 06_TASKS.md's own "IMPLEMENTATION ORDER"**: "Dashboard
+ * Foundation → Summary Header → KPI Metrics → Risk Sections → Portfolio
+ * Composition → Recommendations → Responsive and Accessible States →
+ * Testing." `DashboardKpiGrid` (built on the new shared `KpiCard`,
+ * `features/dashboard/components/`) replaces Batch 1's plain metrics
+ * list — that list was always documented as a temporary proof of the
+ * Store → Service → View Model → render pipeline, explicitly not a
+ * preview of the eventual grid. Health Factor/Liquidation Risk sections
+ * (M5-007–M5-010), Portfolio Composition (M5-011), Recommendation
+ * Summary (M5-015), and full Dashboard Error Recovery (M5-021) remain
+ * later, separate, dependency-gated tasks — not built here.
  *
  * **Loading state**: calls `load()` on mount, mirroring
  * `app/portfolios/page.tsx`'s own M4-004 pattern exactly. Per Conflict B
@@ -124,14 +127,7 @@ export default function DashboardPage() {
                 Calculated {viewModel.formattedCalculationTimestamp}
               </p>
 
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-                {Object.values(viewModel.metrics).map((item) => (
-                  <div key={item.label} className="flex flex-col">
-                    <dt className="text-xs text-muted-foreground">{item.label}</dt>
-                    <dd className="text-base font-medium text-foreground">{item.formattedValue}</dd>
-                  </div>
-                ))}
-              </dl>
+              <DashboardKpiGrid metrics={viewModel.metrics} />
 
               {viewModel.warnings.length > 0 && (
                 <div className="rounded-md border border-border bg-accent/20 p-3 text-sm">

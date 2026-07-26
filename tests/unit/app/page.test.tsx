@@ -83,7 +83,7 @@ describe('DashboardPage — valid portfolio (M5-003 pipeline)', () => {
 });
 
 describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => {
-  it('surfaces the Health Factor Service warning and marks liquidation metrics unavailable', () => {
+  it('surfaces the Health Factor Service warning and marks the Liquidation Price card unavailable', () => {
     const created = usePortfolioStore
       .getState()
       .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
@@ -92,7 +92,10 @@ describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => 
 
     render(<DashboardPage />);
 
-    expect(screen.getAllByText('N/A (no debt)').length).toBe(3);
+    // M5-006's own "Cards" list names only Liquidation price, not Distance/Buffer
+    // (those remain in the view model for M5-009's own, later, dedicated panel).
+    expect(screen.getAllByText('N/A (no debt)').length).toBe(1);
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
     const record = usePortfolioStore.getState().portfolios[created.data.id];
     expect(record.summary.ok && record.summary.warnings.length > 0).toBe(true);
   });
