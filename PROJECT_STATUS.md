@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 7 complete (pending approval) — M3-001 through M3-007 and M3-009 through M3-012 addressed (only M3-008 remains of the Service-implementation tasks, plus M3-013/M3-014). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 8 complete (pending approval) — M3-001 through M3-012 all addressed. Only M3-013 (Service Dependency Injection) and M3-014 (Service Integration Tests) remain to close out Milestone 3. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2339,6 +2339,121 @@ functions and claims no new Formula ID.
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 8 — Protocol Parameter Service (M3-008) — FINAL SERVICE-IMPLEMENTATION BATCH OF MILESTONE 3's CORE SET
+
+**Pre-implementation documentation review, as instructed.** Re-read
+M3-008's exact text (`06_TASKS.md`) and `04_BUILD_GUIDE.md`'s "PROTOCOL
+SERVICE" / "PROTOCOL PARAMETER MODEL" / "PROTOCOL ADAPTER" / "SERVICE
+FALLBACK ORDER" sections in full before writing any code. Found the same
+structural situation Batch 5 already diagnosed for M3-007: a
+`ProtocolProvider` interface, an `AaveV3Provider` adapter, and an
+`infrastructure/protocols/` directory are described, but re-confirmed
+`06_TASKS.md` assigns none of it to any task (no mention of
+`infrastructure/`, `ProtocolProvider`, or `AaveV3Provider` anywhere), and
+no `infrastructure/` directory exists in the repository. Per instruction,
+none of that adapter/network layer was built — this batch implements
+only the Service-layer normalization logic, the same boundary M3-007
+drew.
+
+**One genuine difference from M3-007, found and deliberately not
+papered over**: `04_BUILD_GUIDE.md` defines a concrete "PRICE FRESHNESS"
+rule (5-minute Fresh/Stale/Unavailable) for prices, but **no equivalent
+"PROTOCOL FRESHNESS" section exists anywhere in the document** — only a
+raw `updatedAt` timestamp field and a separate, unassigned 24-hour
+cache-duration hint under "API CLIENT RULES" (also infrastructure, not
+built here). Confirmed with a full-document grep for "Freshness" and
+"PROTOCOL" before designing the type, not assumed. `ProtocolQuote`
+therefore reports a plain timestamp (M3-008's own "Freshness timestamp"
+Include item) with no computed staleness classification — inventing one
+with no documented basis would have been guessing at an undocumented
+business rule.
+
+| Task                                        | Status  | Notes                                                                                                                                                                                                     |
+| ------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-008 Implement Protocol Parameter Service | ✅ Done | `services/protocol/quote.ts` — `normalizeProtocolQuote`, selecting one candidate parameter set per the documented fallback order and validating it against the Engine's own protocol-parameter invariant. |
+
+**`ProtocolQuote` wraps the Engine's own `ProtocolParameters` type
+directly** (`@/engine`, M2-002: `{maxLoanToValue, liquidationThreshold,
+borrowApr, supplyApr}`) rather than `04_BUILD_GUIDE.md`'s more elaborate
+illustrative "PROTOCOL PARAMETER MODEL" (`protocol`, `network`,
+`liquidationBonus`, `collateralAsset`/`borrowAsset` as named fields on
+the parameter object itself). Fields the Build Guide's illustrative
+model names but that have no corresponding Engine formula or consumer
+anywhere in this codebase (`liquidationBonus`, `protocol` name,
+`network`) were not added — 06_TASKS.md's own "Include" list doesn't ask
+for them either. This means a `ProtocolQuote`'s `parameters` field is
+already exactly what `ApplicationPortfolio.protocol` needs with no
+separate conversion step, the same design principle M3-007 already
+established for `MarketQuote`.
+
+**Fallback order** (`04_BUILD_GUIDE.md` "SERVICE FALLBACK ORDER",
+protocol parameters): Live protocol source → Last verified configuration
+→ Manual configuration. `ProtocolOrigin = 'live' | 'cache' | 'manual'`
+and its priority order mirror this verbatim — verified by a test
+asserting the live candidate is chosen even when it is the _oldest_ of
+three candidates (proving no freshness-based override exists, only
+origin-priority selection, consistent with the "no invented freshness
+rule" finding above).
+
+**Validation mirrors the Engine's own (unexported) `validateProtocolParameters`
+invariant** — percentages in [0, 1] for `maxLoanToValue`/
+`liquidationThreshold`, non-negative `borrowApr`/`supplyApr`, and
+`maxLoanToValue` must not exceed `liquidationThreshold`. That helper
+isn't part of the Engine's curated public API (M2-031 "hide internal
+helpers"), so the same checks are re-implemented locally at the Service
+boundary, where — like M3-004's persistence mapping and M3-007's raw
+price candidates — incoming candidate data may legitimately be
+malformed. This is replicating an already-established Engine-layer
+rule, not inventing a new one.
+
+**"No candidates" is a successful `available: false` result, not a
+failure** — the same design M3-007 used for zero market-price
+candidates: absence of data is a legitimate state the Service correctly
+determined, not a computation that failed.
+
+**Public API preserved**: no existing exported name, type shape, or
+function signature from any prior batch was changed. `ServiceResult`/
+`ServiceMetadata`/`MappingResult` (M3-002/M3-003/M3-007) are untouched;
+`services/protocol/index.ts` moved from its M3-001 placeholder
+(`export {};`) to real exports, the same transition every other Service
+subdirectory has already gone through.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/protocol/quote.ts` imports only `@/engine`'s published
+`ProtocolParameters` type and `services/shared/{errors,mappingResult}`
+— no `@/engine` function calls (this Service performs no calculation,
+matching M3-007's own "no Engine dependency" pattern), and no dependency
+on any other Service subdirectory. Grepped the new files for `fetch(`,
+`axios`, `XMLHttpRequest`, `process.env`, and `infrastructure` as
+directory references — none found outside doc comments explaining what
+was deliberately not built. No `engine/` file was modified by this
+batch.
+
+**Traceability audit (pre-commit)**: `normalizeProtocolQuote` and every
+exported type from `services/protocol/` are reachable through
+`@/services` alone, verified by a new `describe` block in
+`tests/unit/services/publicApiSurface.test.ts` (M3-008). This batch
+introduces no Formula ID and makes no Engine calculation claim.
+
+**Validation — Batch 8 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                           |
+| `pnpm lint`          | ✅ Pass (after autofix of import ordering in the new test file)                                                                                                   |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of the new test file)                                                                                                          |
+| `pnpm test`          | ✅ Pass, 699/699 (17 new)                                                                                                                                         |
+| `pnpm test:coverage` | ✅ 95% statements / 90.18% branches / 100% functions / 98.92% lines — `services/protocol/` is fully, 100%-covered (it does not appear as a partial-coverage row). |
+| `pnpm build`         | ✅ Pass                                                                                                                                                           |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch. **Milestone 3's ten Service-implementation tasks
+(M3-001–M3-012, minus none) are now all complete** — M3-013 (Service
+Dependency Injection) and M3-014 (Service Integration Tests) remain,
+both cross-cutting tasks that operate on the now-complete Service set
+rather than adding a new Service of their own.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2886,6 +3001,17 @@ non-speculative example of what a per-Service source/freshness
 vocabulary looks like now exists to model any future resolution on, if
 one is ever decided.
 
+**Update — Milestone 3 Batch 8 (M3-008)**: the same pattern repeated
+once more, confirming it generalizes rather than being a one-off.
+Protocol Parameter Service got its own `ProtocolOrigin` vocabulary
+(`'live' | 'cache' | 'manual'`), again kept local to `ProtocolQuote`
+rather than folded into the generic `sourceStatus`. Notably, protocol
+parameters have _no_ freshness-classification equivalent at all (no
+"PROTOCOL FRESHNESS" section exists in `04_BUILD_GUIDE.md`, unlike
+prices) — reinforcing that each Service's provenance vocabulary is
+genuinely domain-specific, not a single generic scheme `sourceStatus`
+could ever cleanly capture. Still open at the generic level.
+
 ---
 
 ### 19. "Formula version" (M3-002) is singular; how a multi-Engine-call Service aggregates it is unspecified
@@ -3021,29 +3147,34 @@ Planning-adjacent or Portfolio Summary-adjacent work.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 7 (M3-010,
-   M3-011) before committing, per instruction.
-3. Once approved and committed:
-   - **M3-008 (Protocol Parameter Service)** is the only remaining
-     Service-implementation task. Depends only on M3-002, unblocked. Its
-     own "Include" list (Maximum LTV, Liquidation threshold, Borrow
-     rate, Asset configuration, Data source, Freshness timestamp)
-     closely parallels M3-007's shape — re-check whether the same
-     "infrastructure layer is unassigned scope" finding applies
-     (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
-     `ProtocolProvider`/`AaveV3Provider` content looks like the protocol
-     counterpart of what M3-007 found for prices).
+2. **This pass stops here for approval** of Milestone 3 Batch 8 (M3-008)
+   before committing, per instruction.
+3. Once approved and committed, **all ten Service-implementation tasks
+   (M3-001–M3-012) are complete**. Two cross-cutting tasks remain to
+   close out Milestone 3:
+   - **M3-013 (Service Dependency Injection)** — now unblocked (depends
+     on M3-007 + M3-008, both done). "Allow Services to receive
+     providers and persistence adapters through typed dependencies."
+     Given the `infrastructure/` layer finding from Batches 5 and 8
+     (no provider adapters exist or are assigned anywhere in
+     `06_TASKS.md`), re-read this task's own text carefully at the
+     start of that batch before assuming its scope — it may itself be
+     the task that formally introduces the provider-interface
+     abstraction `04_BUILD_GUIDE.md` describes, or it may (like
+     M3-007/M3-008) turn out to be narrower than it first appears.
+   - **M3-014 (Service Integration Tests)** — depends on "M3-005
+     through M3-012" as one range, now fully satisfied. "Test Service
+     and Engine workflows together," covering valid/invalid portfolios,
+     manual/stale market data, simulation comparison, unsafe loop
+     strategy, infeasible exit target, and recommendation generation.
    - **Conflict #20's escalated severity** (full exits currently fail
-     in `planExit`) is now the highest-priority open item — worth a
-     dedicated decision before or shortly after M3-008, independent of
-     M3-008's own scope: whether to make `PortfolioLiquidationSummary`'s
+     in `planExit`) remains the highest-priority open architectural
+     item, independent of M3-013/M3-014's own scope — worth a dedicated
+     decision on whether to make `PortfolioLiquidationSummary`'s
      `price`/`buffer` nullable in `services/portfolio/summary.ts`
      (M3-005), and how that ripples into M3-006/M3-009's existing
-     consumption of `PortfolioSummary`.
-   - Once M3-008 lands, **M3-013 (Service Dependency Injection)**
-     unblocks (depends on M3-007 + M3-008), and **M3-014 (Service
-     Integration Tests)** unblocks (depends on M3-005 through M3-012,
-     all of which are now done).
+     consumption of `PortfolioSummary`. Per instruction, not folded into
+     M3-013/M3-014 or any other batch — its own dedicated follow-up.
 4. **Outstanding blockers/conflicts carried forward from Milestone 2**:
    F-026 (Health Factor status classification, conflict #1), compound
    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
@@ -3061,19 +3192,17 @@ Planning-adjacent or Portfolio Summary-adjacent work.
    level but no longer blocking implementation**: swap-fees/slippage/
    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
    mechanics (conflict #10), and F-040's exit-collateral-sale
-   discrepancy (conflict #13, a known, tested approximation) — all three
-   are resolved at the Service layer by faithful pass-through of the
-   Engine's own already-documented scoping/itemization, not by
-   inventing behavior. See each conflict's own "Update — Batch 7" note.
-6. **From Milestone 3 Batches 2–7, still open**: "Source status"'s
-   undefined _generic_ value domain (conflict #18 — still open at the
-   generic level), "Formula version" aggregation across a
-   multi-Engine-call Service (conflict #19 — a checked stopgap, reused
-   by three Services now, still not a real resolution), and
-   **`calculatePortfolioSummary`'s inability to summarize a zero-debt
-   portfolio (conflict #20 — see point 3 above; now blocks every full
-   exit in `planExit`, not just an edge case)**.
-7. **The `infrastructure/` layer gap** (Batch 5) remains relevant to
-   M3-008 — worth checking whether `04_BUILD_GUIDE.md` describes
-   similarly unassigned infrastructure for protocol parameters before
-   assuming M3-008's real scope boundary.
+   discrepancy (conflict #13, a known, tested approximation).
+6. **From Milestone 3 Batches 2–8, still open**: "Source status"'s
+   undefined _generic_ value domain (conflict #18 — now confirmed by a
+   third Service, M3-008, to be a genuinely per-Service, not generic,
+   concept — still open at the generic level), "Formula version"
+   aggregation across a multi-Engine-call Service (conflict #19 — a
+   checked stopgap, reused by three Services now, still not a real
+   resolution), and **`calculatePortfolioSummary`'s inability to
+   summarize a zero-debt portfolio (conflict #20 — see point 3 above;
+   the highest-priority open item)**.
+7. **The `infrastructure/` layer gap** (Batches 5 and 8) is now
+   confirmed across both Market Data and Protocol Parameter Services —
+   worth keeping in mind for M3-013, which may be the task that
+   actually needs to address it.

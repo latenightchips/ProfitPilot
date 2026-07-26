@@ -277,3 +277,48 @@ describe('Public Service layer API surface (M3-011)', () => {
     expect(result.data.feasible).toBe(true);
   });
 });
+
+/**
+ * Protocol Parameter Service — 06_TASKS.md M3-008. Verifies it is
+ * reachable through the root `@/services` entry point, not just
+ * `@/services/protocol`.
+ */
+describe('Public Service layer API surface (M3-008)', () => {
+  it('normalizeProtocolQuote is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).normalizeProtocolQuote).toBe('function');
+  });
+
+  it('a protocol quote can be normalized using only @/services imports', () => {
+    const result = Services.normalizeProtocolQuote({
+      collateralAsset: 'BTC',
+      borrowAsset: 'USDC',
+      candidates: [
+        {
+          origin: 'live',
+          parameters: {
+            maxLoanToValue: 0.75,
+            liquidationThreshold: 0.8,
+            borrowApr: 0.05,
+            supplyApr: 0.02,
+          },
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toEqual({
+      available: true,
+      collateralAsset: 'BTC',
+      borrowAsset: 'USDC',
+      parameters: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      origin: 'live',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+  });
+});

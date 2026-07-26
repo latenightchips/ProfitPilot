@@ -1,13 +1,16 @@
 /**
- * Protocol Parameter Service — 06_TASKS.md M3-001 ("Create Service
- * Foundation").
+ * Protocol Parameter Service — public entry point.
  *
- * 06_TASKS.md Milestone 3 Deliverables: "Protocol Parameter Service
- * implemented."
- *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Protocol Parameter Service's
- * implementation (a separate, dependent Milestone 3 task). This file is
- * that entry point.
+ * 06_TASKS.md M3-001 ("Create Service Foundation") established this
+ * directory; M3-008 ("Implement Protocol Parameter Service") is its
+ * first occupant.
  */
-export {};
+export {
+  normalizeProtocolQuote,
+  type NormalizeProtocolQuoteInput,
+  type ProtocolOrigin,
+  type ProtocolQuote,
+  type ProtocolQuoteAvailable,
+  type ProtocolQuoteUnavailable,
+  type RawProtocolCandidate,
+} from './quote';
