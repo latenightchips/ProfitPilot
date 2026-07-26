@@ -99,3 +99,30 @@ export type PortfolioInput = z.infer<typeof portfolioInputSchema>;
 export const portfolioInputUpdateSchema = portfolioInputSchema.partial();
 
 export type PortfolioInputUpdate = z.infer<typeof portfolioInputUpdateSchema>;
+
+/**
+ * Portfolio Details form schema — 06_TASKS.md M4-006 ("Implement
+ * Portfolio Details Form"): Fields "Name, Description, Base currency,
+ * Default display settings, Safety target settings." DoD: "Changes
+ * persist and do not alter position balances unexpectedly."
+ *
+ * `.pick()` from `portfolioInputSchema` rather than a hand-written
+ * duplicate: this is a structural guarantee, not just a convention, that
+ * the Details Form can never submit `collateral`/`debt`/`market`/
+ * `protocol` changes even by coding mistake — the DoD's "do not alter
+ * position balances" is enforced by the schema's own shape, not just
+ * discipline in the component that uses it.
+ *
+ * "Default display settings" is not represented here — see conflict
+ * #22 (`types/portfolio.ts`): no field list for it exists anywhere in
+ * the documentation, and `PortfolioSettings` itself only models
+ * `safetyTargets` for the same reason.
+ */
+export const portfolioDetailsSchema = portfolioInputSchema.pick({
+  name: true,
+  description: true,
+  baseCurrency: true,
+  settings: true,
+});
+
+export type PortfolioDetailsInput = z.infer<typeof portfolioDetailsSchema>;

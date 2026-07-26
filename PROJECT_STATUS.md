@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up) and Batch 1 (M4-001–M4-003) are synchronized to GitHub; Batch 2 (M4-004, M4-010, M4-016) is implemented and awaiting approval; M4-005 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up), Batch 1 (M4-001–M4-003), and Batch 2 (M4-004, M4-010, M4-016) are synchronized to GitHub; Batch 3 (M4-005, M4-006) is implemented and awaiting approval; M4-007 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -3012,6 +3012,151 @@ faked.
 
 ---
 
+### Batch 3 — Portfolio Creation Flow + Portfolio Details Form (M4-005, M4-006)
+
+**New dependency added**: `@hookform/resolvers` (`^5.5.7`). Not
+previously installed — only `react-hook-form` and `zod` themselves were.
+M4-006's own Requirements explicitly mandate "Use React Hook Form. Use
+Zod validation." together; `@hookform/resolvers/zod`'s `zodResolver` is
+the standard, expected glue between two already-approved libraries, not
+new infrastructure or a new framework choice. `pnpm add` briefly broke
+`eslint-plugin-react-hooks`'s resolution (a pnpm hoisting side effect of
+re-resolving the dependency tree, unrelated to the package's own
+content) — fixed with `pnpm install --force`; confirmed via `git diff
+--stat pnpm-lock.yaml` that only the new package's own entries were
+added (91 clean insertions, no unrelated package changes).
+
+**M4-005 — `app/portfolios/new/page.tsx`** (replaces Batch 2's
+scaffold): collects exactly this task's own "Collect" list via one
+organized form (React Hook Form + `zodResolver(portfolioInputSchema)`,
+reusing M4-002's schema directly rather than a duplicate).
+
+- **"Guided," scoped as one organized form, not a multi-step
+  wizard**: the task text says "guided," not "multi-step"/"wizard," and
+  no wireframe anywhere in 03_UI.md breaks this flow into discrete
+  steps. Building step-state/progress-indicator machinery beyond what's
+  asked would be inventing UI architecture the specification doesn't
+  call for.
+- **New finding — conflict #24: "Protocol parameters or preset" — no
+  preset values exist anywhere in the documentation.** No numeric Aave
+  V3 parameter values are stated anywhere — 04_BUILD_GUIDE.md's
+  "PROTOCOL SERVICE" section names required _fields_, never values, and
+  no `AaveV3Provider` has ever been built (the same unbuilt
+  infrastructure-layer gap found repeatedly across Milestone 3). Only
+  manual entry is offered; inventing a specific preset number would
+  mean fabricating real-world financial data.
+- **DoD "created, selected, calculated, and saved"**: `onSubmit` calls
+  `store.create()` (validates + computes + caches the summary —
+  "created" and "calculated"), then `store.select()` ("selected"), then
+  navigates to `/portfolio` ("opened"). "Saved" continues Conflict B's
+  established framing: committed to the in-memory Store, not disk/cloud
+  persistence.
+
+**M4-006 — `app/portfolio/page.tsx`** (replaces the Milestone 1
+`PlaceholderPage` this route held): a Details Form for the _active_
+portfolio's identity/settings fields.
+
+- **Scope reconsideration from Batch 2**: Batch 2 treated `/portfolio`'s
+  real content as entirely out of scope/unassigned. Re-reading M4-006
+  corrected this — its own Dependencies chain (M4-005 → M4-003 → M3-005)
+  names no other UI task that would build this route first, and
+  03_UI.md's own "PORTFOLIO PAGE" section already names this exact route
+  for this exact purpose. The _read-only calculated metrics_ that same
+  03_UI.md section also describes (Position Metrics, Milestones,
+  Interest, Performance) remain unbuilt — no task in this batch covers
+  them.
+- **"Default display settings" not rendered** — continues conflict #22:
+  no field list for it exists anywhere; only "Safety target settings"
+  (`settings.safetyTargets`) is editable.
+- **"Support automatic saving"**: debounced (600ms) calls to
+  `store.update()` on `watch()` changes — auto-save to the in-memory
+  Store (Conflict B's established "saved" framing), not disk. No manual
+  save button, matching 04_BUILD_GUIDE.md's own auto-save principle.
+- **DoD "do not alter position balances unexpectedly" — enforced
+  structurally**: added `portfolioDetailsSchema` to
+  `types/portfolio.schema.ts` via `portfolioInputSchema.pick({name,
+description, baseCurrency, settings})` — the form's update payload is
+  _type-incapable_ of containing `collateral`/`debt`/`market`/
+  `protocol`, not just disciplined to avoid them.
+- **Remounted (`key={activePortfolioId}`) on portfolio switch**: forces
+  React Hook Form's internal state to fully reset per portfolio — the
+  concrete mechanism satisfying M4-010's own "never mixes state between
+  portfolios" DoD as it applies to this form. Verified by a dedicated
+  test (switch renders the new portfolio's own field values, not stale
+  ones).
+
+**Bug found and fixed while implementing**: both forms' optional numeric
+fields (safety targets) used `register(path, { valueAsNumber: true })`.
+For an untouched, empty number input, `valueAsNumber` coerces the empty
+string to `NaN` (not `undefined`) — `NaN` fails Zod's `.finite()` check,
+silently blocking the _entire_ form's submission with no rendered error
+(no error UI exists for those specific fields), even though the field is
+genuinely optional and correctly left blank. Caught by a failing test
+(`expected [] to have a length of 1 but got +0` with no visible cause),
+diagnosed by inspecting DOM values and adding temporary debug output,
+traced to this root cause. Fixed by switching those four fields (in both
+forms) to `setValueAs: (value) => (value === '' ? undefined :
+Number(value))`, which correctly represents "left blank" as "field
+absent" rather than "field present with an invalid value." Both forms'
+required numeric fields correctly keep `valueAsNumber` — an empty
+required field _should_ fail validation and render a real error, which
+it does. Regression-tested explicitly in both test files.
+
+**Test files**: `tests/unit/app/portfolios/new/page.test.tsx` (rewritten
+from Batch 2's scaffold test — 6 tests: full "Collect" list rendered, no
+preset offered, the full create/select/navigate DoD, empty-name
+rejection, protocol-invariant rejection, and the Store-failure
+defense-in-depth fallback), `tests/unit/app/portfolio/page.test.tsx`
+(new — 9 tests: no-active-portfolio state, field list, prefilled values,
+no "display settings" fields, auto-save commits after the debounce
+window, the position-balance DoD check, an invalid-edit rejection, the
+NaN-bug regression check, and the switch-remount isolation check),
+`tests/unit/types/portfolio.schema.test.ts` (+3 tests for
+`portfolioDetailsSchema`).
+
+**Browser verification**: started the dev server and drove the full,
+real end-to-end flow with Playwright/Chromium — filled and submitted
+the Creation Flow form, confirmed navigation to `/portfolio`, confirmed
+the Details Form was correctly prefilled, edited the name, waited past
+the debounce window, and confirmed the change propagated reactively to
+the `AppHeader` switcher (proving the Store update actually landed).
+Zero console/page errors throughout. Screenshots taken at each step.
+
+**Scope discipline**: only M4-005 and M4-006 were implemented. No
+M4-007+ work was started. `engine/`, `services/`, `stores/` are
+completely untouched (`git diff --stat -- engine/ services/ stores/`
+empty). The only `app/`/`components/` files touched are the two this
+batch owns (`git diff --stat -- app/ components/` confirms no other
+route/component changed). `PlaceholderPage` remains in use by the 5
+still-unbuilt routes, unchanged.
+
+**Validation — Batch 3**
+
+| Command              | Result                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass (after fixing a `z.infer` vs `z.input` mismatch on `baseCurrency`'s `.default('USD')` — React Hook Form's pre-resolution field values follow the schema's _input_ type, not its _output_ type; fixed via `useForm<FormValues, unknown, OutputType>`'s third generic in both forms)                                                                                                         |
+| `pnpm lint`          | ✅ Pass (after `pnpm install --force` repaired the `eslint-plugin-react-hooks` resolution broken by adding `@hookform/resolvers`)                                                                                                                                                                                                                                                                  |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of 3 files)                                                                                                                                                                                                                                                                                                                                                     |
+| `pnpm test`          | ✅ Pass, 794/794 (18 net new)                                                                                                                                                                                                                                                                                                                                                                      |
+| `pnpm test:coverage` | ✅ 95.03% statements / 89.01% branches / 100% functions / 98.45% lines (project-wide). `app/portfolio/page.tsx`: 100%/83.33%/100%/100%. `app/portfolios/new/page.tsx`: 100%/66.66%/100%/100% (remaining branch gaps are the repetitive per-field `setValueAs`/error-rendering branches for individual optional fields — consistent with this project's already-accepted coverage norms elsewhere). |
+| `pnpm build`         | ✅ Pass — `/portfolio` (1.23 kB) and `/portfolios/new` (1.62 kB) both show real bundle sizes, confirming real content replaced the placeholders                                                                                                                                                                                                                                                    |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ stores/`
+empty. No Service file imports from `@/app` or `@/components`. No
+`fetch`/`axios`/`XMLHttpRequest`/`process.env`/`infrastructure/`
+reference in any new/modified file. Both forms import only from
+`@/stores/portfolioStore`, `@/types/portfolio(.schema)`, and
+React/Next/React-Hook-Form/Zod — the allowed UI → Store → Services
+direction.
+
+**Traceability**: M4-005's "Collect" list and DoD, and M4-006's
+"Fields"/"Requirements"/DoD, are each addressed field-for-field above,
+with every deviation (no preset, "Default display settings" omitted,
+auto-save-to-Store not auto-save-to-disk) documented rather than
+silently decided.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -3760,6 +3905,33 @@ count) or remain switcher-only, as built here.
 
 ---
 
+### 24. M4-005's "Protocol parameters or preset" names a preset option, but no preset values exist anywhere in the documentation
+
+Found while implementing Milestone 4 Batch 3 (M4-005). The task's own
+"Collect" list includes "Protocol parameters **or preset**," implying
+users should be able to choose a predefined parameter set (e.g., "Aave
+V3 defaults") instead of typing every value manually. No such values —
+a concrete `maxLoanToValue`/`liquidationThreshold`/`borrowApr`/
+`supplyApr` for any real protocol — appear anywhere in the entire
+documentation set. 04_BUILD_GUIDE.md's "PROTOCOL SERVICE" section names
+the _required fields_ a preset would need but gives no numbers, and the
+only place such values would legitimately originate — an
+`AaveV3Provider` — has never been built (the same unbuilt
+infrastructure-layer gap identified repeatedly across Milestone 3
+batches: `services/protocol/quote.ts` never hardcodes provider-specific
+values either, by the same reasoning).
+
+**Resolution applied**: the Creation Flow (`app/portfolios/new/page.tsx`)
+offers manual entry only, clearly labeled "Protocol parameters (manual
+entry — no preset available)." Inventing a specific preset number would
+mean fabricating real-world financial data the specification never
+states — the same discipline applied throughout this project to
+undocumented numeric business rules. Action needed: a product decision
+on what "the" Aave V3 preset values should be (and where they'd be
+sourced/maintained/kept current) before a preset option can be built.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -3808,67 +3980,73 @@ count) or remain switcher-only, as built here.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 2
-   (M4-004, M4-010, M4-016) before committing, per instruction. Do not
-   begin M4-005 until this is approved.
+2. **This pass stops here for approval** of Milestone 4 Batch 3
+   (M4-005, M4-006) before committing, per instruction. Do not begin
+   M4-007 until this is approved.
 3. **Milestone 4 plan's three conflict decisions, status as of Batch
-   2**:
-   - **Conflict A (positions)**: applied since Batch 1, reaffirmed this
-     batch — the List Page's "No collateral"/"No debt" badges key off
-     the singular `quantity`/`balance` being exactly zero, not an array
-     length.
-   - **Conflict B (persistence timing)**: applied again this batch —
-     M4-010's "retain selection after refresh" and "preserve unsaved
-     changes safely" Requirements are documented as unsatisfiable/N-A
-     this batch rather than given an interim fix.
-   - **Conflict C (M4-008 vs. conflict #20)**: resolved in Batch 0,
-     unaffected by this batch. The List Page's "No debt" badge and the
-     `summary.ok` check together confirm conflict #20's fix is reachable
-     end-to-end through real UI, not just Service-layer tests.
-4. Once Batch 2 is approved and committed, the next batch is **Batch 3
-   (M4-005, M4-006)** — Portfolio Creation Flow and Portfolio Details
-   Form — per the approved plan's batch order. This will replace
-   `app/portfolios/new/page.tsx`'s scaffold with the real guided flow.
-5. **New from Batch 2**: conflict #23 — 03_UI.md's own "six primary
-   pages" inventory has no room for a Portfolio List page. Resolved by
-   keeping `/portfolios` out of the sidebar, reachable only via the
-   `AppHeader` switcher — flagged for a real product decision on whether
-   it should ever become a navigable eighth page.
-6. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+   3**:
+   - **Conflict A (positions)**: applied again — both forms collect a
+     single `collateral`/`debt` object each, never an array.
+   - **Conflict B (persistence timing)**: applied again — M4-005's
+     "saved" and M4-006's "automatic saving"/"persist" both mean
+     committed to the in-memory Store, not disk/cloud, consistent since
+     Batch 1.
+   - **Conflict C (M4-008 vs. conflict #20)**: unaffected by this batch;
+     remains resolved (Batch 0).
+4. Once Batch 3 is approved and committed, the next batch is **Batch 4
+   (M4-007, M4-008)** — Collateral Position Management and Debt Position
+   Management — per the approved plan's batch order. This batch depends
+   on conflict #20 being resolved (Batch 0, done) since M4-008 explicitly
+   requires "Support zero-debt portfolios."
+5. **New from Batch 3**: conflict #24 — M4-005's "Protocol parameters or
+   preset" names a preset option, but no concrete Aave V3 parameter
+   values exist anywhere in the documentation. Resolved by offering
+   manual entry only; flagged for a real product decision on what "the"
+   preset values should be and where they'd be sourced from before a
+   preset option can be built.
+6. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+   primary pages" inventory has no room for a Portfolio List page.
+   Resolved by keeping `/portfolios` out of the sidebar, reachable only
+   via the `AppHeader` switcher.
+7. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
    names it as a required field with no defined shape anywhere. Resolved
-   conservatively (safety-targets-only) but flagged for a real decision
-   before M4-006 (Portfolio Details Form, next batch) needs to render it
-   as editable fields — directly relevant to Batch 3's own scope.
-7. **Conflict #20 remains resolved** (Batch 0) — no longer an open
-   item. See conflict #20's entry below for the full resolution.
-8. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+   conservatively (safety-targets-only) in both M4-001's type and this
+   batch's M4-006 form (which correctly renders no "Default display
+   settings" fields, since none are defined) — still flagged for a real
+   decision.
+8. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+   item, unaffected by this batch. M4-007/M4-008 (next batch) will be
+   the first UI surface to actually let a user edit debt down to zero
+   through the interface.
+9. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
    (conflict #21) has no persistence Service or task to attach to until
    Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
    Cloud Synchronization & Import/Export) is reached, not before. Directly
    relevant to Conflict B above: this is the same underlying gap.
-9. **Outstanding blockers/conflicts carried forward from Milestone 2**:
-   F-026 (Health Factor status classification, conflict #1), compound
-   interest / M2-013–M2-014 (conflict #7), the partially-unassigned
-   Recommendation Engine chapter (conflict #9 — F-061–F-064
-   implemented; F-060, F-065–F-069 not), "Exit readiness"'s unmapped
-   Formula ID (conflict #11), F-067's partial documentation (conflict
-   #12), the unspecified "Target borrow percentage" blocking a
-   post-loop Golden Reference Portfolio fixture (conflict #14),
-   M2-029's DoD-vs-scope tension over the 33 unimplemented Formula IDs
-   (conflict #15), the Build-Guide-vs-Formulas.md performance-target
-   disagreement plus M2-030's 2 unmapped benchmark categories (conflict
-   #16), and M2-031's undocumented public/internal split criteria
-   (conflict #17). None of these blocked Milestone 2's own completion.
-10. **Revisited in Batch 7, confirmed still open at the specification
+10. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+    F-026 (Health Factor status classification, conflict #1), compound
+    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
+    Recommendation Engine chapter (conflict #9 — F-061–F-064
+    implemented; F-060, F-065–F-069 not), "Exit readiness"'s unmapped
+    Formula ID (conflict #11), F-067's partial documentation (conflict
+    #12), the unspecified "Target borrow percentage" blocking a
+    post-loop Golden Reference Portfolio fixture (conflict #14),
+    M2-029's DoD-vs-scope tension over the 33 unimplemented Formula IDs
+    (conflict #15), the Build-Guide-vs-Formulas.md performance-target
+    disagreement plus M2-030's 2 unmapped benchmark categories (conflict
+    #16), and M2-031's undocumented public/internal split criteria
+    (conflict #17). None of these blocked Milestone 2's own completion.
+11. **Revisited in Batch 7, confirmed still open at the specification
     level but no longer blocking implementation**: swap-fees/slippage/
     gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
     mechanics (conflict #10), and F-040's exit-collateral-sale
     discrepancy (conflict #13, a known, tested approximation).
-11. **From Milestone 3/4, still open**: "Source status"'s undefined
+12. **From Milestone 3/4, still open**: "Source status"'s undefined
     _generic_ value domain (conflict #18), "Formula version" aggregation
     across a multi-Engine-call Service (conflict #19), M3-013's
-    persistence-adapter gap (conflict #21 — point 8 above), "Settings"'s
-    undefined shape (conflict #22 — point 6 above), and the Portfolio
-    List page's missing place in 03_UI.md's page inventory (conflict #23
+    persistence-adapter gap (conflict #21 — point 9 above), "Settings"'s
+    undefined shape (conflict #22 — point 7 above), the Portfolio List
+    page's missing place in 03_UI.md's page inventory (conflict #23 —
+    point 6 above), and the missing protocol-preset values (conflict #24
     — point 5 above). Conflict #20 (resolved Batch 0) is not counted.
-    **22 open conflicts remain (23 total raised, minus #20, resolved).**
+    **23 open conflicts remain (24 total raised, minus #20, resolved).**

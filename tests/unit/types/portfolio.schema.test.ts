@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   collateralPositionSchema,
   debtPositionSchema,
+  portfolioDetailsSchema,
   portfolioInputSchema,
   portfolioInputUpdateSchema,
   protocolParametersSchema,
@@ -177,6 +178,43 @@ describe('protocolParametersSchema — percentages (M4-002)', () => {
       liquidationThreshold: 0.8,
       borrowApr: -0.01,
       supplyApr: 0.02,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('portfolioDetailsSchema (M4-006)', () => {
+  it('accepts exactly the Details Form fields', () => {
+    const result = portfolioDetailsSchema.safeParse({
+      name: 'My Portfolio',
+      description: 'A test portfolio',
+      baseCurrency: 'USD',
+      settings: { safetyTargets: { targetHealthFactor: 1.5 } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('is structurally incapable of accepting collateral/debt/market/protocol fields (DoD: do not alter position balances)', () => {
+    const result = portfolioDetailsSchema.safeParse({
+      name: 'My Portfolio',
+      baseCurrency: 'USD',
+      settings: {},
+      collateral: { asset: 'BTC', quantity: 999 },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    // `collateral` is not part of this schema's shape — .safeParse
+    // silently strips unknown keys rather than rejecting them, but the
+    // parsed *output* never carries it through, so a caller that only
+    // ever sends `result.data` onward cannot alter it.
+    expect('collateral' in result.data).toBe(false);
+  });
+
+  it('still rejects an empty name', () => {
+    const result = portfolioDetailsSchema.safeParse({
+      name: '',
+      baseCurrency: 'USD',
+      settings: {},
     });
     expect(result.success).toBe(false);
   });

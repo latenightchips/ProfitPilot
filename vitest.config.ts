@@ -21,6 +21,7 @@ export default defineConfig({
         'utils/**',
         'types/**',
         'stores/**',
+        'app/portfolio/**',
         'app/portfolios/**',
         'components/layout/AppHeader.tsx',
       ],
