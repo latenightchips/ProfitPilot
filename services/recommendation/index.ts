@@ -1,14 +1,12 @@
 /**
- * Recommendation Service — 06_TASKS.md M3-001 ("Create Service
- * Foundation").
+ * Recommendation Service — public entry point.
  *
- * 04_BUILD_GUIDE.md "SERVICE RESPONSIBILITIES": "Recommendation Service —
- * Combines Portfolio, Risk, Interest, Simulation. Returns Today's
- * Decision, Priority Alerts, Portfolio Score."
- *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Recommendation Service's
- * implementation (a separate, dependent Milestone 3 task). This file is
- * that entry point.
+ * 06_TASKS.md M3-001 ("Create Service Foundation") established this
+ * directory; M3-012 ("Implement Recommendation Service") is its first
+ * occupant.
  */
-export {};
+export {
+  generateRecommendationSet,
+  type RankedRecommendation,
+  type RecommendationResult,
+} from './recommendations';

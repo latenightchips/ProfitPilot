@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 5 complete (pending approval) — M3-001 through M3-007 addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 6 complete (pending approval) — M3-001 through M3-007, M3-009, and M3-012 addressed (M3-008, M3-010, M3-011 remain). **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2061,6 +2061,170 @@ introduces no Formula ID and makes no Engine claim.
 No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
 by this batch.
 
+### Batch 6 — Simulation + Recommendation Services (M3-009, M3-012)
+
+**Batch scoping — chosen deliberately smaller than "all four ready
+tasks," reasoning stated before implementation**: with M3-005 done, five
+tasks became simultaneously ready: M3-008 (Protocol Parameter Service —
+depends only on M3-002) and M3-009/M3-010/M3-011/M3-012 (Simulation,
+Loop Strategy, Exit Planning, Recommendation — each depends only on
+M3-005 plus a completed Milestone 2 module). `06_TASKS.md`'s own M3-014
+("Create Service Integration Tests") depends on "M3-005 through M3-012"
+as one range, textual evidence that the specification treats these as
+one phase. M3-008 was excluded because it is architecturally a
+data-provider Service (like M3-007), not a calculation-coordinator
+Service like the other four — combining it would pad the batch without
+real cohesion, the same distinction that kept M3-007 and M3-008 apart.
+
+Of the remaining four coordinator Services, M3-010 (Loop Strategy) and
+M3-011 (Exit Planning) were deliberately left for a **separate** batch:
+reading their Engine dependencies surfaced that both are entangled with
+pre-existing, already-documented Milestone 2 conflicts — M3-010's "Apply
+cost assumptions" responsibility runs directly into conflict #8
+(swap-fees/slippage/gas-estimate formula gap), and M3-011's exit
+calculations touch conflicts #10 (ambiguous "target cash proceeds"
+mechanics) and #13 (F-040's known exit-collateral-sale approximation).
+Folding four large, conflict-dense tasks into one batch risked a
+proposal and implementation too tangled to review cleanly. M3-009
+(Simulation) and M3-012 (Recommendation) do not touch any open conflict
+directly, so they were implemented together as this batch; M3-010 and
+M3-011 are deferred to a batch where those specific conflicts can get
+focused attention.
+
+| Task                                    | Status  | Notes                                                                                                                                                                                 |
+| --------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-009 Implement Simulation Service     | ✅ Done | `services/simulation/scenario.ts` — `simulateScenario`, coordinating price and interest scenarios against an "attached" M3-005 baseline, returning a `compareScenarios`-ready result. |
+| M3-012 Implement Recommendation Service | ✅ Done | `services/recommendation/recommendations.ts` — `generateRecommendationSet`, wrapping `generateRecommendations` (M2-025/M2-026) with Decision-Priority ranking.                        |
+
+**M3-009 scope: price and interest scenarios only, not position-change.**
+`engine/simulation/simulatePositionChange.ts` (M2-021) is public and
+exists, but forcing it into the same `ScenarioSummary` shape M2-022's
+`compareScenarios`/`rankScenarios` use would require inventing a "profit
+or loss" meaning for a deliberate capital contribution (adding
+collateral raises net equity by exactly the contributed amount — that
+is not profit). Position-change previewing is already M3-006's job
+(`previewPortfolioAction`), which correctly has no `profitOrLoss`
+concept at all. Excluding it here avoids inventing one; documented in
+`scenario.ts`'s own header comment.
+
+**"Attach current portfolio baseline" reuses `calculatePortfolioSummary`
+(M3-005) directly**, the same reuse pattern M3-006 already established —
+not a new architectural decision, but its first use _across_ Service
+subdirectories (`services/simulation/` importing from
+`services/portfolio/`) rather than within one. No rule prohibits
+Service-to-Service composition (only "Only services communicate
+directly with the Formula Engine" governs the Engine boundary); reusing
+an already-built, already-tested Service function is preferable to
+re-deriving equivalent portfolio metrics a second way. `services/recommendation/recommendations.ts`
+does the same, more narrowly — reusing `mapApplicationPortfolioToEngineInput`
+(M3-004) for its own portfolio-to-Engine-input conversion rather than
+duplicating that mapping.
+
+**Field completion per scenario type, not reimplementation.** Neither
+`simulatePriceScenario` nor `simulateInterestScenario` returns every
+field `ScenarioSummary` needs (`leverage` is never included by either;
+`simulateInterestScenario` also omits `liquidationDistance` and
+`profitOrLoss`). Rather than recomputing those functions' own logic
+through a different composition path, `simulateScenario` calls the
+documented M2-019/M2-020 functions directly for the fields they provide
+(preserving their own Formula IDs, validation, and warnings) and
+supplements only the missing fields with additional already-public
+Engine calls (`calculateEffectiveLeverage`, `calculateLiquidationDistance`,
+`calculatePortfolioGain`, and `calculateAnnualInterest` — reusing M3-005's
+own "Annual Interest = debt cost" interpretation for consistency).
+
+**"Preserve assumptions" interpreted as never discarding the caller's
+scenario definition.** `SimulationResult.assumptions` echoes the exact
+`SimulationScenario` the caller supplied (including `timeHorizonDays`/
+`borrowApr` for interest scenarios) so a UI can always display what was
+assumed alongside the numbers — a direct, non-speculative reading of the
+Responsibility text.
+
+**"Priority" (M3-012) — the one field `generateRecommendations` doesn't
+already provide.** `engine/recommendation/types.ts` documents an
+explicit, ordered five-tier "DECISION PRIORITY" list (02_Formulas.md's
+Recommendation Engine chapter, page 8), already used as
+`Recommendation.decisionPriority` ("Risk level"). `generateRecommendations`
+itself returns recommendations in a fixed structural order (borrow,
+repayment, additionalCollateral, loop), not priority-ordered. This
+Service sorts by that same documented tier order and attaches a 1-based
+`priority` rank, satisfying M3-012's "Priority" field and the DoD's
+"ordered consistently" without inventing a new scheme — the tiers and
+their order are the Formula chapter's own.
+
+**`unavailableCategories` is preserved, not dropped.** `generateRecommendations`
+already reports which of the six documented recommendation categories
+(Safety, Interest cost, Exit readiness) are unavailable and why, tracing
+to conflicts #1 and #11 and an interest-cost gap adjacent to #7 —
+dropping that here would silently hide already-documented specification
+gaps from anything consuming this Service.
+
+**`RecommendationRuleConfig` is entirely caller-supplied**, the same
+"never fabricate what the Service doesn't own" principle as `sourceStatus`
+— thresholds like `userMinHealthFactor` and `loopBorrowPercentage` are
+portfolio-owner preferences with no documented default anywhere.
+
+**Structural decision: `formulaStep`/`TrackedFormulaVersion` relocated
+to `services/shared/formulaStep.ts`.** M3-005 (`summary.ts`) originally
+defined this conflict #19 stopgap mechanism locally; M3-009 needed the
+identical mechanism for its own multi-Engine-call composition. Same
+"relocate once a second consumer needs it" trigger already used for
+`MappingResult<T>` at M3-007. `summary.ts` now imports the relocated
+names under their original local aliases, so the rest of that file is
+byte-for-byte unchanged; its own tests pass unmodified, confirming the
+relocation is behavior-preserving. **Not** added to `services/shared/index.ts`'s
+public barrel — unlike `MappingResult<T>` (which appears in public
+function signatures), `formulaStep`/`TrackedFormulaVersion` are pure
+internal plumbing no consumer needs to reference directly, matching
+M2-031's own "hide internal helpers" precedent for the Engine's
+`validate.ts`/`invariants.ts`.
+
+**Coverage note**: extracting `formulaStep` moved its own well-covered
+internal branches out of `summary.ts`'s file-level branch count, so
+`summary.ts`'s reported branch coverage dropped (71.42% → 65%) even
+though the exact same test scenarios exercise the exact same code paths
+as before — a reporting-denominator shift, not a real coverage
+regression. Both `summary.ts` and `scenario.ts` have uncovered
+call-site branches for intermediate Engine-call failures beyond the
+first (e.g. forcing _only_ `calculateNetWorth` to fail while collateral/
+debt succeed is not constructible from a single portfolio); these mirror
+the same category of "defense in depth" uncovered branches already
+documented in `engine/simulation/simulatePositionChange.ts` and are not
+new to this batch's pattern, just now visible under a smaller
+denominator.
+
+**Dependency-direction and architecture audit**: re-verified that
+`services/` still imports no `react`, `next`, or `@/components` path.
+`services/simulation/scenario.ts` imports `@/engine`, `services/shared/
+{formulaStep,result}`, and `services/portfolio/{mapping,models,summary}`
+— its one cross-Service-subdirectory dependency, documented above.
+`services/recommendation/recommendations.ts` imports `@/engine`,
+`services/shared/{errors,result}`, and `services/portfolio/mapping` only.
+No `engine/` file was modified by this batch.
+
+**Traceability audit (pre-commit)**: `simulateScenario` and
+`generateRecommendationSet`, plus every exported type from both new
+files, are reachable through `@/services` alone, verified by two new
+`describe` blocks in `tests/unit/services/publicApiSurface.test.ts`
+(M3-009, M3-012). Every Formula ID this batch relies on (F-050, F-051,
+F-033, F-030, F-011, F-023, F-007, F-053, F-032, F-061-F-064) was
+already implemented and traced in Milestone 2 — this batch composes
+existing public Engine functions and claims no new Formula ID.
+
+**Validation — Batch 6 (Milestone 3)**
+
+| Command              | Result                                                                                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                                                     |
+| `pnpm lint`          | ✅ Pass (after autofix of import ordering across the new/changed files)                                                                                                                                                     |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of the new Service and test files)                                                                                                                                                       |
+| `pnpm test`          | ✅ Pass, 659/659 (23 new)                                                                                                                                                                                                   |
+| `pnpm test:coverage` | ✅ 94.91% statements / 89.92% branches / 100% functions / 98.84% lines — see the coverage note above for the `summary.ts` branch-percentage shift. No coverage threshold is configured, so this does not fail the pipeline. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                     |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -2699,20 +2863,32 @@ this batch's own scope.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 5 (M3-007)
-   before committing, per instruction.
-3. Once approved and committed: **Milestone 3 Batch 6 — M3-008 (Protocol
-   Parameter Service)**, the next task in sequence. M3-008 depends only
-   on M3-002 (done) and is unblocked; Batch 5 already established that it
-   does _not_ need to be combined with M3-007 (no dependency either
-   direction). M3-008's own "Include" list (Maximum LTV, Liquidation
-   threshold, Borrow rate, Asset configuration, Data source, Freshness
-   timestamp) closely parallels M3-007's shape — re-check at the start of
-   that batch whether the same "infrastructure layer is unassigned scope"
-   finding applies (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
-   `ProtocolProvider`/`AaveV3Provider` content looks like the protocol
-   counterpart of what M3-007 found for prices) before assuming the scope
-   boundary needs re-litigating from scratch.
+2. **This pass stops here for approval** of Milestone 3 Batch 6 (M3-009,
+   M3-012) before committing, per instruction.
+3. Once approved and committed, three Milestone 3 tasks remain unstarted:
+   - **M3-008 (Protocol Parameter Service)** — depends only on M3-002,
+     unblocked. Its own "Include" list (Maximum LTV, Liquidation
+     threshold, Borrow rate, Asset configuration, Data source, Freshness
+     timestamp) closely parallels M3-007's shape — re-check at the start
+     of that batch whether the same "infrastructure layer is unassigned
+     scope" finding applies (`04_BUILD_GUIDE.md`'s "PROTOCOL SERVICE" /
+     `ProtocolProvider`/`AaveV3Provider` content looks like the protocol
+     counterpart of what M3-007 found for prices).
+   - **M3-010 (Loop Strategy Service)** and **M3-011 (Exit Planning
+     Service)** — both depend only on M3-005 and are technically
+     unblocked, but were deliberately deferred out of Batch 6 because
+     each is entangled with a pre-existing, already-documented
+     conflict: M3-010's "Apply cost assumptions" responsibility meets
+     conflict #8 (swap-fees/slippage/gas-estimate gap); M3-011's exit
+     calculations meet conflicts #10 and #13. Re-read both together at
+     the start of that batch (no formal dependency between them, same
+     "coordinator Service" architecture as M3-009/M3-012) and resolve or
+     document each conflict's impact before implementing, rather than
+     folding conflict resolution into a larger batch.
+   - Once M3-008 lands, **M3-013 (Service Dependency Injection)**
+     unblocks (depends on M3-007 + M3-008); once M3-008/M3-010/M3-011
+     all land, **M3-014 (Service Integration Tests)** unblocks (depends
+     on M3-005 through M3-012 as one range).
 4. **Outstanding blockers/conflicts carried forward from Milestone 2, all
    still open**: F-026 (Health Factor status classification, conflict
    #1), compound interest / M2-013–M2-014 (conflict #7), the
@@ -2730,22 +2906,21 @@ this batch's own scope.
    benchmark categories (conflict #16), and M2-031's undocumented
    public/internal split criteria (conflict #17). None of these 17
    blocked Milestone 2's own completion, but several (especially #1, #7,
-   #8, #9) plausibly gate specific Milestone 3 Services.
-5. **From Milestone 3 Batches 2–4, all still open**: "Source status"'s
-   undefined _generic_ value domain (conflict #18 — Batch 5 gave
-   Market Data Service its own concrete `PriceFreshness`/`PriceOrigin`
+   #8, #9, #10, #13) plausibly gate specific Milestone 3 Services — #8
+   and #10/#13 specifically are why M3-010/M3-011 were deferred out of
+   this batch.
+5. **From Milestone 3 Batches 2–5, all still open**: "Source status"'s
+   undefined _generic_ value domain (conflict #18 — Batch 5 gave Market
+   Data Service its own concrete `PriceFreshness`/`PriceOrigin`
    vocabulary but deliberately did not fold it into
    `ServiceMetadata.sourceStatus`; still open at the generic level),
    "Formula version" aggregation across a multi-Engine-call Service
-   (conflict #19 — Batch 4 implemented a checked stopgap, not a
-   resolution; still open), and `calculatePortfolioSummary`'s inability
-   to summarize a zero-debt portfolio (conflict #20 — needs a
-   product/engineering decision on a `PortfolioSummary`-level convention
-   for debt-free portfolios).
-6. **New from this batch**: the `infrastructure/` layer gap itself
-   (documented inline in Batch 5's write-up, not given its own numbered
-   conflict entry since it was resolved by explicit instruction rather
-   than left open) — worth remembering when M3-008, M3-009, or M3-010 are
-   scoped, since `04_BUILD_GUIDE.md` likely describes similarly
-   unassigned infrastructure for protocol parameters and possibly other
-   integrations.
+   (conflict #19 — Batch 4 implemented a checked stopgap, Batch 6 reused
+   it for a second consumer; still not a real resolution), and
+   `calculatePortfolioSummary`'s inability to summarize a zero-debt
+   portfolio (conflict #20 — needs a product/engineering decision on a
+   `PortfolioSummary`-level convention for debt-free portfolios).
+6. **The `infrastructure/` layer gap** (Batch 5) remains relevant to
+   M3-008 — worth checking whether `04_BUILD_GUIDE.md` describes similarly
+   unassigned infrastructure for protocol parameters before assuming
+   M3-008's real scope boundary.

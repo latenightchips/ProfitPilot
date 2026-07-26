@@ -1,12 +1,8 @@
 /**
- * Simulation Service — 06_TASKS.md M3-001 ("Create Service Foundation").
+ * Simulation Service — public entry point.
  *
- * 04_BUILD_GUIDE.md "SERVICE RESPONSIBILITIES": "Simulation Service —
- * Builds simulation request. Calls Simulation Engine. Returns comparison
- * results."
- *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Simulation Service's implementation
- * (a separate, dependent Milestone 3 task). This file is that entry point.
+ * 06_TASKS.md M3-001 ("Create Service Foundation") established this
+ * directory; M3-009 ("Implement Simulation Service") is its first
+ * occupant.
  */
-export {};
+export { simulateScenario, type SimulationResult, type SimulationScenario } from './scenario';

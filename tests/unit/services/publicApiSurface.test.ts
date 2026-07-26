@@ -141,3 +141,79 @@ describe('Public Service layer API surface (M3-007)', () => {
     });
   });
 });
+
+/**
+ * Simulation Service — 06_TASKS.md M3-009. Verifies it is reachable
+ * through the root `@/services` entry point, not just
+ * `@/services/simulation`.
+ */
+describe('Public Service layer API surface (M3-009)', () => {
+  it('simulateScenario is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).simulateScenario).toBe('function');
+  });
+
+  it('a price scenario can be simulated using only @/services imports', () => {
+    const portfolio = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = Services.simulateScenario(
+      portfolio,
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 40000 } },
+      'Price drop',
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.scenario.equity).toBe(60000);
+  });
+});
+
+/**
+ * Recommendation Service — 06_TASKS.md M3-012. Verifies it is reachable
+ * through the root `@/services` entry point, not just
+ * `@/services/recommendation`.
+ */
+describe('Public Service layer API surface (M3-012)', () => {
+  it('generateRecommendationSet is reachable through @/services alone', () => {
+    expect(typeof (Services as Record<string, unknown>).generateRecommendationSet).toBe('function');
+  });
+
+  it('a recommendation set can be generated using only @/services imports', () => {
+    const portfolio = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = Services.generateRecommendationSet(
+      portfolio,
+      {
+        borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+        repayment: { targetHealthFactor: 1.5 },
+        additionalCollateral: { targetHealthFactor: 1.5 },
+        loop: {
+          targetHealthFactor: 1.5,
+          loopBorrowPercentage: 0.5,
+          maxAcceptableAnnualInterestCost: 5000,
+        },
+      },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.recommendations).toHaveLength(4);
+  });
+});

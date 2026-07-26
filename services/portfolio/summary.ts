@@ -60,6 +60,13 @@
  * `ServiceFailure` (`FORMULA_VERSION_MISMATCH`) rather than silently
  * picking one. Conflict #19 remains open and documented in
  * PROJECT_STATUS.md; this is a checked stopgap, not a resolution.
+ *
+ * The `step`/`optionsFrom` mechanism implementing the above now lives in
+ * `services/shared/formulaStep.ts` (relocated at M3-009, Simulation
+ * Service — the second consumer that needed the identical mechanism,
+ * the same promotion trigger already used for `MappingResult<T>` at
+ * M3-007). Imported here under its original local names so the rest of
+ * this file is unchanged.
  */
 import {
   calculateAnnualInterest,
@@ -72,18 +79,11 @@ import {
   calculateLiquidationPrice,
   calculateLoanToValue,
   calculateNetWorth,
-  type FormulaResult,
 } from '@/engine';
 
-import { type ApplicationError, createApplicationError } from '../shared/errors';
-import {
-  createServiceFailure,
-  type CreateServiceResultOptions,
-  createServiceSuccess,
-  type ServiceFailure,
-  type ServiceResult,
-  type ServiceWarning,
-} from '../shared/result';
+import type { TrackedFormulaVersion } from '../shared/formulaStep';
+import { formulaStep as step, optionsFromTracked as optionsFrom } from '../shared/formulaStep';
+import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 import { mapApplicationPortfolioToEngineInput } from './mapping';
 import type { ApplicationPortfolio } from './models';
 
@@ -102,66 +102,6 @@ export interface PortfolioSummary {
   healthFactor: number;
   liquidation: PortfolioLiquidationSummary;
   interestCost: number;
-}
-
-interface TrackedFormulaVersion {
-  engineVersion: string;
-  formulaVersion: string;
-}
-
-type Step<T> =
-  | { ok: true; value: T; tracked: TrackedFormulaVersion; warnings: ServiceWarning[] }
-  | { ok: false; failure: ServiceFailure };
-
-function optionsFrom(
-  sourceStatus: string,
-  metadata: { engineVersion: string; formulaVersion: string },
-): CreateServiceResultOptions {
-  return {
-    sourceStatus,
-    engineVersion: metadata.engineVersion,
-    formulaVersion: metadata.formulaVersion,
-  };
-}
-
-function step<T>(
-  result: FormulaResult<T>,
-  tracked: TrackedFormulaVersion | null,
-  sourceStatus: string,
-): Step<T> {
-  if (!result.ok) {
-    const error: ApplicationError = createApplicationError(
-      'calculation',
-      result.error.code,
-      result.error.message,
-    );
-    return {
-      ok: false,
-      failure: createServiceFailure([error], optionsFrom(sourceStatus, result.metadata)),
-    };
-  }
-
-  if (tracked !== null && tracked.formulaVersion !== result.metadata.formulaVersion) {
-    const error: ApplicationError = createApplicationError(
-      'calculation',
-      'FORMULA_VERSION_MISMATCH',
-      `Portfolio summary calculations reported differing formula versions ("${tracked.formulaVersion}" vs "${result.metadata.formulaVersion}") — a single ServiceMetadata.formulaVersion cannot be derived (see PROJECT_STATUS.md conflict #19).`,
-    );
-    return {
-      ok: false,
-      failure: createServiceFailure([error], optionsFrom(sourceStatus, result.metadata)),
-    };
-  }
-
-  return {
-    ok: true,
-    value: result.value,
-    tracked: tracked ?? {
-      engineVersion: result.metadata.engineVersion,
-      formulaVersion: result.metadata.formulaVersion,
-    },
-    warnings: result.warnings,
-  };
 }
 
 /**
