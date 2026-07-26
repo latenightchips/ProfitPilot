@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import {
   buildDashboardViewModel,
+  buildDataFreshnessIndicators,
   buildDebtAndInterestPanel,
   buildHealthFactorStatus,
   buildLeverageSummary,
@@ -14,6 +15,7 @@ import {
   buildRiskWarnings,
   DashboardKpiGrid,
   DashboardSummaryHeader,
+  DataFreshnessSection,
   DebtAndInterestPanel,
   HealthFactorStatusSection,
   LeverageSummarySection,
@@ -35,22 +37,34 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * (Batch 2) + KPI Metrics (Batch 3) + Risk Sections part 1 (Batch 4:
  * M5-007, M5-009) + Risk Sections part 2 / Portfolio Composition
  * (Batch 5: M5-010, M5-011, M5-012) + Recommendations (Batch 6:
- * M5-013, M5-014; Batch 7: M5-015), per 06_TASKS.md's own
+ * M5-013, M5-014; Batch 7: M5-015) + Data Freshness (Batch 8: M5-017,
+ * resolving M5-018 with no new component), per 06_TASKS.md's own
  * "IMPLEMENTATION ORDER"**: "Dashboard Foundation → Summary Header →
  * KPI Metrics → Risk Sections → Portfolio Composition →
- * Recommendations → Responsive and Accessible States → Testing."
+ * Recommendations → Responsive and Accessible States → Testing." M5-016
+ * through M5-022 fall between "Recommendations" and "Responsive and
+ * Accessible States" in `06_TASKS.md`'s own dependency graph (M5-023
+ * depends on "M5-006 through M5-021") even though that coarse bucket
+ * list does not name them individually.
  * `RecommendationSummarySection` (M5-015, Batch 7) completes
  * "Recommendations" — reuses Batch 4's `calculateTargetHealthFactorActions`
  * rather than `generateRecommendationSet` (M3-012), for the same
  * conflict #29 reason `HealthFactorStatusSection`/`LiquidationRiskPanel`
  * already do; see `features/dashboard/types/recommendationSummary.ts`.
+ * `DataFreshnessSection` (M5-017, Batch 8) is a fuller, dedicated
+ * freshness display (adds Protocol Parameters, "Manual-data status," and
+ * "Refresh status" alongside the market-price line `DashboardSummaryHeader`
+ * already renders) and also resolves M5-018 without new workflow code —
+ * see `features/dashboard/types/dataFreshnessIndicators.ts` for the full
+ * reasoning on both.
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Dashboard Quick Actions (M5-016) and full Dashboard
- * Error Recovery (M5-021) remain later, separate, dependency-gated
- * tasks — not built here.
+ * carried over. Dashboard Quick Actions (M5-016), Loading/Empty States
+ * (M5-019/M5-020), full Dashboard Error Recovery (M5-021), and Developer
+ * Mode (M5-022) remain later, separate, dependency-gated tasks — not
+ * built here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -71,13 +85,14 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * redirect. Consistency across both routes for the same underlying
  * condition, not a new decision.
  *
- * **`DashboardSummaryHeader` renders above the ok/error branch**, using
- * only `DashboardViewModel`'s base fields (identity + freshness), which
- * — unlike the metrics/warnings below — do not depend on
- * `calculatePortfolioSummary` succeeding (see
+ * **`DashboardSummaryHeader` and `DataFreshnessSection` both render
+ * above the ok/error branch**, using only `DashboardViewModel`'s base
+ * fields (identity + freshness), which — unlike the metrics/warnings
+ * below — do not depend on `calculatePortfolioSummary` succeeding (see
  * `features/dashboard/types/viewModel.ts`'s own `DashboardViewModelBase`
  * comment). This means a calculation failure still shows which portfolio
- * and price data are active, not just an error message.
+ * and price data are active, not just an error message — arguably most
+ * useful exactly when the calculation has failed.
  *
  * **Every other section renders only in the `ok: true` branch** — all
  * need a successfully-computed `PortfolioSummary`, unlike the Summary
@@ -130,6 +145,8 @@ export default function DashboardPage() {
       ? buildDebtAndInterestPanel(record.portfolio, summary, viewModel.freshness.protocol)
       : null;
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
+  const dataFreshnessIndicators =
+    viewModel !== null ? buildDataFreshnessIndicators(viewModel.freshness) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,6 +172,9 @@ export default function DashboardPage() {
       ) : (
         <div key={activePortfolioId} className="flex flex-col gap-6">
           <DashboardSummaryHeader viewModel={viewModel} />
+          {dataFreshnessIndicators !== null && (
+            <DataFreshnessSection indicators={dataFreshnessIndicators} />
+          )}
 
           {viewModel.ok === false ? (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">

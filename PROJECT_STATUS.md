@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–6 (M5-001–M5-007, M5-009–M5-014) are synchronized to GitHub; Batch 7 (M5-015 — Recommendation Summary) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–7 (M5-001–M5-007, M5-009–M5-015) are synchronized to GitHub; Batch 8 (M5-017 — Data Freshness Indicators, resolving M5-018) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5172,6 +5172,120 @@ rather than silently dropped.
 
 ---
 
+### Batch 8 — Data Freshness (M5-017, resolving M5-018)
+
+Eighth Milestone 5 batch. `06_TASKS.md`'s coarse "IMPLEMENTATION ORDER"
+bucket list (Dashboard Foundation → Summary Header → KPI Metrics → Risk
+Sections → Portfolio Composition → Recommendations → Responsive and
+Accessible States → Testing) does not name M5-016 through M5-022
+individually, but the task-level dependency graph places them here:
+M5-023 (Responsive Layout) depends on "M5-006 through M5-021," so all of
+M5-016–M5-021 must complete first. Of that group, M5-017 (Data Freshness
+Indicators, P0, deps M3-007/M3-008/M5-004 — all already shipped) and its
+dependent M5-018 (Refresh Workflow, deps M5-017) form the only pair
+linked by a real production dependency rather than mere topical
+adjacency — the same "dependency, not just adjacency" standard Batch
+6 applied to M5-013/M5-014. M5-016 (Quick Actions) is independent and
+left for a later batch rather than bundled in for size alone.
+
+**M5-017 — `features/dashboard/components/DataFreshnessSection.tsx`**
+(+ `types/dataFreshnessIndicators.ts`, `utils/buildDataFreshnessIndicators.ts`):
+a new, dedicated freshness section rendered above the ok/error branch in
+`app/page.tsx` (alongside `DashboardSummaryHeader`), since freshness data
+is derived from `Portfolio` alone and stays available even when
+`calculatePortfolioSummary` fails — arguably most useful exactly then.
+Every field is read directly off `DashboardFreshness` (M5-003/M5-004,
+itself `normalizeMarketQuote`/`normalizeProtocolQuote`-derived, M3-007/M3-008)
+— no new Engine or Service call was needed, and none was added.
+
+- **"Source" / "Last updated time"**: `origin` and `formattedUpdatedAt`,
+  already present on `DashboardMarketFreshness`/`DashboardProtocolFreshness`
+  since Batch 2 — reshaped for display, not recomputed.
+- **"Fresh or stale classification" is market-only, by design.**
+  `services/protocol/quote.ts`'s own header comment (M3-008) already
+  establishes why: `04_BUILD_GUIDE.md` defines a concrete 5-minute
+  Fresh/Stale/Unavailable rule for prices specifically, with no
+  equivalent "PROTOCOL FRESHNESS" rule anywhere in the documentation.
+  Carrying that already-established finding forward here, not
+  re-litigating it as a new conflict — the protocol row renders no
+  freshness badge, and the component/type files say why.
+- **"Manual-data status"** — `isManual: boolean`, rendered as its own
+  "(manual entry)" callout distinct from the "source" label, since
+  M5-017's own Show list names it as a separate item.
+- **"Refresh status"** resolves to a fixed explanatory string
+  (`refreshNote`), not a transient loading state. `01_PRD.md` REQ-010
+  ("Version 0.1 uses Manual Mode") and `services/market/quote.ts`'s own
+  header comment (no `PriceProvider` adapter exists anywhere in this
+  codebase) already establish there is no live request/response cycle to
+  report a status for; `recomputeSummary` (the mechanism behind the
+  existing "Refresh" button, M4-017/M5-004) is a synchronous, in-memory
+  recalculation with no observable transient state — the same
+  "instant transition, not fabricated latency" reasoning `app/page.tsx`'s
+  own `loadStatus` comment already applies to `'loading'`.
+
+**Resolves M5-018 (Refresh Workflow) with no new code.** M5-018's own
+Workflow list splits cleanly: "Request new market data" / "Request
+updated protocol parameters" / "Validate responses" all require a live
+data provider, which does not exist in this Manual-Mode version — the
+same structural gap `refreshNote` above documents, not a new numbered
+conflict (it is the identical REQ-010/`PriceProvider` gap M5-004's own
+Batch 2 write-up already resolved for the "Refresh action" Include item).
+"Recalculate portfolio summary" and "Retain previous valid values if
+refresh fails" are already true today, for free: `recomputeSummary` only
+re-derives from the portfolio's already-validated, already-stored
+fields — it never fetches, so there is nothing external to fail and
+nothing valid to lose. M5-018's own DoD ("Refresh failures do not erase
+valid existing data") is satisfied structurally, not by new workflow
+code. `features/dashboard/index.ts`'s own header comment — which
+previously expected M5-018 to be the task that finally populated the
+empty `hooks/`/`services/` subdirectories — is updated to record this
+finding; those subdirectories remain empty.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/` empty
+— zero Engine/Store/type files touched. `git diff --stat -- services/`
+also empty — unlike every prior batch since Batch 4, this one needed no
+new Service and no barrel-export addition either, since
+`normalizeMarketQuote`/`normalizeProtocolQuote`'s output was already
+fully threaded through to `DashboardFreshness` by Batch 2.
+
+**Validation — Batch 8**
+
+| Command                      | Result                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                    |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                    |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                    |
+| `pnpm test` (Vitest)         | ✅ Pass, 1017/1017 (7 net new)                                                                                                             |
+| `pnpm test:coverage`         | ✅ 95.44% statements / 89.1% branches / 100% functions / 98.8% lines (project-wide) — consistent with Batch 7's 95.41%/88.87%/100%/98.79%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                 |
+| `pnpm build`                 | ✅ Pass — `/` grew from 5.66 kB to 6.1 kB (215 kB First Load JS)                                                                           |
+
+**Manual browser verification**: created a portfolio with manually-entered
+market/protocol data — confirmed the Data Freshness section renders both
+rows ("BTC Price:", "Protocol Parameters:"), the "Fresh" classification,
+the "(manual entry)" callout, and the Manual Mode refresh note on a
+production build. Created a second portfolio with zero collateral and
+nonzero debt (the same known Zod-valid-but-calculation-failing case
+M4-017 established) — confirmed the Dashboard's error branch still shows
+the Data Freshness section above the error message, per the DoD.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/`
+empty; `git diff --stat -- services/` empty. `buildDataFreshnessIndicators.ts`
+imports only from `../types/*` (Dashboard-local types) — no `@/services`
+or `@/engine` import at all, since every value it needs was already
+threaded through `DashboardFreshness` by Batch 2's own `buildDashboardViewModel`.
+
+**Traceability**: M5-017's Show list (Source, Last updated time,
+Fresh/stale classification, Manual-data status, Refresh status) is
+addressed field-by-field above, with the one documented, carried-forward
+scoping note (protocol freshness classification not invented) explained
+rather than silently dropped. M5-018's Workflow list and DoD are
+addressed by the "Resolves M5-018" paragraph above, with the two
+structurally-blocked steps and the two already-satisfied steps each
+named individually.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6203,10 +6317,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 7
-   (M5-015 — Recommendation Summary) before committing, per instruction.
-   Batches 1–6 (M5-001–M5-007, M5-009–M5-014) are synchronized to
-   GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 8
+   (M5-017 — Data Freshness Indicators, resolving M5-018) before
+   committing, per instruction. Batches 1–7 (M5-001–M5-007,
+   M5-009–M5-015) are synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6220,16 +6334,14 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–6
-   (M5-001–M5-007, M5-009–M5-014) are synchronized; Batch 7
-   (Recommendations part 2: M5-015) is implemented and awaiting
-   approval, per `06_TASKS.md`'s own "IMPLEMENTATION ORDER." **M5-008
-   remains wholly unbuilt**, still blocked on Conflict #1. M5-015's own
-   scoping review (overdue since Batch 6) is now resolved — see point 11
-   below. The remaining Milestone 5 tasks are M5-016 through M5-028
-   (Quick Actions, Data Freshness Indicators, Refresh Workflow,
-   Loading/Empty/Error states, Developer Mode, Responsive Layout,
-   Accessibility, and Testing) — not yet reviewed in detail.
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–7
+   (M5-001–M5-007, M5-009–M5-015) are synchronized; Batch 8 (Data
+   Freshness: M5-017, resolving M5-018) is implemented and awaiting
+   approval. **M5-008 remains wholly unbuilt**, still blocked on
+   Conflict #1. The remaining Milestone 5 tasks are M5-016 and
+   M5-019 through M5-028 (Quick Actions, Loading/Empty States, Error
+   Recovery, Developer Mode, Responsive Layout, Accessibility, and
+   Testing) — not yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6331,7 +6443,25 @@ Service already supports).
     followed `06_TASKS.md` as authoritative per established practice; the
     practical difference is softened since the scoped-down universe never
     exceeds 2 items anyway.
-12. **From Batch 8, still open**: conflict #28 — M4-013's Dependencies
+12. **Milestone 5 Batch 8 raised no new numbered conflict.** M5-017
+    (Data Freshness Indicators) needed no new Engine or Service call —
+    every field it displays was already threaded through
+    `DashboardFreshness` by Batch 2 (M5-004). Its "Fresh or stale
+    classification" Show item was scoped to market data only, carrying
+    forward `services/protocol/quote.ts`'s own already-established M3-008
+    finding that no "PROTOCOL FRESHNESS" rule is documented anywhere,
+    rather than inventing a staleness threshold for protocol parameters.
+    M5-018 (Refresh Workflow) was resolved with no new code: its
+    "Request new market data"/"Request updated protocol parameters"/
+    "Validate responses" steps require a live data provider that does not
+    exist in this Manual-Mode version (the same REQ-010/`PriceProvider`
+    gap Batch 2's own M5-004 write-up already resolved for the "Refresh
+    action" Include item, not a new conflict); its "Recalculate portfolio
+    summary"/"Retain previous valid values if refresh fails" steps were
+    already true for free, since `recomputeSummary` never fetches and so
+    cannot lose or overwrite valid data. See the Batch 8 write-up above
+    for the full field-by-field reasoning.
+13. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6339,7 +6469,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-13. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+14. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6350,44 +6480,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-14. **From Batch 6, still open**: conflict #27 — M4-012 never says
+15. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-15. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+16. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-16. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+17. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-17. **From Batch 3, still open — recurred in Batch 7 with the same
+18. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-18. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+19. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-19. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+20. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-20. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+21. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-21. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+22. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-22. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+23. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6400,13 +6530,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-23. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+24. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-24. **From Milestone 3/4, still open — final tally at Milestone 4's
+25. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

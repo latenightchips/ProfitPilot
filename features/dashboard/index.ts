@@ -7,10 +7,13 @@
  * directly.
  *
  * `hooks/` and `services/` remain empty (each holding only a
- * `.gitkeep`) until the Dashboard tasks that need them — M5-018 (Refresh
- * Workflow) — are actually implemented; the directory skeleton exists
- * now so that later batch only adds files, not restructures, mirroring
- * M1-003's own precedent for the top-level directory layout.
+ * `.gitkeep`) — **Batch 8 (M5-017) found no Dashboard task actually needs
+ * them**: M5-018 (Refresh Workflow), the task this comment previously
+ * expected to fill them, resolved to reusing the existing synchronous
+ * `recomputeSummary` Store action with no new hook or Service (see
+ * `types/dataFreshnessIndicators.ts`'s own header comment for why). The
+ * directories are kept for whichever later milestone task first needs
+ * them, per M1-003's own directory-skeleton precedent.
  * `components/` gained its first real file in Batch 2 (M5-004); Batch 3
  * (M5-005, M5-006) added the Shared KPI Card and Core KPI Grid; Batch 4
  * (M5-007, M5-009) added the Health Factor Status Component and
@@ -20,10 +23,12 @@
  * Batch 6 (M5-013, M5-014) added the Debt and Interest Panel and
  * Leverage Summary Section; Batch 7 (M5-015) added the Recommendation
  * Summary Section, completing the "Recommendations" Implementation
- * Order step.
+ * Order step; Batch 8 (M5-017) added the Data Freshness Indicators
+ * section, and resolved M5-018 with no new component.
  */
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSummaryHeader';
+export * from './components/DataFreshnessSection';
 export * from './components/DebtAndInterestPanel';
 export * from './components/HealthFactorStatusSection';
 export * from './components/KpiCard';
@@ -32,6 +37,7 @@ export * from './components/LiquidationRiskPanel';
 export * from './components/PortfolioCompositionSection';
 export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
+export * from './types/dataFreshnessIndicators';
 export * from './types/debtAndInterestPanel';
 export * from './types/healthFactorStatus';
 export * from './types/leverageSummary';
@@ -41,6 +47,7 @@ export * from './types/recommendationSummary';
 export * from './types/riskWarnings';
 export * from './types/viewModel';
 export * from './utils/buildDashboardViewModel';
+export * from './utils/buildDataFreshnessIndicators';
 export * from './utils/buildDebtAndInterestPanel';
 export * from './utils/buildHealthFactorStatus';
 export * from './utils/buildLeverageSummary';

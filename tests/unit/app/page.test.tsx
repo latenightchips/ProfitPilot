@@ -200,6 +200,32 @@ describe('DashboardPage — Leverage Summary Section (M5-014, Batch 6)', () => {
   });
 });
 
+describe('DashboardPage — Data Freshness Section (M5-017, Batch 8)', () => {
+  it('renders freshness indicators for both market price and protocol parameters', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Data Freshness')).toBeInTheDocument();
+    expect(screen.getByText('BTC Price:')).toBeInTheDocument();
+    expect(screen.getByText('Protocol Parameters:')).toBeInTheDocument();
+  });
+
+  it('still renders freshness indicators when the calculation fails', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Data Freshness')).toBeInTheDocument();
+  });
+});
+
 describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7)', () => {
   it('renders nothing when no target is configured', () => {
     const created = usePortfolioStore.getState().create(validInput());
