@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up) is synchronized to GitHub; Batch 1 (M4-001, M4-002, M4-003) is implemented and awaiting approval; M4-004 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 4 — Portfolio Management is in progress**: Batch 0 (standalone Conflict #20 follow-up) and Batch 1 (M4-001–M4-003) are synchronized to GitHub; Batch 2 (M4-004, M4-010, M4-016) is implemented and awaiting approval; M4-005 has not started. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2860,6 +2860,158 @@ documented rather than silently decided.
 
 ---
 
+### Batch 2 — Portfolio List Page + Active Portfolio Switching + Portfolio Empty States (M4-004, M4-010, M4-016)
+
+First batch to render real UI — everything built here is a thin,
+presentational layer over Batch 1's store/types; no new Service or
+Engine logic.
+
+**New finding — conflict #23: 03_UI.md's own page inventory has no
+"Portfolio List" page.** 03_UI.md's "APPLICATION STRUCTURE" states
+"ProfitPilot consists of six primary pages" (Dashboard, Portfolio,
+Simulation, Loop Builder, Exit Planner, Settings) and "NAVIGATION
+HIERARCHY" lists exactly those six, with no seventh page for browsing
+multiple portfolios. The existing `/portfolio` route (singular, M1) is
+already spoken for — 03_UI.md's own "PORTFOLIO PAGE" section describes
+it as a single-portfolio detail view ("Display complete asset
+information... Assets, Collateral, Debt, Exposure, Leverage, Interest...
+answers 'What do I own?'"), not a list. This is a genuine gap between
+03_UI.md's fixed single-portfolio-per-page mental model and Milestone
+4's explicit multi-portfolio requirement ("Version 1 must support
+multiple portfolios").
+
+**Resolution applied**: `app/portfolios/page.tsx` (plural — distinct
+from the existing singular `/portfolio`) hosts M4-004's List Page.
+**Not** added to `constants/navigation.ts`/the sidebar, since that would
+contradict 03_UI.md's explicit six-page/six-item structure. Instead
+reached from the portfolio switcher in `AppHeader` (M4-010) — 03_UI.md's
+own "TOP NAVIGATION" section names "Current Portfolio Name" as a Top Bar
+display element, so the switcher (and a "Manage/View portfolios" link to
+the List Page) lives exactly there, the one place 03_UI.md already
+allocates space for portfolio-identity UI in the shell. Action needed: a
+product/engineering decision on whether `/portfolios` should become an
+eighth navigable location (contradicting the "six primary pages"
+statement) or stay reachable only via the switcher, as built here.
+
+**M4-004 — `app/portfolios/page.tsx`**: Display list exactly per this
+task's own list (name, net equity, health factor, debt, last updated,
+storage status). "Create action" links to a new minimal scaffold route,
+`app/portfolios/new/page.tsx` — the same placeholder-route pattern
+Milestone 1 already established for every not-yet-built page; the real
+guided flow is M4-005's own, later, dedicated task, not started here.
+"Select action" calls `select(id)` then navigates to the existing
+`/portfolio` route (still M1's placeholder — filling in its real content
+is a separate, unassigned task, out of this batch's scope). "Loading
+state"/"Error state" are wired to the store's real `loadStatus`/`errors`
+fields.
+
+**M4-016 — empty states, folded into the same page** (M4-016 depends
+only on M4-004, and its 5 states are naturally page-level/row-level
+conditions on the same List Page, not a separate page):
+
+- **"No portfolios"** — fully realized: message + Create action, this
+  page's own real empty state.
+- **"No collateral" / "No debt"** — genuinely reachable, valid states
+  under Conflict A's single-position model (`quantity`/`balance` can be
+  exactly zero — M4-008 explicitly requires supporting zero-debt
+  portfolios). Shown as inline per-row badges.
+- **"Missing prices" / "Missing protocol parameters" — not reachable,
+  documented rather than built as dead UI.** `market`/`protocol` are
+  required, Zod-validated fields (M4-002); no code path today produces a
+  portfolio missing either. The one genuinely reachable per-row problem
+  state — a cached summary calculation failure
+  (`record.summary.ok === false`) — is shown generically instead of
+  guessing which of the two specific fields an `ApplicationError` code
+  might correspond to (no such mapping is defined anywhere).
+- **"Storage status"** displays the store's one _global_ `saveStatus`
+  (Batch 1) on every row — there is no per-portfolio persistence state
+  to differentiate yet (Conflict B). Honestly labeled, not fabricated
+  per-row.
+
+**M4-010 — `components/layout/AppHeader.tsx`** (now a Client Component):
+a native `<select>` bound to `activePortfolioId`, switching via the
+store's own `select` action. Per-Requirement:
+
+- **"Load calculated summary"** — already satisfied structurally:
+  `PortfolioRecord.summary` is cached at create/update time (Batch 1),
+  so switching never triggers a new calculation.
+- **"Update page context"** — satisfied by Zustand's own reactivity;
+  every component reading `usePortfolioStore` re-renders automatically,
+  no additional wiring needed.
+- **"Preserve unsaved changes safely" — N/A this batch, documented, not
+  invented.** No editable/draft portfolio state exists anywhere yet
+  (M4-006's form and M4-013's auto-save are later batches); there is
+  nothing to preserve. Revisit once one exists.
+- **"Retain selection after refresh" — not satisfiable this batch,
+  Conflict B.** The store is in-memory only; a refresh always loses the
+  selection along with every portfolio, exactly as already documented in
+  Batch 1.
+
+**Coverage config extended again**: added `app/portfolios/**` and
+`components/layout/AppHeader.tsx` specifically — **not** `app/**`/
+`components/**` wholesale, since those directories still contain
+untouched Milestone 1 placeholder pages/components
+(`AppShell.tsx`/`AppSidebar.tsx`/`PlaceholderPage.tsx`, every other
+`app/*/page.tsx`) that are not part of this batch's scope; including
+them would misrepresent pre-existing, intentionally-untested scaffolding
+as a coverage shortfall. Revisit as a directory-level include once more
+of `app/`/`components/` is actually built out.
+
+**Browser verification** (per the standing "test UI changes in a
+browser" instruction): started the dev server and drove it with
+Playwright/Chromium. Confirmed: the empty `/portfolios` state renders
+correctly (screenshot taken), the header shows "No portfolios yet —
+create one," clicking "Create Portfolio" navigates to `/portfolios/new`
+and shows the scaffold text, sidebar navigation still works, and there
+are zero browser console/page errors. The populated-list, switcher, and
+error-state paths were not driven through the real browser (no creation
+UI exists yet to organically populate one — that's M4-005) but are
+covered thoroughly by the Testing Library component tests, which
+exercise the exact same render logic via direct store manipulation.
+
+**Test files**: `tests/unit/app/portfolios/page.test.tsx` (10 tests —
+every Display field, both reachable empty-state badges, the error and
+loading branches, select→navigate, and sort order),
+`tests/unit/app/portfolios/new/page.test.tsx` (1 smoke test for the
+scaffold), `tests/unit/components/layout/AppHeader.test.tsx` (5 tests —
+empty/populated switcher states, the actual switch interaction, and the
+manage-portfolios link). `next/navigation`'s `useRouter` is mocked via
+`vi.mock`; `next/link` needed no mocking.
+
+**Scope discipline**: only M4-004, M4-010, and M4-016 were implemented.
+No M4-005/M4-006/M4-011/M4-012 work was started — `/portfolios/new` is a
+scaffold only, `/portfolio` remains M1's placeholder untouched.
+`engine/`, `services/`, `types/`, `stores/` are completely untouched
+(`git diff --stat -- engine/ services/ types/ stores/` empty) — zero
+regression risk to any earlier milestone or batch.
+
+**Validation — Batch 2**
+
+| Command              | Result                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass                                                                                                                                                                                       |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                       |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of one new test file)                                                                                                                                      |
+| `pnpm test`          | ✅ Pass, 776/776 (16 new)                                                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 94.84% statements / 90% branches / 100% functions / 98.4% lines (project-wide). `app/portfolios/page.tsx`: 96.42%/94.11%/100%/100%. `components/layout/AppHeader.tsx`: 100%/90%/100%/100%. |
+| `pnpm build`         | ✅ Pass — `/portfolios` and `/portfolios/new` both appear in the route manifest as static pages                                                                                               |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/
+stores/` empty (zero files touched in any prior-milestone layer). No
+Service file imports from `@/app` or `@/components` (UI → Services
+stays one-way). No `fetch`/`axios`/`XMLHttpRequest`/`process.env`/
+`infrastructure/` reference in any new file. `app/portfolios/page.tsx`
+and `AppHeader.tsx` import only from `@/stores/portfolioStore` and
+Next.js/React — the allowed UI → Store → Services direction.
+
+**Traceability**: M4-004's "Display"/"Include" lists, M4-010's
+"Requirements," and M4-016's 5 empty states are each addressed
+individually above, with every unreachable/unsatisfiable item (2 of
+M4-016's 5 states, 2 of M4-010's 4 Requirements) documented rather than
+faked.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -3578,6 +3730,36 @@ targets really do mirror the global defaults list 1:1, and (b) what
 
 ---
 
+### 23. 03_UI.md's own page inventory has no room for a "Portfolio List" page, but Milestone 4 requires multiple portfolios
+
+Found while implementing Milestone 4 Batch 2 (M4-004). 03_UI.md's
+"APPLICATION STRUCTURE" states plainly: "ProfitPilot consists of six
+primary pages" (Dashboard, Portfolio, Simulation, Loop Builder, Exit
+Planner, Settings), and "NAVIGATION HIERARCHY" lists exactly those six
+as the sidebar's contents. The existing `/portfolio` route is already
+spoken for by 03_UI.md's own "PORTFOLIO PAGE" section, a single-portfolio
+detail view ("Display complete asset information... answers 'What do I
+own?'"), not a browsing/list surface. Yet Milestone 4's own objective is
+explicit: "Version 1 must support multiple portfolios," and M4-004
+requires "Implement Portfolio List Page." 03_UI.md was seemingly written
+assuming one portfolio in view at a time — its Top Navigation section
+names "Current Portfolio Name" as a display element, implying a single
+active-portfolio mental model, not a multi-portfolio browsing UI.
+
+**Resolution applied**: `app/portfolios/page.tsx` (plural) hosts the
+List Page at its own route, but is **not** added to
+`constants/navigation.ts`/the sidebar — doing so would directly
+contradict "six primary pages." Instead it's reached via a switcher
+built into `AppHeader` (M4-010), the Top Navigation location 03_UI.md
+already names for portfolio-identity display. This keeps the sidebar's
+six items intact while still giving M4-004's DoD ("Users can identify
+and open any saved portfolio") a real, reachable page. Action needed: a
+product/engineering decision on whether `/portfolios` should ever become
+an eighth sidebar-navigable page (contradicting 03_UI.md's explicit page
+count) or remain switcher-only, as built here.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -3626,45 +3808,45 @@ targets really do mirror the global defaults list 1:1, and (b) what
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 4 Batch 1
-   (M4-001, M4-002, M4-003) before committing, per instruction. Do not
-   begin M4-004 until this is approved.
-3. **Milestone 4 plan approved**, with three conflict decisions locked
-   in and applied starting this batch:
-   - **Conflict A (positions)**: applied — `Portfolio`
-     (`types/portfolio.ts`) keeps the singular `collateral`/`debt`
-     objects `ApplicationPortfolio` already defines. No multi-position
-     support was invented.
-   - **Conflict B (persistence timing)**: applied — the M4-003 Portfolio
-     Store is in-memory only, no `persist` middleware. `loadStatus`/
-     `saveStatus`/`lastSynchronizedAt` exist per the task's own "State"
-     list but stay honestly degenerate (see "Milestone 4 progress" →
-     "Batch 1" above). M4-010's "retain selection after refresh" and
-     M4-013's real auto-save states remain unsatisfiable until Milestone
-     8 — documented, not papered over.
+2. **This pass stops here for approval** of Milestone 4 Batch 2
+   (M4-004, M4-010, M4-016) before committing, per instruction. Do not
+   begin M4-005 until this is approved.
+3. **Milestone 4 plan's three conflict decisions, status as of Batch
+   2**:
+   - **Conflict A (positions)**: applied since Batch 1, reaffirmed this
+     batch — the List Page's "No collateral"/"No debt" badges key off
+     the singular `quantity`/`balance` being exactly zero, not an array
+     length.
+   - **Conflict B (persistence timing)**: applied again this batch —
+     M4-010's "retain selection after refresh" and "preserve unsaved
+     changes safely" Requirements are documented as unsatisfiable/N-A
+     this batch rather than given an interim fix.
    - **Conflict C (M4-008 vs. conflict #20)**: resolved in Batch 0,
-     synchronized to GitHub. Batch 4 (M4-007/M4-008) can now proceed
-     without inheriting a known zero-debt failure.
-4. Once Batch 1 is approved and committed, the next batch is **Batch 2
-   (M4-004, M4-010, M4-016)** — Portfolio List Page, Active Portfolio
-   Switching, and Portfolio Empty States — per the approved plan's batch
-   order. This is the first batch that renders any real UI on top of
-   the Batch 1 store/types (`app/portfolio/page.tsx` is still M1's
-   placeholder today).
-5. **New from Batch 1**: "Settings" (conflict #22) — M4-001 names it as
-   a required field with no defined shape anywhere in the documentation.
-   Resolved conservatively (safety-targets-only, reusing the global
-   Settings page's field names) but flagged for a real decision before
-   M4-006 (Portfolio Details Form) needs to render it as editable
-   fields.
-6. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+     unaffected by this batch. The List Page's "No debt" badge and the
+     `summary.ok` check together confirm conflict #20's fix is reachable
+     end-to-end through real UI, not just Service-layer tests.
+4. Once Batch 2 is approved and committed, the next batch is **Batch 3
+   (M4-005, M4-006)** — Portfolio Creation Flow and Portfolio Details
+   Form — per the approved plan's batch order. This will replace
+   `app/portfolios/new/page.tsx`'s scaffold with the real guided flow.
+5. **New from Batch 2**: conflict #23 — 03_UI.md's own "six primary
+   pages" inventory has no room for a Portfolio List page. Resolved by
+   keeping `/portfolios` out of the sidebar, reachable only via the
+   `AppHeader` switcher — flagged for a real product decision on whether
+   it should ever become a navigable eighth page.
+6. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+   names it as a required field with no defined shape anywhere. Resolved
+   conservatively (safety-targets-only) but flagged for a real decision
+   before M4-006 (Portfolio Details Form, next batch) needs to render it
+   as editable fields — directly relevant to Batch 3's own scope.
+7. **Conflict #20 remains resolved** (Batch 0) — no longer an open
    item. See conflict #20's entry below for the full resolution.
-7. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
+8. **From Milestone 3 Batch 9**: M3-013's "persistence adapters" mention
    (conflict #21) has no persistence Service or task to attach to until
    Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
    Cloud Synchronization & Import/Export) is reached, not before. Directly
    relevant to Conflict B above: this is the same underlying gap.
-8. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+9. **Outstanding blockers/conflicts carried forward from Milestone 2**:
    F-026 (Health Factor status classification, conflict #1), compound
    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
    Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -3677,18 +3859,16 @@ targets really do mirror the global defaults list 1:1, and (b) what
    disagreement plus M2-030's 2 unmapped benchmark categories (conflict
    #16), and M2-031's undocumented public/internal split criteria
    (conflict #17). None of these blocked Milestone 2's own completion.
-9. **Revisited in Batch 7, confirmed still open at the specification
-   level but no longer blocking implementation**: swap-fees/slippage/
-   gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
-   mechanics (conflict #10), and F-040's exit-collateral-sale
-   discrepancy (conflict #13, a known, tested approximation).
-10. **From Milestone 3, still open**: "Source status"'s undefined
-    _generic_ value domain (conflict #18 — confirmed across three
-    Services now to be a genuinely per-Service, not generic, concept),
-    "Formula version" aggregation across a multi-Engine-call Service
-    (conflict #19 — a checked stopgap, reused by three Services, still
-    not a real resolution), and M3-013's persistence-adapter gap
-    (conflict #21 — see point 7 above), and "Settings"'s undefined shape
-    (conflict #22 — see point 5 above). Conflict #20 (resolved Batch 0)
-    is no longer counted. **21 open conflicts remain (22 total raised,
-    minus #20, resolved).**
+10. **Revisited in Batch 7, confirmed still open at the specification
+    level but no longer blocking implementation**: swap-fees/slippage/
+    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
+    mechanics (conflict #10), and F-040's exit-collateral-sale
+    discrepancy (conflict #13, a known, tested approximation).
+11. **From Milestone 3/4, still open**: "Source status"'s undefined
+    _generic_ value domain (conflict #18), "Formula version" aggregation
+    across a multi-Engine-call Service (conflict #19), M3-013's
+    persistence-adapter gap (conflict #21 — point 8 above), "Settings"'s
+    undefined shape (conflict #22 — point 6 above), and the Portfolio
+    List page's missing place in 03_UI.md's page inventory (conflict #23
+    — point 5 above). Conflict #20 (resolved Batch 0) is not counted.
+    **22 open conflicts remain (23 total raised, minus #20, resolved).**
