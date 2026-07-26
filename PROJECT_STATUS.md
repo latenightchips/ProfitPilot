@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-26
-Current milestone: **Milestone 3 — Core Services** (per `docs/06_TASKS.md`), Batch 8 complete (pending approval) — M3-001 through M3-012 all addressed. Only M3-013 (Service Dependency Injection) and M3-014 (Service Integration Tests) remain to close out Milestone 3. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 3 — Core Services is complete (pending final approval)** — all 14 tasks (M3-001 through M3-014) addressed, per `docs/06_TASKS.md`. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -2454,6 +2454,127 @@ Dependency Injection) and M3-014 (Service Integration Tests) remain,
 both cross-cutting tasks that operate on the now-complete Service set
 rather than adding a new Service of their own.
 
+### Batch 9 — Service Dependency Injection + Service Integration Tests (M3-013, M3-014) — FINAL MILESTONE 3 BATCH
+
+**Pre-implementation documentation review, as instructed.** Re-read both
+tasks' full text in `06_TASKS.md` before writing anything. M3-013's own
+text is unusually sparse — four one-line Goals and a one-line DoD, no
+interface shapes, no code examples — and its **Dependencies field lists
+only M3-007 and M3-008**, not M3-005 or any other Service. Read as
+scoping evidence: this task formalizes dependency injection specifically
+for the two "provider-shaped" Services (Market Data, Protocol Parameter,
+the ones that stand in for external data sources), not a sweeping DI
+container across the whole Service layer.
+
+**Finding: M3-013's Definition of Done ("Service tests can run using
+in-memory dependencies") is already satisfied by the existing
+architecture, verified rather than assumed.** Every Service built since
+M3-004 has consistently followed one rule, reinforced explicitly in
+every batch's own write-up: never fabricate what a Service doesn't own —
+accept it as an explicit, typed function parameter instead
+(`sourceStatus`, `RawPriceCandidate[]`, `RawProtocolCandidate[]`,
+`RecommendationRuleConfig`, etc.). This **is** dependency injection in
+its simplest form — the dependency is received, never fetched — and
+every existing Service test already exercises it using plain in-memory
+object literals, no mocking library anywhere in the codebase. No new
+production code was needed to make this true; it was already true by
+construction. What M3-013 needed was verification, not invention:
+
+- **"Avoid hardcoded infrastructure"**: formalized the recurring manual
+  grep audit every batch since M3-005 has performed by hand (checking
+  `services/` for `fetch(`/`axios`/`XMLHttpRequest`/`process.env`/
+  `infrastructure/` references) into a permanent, automated test in
+  `tests/unit/services/serviceFoundation.test.ts` — mechanically proving
+  the Goal on every future run instead of re-checking it by hand each
+  batch.
+- **"Improve testability" / DoD ("in-memory dependencies")**: a new
+  `tests/unit/services/dependencyInjection.test.ts` exercises
+  `normalizeMarketQuote` and `normalizeProtocolQuote` (M3-013's own
+  listed Dependencies) using only plain in-memory object literals.
+- **"Enable provider replacement"**: the same test file demonstrates
+  this concretely — swapping which `origin` supplies the winning
+  candidate changes each Service's output predictably, without either
+  Service knowing or caring where the data actually came from.
+- **"Support manual and cloud modes"**: "manual" mode is already a
+  first-class, tested `origin` value on both Services (not a special
+  code path); "cloud modes" (Supabase sync, etc.) genuinely has no
+  implementation to inject yet — see the new conflict below.
+
+**New finding, documented as conflict #21 rather than guessed at**:
+M3-013's Description also says Services should receive "**persistence**
+adapters" through typed dependencies — but no persistence Service or
+task exists anywhere in Milestone 3 (`services/persistence/` is still
+its M3-001 placeholder), and persistence/cloud sync is explicitly a
+**Milestone 8** concern (`06_TASKS.md`'s own milestone overview:
+"Milestone 8 — Persistence, Authentication, Cloud Synchronization &
+Import/Export"). There is nothing to formally inject a persistence
+adapter _into_ yet. Per instruction, this was documented rather than
+guessed at — no speculative persistence-adapter interface was invented
+to fill the gap.
+
+**M3-014 (Service Integration Tests)** was directly, concretely
+implementable with no specification conflicts. `06_TASKS.md`'s own
+8-item "Cover" list maps one-to-one onto a new
+`tests/integration/services/coreWorkflows.test.ts` (a new top-level test
+category, alongside the existing `tests/unit/`, `tests/e2e/`, and
+`tests/performance/` split) — one `describe` block per Cover item, each
+chaining real Services together starting from raw `PersistencePortfolio`
+data (M3-004 → M3-005/M3-007/M3-009/M3-010/M3-011/M3-012), the same
+boundary-to-result path the application will actually exercise, rather
+than re-testing each Service in isolation (already covered by every
+prior batch's own unit tests).
+
+| Task                                          | Status  | Notes                                                                                                                                                                        |
+| --------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M3-013 Implement Service Dependency Injection | ✅ Done | DoD already satisfied by existing architecture; verified with two new tests rather than new production code. Conflict #21 (persistence adapters) documented, not guessed at. |
+| M3-014 Create Service Integration Tests       | ✅ Done | `tests/integration/services/coreWorkflows.test.ts` — 9 tests across the 8 documented Cover items, chaining M3-004 mapping into each downstream Service.                      |
+
+**DoD ("Core workflows pass without external network calls") is
+satisfied structurally**, not by mocking or intercepting anything — no
+file anywhere in `services/` or `engine/` performs network I/O (the same
+fact `serviceFoundation.test.ts`'s new M3-013 check now proves
+mechanically), so there is no network call for these tests to avoid
+making.
+
+**One correction found while writing the "Invalid portfolio" integration
+test**: initially assumed `maxLoanToValue` was used somewhere in
+`calculatePortfolioSummary`'s computation chain; re-reading `summary.ts`
+showed it is not (only `liquidationThreshold` and `borrowApr` are
+consumed from `protocol` by that function — `maxLoanToValue` has no
+consumer anywhere in the Portfolio Summary Service). The test was
+corrected to use an out-of-range `liquidationThreshold` instead, which
+does genuinely propagate to a Health Factor failure.
+
+**Dependency-direction and architecture audit**: this batch made **no
+production code changes** to `services/` or `engine/` — confirmed by
+`git status`, not assumed. All new/changed files are test-only
+(`tests/unit/services/serviceFoundation.test.ts`,
+`tests/unit/services/dependencyInjection.test.ts`,
+`tests/integration/services/coreWorkflows.test.ts`). Re-verified no
+`react`/`next`/`@/components` imports anywhere under `services/`.
+
+**Traceability audit (pre-commit)**: `tests/integration/services/coreWorkflows.test.ts`'s
+8 `describe` blocks are named and ordered to match `06_TASKS.md` M3-014's
+own "Cover" list verbatim, making the mapping from documentation to test
+mechanical to verify. Every Service and Formula ID exercised was already
+implemented and traced in an earlier Milestone 3 batch — this batch
+introduces no new Formula ID or Service.
+
+**Validation — Batch 9 (Milestone 3) — FINAL MILESTONE 3 VALIDATION**
+
+| Command              | Result                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`     | ✅ Pass (after correcting two `MarketQuote` discriminated-union narrowing mistakes in the integration test — narrowed on `available`, which is `ProtocolQuote`'s field, not `MarketQuote`'s `freshness`)                                      |
+| `pnpm lint`          | ✅ Pass                                                                                                                                                                                                                                       |
+| `pnpm format:check`  | ✅ Pass (after Prettier formatting of `serviceFoundation.test.ts`)                                                                                                                                                                            |
+| `pnpm test`          | ✅ Pass, 714/714 (26 new)                                                                                                                                                                                                                     |
+| `pnpm test:coverage` | ✅ 95.08% statements / 90.34% branches / 100% functions / 98.92% lines — `services/portfolio/summary.ts`'s branch coverage improved slightly (65% → 70%) as a side effect of the integration test's out-of-range-`liquidationThreshold` case. |
+| `pnpm build`         | ✅ Pass                                                                                                                                                                                                                                       |
+
+No Milestone 2 code (`engine/`, its tests, or its fixtures) was modified
+by this batch. **Milestone 3 — Core Services is now complete**: all 14
+tasks (M3-001 through M3-014) addressed.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -3099,6 +3220,36 @@ Planning-adjacent or Portfolio Summary-adjacent work.
 
 ---
 
+### 21. M3-013 asks Services to receive "persistence adapters" through typed dependencies, but no persistence Service or task exists anywhere in Milestone 3
+
+Found while implementing Milestone 3 Batch 9 (M3-013). M3-013's own
+Description reads: "Allow Services to receive providers **and
+persistence adapters** through typed dependencies." `services/persistence/`
+is still its M3-001 placeholder (`export {};`) — no task in Milestone 3
+implements a Persistence Service, and persistence/cloud sync is
+explicitly scoped to a later milestone (`06_TASKS.md`'s own milestone
+overview: "Milestone 8 — Persistence, Authentication, Cloud
+Synchronization & Import/Export"). There is no persistence adapter
+anywhere in the codebase for a Service to receive as a typed dependency
+today.
+
+**Resolution applied**: none — no speculative `PersistenceAdapter`
+interface was invented to fill the gap, since 06_TASKS.md gives no shape
+for one and Milestone 8 is where that shape would actually be defined
+against a real persistence mechanism (local storage vs. Supabase, per
+`04_BUILD_GUIDE.md`'s "MANUAL MODE" / "VERSION 1 INTEGRATIONS" sections).
+M3-013's other stated Goals (testability, avoiding hardcoded
+infrastructure, provider replacement) were verified against the two
+Services M3-013 actually lists as Dependencies (M3-007, M3-008), both of
+which already satisfy them structurally — see Batch 9's write-up. Action
+needed: either `06_TASKS.md` clarifies that M3-013's "persistence
+adapters" mention is forward-looking (to be revisited once Milestone 8
+defines a real persistence layer), or a future task should formally
+introduce a `PersistenceAdapter` interface at the point Milestone 8
+actually builds one.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -3147,35 +3298,34 @@ Planning-adjacent or Portfolio Summary-adjacent work.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 3 Batch 8 (M3-008)
-   before committing, per instruction.
-3. Once approved and committed, **all ten Service-implementation tasks
-   (M3-001–M3-012) are complete**. Two cross-cutting tasks remain to
-   close out Milestone 3:
-   - **M3-013 (Service Dependency Injection)** — now unblocked (depends
-     on M3-007 + M3-008, both done). "Allow Services to receive
-     providers and persistence adapters through typed dependencies."
-     Given the `infrastructure/` layer finding from Batches 5 and 8
-     (no provider adapters exist or are assigned anywhere in
-     `06_TASKS.md`), re-read this task's own text carefully at the
-     start of that batch before assuming its scope — it may itself be
-     the task that formally introduces the provider-interface
-     abstraction `04_BUILD_GUIDE.md` describes, or it may (like
-     M3-007/M3-008) turn out to be narrower than it first appears.
-   - **M3-014 (Service Integration Tests)** — depends on "M3-005
-     through M3-012" as one range, now fully satisfied. "Test Service
-     and Engine workflows together," covering valid/invalid portfolios,
-     manual/stale market data, simulation comparison, unsafe loop
-     strategy, infeasible exit target, and recommendation generation.
-   - **Conflict #20's escalated severity** (full exits currently fail
-     in `planExit`) remains the highest-priority open architectural
-     item, independent of M3-013/M3-014's own scope — worth a dedicated
-     decision on whether to make `PortfolioLiquidationSummary`'s
-     `price`/`buffer` nullable in `services/portfolio/summary.ts`
-     (M3-005), and how that ripples into M3-006/M3-009's existing
-     consumption of `PortfolioSummary`. Per instruction, not folded into
-     M3-013/M3-014 or any other batch — its own dedicated follow-up.
-4. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+2. **This pass stops here for approval** of Milestone 3 Batch 9 (M3-013,
+   M3-014) before committing, per instruction. **Milestone 3 — Core
+   Services is complete pending this approval**: all 14 tasks
+   (M3-001–M3-014) addressed.
+3. Once approved and committed, the next milestone is **Milestone 4 —
+   Portfolio Management** (`06_TASKS.md`): implementing the complete
+   portfolio-management experience (create, view, edit, duplicate,
+   switch, archive, delete portfolios; multiple portfolios supported).
+   Before starting: re-read Milestone 4's own task list fresh, the same
+   "verify before assuming scope" discipline used throughout Milestone
+   3 — Milestone 4 is the first milestone to build real UI/application
+   state on top of the now-complete Service layer, a different kind of
+   work than anything built so far.
+4. **Highest-priority open architectural item, independent of any
+   specific milestone's scope**: conflict #20's escalated severity
+   (`planExit` currently fails for every full exit) — worth a dedicated
+   decision on whether to make `PortfolioLiquidationSummary`'s
+   `price`/`buffer` nullable in `services/portfolio/summary.ts`
+   (M3-005), and how that ripples into M3-006/M3-009's existing
+   consumption of `PortfolioSummary`. Per repeated instruction, never
+   folded into an unrelated batch — treat as its own dedicated
+   follow-up whenever it is picked up, likely before or during Milestone
+   4/5 UI work that will actually need to render exit plans.
+5. **New from Batch 9**: M3-013's "persistence adapters" mention
+   (conflict #21) has no persistence Service or task to attach to until
+   Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
+   Cloud Synchronization & Import/Export) is reached, not before.
+6. **Outstanding blockers/conflicts carried forward from Milestone 2**:
    F-026 (Health Factor status classification, conflict #1), compound
    interest / M2-013–M2-014 (conflict #7), the partially-unassigned
    Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -3188,21 +3338,17 @@ Planning-adjacent or Portfolio Summary-adjacent work.
    disagreement plus M2-030's 2 unmapped benchmark categories (conflict
    #16), and M2-031's undocumented public/internal split criteria
    (conflict #17). None of these blocked Milestone 2's own completion.
-5. **Revisited in Batch 7, confirmed still open at the specification
+7. **Revisited in Batch 7, confirmed still open at the specification
    level but no longer blocking implementation**: swap-fees/slippage/
    gas-estimate (conflict #8), "Target cash proceeds"'s ambiguous
    mechanics (conflict #10), and F-040's exit-collateral-sale
    discrepancy (conflict #13, a known, tested approximation).
-6. **From Milestone 3 Batches 2–8, still open**: "Source status"'s
-   undefined _generic_ value domain (conflict #18 — now confirmed by a
-   third Service, M3-008, to be a genuinely per-Service, not generic,
-   concept — still open at the generic level), "Formula version"
-   aggregation across a multi-Engine-call Service (conflict #19 — a
-   checked stopgap, reused by three Services now, still not a real
-   resolution), and **`calculatePortfolioSummary`'s inability to
-   summarize a zero-debt portfolio (conflict #20 — see point 3 above;
-   the highest-priority open item)**.
-7. **The `infrastructure/` layer gap** (Batches 5 and 8) is now
-   confirmed across both Market Data and Protocol Parameter Services —
-   worth keeping in mind for M3-013, which may be the task that
-   actually needs to address it.
+8. **From Milestone 3, still open**: "Source status"'s undefined
+   _generic_ value domain (conflict #18 — confirmed across three
+   Services now to be a genuinely per-Service, not generic, concept),
+   "Formula version" aggregation across a multi-Engine-call Service
+   (conflict #19 — a checked stopgap, reused by three Services, still
+   not a real resolution), `calculatePortfolioSummary`'s inability to
+   summarize a zero-debt portfolio (conflict #20 — see point 4 above),
+   and M3-013's persistence-adapter gap (conflict #21 — see point 5
+   above). **21 total open conflicts carried into Milestone 4.**

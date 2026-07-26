@@ -77,3 +77,35 @@ describe('Service Foundation (M3-001)', () => {
     expect(offendingFiles, 'these Service files import React/Next.js/UI components').toEqual([]);
   });
 });
+
+/**
+ * Hardcoded-infrastructure check — 06_TASKS.md M3-013 ("Implement
+ * Service Dependency Injection"), Goal "Avoid hardcoded infrastructure."
+ *
+ * Every batch from M3-005 onward manually grepped `services/` for
+ * `fetch(`/`axios`/`XMLHttpRequest`/`process.env`/`infrastructure` as
+ * part of its own architecture audit (see PROJECT_STATUS.md's Batch 5
+ * and Batch 8 write-ups on the unassigned `infrastructure/` layer).
+ * This formalizes that recurring manual check into a permanent,
+ * automated regression test rather than repeating it by hand every
+ * batch — mechanically proving the Goal, not just asserting it in prose,
+ * the same "prove the DoD" pattern this file's own M3-001 checks use.
+ */
+describe('No hardcoded infrastructure under services/ (M3-013)', () => {
+  it('no file under services/ calls fetch, axios, or XMLHttpRequest, or reads process.env, or references an infrastructure/ import path', () => {
+    const forbiddenPattern =
+      /(\bfetch\s*\(|\baxios\b|\bXMLHttpRequest\b|process\.env|from\s+['"][^'"]*\/infrastructure\/)/;
+    const offendingFiles: string[] = [];
+
+    for (const file of collectTsFiles(servicesDir)) {
+      const content = readFileSync(file, 'utf-8');
+      // Doc comments in services/market/quote.ts, services/protocol/quote.ts,
+      // etc. discuss these terms in prose while explaining what was
+      // deliberately not built; only flag matches outside comment blocks.
+      const withoutComments = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      if (forbiddenPattern.test(withoutComments)) offendingFiles.push(file);
+    }
+
+    expect(offendingFiles, 'these Service files reference hardcoded infrastructure').toEqual([]);
+  });
+});
