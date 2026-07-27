@@ -11,6 +11,7 @@ import {
   buildLeverageSummary,
   buildLiquidationRiskPanel,
   buildPortfolioComposition,
+  buildQuickActions,
   buildRecommendationSummary,
   buildRiskWarnings,
   DashboardErrorBanner,
@@ -24,6 +25,7 @@ import {
   LiquidationRiskPanel,
   NoDebtNotice,
   PortfolioCompositionSection,
+  QuickActionsSection,
   RecommendationSummarySection,
   RiskWarningBanner,
 } from '@/features/dashboard';
@@ -72,13 +74,22 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * for the full cross-document reasoning (Retry, Export recovery copy,
  * Error Identifier, and why "Use last valid data" is already structurally
  * satisfied, mirroring M4-017's own finding for the Portfolio page).
+ * `QuickActionsSection` (M5-016, Batch 11) renders in the shared base
+ * section, above the ok/error branch — "Edit portfolio"/"Update prices"
+ * stay reachable during a calculation failure (arguably most useful
+ * exactly then, the same reasoning already applied to the Summary Header
+ * and Data Freshness section), while "Export portfolio" is gated on
+ * `viewModel.ok` since it exports the *calculated* metrics — see
+ * `features/dashboard/types/quickActions.ts` for the full reasoning,
+ * including why "Run simulation"/"Build loop strategy"/"Create exit
+ * plan" are marked unavailable rather than linked through as if
+ * functional.
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Dashboard Quick Actions (M5-016) and Developer Mode
- * (M5-022) remain later, separate, dependency-gated tasks — not built
- * here.
+ * carried over. Developer Mode (M5-022) remains a later, separate,
+ * dependency-gated task — not built here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -104,18 +115,21 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * redirect. Consistency across both routes for the same underlying
  * condition, not a new decision.
  *
- * **`DashboardSummaryHeader` and `DataFreshnessSection` both render
- * above the ok/error branch**, using only `DashboardViewModel`'s base
- * fields (identity + freshness), which — unlike the metrics/warnings
- * below — do not depend on `calculatePortfolioSummary` succeeding (see
+ * **`DashboardSummaryHeader`, `DataFreshnessSection`, and
+ * `QuickActionsSection` all render above the ok/error branch**, using
+ * only `DashboardViewModel`'s base fields (identity + freshness) plus
+ * `viewModel.ok` itself for `QuickActionsSection`'s own export gating —
+ * none of the three require a successfully-computed `PortfolioSummary`
+ * to render *something* useful (see
  * `features/dashboard/types/viewModel.ts`'s own `DashboardViewModelBase`
  * comment). This means a calculation failure still shows which portfolio
- * and price data are active, not just an error message — arguably most
- * useful exactly when the calculation has failed.
+ * and price data are active, and still lets the user navigate to fix the
+ * problem — arguably most useful exactly when the calculation has
+ * failed.
  *
  * **Every other section renders only in the `ok: true` branch** — all
- * need a successfully-computed `PortfolioSummary`, unlike the Summary
- * Header above them.
+ * need a successfully-computed `PortfolioSummary`, unlike the three
+ * sections above them.
  *
  * **Error state**: `buildDashboardViewModel` can return `{ ok: false }`
  * (`calculatePortfolioSummary` genuinely fails for certain Zod-valid
@@ -164,6 +178,7 @@ export default function DashboardPage() {
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
   const dataFreshnessIndicators =
     viewModel !== null ? buildDataFreshnessIndicators(viewModel.freshness) : null;
+  const quickActions = viewModel !== null ? buildQuickActions(viewModel.ok) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -187,6 +202,15 @@ export default function DashboardPage() {
           <DashboardSummaryHeader viewModel={viewModel} />
           {dataFreshnessIndicators !== null && (
             <DataFreshnessSection indicators={dataFreshnessIndicators} />
+          )}
+          {quickActions !== null && (
+            <QuickActionsSection
+              actions={quickActions}
+              portfolioId={activePortfolioId}
+              portfolioName={viewModel.portfolioName}
+              calculationTimestamp={viewModel.ok ? viewModel.calculationTimestamp : ''}
+              metrics={viewModel.ok ? viewModel.metrics : null}
+            />
           )}
 
           {viewModel.ok === false ? (

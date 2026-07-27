@@ -285,6 +285,38 @@ describe('DashboardPage — Data Freshness Section (M5-017, Batch 8)', () => {
   });
 });
 
+describe('DashboardPage — Quick Actions Section (M5-016, Batch 11)', () => {
+  it('renders available and unavailable actions, and export links, for a healthy portfolio', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Quick Actions')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit portfolio' })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
+    expect(screen.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export portfolio (JSON)' })).toBeInTheDocument();
+  });
+
+  it('still renders Quick Actions, with Export disabled, when the calculation fails', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Quick Actions')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit portfolio' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export portfolio' })).toBeDisabled();
+  });
+});
+
 describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7; empty state Batch 9)', () => {
   it('explains the empty state when no target is configured, per M5-020', () => {
     const created = usePortfolioStore.getState().create(validInput());

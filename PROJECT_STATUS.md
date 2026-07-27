@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–9 (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020) are synchronized to GitHub; Batch 10 (M5-021 — Dashboard Error Recovery) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–10 (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020, M5-021) are synchronized to GitHub; Batch 11 (M5-016 — Dashboard Quick Actions) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5552,6 +5552,122 @@ alone would have missed — mirroring M4-017's own investigation depth.
 
 ---
 
+### Batch 11 — Dashboard Quick Actions (M5-016)
+
+Eleventh Milestone 5 batch. Scoped to M5-016 alone, deferring M5-022
+(Developer Mode) to its own future batch: M5-022 is a materially larger,
+cross-cutting task (wiring diagnostic details into most existing
+Dashboard sections, plus a Developer Mode toggle that does not exist
+anywhere in this codebase yet), and M5-016 itself grew into a
+substantial batch on its own once its "Export portfolio" Action item
+was cross-referenced against 03_UI.md's fuller "EXPORT OPTIONS" section
+(see below) — the same "don't bundle two tasks that each need real
+investigation" reasoning Batch 9/10 already used to keep M5-021 separate.
+
+**Cross-referenced 03_UI.md's own Dashboard "PAGE ACTIONS" and "EXPORT
+OPTIONS" sections**, not just `06_TASKS.md`'s short Action list:
+"PAGE ACTIONS" confirms M5-016's own 6-item list is the authoritative,
+more-granular version of 03_UI.md's 5-item one (splitting "Refresh
+Portfolio" into "Edit portfolio" + "Update prices," both real
+destinations on the same `/portfolio` page). "EXPORT OPTIONS" is the
+real find: "Users may export Portfolio Summary as CSV, JSON [PDF is an
+explicit Future Version item]. Exports include calculation timestamps."
+This is concrete, documented, buildable scope for "Export portfolio,"
+not an invitation to reuse M4-017's narrower recovery-copy export.
+
+**M5-016 — `features/dashboard/components/QuickActionsSection.tsx`**
+(+ `types/quickActions.ts`, `utils/buildQuickActions.ts`), rendered in
+the shared base section of `app/page.tsx` (alongside
+`DashboardSummaryHeader`/`DataFreshnessSection`), so "Edit
+portfolio"/"Update prices" stay reachable during a calculation failure —
+arguably most useful exactly then, the same reasoning already applied to
+the two sections above it:
+
+- **"Edit portfolio" / "Update prices"** — both real, always-available
+  links to `/portfolio`, regardless of calculation success.
+- **"Run simulation" / "Build loop strategy" / "Create exit plan" —
+  marked unavailable, not linked through as if functional.**
+  `/simulation`, `/loop-builder`, `/exit-planner` are still Milestone 1
+  `PlaceholderPage` scaffolds, whose own text already states
+  "Functionality is implemented in a later milestone" — Milestones 6/7
+  have not been reached. This task's own Requirement ("Unavailable
+  actions should explain why") gives an explicit basis for this, more
+  cautious than the sidebar's own pre-existing (M1-scaffold, pre-dating
+  this Requirement) unconditional links to the same routes. Disabled
+  buttons carry the reason as both visible text and a `title` tooltip.
+- **"Export portfolio" is the one action whose availability genuinely
+  reflects current portfolio state** (this task's own Requirement),
+  gated on `viewModel.ok` rather than feature existence — it exports the
+  _calculated_ `DashboardMetrics`, which only exist after a successful
+  calculation. When calculation has failed, this action is disabled with
+  a reason pointing to `DashboardErrorBanner`'s own "Download recovery
+  copy" (the equivalent raw-data-only case), rather than duplicating it
+  with a smaller payload.
+
+**Portfolio Summary export — `features/dashboard/utils/exportPortfolioSummary.ts`**
+(new): JSON and CSV downloads of the already-calculated `DashboardMetrics`
+(the same 10 values already shown in `DashboardKpiGrid`/`LiquidationRiskPanel`),
+plus portfolio name and calculation timestamp ("Exports include
+calculation timestamps," 03_UI.md). Deliberately **not** a duplicate of
+M4-017's `downloadPortfolioRecoveryCopy`: that export is raw _entered_
+data for the failure case; this one is calculated _output_ data for the
+success case — reusing its shape here would either fabricate calculated
+fields that do not exist, or silently drop the timestamp requirement.
+`schemaVersion` reuses `PORTFOLIO_RECOVERY_SCHEMA_VERSION` (the same
+app-wide Version 0.1 tag `01_PRD.md`'s "BACKUP & RECOVERY" section
+requires on every export). PDF is **not built** — 03_UI.md itself lists
+it under "Future Version," not Version 0.1. Raw (unformatted) numeric
+export is **not built** either: `04_BUILD_GUIDE.md`'s own "IMPORT /
+EXPORT DIRECTORY" describes a separate, unassigned `services/export/`
+Service (a machine-reimportable schema) that no task assigns building —
+this stays a human-readable snapshot of already-formatted display
+values, the same "view layer, not a calculator" boundary every other
+Dashboard export/format module in this codebase observes.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/
+services/` empty — zero Engine/Store/type/Service files touched. Every
+exported value is already-formatted `DashboardMetric.formattedValue`
+output from `buildDashboardViewModel` (M5-003); no new calculation.
+
+**Validation — Batch 11**
+
+| Command                      | Result                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                      |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                      |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                      |
+| `pnpm test` (Vitest)         | ✅ Pass, 1038/1038 (11 net new)                                                                                                              |
+| `pnpm test:coverage`         | ✅ 95.55% statements / 89.22% branches / 100% functions / 98.83% lines (project-wide) — consistent with Batch 10's 95.48%/89.2%/100%/98.81%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 12/12 (unchanged)                                                                                                                   |
+| `pnpm build`                 | ✅ Pass — `/` grew from 6.89 kB to 8.04 kB (217 kB First Load JS)                                                                            |
+
+**Manual browser verification**: created a normal portfolio with
+protocol parameters filled in through the real Creation Flow — confirmed
+Quick Actions renders all 6 actions (3 real links, 3 disabled with a
+"not yet available" tooltip), and that both "Export portfolio (JSON)"
+and "Export portfolio (CSV)" buttons click without any console or page
+error. Separately (via the same session's earlier calculation-failure
+fixture from Batch 10's own re-verification) confirmed the single,
+disabled "Export portfolio" button renders correctly when
+`viewModel.ok` is `false`, with its own distinct reason tooltip.
+Screenshot captured for the success case.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/
+services/` empty. `QuickActionsSection.tsx` and
+`exportPortfolioSummary.ts` both import only from within
+`features/dashboard/` (or `next/link`, or `@/utils/portfolioRecoveryExport`
+for the shared schema-version constant) — no `@/services` or `@/engine`
+import in either.
+
+**Traceability**: M5-016's Description, all 6 Action items, both
+Requirements, and its DoD are addressed individually above. 03_UI.md's
+own "EXPORT OPTIONS" section (CSV, JSON, calculation timestamps) is
+addressed field-by-field, with the one deliberately-deferred item (PDF,
+explicitly a documented "Future Version" item) named rather than
+silently dropped.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6583,10 +6699,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 10
-   (M5-021 — Dashboard Error Recovery) before committing, per
-   instruction. Batches 1–9 (M5-001–M5-007, M5-009–M5-015, M5-017,
-   M5-019, M5-020) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 11
+   (M5-016 — Dashboard Quick Actions) before committing, per
+   instruction. Batches 1–10 (M5-001–M5-007, M5-009–M5-015, M5-017,
+   M5-019, M5-020, M5-021) are synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6600,14 +6716,13 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–9
-   (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020) are
-   synchronized; Batch 10 (Dashboard Error Recovery: M5-021) is
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–10
+   (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020, M5-021) are
+   synchronized; Batch 11 (Dashboard Quick Actions: M5-016) is
    implemented and awaiting approval. **M5-008 remains wholly unbuilt**,
    still blocked on Conflict #1. The remaining Milestone 5 tasks are
-   M5-016, M5-022, and M5-023 through M5-028 (Quick Actions, Developer
-   Mode, Responsive Layout, Accessibility, and Testing) — not yet
-   reviewed in detail.
+   M5-022, and M5-023 through M5-028 (Developer Mode, Responsive Layout,
+   Accessibility, and Testing) — not yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6760,7 +6875,23 @@ Service already supports).
     (validate-before-mutate already guarantees this) rather than
     re-deriving it or inventing a new summary cache. See the Batch 10
     write-up above for the full reasoning.
-15. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+15. **Milestone 5 Batch 11 raised no new numbered conflict.** M5-016's
+    "Export portfolio" Action item was cross-referenced against
+    03_UI.md's own "EXPORT OPTIONS" section (CSV, JSON, calculation
+    timestamps — PDF explicitly deferred as "Future Version") rather
+    than assumed to be satisfied by reusing M4-017's narrower
+    recovery-copy export, which is scoped to raw entered data for
+    failure cases specifically, not calculated output. A new,
+    deliberately separate `exportPortfolioSummary.ts` module was added
+    for this real, documented, distinct requirement. "Run
+    simulation"/"Build loop strategy"/"Create exit plan" were marked
+    unavailable (not linked through) since Milestones 6/7 have not been
+    reached — the placeholder pages' own text already says so, and this
+    task's own "Unavailable actions should explain why" Requirement
+    gives explicit grounds for it, more cautious than the sidebar's own
+    pre-existing (M1-scaffold) links to the same routes. See the Batch
+    11 write-up above for the full reasoning.
+16. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6768,7 +6899,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-16. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+17. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6779,44 +6910,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-17. **From Batch 6, still open**: conflict #27 — M4-012 never says
+18. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-18. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+19. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-19. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+20. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-20. **From Batch 3, still open — recurred in Batch 7 with the same
+21. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-21. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+22. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-22. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+23. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-23. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+24. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-24. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+25. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-25. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+26. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6829,13 +6960,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-26. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+27. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-27. **From Milestone 3/4, still open — final tally at Milestone 4's
+28. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

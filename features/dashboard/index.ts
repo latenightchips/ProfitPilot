@@ -28,7 +28,8 @@
  * M5-020) added the Dashboard Skeleton and the No-Debt Notice, and
  * extended the Recommendation Summary Section with empty-state messaging;
  * Batch 10 (M5-021) added the Dashboard Error Banner, replacing the
- * previous inline error `<div>`.
+ * previous inline error `<div>`; Batch 11 (M5-016) added the Quick
+ * Actions Section and the Portfolio Summary export (JSON/CSV).
  */
 export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
@@ -42,6 +43,7 @@ export * from './components/LeverageSummarySection';
 export * from './components/LiquidationRiskPanel';
 export * from './components/NoDebtNotice';
 export * from './components/PortfolioCompositionSection';
+export * from './components/QuickActionsSection';
 export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
 export * from './types/dataFreshnessIndicators';
@@ -50,6 +52,7 @@ export * from './types/healthFactorStatus';
 export * from './types/leverageSummary';
 export * from './types/liquidationRiskPanel';
 export * from './types/portfolioComposition';
+export * from './types/quickActions';
 export * from './types/recommendationSummary';
 export * from './types/riskWarnings';
 export * from './types/viewModel';
@@ -60,6 +63,8 @@ export * from './utils/buildHealthFactorStatus';
 export * from './utils/buildLeverageSummary';
 export * from './utils/buildLiquidationRiskPanel';
 export * from './utils/buildPortfolioComposition';
+export * from './utils/buildQuickActions';
 export * from './utils/buildRecommendationSummary';
 export * from './utils/buildRiskWarnings';
+export * from './utils/exportPortfolioSummary';
 export * from './utils/format';
