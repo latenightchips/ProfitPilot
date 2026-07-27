@@ -12,6 +12,7 @@ import { useSimulationStore } from '@/stores/simulationStore';
 const INITIAL_STATE = {
   currentScenario: null,
   currentResult: null,
+  portfolioActionPreview: null,
   savedScenarios: [],
   comparisonSelection: [],
   status: 'idle' as const,
@@ -56,6 +57,7 @@ describe('useSimulationStore — initial state', () => {
     const state = useSimulationStore.getState();
     expect(state.currentScenario).toBeNull();
     expect(state.currentResult).toBeNull();
+    expect(state.portfolioActionPreview).toBeNull();
     expect(state.savedScenarios).toEqual([]);
     expect(state.comparisonSelection).toEqual([]);
     expect(state.status).toBe('idle');
@@ -122,6 +124,48 @@ describe('useSimulationStore — runSimulation', () => {
   });
 });
 
+describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
+  it('populates portfolioActionPreview from the real Portfolio Action Simulation Service on success', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 1, debtDelta: 10000 });
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    expect(state.errors).toEqual([]);
+    expect(state.portfolioActionPreview).not.toBeNull();
+    // 3 BTC * $50,000 = $150,000 collateral; $20,000 + $10,000 = $30,000 debt.
+    expect(state.portfolioActionPreview?.after.collateralValue).toBe(150000);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
+    expect(state.portfolioActionPreview?.before.collateralValue).toBe(100000);
+  });
+
+  it('sets status to error and clears portfolioActionPreview when the underlying calculation fails', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: -5, debtDelta: 0 });
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.portfolioActionPreview).toBeNull();
+  });
+
+  it('does not touch currentScenario or currentResult, which belong to price/interest scenarios', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 1, debtDelta: 0 });
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual(PRICE_SCENARIO);
+    expect(state.currentResult?.scenario.equity).toBe(100000);
+    expect(state.portfolioActionPreview).not.toBeNull();
+  });
+});
+
 describe('useSimulationStore — saveCurrentScenario', () => {
   it('returns null and saves nothing when there is no current result yet', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
@@ -185,6 +229,9 @@ describe('useSimulationStore — reset', () => {
     useSimulationStore.getState().runSimulation(validPortfolio());
     useSimulationStore.getState().saveCurrentScenario();
     useSimulationStore.getState().setPreviewMode(true);
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 1, debtDelta: 0 });
 
     useSimulationStore.getState().reset();
 

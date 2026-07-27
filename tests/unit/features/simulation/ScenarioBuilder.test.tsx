@@ -26,6 +26,7 @@ beforeEach(() => {
   useSimulationStore.setState({
     currentScenario: null,
     currentResult: null,
+    portfolioActionPreview: null,
     savedScenarios: [],
     comparisonSelection: [],
     status: 'idle',
@@ -143,6 +144,64 @@ describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
     // BTC price $50,000 * 1.1 = $55,000; 2 BTC * $55,000 - $20,000 debt = $90,000.
     expect(state.currentResult?.scenario.equity).toBe(90000);
     expect(screen.getByLabelText('Percentage Change (0–1)')).toHaveValue(0.1);
+  });
+});
+
+describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 5)', () => {
+  it('updates portfolioActionPreview on a valid Collateral Change', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
+    await user.clear(collateralInput);
+    await user.type(collateralInput, '2');
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    // 2 BTC + 2 BTC = 4 BTC * $50,000 = $200,000.
+    expect(state.portfolioActionPreview?.after.collateralValue).toBe(200000);
+    expect(state.portfolioActionPreview?.before.collateralValue).toBe(100000);
+  });
+
+  it('updates portfolioActionPreview on a valid Debt Change', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const debtInput = screen.getByLabelText('Debt Change (USD)');
+    await user.clear(debtInput);
+    await user.type(debtInput, '10000');
+
+    const state = useSimulationStore.getState();
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
+  });
+
+  it('applies both deltas together for a combined action', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
+    await user.clear(collateralInput);
+    await user.type(collateralInput, '1');
+
+    const debtInput = screen.getByLabelText('Debt Change (USD)');
+    await user.clear(debtInput);
+    await user.type(debtInput, '10000');
+
+    const state = useSimulationStore.getState();
+    // 3 BTC * $50,000 = $150,000; $20,000 + $10,000 = $30,000.
+    expect(state.portfolioActionPreview?.after.collateralValue).toBe(150000);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
+  });
+
+  it('shows an inline error and does not update portfolioActionPreview on an over-withdrawal', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
+    await user.clear(collateralInput);
+    await user.type(collateralInput, '-5');
+
+    expect(useSimulationStore.getState().portfolioActionPreview).toBeNull();
   });
 });
 

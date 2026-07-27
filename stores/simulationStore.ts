@@ -3,6 +3,9 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
+  type PortfolioActionPreview,
+  type PortfolioActionSimulationInput,
+  simulatePortfolioAction,
   simulateScenario,
   type SimulationResult,
   type SimulationScenario,
@@ -56,6 +59,16 @@ import {
  * own header comment already established for `ApplicationPortfolio` vs.
  * M4-001. `saveCurrentScenario` below returns the new record's `id`;
  * M6-015's own later UI is what will let a user attach a name.
+ *
+ * **`portfolioActionPreview` (M6-008, Batch 5)**: a second, independent
+ * result field alongside `currentResult` — `PortfolioActionPreview`
+ * (`{ before, after }` `PortfolioSummary` objects, from
+ * `services/simulation/portfolioAction.ts`) is a structurally different
+ * shape from `SimulationResult` (`{ baseline, scenario, comparison,
+ * assumptions }`, from price/interest scenarios), so it is not forced
+ * into the same field. `runPortfolioActionSimulation` shares the same
+ * `status`/`errors` fields as `runSimulation` — both represent "is a
+ * calculation currently in flight or failed," regardless of which kind.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -69,6 +82,7 @@ export interface SavedSimulation {
 export interface SimulationStoreState {
   currentScenario: SimulationScenario | null;
   currentResult: SimulationResult | null;
+  portfolioActionPreview: PortfolioActionPreview | null;
   savedScenarios: SavedSimulation[];
   comparisonSelection: string[];
   status: SimulationStatus;
@@ -79,6 +93,10 @@ export interface SimulationStoreState {
 export interface SimulationStoreActions {
   setCurrentScenario: (scenario: SimulationScenario | null) => void;
   runSimulation: (portfolio: ApplicationPortfolio) => void;
+  runPortfolioActionSimulation: (
+    portfolio: ApplicationPortfolio,
+    input: PortfolioActionSimulationInput,
+  ) => void;
   saveCurrentScenario: () => string | null;
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
@@ -91,6 +109,7 @@ const SOURCE_STATUS = 'manual';
 const INITIAL_STATE: SimulationStoreState = {
   currentScenario: null,
   currentResult: null,
+  portfolioActionPreview: null,
   savedScenarios: [],
   comparisonSelection: [],
   status: 'idle',
@@ -125,6 +144,19 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       }
 
       set({ status: 'idle', errors: [], currentResult: result.data });
+    },
+
+    runPortfolioActionSimulation: (portfolio, input) => {
+      set({ status: 'calculating' });
+
+      const result = simulatePortfolioAction(portfolio, input, SOURCE_STATUS);
+
+      if (!result.ok) {
+        set({ status: 'error', errors: result.errors, portfolioActionPreview: null });
+        return;
+      }
+
+      set({ status: 'idle', errors: [], portfolioActionPreview: result.data });
     },
 
     saveCurrentScenario: () => {

@@ -39,14 +39,26 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * define custom scenarios") describes the two free-form inputs
  * themselves, as opposed to the fixed presets, not a new input type.
  *
- * **Only the two price-scenario fields (BTC Price, Percentage Change)
- * are wired to a real calculation.** The other four (Borrow rate,
- * Collateral delta, Debt delta, Target Health Factor) and Time horizon
- * belong to their own later, dedicated tasks (M6-006, M6-008, M6-007
- * respectively; Target Health Factor has no later task naming it as an
- * input anywhere, a genuine specification gap — see
- * `../types/scenarioBuilder.ts`'s own header comment). Wiring them here
- * would be pre-empting those tasks' own scope.
+ * **Price-scenario fields (BTC Price, Percentage Change) and the
+ * Collateral/Debt Change fields (M6-008, Batch 5) are wired to real
+ * calculations; the rest are not.** Borrow rate, Target Health Factor,
+ * and Time horizon belong to their own later, dedicated tasks (M6-006,
+ * no later task, M6-007 respectively; Target Health Factor has no later
+ * task naming it as an input anywhere, a genuine specification gap —
+ * see `../types/scenarioBuilder.ts`'s own header comment). Wiring them
+ * here would be pre-empting those tasks' own scope.
+ *
+ * **Collateral Change / Debt Change call `runPortfolioActionSimulation`
+ * (M6-008, `services/simulation/portfolioAction.ts`), a separate Store
+ * action and result field from the price-scenario `runSimulation`/
+ * `currentResult` pair** — a portfolio action ("Add collateral,"
+ * "Withdraw collateral," "Borrow," "Repay," "Combined actions") is a
+ * structurally different calculation from a price/interest scenario,
+ * so it does not share `currentScenario`/`currentResult`. Each field
+ * change re-sends BOTH deltas together (not just the one that changed),
+ * since the Service call is a single snapshot of "collateral delta +
+ * debt delta applied together" — this is what naturally satisfies
+ * "Combined actions" without a separate action-type input.
  *
  * **No Engine access from this component** — `04_BUILD_GUIDE.md`'s own
  * "DEPENDENCY RULES": "Only services communicate directly with the
@@ -91,6 +103,9 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
   );
   const setCurrentScenario = useSimulationStore((state) => state.setCurrentScenario);
   const runSimulation = useSimulationStore((state) => state.runSimulation);
+  const runPortfolioActionSimulation = useSimulationStore(
+    (state) => state.runPortfolioActionSimulation,
+  );
   const resetSimulation = useSimulationStore((state) => state.reset);
 
   const errors = validateScenarioBuilderInput(values, portfolio);
@@ -121,6 +136,16 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
         priceScenario: { type: 'percentageChange', percentageChange },
       });
       runSimulation(portfolio);
+      return;
+    }
+
+    if (field === 'collateralDelta' || field === 'debtDelta') {
+      const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
+      if (nextErrors.collateralDelta !== null || nextErrors.debtDelta !== null) return;
+      runPortfolioActionSimulation(portfolio, {
+        collateralDelta: Number(nextValues.collateralDelta),
+        debtDelta: Number(nextValues.debtDelta),
+      });
     }
   }
 

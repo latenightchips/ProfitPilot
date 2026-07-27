@@ -194,7 +194,7 @@ test('Cover: Navigate to Simulation Workspace (M5-027)', async ({ page }) => {
     .getByRole('navigation', { name: 'Primary' })
     .getByRole('link', { name: 'Simulation' })
     .click();
-  await expect(page.getByRole('heading', { name: 'Simulation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Simulation', exact: true })).toBeVisible();
 });
 
 test('Cover: Navigate to Exit Planner (M5-027)', async ({ page }) => {
