@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildDashboardViewModel, DashboardSummaryHeader } from '@/features/dashboard';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -121,5 +121,36 @@ describe('DashboardSummaryHeader — actions (M5-004)', () => {
     render(<DashboardSummaryHeader viewModel={viewModel} />);
 
     expect(screen.queryByLabelText('Active portfolio')).not.toBeInTheDocument();
+  });
+});
+
+describe('DashboardSummaryHeader — stale market data (M5-025, Batch 15)', () => {
+  it('appends ", stale" once the price is older than the 5-minute freshness threshold', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.now() + 6 * 60 * 1000));
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+
+    render(<DashboardSummaryHeader viewModel={viewModel} />);
+
+    expect(screen.getByText(/BTC \$50,000\.00 \(manual, stale\)/)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+});
+
+describe('DashboardSummaryHeader — long values (M5-025, Batch 15)', () => {
+  it('renders a long portfolio name in full, not truncated or hidden', () => {
+    const longName = 'A'.repeat(200);
+    const created = usePortfolioStore.getState().create(validInput({ name: longName }));
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+
+    render(<DashboardSummaryHeader viewModel={viewModel} />);
+
+    expect(screen.getByText(longName)).toBeInTheDocument();
   });
 });

@@ -88,3 +88,28 @@ describe('HealthFactorStatusSection — Risk classification is not rendered (Con
     }
   });
 });
+
+describe('HealthFactorStatusSection — zero debt (M5-025, Batch 15)', () => {
+  it('renders the Infinity Health Factor as "∞", not NaN or a crash', () => {
+    const status = buildStatus({ debt: { asset: 'USDC', balance: 0 } });
+    expect(status.currentHealthFactor).toBe(Infinity);
+
+    render(<HealthFactorStatusSection status={status} />);
+
+    expect(screen.getByText('Current Health Factor')).toBeInTheDocument();
+    expect(screen.getByText('∞')).toBeInTheDocument();
+  });
+});
+
+describe('HealthFactorStatusSection — critical (near-liquidation) Health Factor (M5-025, Batch 15)', () => {
+  it('renders a real Health Factor just above 1.0 without clamping, rounding to 1, or crashing', () => {
+    // 2 BTC * $50,000 * 0.8 liquidation threshold / $79,000 debt ≈ 1.0127 — deliberately close to the liquidation boundary (1.0).
+    const status = buildStatus({ debt: { asset: 'USDC', balance: 79000 } });
+    expect(status.currentHealthFactor).toBeGreaterThan(1);
+    expect(status.currentHealthFactor).toBeLessThan(1.1);
+
+    render(<HealthFactorStatusSection status={status} />);
+
+    expect(screen.getByText(status.formattedCurrentHealthFactor)).toBeInTheDocument();
+  });
+});

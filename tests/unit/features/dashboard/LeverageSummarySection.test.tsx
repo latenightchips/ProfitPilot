@@ -61,3 +61,25 @@ describe('LeverageSummarySection — Debt-to-equity ratio is not rendered (M2-00
     expect(screen.queryByText(/[Dd]ebt.to.equity/)).not.toBeInTheDocument();
   });
 });
+
+describe('LeverageSummarySection — zero debt (M5-025, Batch 15)', () => {
+  it('renders an exact 1.00x leverage ratio and the "not leveraged" explanation, not a division-by-zero artifact', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    if (!record.summary.ok) throw new Error('expected a successful summary');
+    const summary = buildLeverageSummary(record.summary.data);
+
+    render(<LeverageSummarySection summary={summary} />);
+
+    expect(record.summary.data.leverage).toBe(1);
+    expect(screen.getByText(summary.formattedLeverageRatio)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This portfolio is not leveraged — your net equity equals your total Bitcoin exposure.',
+      ),
+    ).toBeInTheDocument();
+  });
+});

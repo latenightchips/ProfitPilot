@@ -44,3 +44,17 @@ describe('DataFreshnessSection — nothing available', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('DataFreshnessSection — stale market data (M5-025, Batch 15)', () => {
+  it('renders the "Stale" classification for the BTC Price row', () => {
+    render(
+      <DataFreshnessSection
+        indicators={{
+          ...INDICATORS,
+          market: { ...INDICATORS.market!, freshnessLabel: 'Stale' },
+        }}
+      />,
+    );
+    expect(screen.getByText(/Stale/)).toBeInTheDocument();
+  });
+});

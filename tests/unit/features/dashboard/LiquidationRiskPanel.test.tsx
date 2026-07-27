@@ -94,6 +94,33 @@ describe('LiquidationRiskPanel — assumptions disclosure', () => {
   });
 });
 
+describe('LiquidationRiskPanel — zero debt (M5-025, Batch 15)', () => {
+  it('marks all three calculated estimates unavailable, not a crash or a fabricated number', () => {
+    const panel = buildPanel({ debt: { asset: 'USDC', balance: 0 } });
+
+    render(<LiquidationRiskPanel panel={panel} />);
+
+    expect(panel.estimatedLiquidationPrice.status).toBe('unavailable');
+    expect(panel.liquidationDistance.status).toBe('unavailable');
+    expect(panel.percentageDeclineToLiquidation.status).toBe('unavailable');
+    expect(screen.getAllByText('N/A (no debt)').length).toBe(3);
+    expect(screen.getAllByText('Unavailable').length).toBe(3);
+  });
+});
+
+describe('LiquidationRiskPanel — critical (near-liquidation) Health Factor (M5-025, Batch 15)', () => {
+  it('renders real, small estimates as the position approaches liquidation, not "unavailable"', () => {
+    // Same near-liquidation fixture as HealthFactorStatusSection's own critical-HF test.
+    const panel = buildPanel({ debt: { asset: 'USDC', balance: 79000 } });
+
+    render(<LiquidationRiskPanel panel={panel} />);
+
+    expect(panel.estimatedLiquidationPrice.status).toBe('ok');
+    expect(panel.percentageDeclineToLiquidation.status).toBe('ok');
+    expect(screen.getByText(panel.estimatedLiquidationPrice.formattedValue)).toBeInTheDocument();
+  });
+});
+
 describe('LiquidationRiskPanel — Developer Mode (M5-022, Batch 14)', () => {
   it('shows no developer details by default', () => {
     render(<LiquidationRiskPanel panel={buildPanel()} />);

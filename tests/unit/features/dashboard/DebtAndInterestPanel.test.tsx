@@ -78,3 +78,25 @@ describe('DebtAndInterestPanel — Projected debt is not rendered (Conflict #7)'
     expect(screen.queryByText(/[Pp]rojected/)).not.toBeInTheDocument();
   });
 });
+
+describe('DebtAndInterestPanel — zero debt (M5-025, Batch 15)', () => {
+  it('renders every debt and interest figure as exactly $0.00, not N/A or NaN', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    if (!record.summary.ok) throw new Error('expected a successful summary');
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+    if (!viewModel.ok) throw new Error('expected a successful view model');
+    const panel = buildDebtAndInterestPanel(
+      record.portfolio,
+      record.summary.data,
+      viewModel.freshness.protocol,
+    );
+
+    render(<DebtAndInterestPanel panel={panel} />);
+
+    expect(screen.getAllByText('$0.00').length).toBe(4);
+  });
+});

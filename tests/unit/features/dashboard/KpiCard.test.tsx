@@ -92,6 +92,14 @@ describe('KpiCard — loading state', () => {
   });
 });
 
+describe('KpiCard — long values (M5-025, Batch 15)', () => {
+  it('renders a long formatted primary value in full, not truncated or hidden', () => {
+    const longValue = '$123,456,789,012,345.67';
+    render(<KpiCard title="Net Portfolio Value" primaryValue={longValue} />);
+    expect(screen.getByText(longValue)).toBeInTheDocument();
+  });
+});
+
 describe('KpiCard — Developer Mode details', () => {
   it('renders the slot only when a caller supplies content (no Developer Mode toggle exists yet)', () => {
     render(<KpiCard title="Health Factor" primaryValue="4" />);

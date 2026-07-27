@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–13 (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized to GitHub; Batch 14 (M5-022 — Dashboard Developer Mode) is implemented and awaiting approval, completing every Milestone 5 "feature" task ahead of its own Testing phase (M5-025–M5-028). M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–14 (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized to GitHub, completing every Milestone 5 "feature" task; Batch 15 (M5-025 — Dashboard Component Tests, the first of the Testing phase M5-025–M5-028) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -6091,6 +6091,110 @@ addressed individually above.
 
 ---
 
+### Batch 15 — M5-025 (Create Dashboard Component Tests)
+
+**Dependencies satisfied**: M5-006 through M5-022 are all synchronized
+to GitHub as of Batch 14, unblocking this task — the last
+`Dependencies` entry (M5-022) was itself the previous batch.
+
+**This batch found no missing component and added zero production
+code.** Every one of the 15 Dashboard components already had its own
+dedicated test file, built incrementally alongside its component
+across Batches 1–14 (`ls features/dashboard/components/` and
+`ls tests/unit/features/dashboard/` are 1:1). The real work this task's
+own text calls for is checking each component's tests against the 8
+named `Cover` items and closing genuine gaps — an audit task, the same
+shape as Batch 13's (M5-024) own accessibility pass, not a build task.
+
+**Audited each of the 8 `Cover` items individually against the existing
+suite, rather than assuming "components have tests" already satisfies
+the task:**
+
+- **Normal values** — already satisfied everywhere; every existing
+  `describe` block's base case is a normal-value fixture.
+- **Zero debt** — partially satisfied (`DashboardKpiGrid`'s
+  "N/A (no debt)" test, `NoDebtNotice`). **Closed this batch** in the 4
+  components that had no zero-debt test of their own:
+  `HealthFactorStatusSection` (Health Factor is exactly `Infinity` at
+  zero debt — `formatHealthFactor`'s own header comment already
+  documents `Intl.NumberFormat` rendering this as "∞" natively — a real
+  behavior, now verified, not assumed), `LiquidationRiskPanel` (all
+  three calculated estimates render `Unavailable`/"N/A (no debt)"),
+  `DebtAndInterestPanel` (all four money figures render exactly
+  `$0.00`, not `NaN` or a dash), `LeverageSummarySection` (leverage is
+  exactly `1`, not `Infinity` — `buildLeverageSummary.ts`'s own header
+  comment already explains why: `calculatePortfolioSummary` fails the
+  whole summary on `DIVISION_BY_ZERO` before leverage could ever be
+  non-finite — now verified with a real zero-debt fixture instead of
+  only asserted in a comment).
+- **Missing data** — already fully audited in Batch 9 (M5-020): every
+  reachable missing-data case (`DashboardErrorBanner`'s calculation
+  failure, the zero-debt-driven `unavailable` KPIs) already has a
+  test; collateral/price/protocol-missing states remain confirmed
+  structurally unreachable via required Zod fields. No new gap found.
+- **Warning states** — already satisfied (`RiskWarningBanner`'s
+  `role="alert"` and multiple-simultaneous-warnings tests, `KpiCard`'s
+  `status="warning"` test). No new gap found.
+- **Critical Health Factor** — genuine gap, **closed this batch**.
+  Added a shared near-liquidation fixture (2 BTC × $50,000 × 0.8
+  liquidation threshold ÷ $79,000 debt ≈ 1.0127 — deliberately just
+  above the 1.0 liquidation boundary) to `HealthFactorStatusSection`
+  and `LiquidationRiskPanel`, asserting the real computed value renders
+  without clamping, rounding to a whole number, or crashing. No risk-band
+  label is asserted or invented — Conflict #1 still blocks that; this
+  only verifies numeric behavior at an extreme value.
+- **Stale data** — genuine gap, **closed this batch**. `'Stale'` is a
+  real, reachable `freshnessLabel` value (`services/market/quote.ts`'s
+  own 5-minute `FRESHNESS_THRESHOLD_MINUTES`), but no component test
+  had ever driven it. `DataFreshnessSection` now covers a `Stale`
+  `freshnessLabel` directly. `DashboardSummaryHeader` now covers it
+  through a real fixture, not a synthetic one: `vi.useFakeTimers()` /
+  `vi.setSystemTime()` advances 6 minutes past the portfolio's real
+  `marketUpdatedAt`, then calls `buildDashboardViewModel` again (which
+  computes market freshness fresh, at call time, via
+  `normalizeMarketQuote`'s own `now` parameter) — confirming the
+  ", stale" suffix this component's own JSX already renders.
+- **Developer Mode** — already satisfied (`DashboardKpiGrid`,
+  `LiquidationRiskPanel`, `KpiCard`, `DeveloperModeToggle`, all from
+  Batch 14 / M5-022). No new gap found.
+- **Long values** — genuine gap, **closed this batch**. `KpiCard` now
+  covers a long formatted primary value (a 24-character currency
+  string) rendering in full. `DashboardSummaryHeader` now covers a
+  200-character portfolio name rendering in full — confirmed against
+  `types/portfolio.schema.ts`'s own `name: z.string().min(1, ...)`,
+  which has no maximum length, so a long name is a real, reachable
+  input, not a fabricated edge case.
+
+**Zero production code changed** — this batch is the cleanest possible
+scope for its own task: `git diff --stat -- engine/ services/ types/
+stores/ features/dashboard/components/ features/dashboard/utils/
+app/` is empty. Only 7 test files were touched, all under
+`tests/unit/features/dashboard/`.
+
+**Validation — Batch 15**
+
+| Command                      | Result                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                         |
+| `pnpm lint`                  | ✅ Pass                                                                                                                         |
+| `pnpm format:check`          | ✅ Pass                                                                                                                         |
+| `pnpm test` (Vitest)         | ✅ Pass, 1070/1070 (10 net new)                                                                                                 |
+| `pnpm test:coverage`         | ✅ 95.58% statements / 89.41% branches / 100% functions / 98.84% lines (project-wide) — consistent with Batch 14's own numbers. |
+| `pnpm build`                 | ✅ Pass — `/` unchanged at 8.45 kB (no production code touched)                                                                 |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 24/24 (unchanged — M5-027 is the dedicated, later E2E task, not this one)                                              |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/
+stores/` empty; `git status --porcelain` shows exactly 7 modified test
+files and no new or deleted files.
+
+**Traceability**: M5-025's Description ("Test individual Dashboard
+components") and all 8 `Cover` items are each addressed individually
+above; its DoD ("All critical display states have automated tests")
+is satisfied — every named critical display state now has at least one
+real, fixture-driven component test, not a placeholder.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -7122,9 +7226,9 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 14
-   (M5-022 — Dashboard Developer Mode) before committing, per
-   instruction. Batches 1–13 (M5-001–M5-007, M5-009–M5-024, excluding
+2. **This pass stops here for approval** of Milestone 5 Batch 15
+   (M5-025 — Dashboard Component Tests) before committing, per
+   instruction. Batches 1–14 (M5-001–M5-007, M5-009–M5-024, excluding
    M5-008) are synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
@@ -7139,14 +7243,14 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–13
-   (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized;
-   Batch 14 (Dashboard Developer Mode: M5-022) is implemented and
-   awaiting approval — the last Milestone 5 "feature" task. **M5-008
-   remains wholly unbuilt**, still blocked on Conflict #1. The remaining
-   Milestone 5 tasks are M5-025 through M5-028 (Component Tests,
-   Integration Tests, End-to-End Tests, and final UI Spec Validation) —
-   not yet reviewed in detail.
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–14
+   (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized,
+   completing every Milestone 5 "feature" task. Batch 15 (Dashboard
+   Component Tests: M5-025), the first of the Testing phase, is
+   implemented and awaiting approval. **M5-008 remains wholly
+   unbuilt**, still blocked on Conflict #1. The remaining Milestone 5
+   tasks are M5-026 through M5-028 (Integration Tests, End-to-End
+   Tests, and final UI Spec Validation) — not yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -7378,7 +7482,22 @@ Service already supports).
     already-visible information from normal users would contradict this
     task's own DoD. See the Batch 14 write-up above for the full
     reasoning.
-19. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+19. **Milestone 5 Batch 15 raised no new numbered conflict.** M5-025
+    ("Create Dashboard Component Tests") turned out to be an audit task,
+    not a build task — every one of the 15 Dashboard components already
+    had its own test file from incremental development across Batches
+    1–14. Checked each of the task's 8 named `Cover` items individually
+    against the existing suite (the same discipline Batch 14 applied to
+    M5-022's 7 "Display where appropriate" items): 4 were already
+    satisfied (Normal values, Missing data, Warning states, Developer
+    Mode); 4 had genuine gaps, closed this batch (Zero debt in 4 more
+    components beyond the 2 already covered; Critical Health Factor, via
+    a shared near-liquidation fixture; Stale data, via a real
+    `vi.useFakeTimers()` fixture rather than a synthetic prop; Long
+    values, a 200-character portfolio name and a 24-character formatted
+    KPI value). Zero production code changed — only 7 test files. See
+    the Batch 15 write-up above for the full reasoning.
+20. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -7386,7 +7505,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-20. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+21. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -7397,44 +7516,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-21. **From Batch 6, still open**: conflict #27 — M4-012 never says
+22. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-22. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+23. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-23. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+24. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-24. **From Batch 3, still open — recurred in Batch 7 with the same
+25. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-25. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+26. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-26. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+27. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-27. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+28. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-28. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+29. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-29. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+30. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -7447,13 +7566,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-30. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+31. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-31. **From Milestone 3/4, still open — final tally at Milestone 4's
+32. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-
