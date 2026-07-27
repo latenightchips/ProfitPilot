@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–16 (M5-001–M5-007, M5-009–M5-026, excluding M5-008) are synchronized to GitHub, completing every Milestone 5 "feature" task plus Component and Integration Tests; Batch 17 (M5-027 — Dashboard End-to-End Tests) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard's task list is complete pending final approval**: Batches 1–17 (M5-001–M5-007, M5-009–M5-027, excluding M5-008) are synchronized to GitHub; Batch 18 (M5-028 — Validate Dashboard Against UI Specification, the final Milestone 5 task) is implemented and awaiting approval, closing M5-001 through M5-028. M5-008 remains wholly blocked on Conflict #1. Batch 18 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -6398,6 +6398,155 @@ parametrized test, not asserted without evidence.
 
 ---
 
+### Batch 18 — M5-028 (Validate Dashboard Against UI Specification) — final Milestone 5 task
+
+**Dependencies satisfied**: M5-027 is synchronized to GitHub as of
+Batch 17. This is the last Milestone 5 task per `06_TASKS.md`.
+
+**Read `03_UI.md` in full for the first time at this granularity** —
+not just the sections already individually cited across 17 prior
+batches (ACCESSIBILITY, ERROR HANDLING, DEVELOPER MODE, EXPORT
+OPTIONS, MOBILE NAVIGATION), but the entire document, page by page,
+since this task's own Description is explicitly "a final implementation
+audit against `03_UI.md`," not against any one section of it.
+
+**Found the largest single gap in this engagement: `03_UI.md`'s own
+Page 3 ("Dashboard") describes an entirely different, never-built
+Dashboard design** — see Conflict #30 above for the full comparison
+table and reasoning. In short: Page 3's own Section 1–7 mockup
+(Market Snapshot with 24-hour price change, a Portfolio Score, a Risk
+Category, a Position Timeline chart, a Recent Activity event log) does
+not match `06_TASKS.md`'s own M5-001–M5-024 task list, which this
+entire Milestone 5 build has correctly followed task-by-task since
+Batch 1. Cross-checked one concrete case precisely: Page 3's own
+"SECTION 2 PORTFOLIO SUMMARY" card list does not match M5-006's own
+"Cards" list, but M5-006's list matches the actually-built
+`DashboardKpiGrid` exactly, field for field — conclusive evidence Page
+3 is a superseded draft, not a requirement this build silently
+dropped. Not retrofitted: doing so would mean inventing a
+historical-data subsystem (Position Timeline, Recent Activity) with no
+documented storage or projection formula, violating Conflict B (no
+persistence before Milestone 8) and Conflict #7 (no documented
+compound-interest formula) simultaneously, for an "M"-effort audit task
+whose own dependency chain never asked for one. Flagged as a new
+conflict requiring a product decision (rewrite Page 3, or mark it
+superseded), not an engineering one.
+
+**Individually verified this task's own 7 named `Verify` items, not
+just the one large finding:**
+
+- **Information hierarchy** — `app/page.tsx`'s own section order
+  (identity/freshness → error or KPI grid → risk sections → composition
+  → recommendations → quick actions) matches `06_TASKS.md`'s own
+  Implementation Order note cited across Batches 1–7; no reordering
+  needed.
+- **Required components** — every `06_TASKS.md` M5-xxx component task
+  (M5-004 through M5-024, excluding blocked M5-008) has a real,
+  synchronized component; cross-checked against
+  `features/dashboard/index.ts`'s own export list.
+- **Terminology** — spot-checked the one place wording could plausibly
+  drift: `DashboardKpiGrid`'s card is labeled "Loan-to-Value," not
+  M5-006's own casual "Current LTV" — confirmed _correct_, not a
+  deviation, since `02_Formulas.md`'s own F-020 is officially named
+  "Loan-to-Value (LTV)," the more authoritative source for a metric's
+  own name.
+- **Formatting** — currency/percentage/Health-Factor formatting was
+  already settled by Conflict #6 (Milestone 2/3) and has been applied
+  consistently by every batch since; no new drift found.
+- **States** — loading (M5-019), empty (M5-020), and error (M5-021)
+  states were each already built and tested (Batches 9–10); re-verified
+  against Page 3's own smaller `EMPTY DASHBOARD`/`ERROR HANDLING` rules
+  individually (see Conflict #30) rather than assumed satisfied by
+  those earlier batches alone.
+- **Responsive behavior** — M5-023 (Batch 12) already satisfies this;
+  Page 10's own "MOBILE EXPERIENCE" note ("Essential Features Only" on
+  mobile) conflicts with M5-023's own literal DoD ("All Dashboard
+  functionality remains usable on mobile") — resolved in favor of the
+  already-built, already-tested `06_TASKS.md` requirement, the same
+  precedent this whole audit applies throughout.
+- **Accessibility** — M5-024 (Batch 13) already satisfies WCAG AA; this
+  batch's own tooltip fix (below) surfaced and fixed one more real gap
+  in the same category.
+
+**One real, small, fixable `TOOLTIPS` gap found and fixed**: `03_UI.md`'s
+own cross-cutting "Every important metric includes a tooltip" rule
+(Page 3) was not satisfied by `DebtAndInterestPanel` (M5-013) or
+`LeverageSummarySection` (M5-014) — the only two Dashboard sections
+with zero tooltips anywhere, unlike every other section (which either
+uses `KpiCard` or, like `HealthFactorStatusSection`, carries a manual
+`title`). Added Formula ID tooltips to both, reusing already-documented
+IDs rather than inventing new ones — Total Debt (F-003) and Annual
+Interest Cost (F-032) are the exact same Service values
+`DashboardKpiGrid` already tooltips; Monthly/Daily reuse
+`calculateDebtInterestBreakdown`'s own documented F-031/F-030; Gross
+Exposure/Effective BTC Exposure (F-002), Net Equity (F-004), and
+Leverage Ratio (F-011) are `LeverageSummarySection`'s own values under
+a second, differently-worded label for metrics `DashboardKpiGrid`
+already tooltips (`buildLeverageSummary.ts`'s own header comment
+already documents this aliasing). Current Borrow Rate is left
+untooltipped — a raw stored input, not a Formula output, consistent
+with "Current market price" in `LiquidationRiskPanel` also carrying no
+tooltip.
+
+**Adding those tooltips surfaced a second, real, pre-existing
+accessibility gap, found by applying this batch's own `Accessibility`
+Verify item to the fix it had just made**: `HealthFactorStatusSection`'s
+own "Current Health Factor" tooltip (built in Batch 4, M5-007) had no
+`tabIndex`, meaning it was never keyboard-reachable — the exact WCAG
+2.1.1 issue Batch 13 (M5-024) fixed for `KpiCard`, never applied here
+since this component predates that fix and does not use `KpiCard`.
+Fixed by adding `tabIndex={0}` to that div and to every new tooltip
+this batch added in `DebtAndInterestPanel`/`LeverageSummarySection`,
+so this batch does not ship a new instance of the same gap it is
+auditing for.
+
+**Verified the Milestone 5 Acceptance Criteria checklist (`06_TASKS.md`,
+end of Milestone 5) directly, all 12 items** — Dashboard uses the
+active portfolio ✓; core portfolio metrics are displayed ✓; Health
+Factor is explained clearly ✓; liquidation risk is visible and
+actionable ✓; debt and interest costs are displayed ✓; portfolio
+composition is understandable ✓; recommendations are transparent ✓;
+manual and stale data are clearly identified ✓; Dashboard supports
+loading, empty, and error states ✓; responsive behavior is complete ✓;
+accessibility requirements are satisfied ✓; Dashboard tests pass ✓
+(1083/1083 unit+integration, 35/35 e2e). Every item traces to a
+specific, already-synchronized batch.
+
+**Scope discipline**: `git diff --stat -- engine/ services/ types/
+stores/` empty. Exactly 3 component files touched
+(`DebtAndInterestPanel.tsx`, `LeverageSummarySection.tsx`,
+`HealthFactorStatusSection.tsx`) plus their 3 test files — every change
+is a presentational `title`/`tabIndex` addition, zero new business
+logic, zero new data flow.
+
+**Validation — Batch 18**
+
+| Command                      | Result                                                                                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                         |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                         |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                         |
+| `pnpm test` (Vitest)         | ✅ Pass, 1083/1083 (5 net new)                                                                                                                  |
+| `pnpm test:coverage`         | ✅ 95.58% statements / 89.41% branches / 100% functions / 98.84% lines (project-wide) — unchanged from Batch 17.                                |
+| `pnpm build`                 | ✅ Pass — `/` grew from 8.45 kB to 8.49 kB (new tooltip attributes only)                                                                        |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 35/35 (unchanged — including all 5 WCAG AA scans and both keyboard/focus checks, confirming the new tooltips introduced no regression) |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/
+stores/` empty; `git status --porcelain` shows exactly 6 modified files
+(3 components, 3 tests) and no new or deleted files.
+
+**Traceability**: M5-028's Description ("Perform a final implementation
+audit against `03_UI.md`") and all 7 `Verify` items are each addressed
+individually above; its DoD ("No undocumented UI deviations remain
+without explicit approval") is satisfied — every deviation found is
+either fixed (the `TOOLTIPS` gap and its accessibility follow-on) or
+explicitly documented as Conflict #30, awaiting a product decision, not
+silently left unrecorded. **This closes Milestone 5's own task list**:
+M5-001 through M5-028 are now all addressed (M5-008 remains the one
+formally, permanently blocked task, per Conflict #1).
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -7381,6 +7530,67 @@ Service already supports).
 
 ---
 
+### 30. `03_UI.md` Page 3 ("Dashboard Design & Portfolio Overview") describes an entirely different, never-built Dashboard design — found while performing the final M5-028 audit (Milestone 5 Batch 18)
+
+**This is the largest single documentation/implementation gap found in
+this entire engagement, and the reason M5-028 ("Validate Dashboard
+Against UI Specification") exists.** `03_UI.md` is organized as 10
+sequential "pages" (its own Document Index, near end of file, names each
+one); Page 3 is literally titled "Dashboard" and is the only page whose
+purpose is to specify this exact screen. Its own `PAGE LAYOUT` and
+`SECTION 1`–`SECTION 7` content describes a design that shares almost no
+vocabulary with `06_TASKS.md`'s own M5-001–M5-024 task list — the
+specification this entire Milestone 5 build (Batches 1–17) has correctly
+followed, task by task, citing each task's own literal text throughout:
+
+| Page 3 (`03_UI.md`) names                                                                                                            | `06_TASKS.md` (M5-xxx) actually specifies                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Market Snapshot" (BTC Price, 24 Hour Change, Borrow/Supply APR, HF, "Portfolio Status")                                             | No task named "Market Snapshot"; no "24 Hour Change" anywhere — no historical price data source exists (Manual Mode, `services/market/quote.ts`)                                                                                                                                        |
+| "Portfolio Summary" cards: Portfolio Value, Net Worth, Total BTC, Current Debt, Effective Leverage, **Portfolio Score**              | M5-006's own "Cards" list (built exactly as `DashboardKpiGrid`): Net portfolio value, Total collateral, Total debt, Health Factor, Current LTV, Effective leverage, Annual interest cost, Liquidation price — no "Portfolio Score" anywhere                                             |
+| "Health & Risk": Health Factor, Liquidation Price, Distance to Liquidation, Current LTV, **Risk Category**, **Health Factor Gauge**  | M5-007/M5-009's own Display/Cards lists — no "Risk Category" (blocked by Conflict #1, never invented) and no "Health Factor Gauge" visual widget anywhere                                                                                                                               |
+| **"Position Timeline"**: 30/90/180/365-day chart of Projected Debt, Interest Paid, Health Factor, Liquidation Price, Portfolio Value | No task named "Position Timeline" or equivalent chart exists anywhere in M5-001–M5-028; would require historical/projected time-series data with no documented source (Conflict B: no persistence; Conflict #7: no documented compound-interest formula for any projection)             |
+| **"Recent Activity"**: a timestamped event log (BTC Price Updated, Debt Repaid, etc.)                                                | No task named "Recent Activity" or an activity/event log exists anywhere; no persistence infrastructure exists to store such a log (Conflict B)                                                                                                                                         |
+| "Quick Actions": Run Simulation, Build Loop, Exit Planner, Refresh Portfolio, **Settings**                                           | M5-016's own Buttons list (built exactly as `QuickActionsSection`): Edit portfolio, Run simulation, Build loop strategy, Create exit plan, Update prices, Export portfolio — no direct "Settings" shortcut                                                                              |
+| "Empty Dashboard": Welcome Message, **Import Existing Portfolio**, Create New Portfolio, **Example Portfolio**                       | M5-020's own DoD ("explains the missing requirement and provides a clear action") — built as "No portfolio is currently selected" + "Select or create one." No Import or Example-Portfolio feature exists anywhere in the application (Milestone 4 never built portfolio import either) |
+
+**Why `06_TASKS.md` is treated as authoritative here, not Page 3** —
+the same reasoning this engagement has applied to every prior
+`03_UI.md` vs. `06_TASKS.md` mismatch, made explicit for the first time
+at this scale: `06_TASKS.md`'s own M5-006 "Cards" list matches the
+actually-built `DashboardKpiGrid` exactly, field for field; Page 3's own
+"SECTION 2" card list does not match either document precisely — it is
+its own third variant. This, plus the complete absence of any task
+building a Position Timeline, Recent Activity log, Portfolio Score, or
+Risk Category anywhere across 28 Milestone-5 tasks, indicates Page 3 is
+an earlier design draft that was superseded when `06_TASKS.md`'s own
+task list was written, and was never updated to match — not a
+requirement this build silently dropped. Retrofitting the Dashboard to
+match Page 3 literally would mean inventing an entire historical-data
+subsystem with no documented storage or projection formula (violating
+Conflict B and Conflict #7 at once) for an "M"-effort audit task whose
+own dependency chain (M5-027) never asked for one.
+
+**What Page 3's smaller, cross-cutting rules were individually checked
+against** (not assumed correct just because the page-level structure is
+stale) — see the Batch 18 write-up in the Milestone 5 progress section
+above for the full per-item audit: `CARD DESIGN`, `TOOLTIPS`, `DASHBOARD
+REFRESH`, `EMPTY DASHBOARD`, `ERROR HANDLING`, and `DESIGN RULES` were
+each verified individually; one real, small, fixable gap was found
+(`TOOLTIPS`: two panels had no Formula ID tooltips) and fixed this
+batch. Page 10's own "MOBILE EXPERIENCE" note ("Essential Features
+Only" on mobile) also conflicts with M5-023's own literal DoD ("All
+Dashboard functionality remains usable on mobile") — resolved the same
+way, in favor of the already-built, already-tested `06_TASKS.md`
+requirement.
+
+**No code changes were made to reconcile Page 3 itself** — that would
+require a product decision (rewrite Page 3 to match the as-built
+Dashboard, or treat it as historical and mark it superseded), not an
+engineering one. Flagging for that decision, consistent with how every
+other unresolved conflict in this list is handled.
+
+---
+
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
 
 - **shadcn/ui**: the `shadcn` CLI's `init` command calls `ui.shadcn.com`,
@@ -7429,10 +7639,11 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 17
-   (M5-027 — Dashboard End-to-End Tests) before committing, per
-   instruction. Batches 1–16 (M5-001–M5-007, M5-009–M5-026, excluding
-   M5-008) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 18
+   (M5-028 — Validate Dashboard Against UI Specification, the final
+   Milestone 5 task) before committing, per instruction. Batches 1–17
+   (M5-001–M5-007, M5-009–M5-027, excluding M5-008) are synchronized to
+   GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -7446,14 +7657,20 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–16
-   (M5-001–M5-007, M5-009–M5-026, excluding M5-008) are synchronized,
-   completing every Milestone 5 "feature" task plus Component and
-   Integration Tests. Batch 17 (Dashboard End-to-End Tests: M5-027) is
-   implemented and awaiting approval. **M5-008 remains wholly
-   unbuilt**, still blocked on Conflict #1. The remaining Milestone 5
-   task is M5-028 (final UI Spec Validation) — not yet reviewed in
-   detail.
+4. **Milestone 5 — Dashboard's task list is complete pending final
+   approval.** Batches 1–17 (M5-001–M5-007, M5-009–M5-027, excluding
+   M5-008) are synchronized. Batch 18 (Validate Dashboard Against UI
+   Specification: M5-028), the final Milestone 5 task, is implemented
+   and awaiting approval — this closes M5-001 through M5-028.
+   **M5-008 remains wholly unbuilt**, still blocked on Conflict #1 (the
+   only formally, permanently blocked task in the milestone). Batch 18
+   found and documented **Conflict #30**: `03_UI.md`'s own Page 3
+   Dashboard mockup describes an entirely different, never-built
+   design (a Position Timeline chart, a Recent Activity log, a
+   Portfolio Score) than the `06_TASKS.md`-driven Dashboard this
+   milestone actually built — resolved in favor of `06_TASKS.md` (the
+   spec this whole build has correctly followed throughout), not
+   retrofitted, and flagged for a product decision on Page 3 itself.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -7737,7 +7954,33 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     viewport, resizing only to check the completed workflow's own
     rendered result). Zero production code changed. See the Batch 17
     write-up above for the full reasoning.
-22. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+22. **Milestone 5 Batch 18 raised one new, significant conflict
+    (#30) — the largest found in this entire engagement.** M5-028
+    ("Validate Dashboard Against UI Specification"), the final
+    Milestone 5 task, required reading `03_UI.md` in full for the
+    first time at this granularity, not just its previously-cited
+    sections. Found that Page 3 ("Dashboard") describes an entirely
+    different, never-built design — a Market Snapshot with 24-hour
+    price change, a Portfolio Score, a Risk Category, a Position
+    Timeline chart, a Recent Activity event log — that shares almost no
+    vocabulary with `06_TASKS.md`'s own M5-001–M5-024 task list this
+    milestone actually built. Confirmed `06_TASKS.md` as authoritative
+    (its own M5-006 "Cards" list matches the built `DashboardKpiGrid`
+    exactly; Page 3's own card list does not), not retrofitted (would
+    require inventing a historical-data subsystem violating Conflict B
+    and Conflict #7 at once), and flagged as Conflict #30 for a product
+    decision. Individually verified all 7 of the task's own `Verify`
+    items, not just this one large finding; also found and fixed one
+    real, small gap (`TOOLTIPS`: `DebtAndInterestPanel`/
+    `LeverageSummarySection` had none) and, while fixing it, found and
+    fixed a second, pre-existing accessibility gap
+    (`HealthFactorStatusSection`'s own tooltip was never keyboard-
+    reachable — the same WCAG 2.1.1 issue Batch 13 fixed for `KpiCard`,
+    never applied here). Verified all 12 Milestone 5 Acceptance
+    Criteria directly. This closes Milestone 5's task list
+    (M5-001–M5-028, M5-008 excepted). See the Batch 18 write-up above
+    for the full reasoning.
+23. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -7745,7 +7988,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-23. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+24. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -7756,44 +7999,44 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-24. **From Batch 6, still open**: conflict #27 — M4-012 never says
+25. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-25. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+26. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-26. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+27. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-27. **From Batch 3, still open — recurred in Batch 7 with the same
+28. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-28. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+29. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-29. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+30. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-30. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+31. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-31. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+32. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-32. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+33. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -7806,13 +8049,13 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-33. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+34. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-34. **From Milestone 3/4, still open — final tally at Milestone 4's
+35. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

@@ -78,6 +78,14 @@ describe('HealthFactorStatusSection — Formula reference', () => {
       'F-022 — see docs/02_Formulas.md',
     );
   });
+
+  it('is keyboard-focusable, so the tooltip is reachable without a mouse (M5-028, Batch 18)', () => {
+    render(<HealthFactorStatusSection status={buildStatus()} />);
+    expect(screen.getByText('Current Health Factor').closest('[title]')).toHaveAttribute(
+      'tabIndex',
+      '0',
+    );
+  });
 });
 
 describe('HealthFactorStatusSection — Risk classification is not rendered (Conflict #1)', () => {

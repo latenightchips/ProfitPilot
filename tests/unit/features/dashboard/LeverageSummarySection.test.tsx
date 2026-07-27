@@ -62,6 +62,40 @@ describe('LeverageSummarySection — Debt-to-equity ratio is not rendered (M2-00
   });
 });
 
+describe('LeverageSummarySection — Formula ID tooltips (M5-028, Batch 18)', () => {
+  it('exposes each aliased metric’s own Formula ID as a tooltip', () => {
+    render(<LeverageSummarySection summary={buildSection()} />);
+    expect(screen.getByText('Gross Exposure').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-002 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Net Equity').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-004 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Leverage Ratio').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-011 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Effective BTC Exposure').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-002 — see docs/02_Formulas.md',
+    );
+  });
+
+  it('is keyboard-focusable on every tooltipped metric, so each tooltip is reachable without a mouse', () => {
+    render(<LeverageSummarySection summary={buildSection()} />);
+    for (const label of [
+      'Gross Exposure',
+      'Net Equity',
+      'Leverage Ratio',
+      'Effective BTC Exposure',
+    ]) {
+      expect(screen.getByText(label).closest('[title]')).toHaveAttribute('tabIndex', '0');
+    }
+  });
+});
+
 describe('LeverageSummarySection — zero debt (M5-025, Batch 15)', () => {
   it('renders an exact 1.00x leverage ratio and the "not leveraged" explanation, not a division-by-zero artifact', () => {
     const created = usePortfolioStore

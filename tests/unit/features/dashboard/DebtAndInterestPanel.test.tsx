@@ -79,6 +79,41 @@ describe('DebtAndInterestPanel — Projected debt is not rendered (Conflict #7)'
   });
 });
 
+describe('DebtAndInterestPanel — Formula ID tooltips (M5-028, Batch 18)', () => {
+  it('exposes a Formula ID tooltip on every calculated figure, but not on the raw Current Borrow Rate', () => {
+    render(<DebtAndInterestPanel panel={buildPanel()} />);
+    expect(screen.getByText('Total Debt').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-003 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Annual Interest Cost').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-032 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Monthly Interest Cost').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-031 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Daily Interest Cost').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-030 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Current Borrow Rate').closest('[title]')).toBeNull();
+  });
+
+  it('is keyboard-focusable on every tooltipped figure, so each tooltip is reachable without a mouse', () => {
+    render(<DebtAndInterestPanel panel={buildPanel()} />);
+    for (const label of [
+      'Total Debt',
+      'Annual Interest Cost',
+      'Monthly Interest Cost',
+      'Daily Interest Cost',
+    ]) {
+      expect(screen.getByText(label).closest('[title]')).toHaveAttribute('tabIndex', '0');
+    }
+  });
+});
+
 describe('DebtAndInterestPanel — zero debt (M5-025, Batch 15)', () => {
   it('renders every debt and interest figure as exactly $0.00, not N/A or NaN', () => {
     const created = usePortfolioStore
