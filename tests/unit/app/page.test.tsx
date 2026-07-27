@@ -163,6 +163,35 @@ describe('DashboardPage — calculation failure', () => {
     expect(screen.getByText('My Portfolio')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
+
+  it('offers Retry, an error code, and a recovery-copy download (M5-021, Batch 10)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText(/Error code:/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download recovery copy' })).toBeInTheDocument();
+  });
+
+  it('Retry re-runs the calculation without crashing (M5-021, Batch 10)', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+    screen.getByRole('button', { name: 'Retry' }).click();
+
+    // Reproduces the same failure, since the underlying data is unchanged —
+    // matching M4-017's own already-established finding for the Portfolio page.
+    expect(screen.getByText(/Unable to calculate a summary/)).toBeInTheDocument();
+  });
 });
 
 describe('DashboardPage — Risk Warning Banner (M5-010, Batch 5)', () => {

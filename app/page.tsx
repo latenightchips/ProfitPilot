@@ -13,6 +13,7 @@ import {
   buildPortfolioComposition,
   buildRecommendationSummary,
   buildRiskWarnings,
+  DashboardErrorBanner,
   DashboardKpiGrid,
   DashboardSkeleton,
   DashboardSummaryHeader,
@@ -66,13 +67,18 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `features/dashboard/components/NoDebtNotice.tsx` for the full reasoning
  * on both, including why "Portfolio without collateral"/"Missing
  * prices"/"Missing protocol parameters" are not built.
+ * `DashboardErrorBanner` (M5-021, Batch 10) replaces the old inline error
+ * `<div>` — see `features/dashboard/components/DashboardErrorBanner.tsx`
+ * for the full cross-document reasoning (Retry, Export recovery copy,
+ * Error Identifier, and why "Use last valid data" is already structurally
+ * satisfied, mirroring M4-017's own finding for the Portfolio page).
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Dashboard Quick Actions (M5-016), full Dashboard Error
- * Recovery (M5-021), and Developer Mode (M5-022) remain later, separate,
- * dependency-gated tasks — not built here.
+ * carried over. Dashboard Quick Actions (M5-016) and Developer Mode
+ * (M5-022) remain later, separate, dependency-gated tasks — not built
+ * here.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -114,11 +120,9 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * **Error state**: `buildDashboardViewModel` can return `{ ok: false }`
  * (`calculatePortfolioSummary` genuinely fails for certain Zod-valid
  * inputs — confirmed via M4-017's own investigation, e.g. zero collateral
- * with nonzero debt). Rendered here as a minimal, honest message with a
- * link back to `/portfolio` to fix the underlying data — not the full
- * "Retry calculation / Retry refresh / Use last valid data / Export
- * recovery copy" flow M5-021 ("Implement Dashboard Error Recovery") is
- * separately responsible for building.
+ * with nonzero debt). Rendered via `DashboardErrorBanner` (M5-021, Batch
+ * 10): a clear message with each error's code, Retry, a link back to
+ * `/portfolio`, and a recovery-copy download.
  *
  * **"Portfolio Status" / "Risk Category" (03_UI.md's Market Snapshot and
  * Health & Risk mockups) are not rendered** — blocked on Conflict #1
@@ -186,19 +190,11 @@ export default function DashboardPage() {
           )}
 
           {viewModel.ok === false ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
-              <p className="font-medium text-destructive">
-                Unable to calculate a summary for {viewModel.portfolioName}.
-              </p>
-              {viewModel.errors.map((error) => (
-                <p key={error.code} className="mt-1 text-destructive">
-                  {error.message}
-                </p>
-              ))}
-              <Link href="/portfolio" className="mt-2 inline-block underline">
-                Return to Portfolio to fix the underlying data
-              </Link>
-            </div>
+            <DashboardErrorBanner
+              portfolioId={activePortfolioId}
+              portfolio={record.portfolio}
+              viewModel={viewModel}
+            />
           ) : (
             <div className="flex flex-col gap-4">
               <p className="text-xs text-muted-foreground">

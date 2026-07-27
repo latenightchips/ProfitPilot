@@ -26,8 +26,11 @@
  * Order step; Batch 8 (M5-017) added the Data Freshness Indicators
  * section, and resolved M5-018 with no new component; Batch 9 (M5-019,
  * M5-020) added the Dashboard Skeleton and the No-Debt Notice, and
- * extended the Recommendation Summary Section with empty-state messaging.
+ * extended the Recommendation Summary Section with empty-state messaging;
+ * Batch 10 (M5-021) added the Dashboard Error Banner, replacing the
+ * previous inline error `<div>`.
  */
+export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSkeleton';
 export * from './components/DashboardSummaryHeader';
