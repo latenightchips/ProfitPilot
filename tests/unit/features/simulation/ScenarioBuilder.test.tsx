@@ -90,6 +90,62 @@ describe('ScenarioBuilder — live BTC Price wiring (M6-004 Dependencies: M3-009
   });
 });
 
+describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', () => {
+  it('updates the Simulation Store and runs a real simulation on a valid percentage change', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
+    await user.type(percentInput, '0.2');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: 0.2 },
+    });
+    // BTC price $50,000 * 1.2 = $60,000; 2 BTC * $60,000 - $20,000 debt = $100,000.
+    expect(state.currentResult?.scenario.equity).toBe(100000);
+  });
+
+  it('shows an inline error for a percentage change that would drop the price to zero or below', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
+    await user.type(percentInput, '-1');
+
+    expect(
+      screen.getByText('Percentage change cannot reduce the price to zero or below.'),
+    ).toBeInTheDocument();
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+  });
+});
+
+describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
+  it('renders all 8 presets from the PRD’s own "Required Presets" list', () => {
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    for (const label of ['+10%', '+25%', '+50%', '+100%', '-10%', '-20%', '-30%', '-50%']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it('clicking a preset runs a real simulation using that fixed percentage change', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    await user.click(screen.getByRole('button', { name: '+10%' }));
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: 0.1 },
+    });
+    // BTC price $50,000 * 1.1 = $55,000; 2 BTC * $55,000 - $20,000 debt = $90,000.
+    expect(state.currentResult?.scenario.equity).toBe(90000);
+    expect(screen.getByLabelText('Percentage Change (0–1)')).toHaveValue(0.1);
+  });
+});
+
 describe('ScenarioBuilder — Reset Scenario', () => {
   it('restores every field to the portfolio’s own current values and resets the Store', async () => {
     const user = userEvent.setup();

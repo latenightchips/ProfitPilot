@@ -29,6 +29,7 @@ function portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPo
 function values(overrides: Partial<ScenarioBuilderFormValues> = {}): ScenarioBuilderFormValues {
   return {
     btcPriceUsd: '50000',
+    percentageChange: '',
     borrowApr: '0.05',
     collateralDelta: '0',
     debtDelta: '0',
@@ -54,6 +55,36 @@ describe('validateScenarioBuilderInput — Negative BTC Price', () => {
     expect(
       validateScenarioBuilderInput(values({ btcPriceUsd: '-100' }), portfolio()).btcPriceUsd,
     ).not.toBeNull();
+  });
+});
+
+describe('validateScenarioBuilderInput — Percentage Change (M6-005, Batch 4)', () => {
+  it('leaves Percentage Change optional — an empty value is not an error', () => {
+    expect(
+      validateScenarioBuilderInput(values({ percentageChange: '' }), portfolio()).percentageChange,
+    ).toBeNull();
+  });
+
+  it('rejects a change of -100% or worse (would drop the price to zero or below, per F-051)', () => {
+    expect(
+      validateScenarioBuilderInput(values({ percentageChange: '-1' }), portfolio())
+        .percentageChange,
+    ).not.toBeNull();
+    expect(
+      validateScenarioBuilderInput(values({ percentageChange: '-2' }), portfolio())
+        .percentageChange,
+    ).not.toBeNull();
+  });
+
+  it('accepts a valid negative or positive percentage change', () => {
+    expect(
+      validateScenarioBuilderInput(values({ percentageChange: '-0.5' }), portfolio())
+        .percentageChange,
+    ).toBeNull();
+    expect(
+      validateScenarioBuilderInput(values({ percentageChange: '0.25' }), portfolio())
+        .percentageChange,
+    ).toBeNull();
   });
 });
 

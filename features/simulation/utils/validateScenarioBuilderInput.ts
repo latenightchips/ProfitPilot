@@ -34,6 +34,7 @@ export function validateScenarioBuilderInput(
 ): ScenarioBuilderFieldErrors {
   const errors: ScenarioBuilderFieldErrors = {
     btcPriceUsd: null,
+    percentageChange: null,
     borrowApr: null,
     collateralDelta: null,
     debtDelta: null,
@@ -44,6 +45,18 @@ export function validateScenarioBuilderInput(
   const btcPriceUsd = parseNumber(values.btcPriceUsd);
   if (btcPriceUsd === null || btcPriceUsd <= 0) {
     errors.btcPriceUsd = 'BTC price must be a positive number.';
+  }
+
+  // Optional — only validated when the user actually enters a value
+  // (mirrors Target Health Factor's own optional-field pattern below).
+  // Bound matches `resolveScenarioPrice`'s (F-051) own rejection: a
+  // change of -100% or worse would drop the resulting price to zero or
+  // below.
+  if (values.percentageChange.trim() !== '') {
+    const percentageChange = parseNumber(values.percentageChange);
+    if (percentageChange === null || percentageChange <= -1) {
+      errors.percentageChange = 'Percentage change cannot reduce the price to zero or below.';
+    }
   }
 
   const borrowApr = parseNumber(values.borrowApr);
