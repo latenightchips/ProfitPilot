@@ -66,6 +66,14 @@ describe('PortfolioCompositionSection — table and compact cards render the sam
   });
 });
 
+describe('PortfolioCompositionSection — responsive table container (M5-023, Batch 12)', () => {
+  it('wraps the table in an overflow-x-auto container so it scrolls locally, not the page', () => {
+    render(<PortfolioCompositionSection composition={buildComposition()} />);
+    const table = screen.getByRole('table');
+    expect(table.parentElement).toHaveClass('overflow-x-auto');
+  });
+});
+
 describe('PortfolioCompositionSection — protocol parameters', () => {
   it('renders every protocol parameter', () => {
     render(<PortfolioCompositionSection composition={buildComposition()} />);

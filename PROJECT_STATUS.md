@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–10 (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020, M5-021) are synchronized to GitHub; Batch 11 (M5-016 — Dashboard Quick Actions) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–11 (M5-001–M5-007, M5-009–M5-021) are synchronized to GitHub; Batch 12 (M5-023 — Dashboard Responsive Layout) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5668,6 +5668,151 @@ silently dropped.
 
 ---
 
+### Batch 12 — Dashboard Responsive Layout (M5-023)
+
+Twelfth Milestone 5 batch. M5-023's own dependency ("M5-006 through
+M5-021") is now fully satisfied — all of M5-016 through M5-021 shipped
+across Batches 4–11. Chose M5-023 over M5-022 (Developer Mode) for this
+batch despite M5-022 coming first numerically: M5-023 is P0 (M5-022 is
+P2) and is the next bucket 06_TASKS.md's own coarse "IMPLEMENTATION
+ORDER" names explicitly ("Recommendations → Responsive and Accessible
+States → Testing"), while M5-022 gates nothing until M5-025. M5-024
+(Accessibility Pass, which depends on M5-023) was left for its own
+batch, the same "don't bundle two tasks that each need real
+investigation" discipline Batches 9–11 already established.
+
+**Investigated by rendering the real, compiled app at real viewport
+widths via Playwright — not by reading Tailwind class names alone.**
+Code review first suggested most Dashboard sections already used
+mobile-first responsive classes (`grid-cols-1 sm:grid-cols-2
+lg:grid-cols-4` on `DashboardKpiGrid`; the same on `LiquidationRiskPanel`'s
+inner grid; `PortfolioCompositionSection`'s existing table/compact-card
+split), which turned out to be correct — screenshots at 375px/640px/1280px
+showed no problems in any of those. But a `document.documentElement.scrollWidth`
+check at exactly 375px (mobile) and 768px (the width the sidebar first
+appears, `AppSidebar.tsx`'s own `md:` breakpoint) surfaced two real,
+previously-undetected horizontal-overflow bugs that no amount of reading
+class names would have found:
+
+- **`AppHeader`'s `<select>` (the portfolio switcher, M4-010) had no
+  width constraint** — a long portfolio name forced the header wider
+  than a 375px viewport, with no `flex-wrap` to compensate, producing
+  real page-level horizontal scroll. Fixed with a `max-w-[45vw]` cap
+  below `sm:` (the browser truncates the _displayed_ value only; the
+  full name remains selectable in the dropdown's own option list).
+- **`PortfolioCompositionSection`'s table was visibly cramped** at
+  exactly 768px (sidebar present, `lg:`'s 4-column KPI breakpoint not yet
+  reached) — its 6 columns had no room and text visibly ran together.
+  Wrapped the table in its own `overflow-x-auto` container with
+  `whitespace-nowrap` cells, the standard pattern for "Tables must adapt
+  appropriately" without violating "No horizontal page scrolling" — the
+  scroll is local to the table, confirmed empirically (the container's
+  own `scrollWidth`/`clientWidth` differ, scrolling it reveals the
+  "Portfolio %" column, and the _page_ never overflows even after
+  scrolling within it).
+- **Fixing the table's own container wasn't sufficient by itself** —
+  found via the same viewport check still showing overflow after the
+  first fix. Root cause: `AppShell`'s `<main>` is a flex item with no
+  `min-width` override, and a flex item's default `min-width: auto`
+  refuses to shrink below its content's natural width, so the table's
+  wide content was widening `<main>` (and the whole page) instead of
+  scrolling inside its own container. Added `min-w-0` to `<main>` — the
+  standard, well-known fix that lets a flex child shrink to its
+  container's width so an inner `overflow-x-auto` can actually contain
+  overflow instead of propagating it upward.
+
+**All three fixes touch shared, pre-Milestone-5 layout components**
+(`AppHeader.tsx`, `AppShell.tsx` — both M1-006), not Dashboard-owned
+files, and apply to every route, not only the Dashboard. This is a
+deliberate, documented exception to "only touch Dashboard-owned code,"
+made because M5-023's own literal Requirement ("No horizontal page
+scrolling") is a property of what the Dashboard route actually renders
+on screen, which necessarily includes the always-present header and
+shell — reporting M5-023 complete while the Dashboard visibly overflowed
+on a real mobile device would not have been honest. Each fix carries its
+own detailed comment explaining the empirical finding, not just the
+change.
+
+**"Critical metrics remain near the top"** — confirmed already
+satisfied by the established render order (`app/page.tsx`, unchanged
+since Batch 1: Summary Header → Data Freshness → Quick Actions → Risk
+Warnings/No-Debt Notice → **KPI Grid** → Health Factor Status →
+Liquidation Risk → Portfolio Composition → Debt/Interest → Leverage →
+Recommendations); no reordering was needed, only verified via the same
+screenshots.
+
+**Mobile navigation gap noted, not built.** `AppSidebar.tsx` is `hidden
+md:block` — below `md:` there is no sidebar and no replacement mobile
+menu, so a mobile user cannot navigate away from the current page via
+the sidebar (only via in-page links, e.g. Quick Actions' own). This is a
+pre-existing M1-006 characteristic, not something M5-023's own text asks
+for (its dependency list and Description are Dashboard-content-scoped, a
+hamburger-menu feature is not named anywhere in it), and building one
+here — affecting global navigation across every route — would be real
+scope creep beyond "Optimize the Dashboard for supported screen sizes."
+Documented, not silently ignored, and not invented.
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/
+services/` empty — zero Engine/Store/type/Service files touched. Every
+change is CSS/layout-only (Tailwind class changes); no new calculation,
+Store action, or Service call anywhere in this batch.
+
+**Validation — Batch 12**
+
+| Command                      | Result                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                                            |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                                            |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                                            |
+| `pnpm test` (Vitest)         | ✅ Pass, 1041/1041 (2 net new)                                                                                                                                     |
+| `pnpm test:coverage`         | ✅ 95.55% statements / 89.22% branches / 100% functions / 98.83% lines (project-wide) — unchanged from Batch 11 (CSS-only changes add no new statements/branches). |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 16/16 (4 net new — see below)                                                                                                                             |
+| `pnpm build`                 | ✅ Pass — `/` grew from 8.04 kB to 8.09 kB (217 kB First Load JS)                                                                                                  |
+
+**New permanent regression tests — `tests/e2e/responsiveLayout.spec.ts`**
+(new file, 4 tests): real-browser viewport checks at 375px/768px/1280px
+confirming `document.documentElement.scrollWidth <= clientWidth` on the
+Dashboard, using the same long-portfolio-name fixture that produced the
+real `AppHeader` bug; a dedicated test confirming the Portfolio
+Composition table's own container is genuinely scrollable, that
+scrolling it reveals the "Portfolio %" column, and that the page itself
+never overflows even mid-scroll. This property cannot be unit-tested in
+Vitest/jsdom (no real box-layout computation), so Playwright is the only
+honest place for it — a deliberate, permanent guard against regressing
+either fix. Two small companion unit tests
+(`tests/unit/components/layout/AppHeader.test.tsx`,
+`tests/unit/features/dashboard/PortfolioCompositionSection.test.tsx`)
+assert the fix's own CSS classes remain present, catching an accidental
+revert even though they cannot verify actual layout.
+
+**Manual browser verification**: screenshots captured at 375px, 640px,
+768px, and 1280px, before and after each fix, driving the real Creation
+Flow through to the Dashboard. Confirmed visually and via the
+`scrollWidth`/`clientWidth` check at every width: no horizontal page
+scroll, KPI grid at 1/2/4 columns matching Mobile/Tablet/Desktop per
+this task's own Description, Liquidation Risk's 3-card grid at
+1/2/3 columns, the Portfolio Composition table scrolling locally and
+cleanly at 768px instead of visibly cramping, and the header's portfolio
+switcher truncating cleanly on mobile instead of forcing page overflow.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/
+services/` empty. Every changed file is either a pre-existing shared
+layout component (`AppHeader.tsx`, `AppShell.tsx`) or an existing
+Dashboard component (`PortfolioCompositionSection.tsx`) — no new
+component, type, or builder was added; this batch is exclusively
+CSS/layout adjustments to already-existing render trees.
+
+**Traceability**: M5-023's Description (Desktop/Tablet/Mobile column
+behavior), both Requirements ("No horizontal page scrolling," "Tables
+must adapt appropriately," "Critical metrics remain near the top" —
+three Requirements total, all three addressed), and its DoD are each
+addressed individually above, with the two real bugs found and fixed
+named specifically rather than a general "looks fine" assertion, and the
+one deliberately out-of-scope finding (mobile sidebar navigation)
+documented rather than silently ignored or invented.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6699,10 +6844,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 11
-   (M5-016 — Dashboard Quick Actions) before committing, per
-   instruction. Batches 1–10 (M5-001–M5-007, M5-009–M5-015, M5-017,
-   M5-019, M5-020, M5-021) are synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 12
+   (M5-023 — Dashboard Responsive Layout) before committing, per
+   instruction. Batches 1–11 (M5-001–M5-007, M5-009–M5-021) are
+   synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -6716,13 +6861,13 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–10
-   (M5-001–M5-007, M5-009–M5-015, M5-017, M5-019, M5-020, M5-021) are
-   synchronized; Batch 11 (Dashboard Quick Actions: M5-016) is
-   implemented and awaiting approval. **M5-008 remains wholly unbuilt**,
-   still blocked on Conflict #1. The remaining Milestone 5 tasks are
-   M5-022, and M5-023 through M5-028 (Developer Mode, Responsive Layout,
-   Accessibility, and Testing) — not yet reviewed in detail.
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–11
+   (M5-001–M5-007, M5-009–M5-021) are synchronized; Batch 12 (Dashboard
+   Responsive Layout: M5-023) is implemented and awaiting approval.
+   **M5-008 remains wholly unbuilt**, still blocked on Conflict #1. The
+   remaining Milestone 5 tasks are M5-022 and M5-024 through M5-028
+   (Developer Mode, Accessibility, and Testing) — not yet reviewed in
+   detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -6891,7 +7036,26 @@ Service already supports).
     gives explicit grounds for it, more cautious than the sidebar's own
     pre-existing (M1-scaffold) links to the same routes. See the Batch
     11 write-up above for the full reasoning.
-16. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+16. **Milestone 5 Batch 12 raised no new numbered conflict, but found
+    and fixed two real horizontal-overflow bugs via actual Playwright
+    viewport checks** — reading Tailwind class names alone would not
+    have caught either: `AppHeader`'s portfolio switcher had no width
+    cap (overflowed at 375px with a long portfolio name), and
+    `PortfolioCompositionSection`'s table was visibly cramped at exactly
+    768px (the sidebar-appears breakpoint). Fixing the table required a
+    third change (`AppShell`'s `<main>` needed `min-w-0`, the standard
+    flexbox fix that lets a flex child's own `overflow-x-auto`
+    descendant actually contain overflow instead of widening the whole
+    page) — found only because the viewport check still failed after
+    the first table fix alone. All three fixes touch shared,
+    pre-Milestone-5 layout components (`AppHeader.tsx`, `AppShell.tsx`,
+    both M1-006), a deliberate, documented exception since M5-023's own
+    "No horizontal page scrolling" Requirement is a property of what the
+    Dashboard route actually renders on screen. A mobile navigation gap
+    was found and documented but not built (no sidebar replacement below
+    `md:`) — out of scope for a Dashboard-content task. See the Batch 12
+    write-up above for the full reasoning.
+17. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -6899,7 +7063,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-17. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+18. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -6910,44 +7074,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-18. **From Batch 6, still open**: conflict #27 — M4-012 never says
+19. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-19. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+20. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-20. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+21. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-21. **From Batch 3, still open — recurred in Batch 7 with the same
+22. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-22. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+23. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-23. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+24. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-24. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+25. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-25. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+26. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-26. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+27. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -6960,13 +7124,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-27. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+28. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-28. **From Milestone 3/4, still open — final tally at Milestone 4's
+29. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

@@ -33,6 +33,23 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * store action (`select`) already can't land here on an archived
  * portfolio, since the Store's own `archive` action (M4-012) clears
  * `activePortfolioId` when the archived record was the active one.
+ *
+ * **`<select>` width capped at `max-w-[45vw]` below `sm:` (Milestone 5
+ * Batch 12, M5-023 "Implement Dashboard Responsive Layout")**: a real,
+ * empirically-confirmed bug, not assumed — a long portfolio name (e.g.
+ * "Responsive Layout Verification Portfolio") forced this header wider
+ * than a 375px viewport with no `flex-wrap`, producing real horizontal
+ * page scroll, found via an actual Playwright viewport check
+ * (`document.documentElement.scrollWidth > clientWidth`), not just
+ * reading Tailwind classes. This is a cross-cutting fix in a shared,
+ * pre-Milestone-5 shell component (M1-006), not Dashboard-owned code —
+ * but M5-023's own literal Requirement ("No horizontal page scrolling")
+ * is a property of what the Dashboard route actually renders, which
+ * includes this always-present header; leaving it broken would mean
+ * reporting M5-023 complete while the Dashboard still visibly overflows
+ * on real mobile widths. The browser truncates the `<select>`'s own
+ * displayed text within the capped width — no information is hidden,
+ * the full name remains in the dropdown's own option list.
  */
 export function AppHeader() {
   const portfolios = usePortfolioStore((state) => state.portfolios);
@@ -46,19 +63,24 @@ export function AppHeader() {
     activePortfolioId !== null ? portfolios[activePortfolioId]?.portfolio.name : undefined;
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 md:px-6">
-      <span className="text-sm font-semibold tracking-tight text-foreground">ProfitPilot</span>
-      <div className="flex items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4 md:px-6">
+      <span className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
+        ProfitPilot
+      </span>
+      <div className="flex min-w-0 items-center gap-3">
         {entries.length === 0 ? (
-          <Link href="/portfolios" className="text-xs text-muted-foreground hover:underline">
+          <Link
+            href="/portfolios"
+            className="shrink-0 text-xs text-muted-foreground hover:underline"
+          >
             No portfolios yet — create one
           </Link>
         ) : (
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span className="sr-only">Active portfolio</span>
             <select
               aria-label="Active portfolio"
-              className="rounded-md border border-border bg-transparent px-2 py-1 text-xs text-foreground"
+              className="min-w-0 max-w-[45vw] rounded-md border border-border bg-transparent px-2 py-1 text-xs text-foreground sm:max-w-none"
               value={activePortfolioId ?? ''}
               onChange={(event) => select(event.target.value === '' ? null : event.target.value)}
             >
@@ -73,7 +95,7 @@ export function AppHeader() {
             </select>
           </label>
         )}
-        <Link href="/portfolios" className="text-xs text-muted-foreground hover:underline">
+        <Link href="/portfolios" className="shrink-0 text-xs text-muted-foreground hover:underline">
           {activeName !== undefined ? 'Manage portfolios' : 'View portfolios'}
         </Link>
       </div>

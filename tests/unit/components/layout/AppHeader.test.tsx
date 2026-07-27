@@ -95,4 +95,10 @@ describe('AppHeader — with portfolios (M4-010)', () => {
     render(<AppHeader />);
     expect(screen.getByText('Manage portfolios')).toBeInTheDocument();
   });
+
+  it('caps the switcher width below sm: so a long portfolio name cannot force horizontal page overflow (M5-023, Batch 12)', () => {
+    usePortfolioStore.getState().create(validInput('Responsive Layout Verification Portfolio'));
+    render(<AppHeader />);
+    expect(screen.getByLabelText('Active portfolio')).toHaveClass('max-w-[45vw]');
+  });
 });
