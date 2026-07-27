@@ -20,6 +20,7 @@ import {
   DashboardSummaryHeader,
   DataFreshnessSection,
   DebtAndInterestPanel,
+  DeveloperModeToggle,
   HealthFactorStatusSection,
   LeverageSummarySection,
   LiquidationRiskPanel,
@@ -29,6 +30,7 @@ import {
   RecommendationSummarySection,
   RiskWarningBanner,
 } from '@/features/dashboard';
+import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -84,12 +86,24 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * including why "Run simulation"/"Build loop strategy"/"Create exit
  * plan" are marked unavailable rather than linked through as if
  * functional.
+ * `DeveloperModeToggle` (M5-022, Batch 14) also renders in the shared
+ * base section — a display preference, not tied to calculation success —
+ * and `developerMode`/`engineVersion`/`formulaVersion` are threaded into
+ * `DashboardKpiGrid`/`LiquidationRiskPanel` so each `KpiCard`'s own
+ * `developerModeDetails` slot (unused since M5-005) finally has content.
+ * See `features/dashboard/components/DeveloperModeToggle.tsx` for the
+ * full reasoning on where the toggle's state lives (no Settings-page
+ * task exists to route it through) and
+ * `features/dashboard/utils/buildKpiDeveloperDetails.ts` for why only
+ * "Raw values"/"Formula IDs"/"Engine version"/"Formula version" are
+ * genuinely new, gated content — "Assumptions," "Warnings," and
+ * "Calculation timestamp" are already visible to every user today, not
+ * moved behind this toggle.
  * **M5-008 (Health Factor Range Visualization) remains wholly unbuilt** —
  * every one of its "Show" items is a Critical/Caution/Target zone
  * boundary, exactly Conflict #1's own blocked content, with no partial
  * subset the way M5-007/M5-010 had — re-confirmed in Batch 5, not just
- * carried over. Developer Mode (M5-022) remains a later, separate,
- * dependency-gated task — not built here.
+ * carried over.
  *
  * **`RiskWarningBanner` replaces the old raw `viewModel.warnings` list**
  * (previously rendered inline) — `buildRiskWarnings` already folds
@@ -150,6 +164,7 @@ export default function DashboardPage() {
   const record = usePortfolioStore((state) =>
     state.activePortfolioId !== null ? state.portfolios[state.activePortfolioId] : undefined,
   );
+  const developerMode = useDeveloperModeStore((state) => state.enabled);
 
   useEffect(() => {
     load();
@@ -203,6 +218,7 @@ export default function DashboardPage() {
           {dataFreshnessIndicators !== null && (
             <DataFreshnessSection indicators={dataFreshnessIndicators} />
           )}
+          <DeveloperModeToggle />
           {quickActions !== null && (
             <QuickActionsSection
               actions={quickActions}
@@ -229,7 +245,12 @@ export default function DashboardPage() {
 
               <NoDebtNotice hasDebt={summary !== null && summary.liquidation !== null} />
 
-              <DashboardKpiGrid metrics={viewModel.metrics} />
+              <DashboardKpiGrid
+                metrics={viewModel.metrics}
+                developerMode={developerMode}
+                engineVersion={viewModel.engineVersion}
+                formulaVersion={viewModel.formulaVersion}
+              />
 
               {healthFactorStatus !== null && (
                 <HealthFactorStatusSection status={healthFactorStatus} />
@@ -241,6 +262,9 @@ export default function DashboardPage() {
                   viewModel.metrics,
                   viewModel.freshness.market,
                 )}
+                developerMode={developerMode}
+                engineVersion={viewModel.engineVersion}
+                formulaVersion={viewModel.formulaVersion}
               />
 
               {portfolioComposition !== null && (

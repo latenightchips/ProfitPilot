@@ -1,7 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import DashboardPage from '@/app/page';
+import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -21,6 +23,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  useDeveloperModeStore.setState({ enabled: false });
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -349,5 +352,32 @@ describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7; emp
 
     expect(screen.getByText('Recommendations')).toBeInTheDocument();
     expect(screen.getByText('Priority 1')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Developer Mode Toggle (M5-022, Batch 14)', () => {
+  it('renders the toggle unchecked by default and shows no developer details', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole('checkbox', { name: 'Developer Mode' })).not.toBeChecked();
+    expect(screen.queryByText(/Formula ID:/)).not.toBeInTheDocument();
+  });
+
+  it('reveals Formula IDs and raw values once toggled on', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Developer Mode' }));
+
+    expect(screen.getByText(/Formula ID: F-004/)).toBeInTheDocument();
+    expect(screen.getByText(/Raw value: 80000/)).toBeInTheDocument();
   });
 });

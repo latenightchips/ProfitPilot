@@ -1,4 +1,5 @@
 import type { DashboardMetric, DashboardMetrics } from '../types/viewModel';
+import { buildKpiDeveloperDetails } from '../utils/buildKpiDeveloperDetails';
 import { KpiCard } from './KpiCard';
 
 /**
@@ -30,20 +31,44 @@ import { KpiCard } from './KpiCard';
  *   just a blank or dashed value.
  *
  * Tooltip content is each metric's own Formula ID (already documented,
- * not invented — see `../types/viewModel.ts`), giving lightweight
- * traceability ahead of M5-022's fuller Developer Mode treatment.
+ * not invented — see `../types/viewModel.ts`).
+ *
+ * **`developerMode` prop (Batch 14, M5-022, "Implement Dashboard
+ * Developer Mode")**: when `true`, each card's `developerModeDetails`
+ * slot (added M5-005, unused until now) shows that metric's own Formula
+ * ID, raw (unformatted) value, and the calculation's Engine/Formula
+ * version — see `../utils/buildKpiDeveloperDetails.ts` for why only
+ * these two items are genuinely new, gated content.
  */
-function toKpiCardProps(metric: DashboardMetric) {
+function toKpiCardProps(
+  metric: DashboardMetric,
+  developerMode: boolean,
+  engineVersion: string,
+  formulaVersion: string,
+) {
   return {
     title: metric.label,
     primaryValue: metric.formattedValue,
     status: metric.status,
     tooltip:
       metric.formulaId !== null ? `${metric.formulaId} — see docs/02_Formulas.md` : undefined,
+    developerModeDetails: developerMode
+      ? buildKpiDeveloperDetails(metric, engineVersion, formulaVersion)
+      : undefined,
   };
 }
 
-export function DashboardKpiGrid({ metrics }: { metrics: DashboardMetrics }) {
+export function DashboardKpiGrid({
+  metrics,
+  developerMode = false,
+  engineVersion = '',
+  formulaVersion = '',
+}: {
+  metrics: DashboardMetrics;
+  developerMode?: boolean;
+  engineVersion?: string;
+  formulaVersion?: string;
+}) {
   const cards: DashboardMetric[] = [
     metrics.netPortfolioValue,
     metrics.totalCollateral,
@@ -58,7 +83,10 @@ export function DashboardKpiGrid({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((metric) => (
-        <KpiCard key={metric.label} {...toKpiCardProps(metric)} />
+        <KpiCard
+          key={metric.label}
+          {...toKpiCardProps(metric, developerMode, engineVersion, formulaVersion)}
+        />
       ))}
     </div>
   );

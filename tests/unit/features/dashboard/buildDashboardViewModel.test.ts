@@ -97,6 +97,19 @@ describe('buildDashboardViewModel — valid portfolio (M5-003)', () => {
     expect(viewModel.freshness.protocol).not.toBeNull();
     expect(viewModel.freshness.protocol?.origin).toBe('manual');
   });
+
+  it('exposes the Service call’s own Engine/Formula version, for Developer Mode (M5-022, Batch 14)', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok || !record.summary.ok) return;
+    expect(viewModel.engineVersion).toBe(record.summary.metadata.engineVersion);
+    expect(viewModel.formulaVersion).toBe(record.summary.metadata.formulaVersion);
+    expect(viewModel.engineVersion.length).toBeGreaterThan(0);
+  });
 });
 
 describe('buildDashboardViewModel — zero-debt portfolio (Conflict #20)', () => {

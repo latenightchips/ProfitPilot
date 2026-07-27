@@ -83,6 +83,15 @@ test('Cover: no WCAG AA violations — healthy portfolio with active recommendat
   await expectNoWcagAaViolations(page);
 });
 
+test('Cover: no WCAG AA violations — Developer Mode enabled (M5-022, Batch 14)', async ({
+  page,
+}) => {
+  await createPortfolio(page, { name: 'A11y Developer Mode Portfolio' });
+  await page.getByRole('checkbox', { name: 'Developer Mode' }).check();
+  await expect(page.getByText(/Formula ID:/).first()).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
 test('Cover: no WCAG AA violations — calculation failure (Dashboard Error Banner)', async ({
   page,
 }) => {

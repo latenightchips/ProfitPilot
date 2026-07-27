@@ -1,4 +1,5 @@
 import type { LiquidationRiskPanelData } from '../types/liquidationRiskPanel';
+import { buildKpiDeveloperDetails } from '../utils/buildKpiDeveloperDetails';
 import { KpiCard } from './KpiCard';
 
 /**
@@ -13,8 +14,24 @@ import { KpiCard } from './KpiCard';
  * the same tooltip/status/"clearly unavailable" treatment
  * `DashboardKpiGrid` (M5-006) already established, for visual
  * consistency across every Dashboard KPI-style value.
+ *
+ * **`developerMode`/`engineVersion`/`formulaVersion` props (Batch 14,
+ * M5-022)**: the same `buildKpiDeveloperDetails` helper
+ * `DashboardKpiGrid` already uses, applied to this panel's own three
+ * `KpiCard`s for consistency — Developer Mode is a Dashboard-wide
+ * concern, not one grid's alone.
  */
-export function LiquidationRiskPanel({ panel }: { panel: LiquidationRiskPanelData }) {
+export function LiquidationRiskPanel({
+  panel,
+  developerMode = false,
+  engineVersion = '',
+  formulaVersion = '',
+}: {
+  panel: LiquidationRiskPanelData;
+  developerMode?: boolean;
+  engineVersion?: string;
+  formulaVersion?: string;
+}) {
   return (
     <div className="flex flex-col gap-3 rounded-md border border-border p-4">
       <h3 className="text-sm font-medium text-foreground">Liquidation Risk</h3>
@@ -36,6 +53,15 @@ export function LiquidationRiskPanel({ panel }: { panel: LiquidationRiskPanelDat
                 ? `${panel.estimatedLiquidationPrice.formulaId} — see docs/02_Formulas.md`
                 : undefined
             }
+            developerModeDetails={
+              developerMode
+                ? buildKpiDeveloperDetails(
+                    panel.estimatedLiquidationPrice,
+                    engineVersion,
+                    formulaVersion,
+                  )
+                : undefined
+            }
           />
           <KpiCard
             title="Distance to Liquidation"
@@ -46,6 +72,11 @@ export function LiquidationRiskPanel({ panel }: { panel: LiquidationRiskPanelDat
                 ? `${panel.liquidationDistance.formulaId} — see docs/02_Formulas.md`
                 : undefined
             }
+            developerModeDetails={
+              developerMode
+                ? buildKpiDeveloperDetails(panel.liquidationDistance, engineVersion, formulaVersion)
+                : undefined
+            }
           />
           <KpiCard
             title="Percentage Decline to Liquidation"
@@ -54,6 +85,15 @@ export function LiquidationRiskPanel({ panel }: { panel: LiquidationRiskPanelDat
             tooltip={
               panel.percentageDeclineToLiquidation.formulaId !== null
                 ? `${panel.percentageDeclineToLiquidation.formulaId} — see docs/02_Formulas.md`
+                : undefined
+            }
+            developerModeDetails={
+              developerMode
+                ? buildKpiDeveloperDetails(
+                    panel.percentageDeclineToLiquidation,
+                    engineVersion,
+                    formulaVersion,
+                  )
                 : undefined
             }
           />

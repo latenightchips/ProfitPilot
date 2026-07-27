@@ -93,3 +93,23 @@ describe('LiquidationRiskPanel — assumptions disclosure', () => {
     expect(screen.getByText(/Assumes the current BTC price/)).toBeInTheDocument();
   });
 });
+
+describe('LiquidationRiskPanel — Developer Mode (M5-022, Batch 14)', () => {
+  it('shows no developer details by default', () => {
+    render(<LiquidationRiskPanel panel={buildPanel()} />);
+    expect(screen.queryByText(/Formula ID: F-024/)).not.toBeInTheDocument();
+  });
+
+  it('shows Formula ID and Engine/Formula version for each estimate when enabled', () => {
+    render(
+      <LiquidationRiskPanel
+        panel={buildPanel()}
+        developerMode
+        engineVersion="1.0"
+        formulaVersion="1.0"
+      />,
+    );
+    expect(screen.getByText(/Formula ID: F-024/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Engine v1\.0, Formula v1\.0/).length).toBe(3);
+  });
+});

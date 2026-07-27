@@ -29,7 +29,9 @@
  * extended the Recommendation Summary Section with empty-state messaging;
  * Batch 10 (M5-021) added the Dashboard Error Banner, replacing the
  * previous inline error `<div>`; Batch 11 (M5-016) added the Quick
- * Actions Section and the Portfolio Summary export (JSON/CSV).
+ * Actions Section and the Portfolio Summary export (JSON/CSV); Batch 14
+ * (M5-022) added the Developer Mode Toggle and wired its content into
+ * the Core KPI Grid and Liquidation Risk Panel's existing `KpiCard`s.
  */
 export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
@@ -37,6 +39,7 @@ export * from './components/DashboardSkeleton';
 export * from './components/DashboardSummaryHeader';
 export * from './components/DataFreshnessSection';
 export * from './components/DebtAndInterestPanel';
+export * from './components/DeveloperModeToggle';
 export * from './components/HealthFactorStatusSection';
 export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
@@ -60,6 +63,7 @@ export * from './utils/buildDashboardViewModel';
 export * from './utils/buildDataFreshnessIndicators';
 export * from './utils/buildDebtAndInterestPanel';
 export * from './utils/buildHealthFactorStatus';
+export * from './utils/buildKpiDeveloperDetails';
 export * from './utils/buildLeverageSummary';
 export * from './utils/buildLiquidationRiskPanel';
 export * from './utils/buildPortfolioComposition';

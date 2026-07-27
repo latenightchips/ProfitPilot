@@ -117,6 +117,17 @@ export interface DashboardViewModelOk extends DashboardViewModelBase {
   warnings: DashboardWarning[];
   calculationTimestamp: string;
   formattedCalculationTimestamp: string;
+  /**
+   * Added Batch 14 (M5-022, "Implement Dashboard Developer Mode") —
+   * read directly off `ServiceResult.metadata`
+   * (`services/shared/result.ts`, M3-002), the same values every other
+   * Service call already carries; nothing new computed. `sourceStatus`
+   * is deliberately not exposed here — M5-022's own "Display where
+   * appropriate" list does not name it (only "Engine version" and
+   * "Formula version" do).
+   */
+  engineVersion: string;
+  formulaVersion: string;
 }
 
 export interface DashboardViewModelError extends DashboardViewModelBase {

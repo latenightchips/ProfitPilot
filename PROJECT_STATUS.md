@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–12 (M5-001–M5-007, M5-009–M5-021, M5-023) are synchronized to GitHub; Batch 13 (M5-024 — Dashboard Accessibility Pass) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–13 (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized to GitHub; Batch 14 (M5-022 — Dashboard Developer Mode) is implemented and awaiting approval, completing every Milestone 5 "feature" task ahead of its own Testing phase (M5-025–M5-028). M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5980,6 +5980,117 @@ documented rather than silently reinterpreted.
 
 ---
 
+### Batch 14 — Dashboard Developer Mode (M5-022)
+
+Fourteenth Milestone 5 batch, the last "feature" task before Milestone
+5's own Testing phase (M5-025 depends on "M5-006 through M5-022" and its
+own "Cover" list explicitly names "Developer Mode" as a state to test —
+confirming this task genuinely gates that later one, not just by
+numeric order).
+
+**Investigated where the toggle's own state should live — a real gap,
+not assumed.** 03_UI.md's "DEVELOPER MODE" section ("It is disabled by
+default") implies a persistent, app-wide control, but its own
+"SETTINGS" page section's literal Version 1 field list (BTC Price
+Provider, Currency, Target Health Factor, Display Precision, Theme)
+does not name a Developer Mode toggle, and no task anywhere in
+`06_TASKS.md` assigns building a Settings page (`/settings` remains the
+Milestone 1 `PlaceholderPage` scaffold). M5-022's own Dependencies list
+is only M5-003 — not a Settings-page task — confirming the toggle is
+meant to be self-contained. Resolved with a new, small, dedicated
+`stores/developerModeStore.ts`, the same lightweight-Store pattern
+`stores/portfolioStore.ts` already established, in-memory only (Conflict
+B) — not by inventing a Settings page or persistence this milestone does
+not build.
+
+**Checked which of M5-022's 7 "Display where appropriate" items are
+genuinely new, gated content, rather than assuming all 7 needed new
+UI.** `ServiceMetadata` (`services/shared/result.ts`, M3-002) already
+carries `engineVersion`/`formulaVersion`; `DashboardMetric` (M5-003)
+already carries `rawValue`/`formulaId` — none of these were previously
+threaded through to any rendered output. But "Assumptions"
+(`LiquidationRiskPanel`'s own `assumptions` line, M5-009), "Warnings"
+(`RiskWarningBanner`'s own `calculationWarnings` case, reading
+`DashboardViewModelOk.warnings` directly, M5-010), and "Calculation
+timestamp" (the "Calculated {timestamp}" line above the KPI grid,
+M5-001) are **already visible to every user today, unconditionally** —
+moving them behind a new toggle would hide information from normal
+users, the opposite of this task's own DoD ("without cluttering," not
+"without informing"). Only "Raw values," "Formula IDs," "Engine
+version," and "Formula version" are genuinely new, Developer-Mode-gated
+content; those four are what this batch built.
+
+**M5-022 — `features/dashboard/components/DeveloperModeToggle.tsx`**
+(+ `stores/developerModeStore.ts`), rendered in the shared base section
+of `app/page.tsx` (alongside `DashboardSummaryHeader`/`DataFreshnessSection`/
+`QuickActionsSection`) — a display preference, not tied to calculation
+success. `features/dashboard/utils/buildKpiDeveloperDetails.ts` (new)
+feeds `KpiCard`'s own `developerModeDetails` slot (added M5-005, unused
+until this batch) with each metric's Formula ID, raw value, and the
+calculation's shared Engine/Formula version; wired into both
+`DashboardKpiGrid` (M5-006) and `LiquidationRiskPanel` (M5-009), the two
+sections that already use `KpiCard`. `DashboardViewModelOk` (M5-003)
+gained `engineVersion`/`formulaVersion` fields, read directly off
+`ServiceResult.metadata` — no new calculation, only two more fields
+threaded through an already-computed value.
+
+- **"Developer Mode must not change calculation behavior"** (this
+  task's own Requirement): enforced structurally, not just by
+  convention — `useDeveloperModeStore`'s `enabled` flag is read only by
+  Dashboard view-layer components; no Engine or Service call anywhere
+  takes it as an input.
+- **A metric with no `formulaId` (e.g. the zero-debt liquidation trio)
+  shows no developer details even when the toggle is on** — nothing
+  formula-specific to elaborate on for a value that was never computed,
+  confirmed via a dedicated test.
+
+**Scope discipline**: `git diff --stat -- engine/ services/ types/`
+empty — zero Engine/Service/shared-type files touched.
+`git diff --stat -- stores/` shows only the one new file
+(`developerModeStore.ts`); `stores/portfolioStore.ts` itself is
+untouched. Every value displayed is already-computed Service output,
+reshaped, not recalculated.
+
+**Validation — Batch 14**
+
+| Command                      | Result                                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                       |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                       |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                       |
+| `pnpm test` (Vitest)         | ✅ Pass, 1060/1060 (14 net new)                                                                                                               |
+| `pnpm test:coverage`         | ✅ 95.58% statements / 89.32% branches / 100% functions / 98.84% lines (project-wide) — consistent with Batch 13's 95.55%/89.24%/100%/98.83%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 24/24 (1 net new — see below)                                                                                                        |
+| `pnpm build`                 | ✅ Pass — `/` grew from 8.12 kB to 8.45 kB (217 kB First Load JS)                                                                             |
+
+**Extended `tests/e2e/accessibility.spec.ts` (Batch 13) with a 5th
+axe-core WCAG-AA scan state**: Developer Mode enabled — zero violations,
+closing the loop on this batch's own new UI (a checkbox and per-card
+detail blocks) rather than leaving it unverified by the accessibility
+suite that batch already built.
+
+**Manual browser verification**: toggled Developer Mode on for a real
+portfolio through the actual Creation Flow — confirmed every KPI card
+and all three Liquidation Risk cards show their own Formula ID, raw
+value, and a shared "Engine v0.1.0, Formula v1.0" line; confirmed no
+developer details render before toggling; confirmed the displayed KPI
+values themselves are unchanged before/after toggling (calculation
+behavior unaffected); screenshot captured, no console errors.
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/`
+empty; `git diff --stat -- stores/` shows only the new
+`developerModeStore.ts`. `DeveloperModeToggle.tsx` and
+`buildKpiDeveloperDetails.ts` both import only from within
+`features/dashboard/` or the new Store — no `@/services` or `@/engine`
+import in either.
+
+**Traceability**: M5-022's Description, all 7 "Display where
+appropriate" items (4 newly gated, 3 confirmed already satisfied for
+all users, not silently dropped), its Requirement, and its DoD are each
+addressed individually above.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -7011,10 +7122,10 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 13
-   (M5-024 — Dashboard Accessibility Pass) before committing, per
-   instruction. Batches 1–12 (M5-001–M5-007, M5-009–M5-021, M5-023) are
-   synchronized to GitHub.
+2. **This pass stops here for approval** of Milestone 5 Batch 14
+   (M5-022 — Dashboard Developer Mode) before committing, per
+   instruction. Batches 1–13 (M5-001–M5-007, M5-009–M5-024, excluding
+   M5-008) are synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
    `MILESTONE_4_COMPLETION.md` (committed and synchronized separately,
@@ -7028,13 +7139,14 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–12
-   (M5-001–M5-007, M5-009–M5-021, M5-023) are synchronized; Batch 13
-   (Dashboard Accessibility Pass: M5-024) is implemented and awaiting
-   approval. **M5-008 remains wholly unbuilt**, still blocked on
-   Conflict #1. The remaining Milestone 5 tasks are M5-022 and M5-025
-   through M5-028 (Developer Mode and Testing) — not yet reviewed in
-   detail.
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–13
+   (M5-001–M5-007, M5-009–M5-024, excluding M5-008) are synchronized;
+   Batch 14 (Dashboard Developer Mode: M5-022) is implemented and
+   awaiting approval — the last Milestone 5 "feature" task. **M5-008
+   remains wholly unbuilt**, still blocked on Conflict #1. The remaining
+   Milestone 5 tasks are M5-025 through M5-028 (Component Tests,
+   Integration Tests, End-to-End Tests, and final UI Spec Validation) —
+   not yet reviewed in detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
    name a `Portfolio Status`/`Risk Category` field (example values
@@ -7247,7 +7359,26 @@ Service already supports).
     M5-016's own "explain why" Requirement for keyboard/screen-reader
     users specifically). See the Batch 13 write-up above for the full
     per-item reasoning.
-18. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+18. **Milestone 5 Batch 14 raised no new numbered conflict, but found
+    where M5-022's own toggle state should live had no documented
+    answer.** 03_UI.md's "DEVELOPER MODE" section implies a persistent,
+    app-wide control, but its own "SETTINGS" page's literal Version 1
+    field list does not name a Developer Mode toggle, and no task
+    anywhere assigns building a Settings page. Resolved with a new,
+    small, dedicated `stores/developerModeStore.ts` — the same
+    lightweight-Store pattern `stores/portfolioStore.ts` already
+    established — rather than inventing a Settings page this milestone
+    does not build. Also checked which of the task's 7 "Display where
+    appropriate" items were genuinely new: "Assumptions," "Warnings,"
+    and "Calculation timestamp" are already visible to every user today
+    (`LiquidationRiskPanel`, `RiskWarningBanner`, the "Calculated
+    {timestamp}" line), so only "Raw values"/"Formula IDs"/"Engine
+    version"/"Formula version" were genuinely new, gated content — the
+    other three were not moved behind the new toggle, since hiding
+    already-visible information from normal users would contradict this
+    task's own DoD. See the Batch 14 write-up above for the full
+    reasoning.
+19. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -7255,7 +7386,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-19. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+20. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -7266,44 +7397,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-20. **From Batch 6, still open**: conflict #27 — M4-012 never says
+21. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-21. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+22. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-22. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+23. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-23. **From Batch 3, still open — recurred in Batch 7 with the same
+24. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-24. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+25. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-25. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+26. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-26. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+27. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-27. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+28. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-28. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+29. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -7316,13 +7447,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-29. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+30. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-30. **From Milestone 3/4, still open — final tally at Milestone 4's
+31. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

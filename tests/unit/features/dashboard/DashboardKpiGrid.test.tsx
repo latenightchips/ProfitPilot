@@ -102,3 +102,41 @@ describe('DashboardKpiGrid — unavailable values (Conflict #20)', () => {
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
   });
 });
+
+describe('DashboardKpiGrid — Developer Mode (M5-022, Batch 14)', () => {
+  it('shows no developer details by default', () => {
+    const viewModel = buildOkViewModel();
+    render(<DashboardKpiGrid metrics={viewModel.metrics} />);
+    expect(screen.queryByText(/Formula ID: F-022/)).not.toBeInTheDocument();
+  });
+
+  it('shows Formula ID, raw value, and Engine/Formula version when enabled', () => {
+    const viewModel = buildOkViewModel();
+    render(
+      <DashboardKpiGrid
+        metrics={viewModel.metrics}
+        developerMode
+        engineVersion="1.0"
+        formulaVersion="1.0"
+      />,
+    );
+    expect(screen.getByText(/Formula ID: F-022/)).toBeInTheDocument();
+    expect(screen.getByText(/Raw value: 4/)).toBeInTheDocument();
+    // Every one of the 8 available cards carries the same shared
+    // Engine/Formula version string in its own developer details.
+    expect(screen.getAllByText(/Engine v1\.0, Formula v1\.0/).length).toBe(8);
+  });
+
+  it('shows no developer details for an unavailable card even when enabled', () => {
+    const viewModel = buildOkViewModel({ debt: { asset: 'USDC', balance: 0 } });
+    render(
+      <DashboardKpiGrid
+        metrics={viewModel.metrics}
+        developerMode
+        engineVersion="1.0"
+        formulaVersion="1.0"
+      />,
+    );
+    expect(screen.queryByText(/Formula ID: F-024/)).not.toBeInTheDocument();
+  });
+});

@@ -223,5 +223,7 @@ export function buildDashboardViewModel(
     warnings: summaryResult.warnings,
     calculationTimestamp: summaryResult.metadata.calculationTimestamp,
     formattedCalculationTimestamp: formatDateTime(summaryResult.metadata.calculationTimestamp),
+    engineVersion: summaryResult.metadata.engineVersion,
+    formulaVersion: summaryResult.metadata.formulaVersion,
   };
 }
