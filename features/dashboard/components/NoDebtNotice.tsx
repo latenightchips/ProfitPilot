@@ -17,12 +17,20 @@ import Link from 'next/link';
  * builder already uses** (`summary.liquidation === null`,
  * `features/dashboard/utils/buildDashboardViewModel.ts`) — not a new
  * threshold or condition invented for this notice.
+ *
+ * **`role="status"` (Milestone 5 Batch 13, M5-024 "Complete Dashboard
+ * Accessibility Pass")**: a real, found-not-assumed gap under this
+ * task's own "Status announcements" Review item. `"status"`, not
+ * `"alert"`, since this is informational (explaining why certain
+ * metrics are unavailable), not an error or urgent warning — matching
+ * the polite-vs-assertive distinction `DashboardSummaryHeader`'s own
+ * storage-status line already establishes (M5-004).
  */
 export function NoDebtNotice({ hasDebt }: { hasDebt: boolean }) {
   if (hasDebt) return null;
 
   return (
-    <div className="rounded-md border border-border bg-accent/10 p-3 text-sm">
+    <div role="status" className="rounded-md border border-border bg-accent/10 p-3 text-sm">
       <p className="text-foreground">
         This portfolio has no debt position — Health Factor and liquidation risk do not apply.
       </p>

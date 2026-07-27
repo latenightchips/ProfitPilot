@@ -25,10 +25,18 @@ import type { ReactNode } from 'react';
  *   rule; see `../types/viewModel.ts`). Rendered as a text label, not
  *   color alone, matching the accessibility principle later tasks
  *   (M5-008, M5-024) make explicit.
- * - `tooltip`: uses the native `title` attribute — a minimal, always-
- *   accessible baseline; M5-024 ("Complete Dashboard Accessibility
- *   Pass") is this project's own dedicated task for a fuller
- *   tooltip-accessibility treatment, not assumed here.
+ * - `tooltip`: uses the native `title` attribute. **Made keyboard-
+ *   reachable in Milestone 5 Batch 13 (M5-024, "Complete Dashboard
+ *   Accessibility Pass")** — a real, found-not-assumed gap: a `title` on
+ *   a non-focusable `<div>` only ever shows on mouse hover, never on
+ *   keyboard focus, which fails WCAG 2.1.1 (Keyboard) for anyone who
+ *   cannot use a mouse. `tabIndex={0}` is added only when `tooltip` is
+ *   actually provided — an empty tab stop with nothing to announce would
+ *   be its own accessibility regression (noise for keyboard users). This
+ *   is still the native `title` mechanism, not a redesigned tooltip
+ *   component; a richer, dismissible/hoverable tooltip remains
+ *   M5-022's ("Implement Dashboard Developer Mode") own scope, not this
+ *   task's.
  * - `trend`: optional comparison text. No historical/baseline data
  *   source exists anywhere in this application yet (no time-series
  *   storage — Conflict B, no persistence before Milestone 8), so no
@@ -84,6 +92,7 @@ export function KpiCard({
     <div
       className="flex flex-col gap-1 rounded-md border border-border p-3"
       title={tooltip}
+      tabIndex={tooltip !== undefined ? 0 : undefined}
       aria-busy={loading}
     >
       <div className="flex items-center justify-between gap-2">

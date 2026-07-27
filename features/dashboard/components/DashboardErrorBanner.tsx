@@ -77,6 +77,14 @@ import type { DashboardViewModelError } from '../types/viewModel';
  *   one genuinely new addition beyond what the Portfolio page's own
  *   `CalculationErrorBanner` (M4-017) does: each error's own `code` is
  *   now shown, not only used as a React key.
+ *
+ * **`role="alert"` (Milestone 5 Batch 13, M5-024 "Complete Dashboard
+ * Accessibility Pass")**: a real, found-not-assumed gap under this
+ * task's own "Status announcements" Review item — without it, a screen
+ * reader user not already focused near this banner when it appears
+ * (e.g. after editing data into a failing state) would never be told a
+ * calculation failed. Mirrors `RiskWarningBanner`'s own already-existing
+ * `role="alert"` (M5-010) — the same class of condition, the same fix.
  */
 export function DashboardErrorBanner({
   portfolioId,
@@ -90,7 +98,10 @@ export function DashboardErrorBanner({
   const recomputeSummary = usePortfolioStore((state) => state.recomputeSummary);
 
   return (
-    <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
+    <div
+      role="alert"
+      className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm"
+    >
       <p className="font-medium text-destructive">
         Unable to calculate a summary for {viewModel.portfolioName}.
       </p>

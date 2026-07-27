@@ -28,6 +28,12 @@ import type { PortfolioComposition, PortfolioCompositionRow } from '../types/por
  * appropriately" Requirement without violating its "No horizontal page
  * scrolling" Requirement — the scroll is local to the table, never the
  * page. The `sm:`-and-below compact-card fallback above is unaffected.
+ *
+ * **`scope="col"` on every `<th>` (Milestone 5 Batch 13, M5-024
+ * "Complete Dashboard Accessibility Pass")**: a real, found-not-assumed
+ * gap under this task's own "Table semantics" Review item — without it,
+ * a screen reader navigating cell-by-cell cannot announce which column a
+ * given data cell belongs to (WCAG 1.3.1, Info and Relationships).
  */
 const ROWS: { key: 'collateral' | 'debt'; label: string }[] = [
   { key: 'collateral', label: 'Collateral' },
@@ -63,12 +69,24 @@ export function PortfolioCompositionSection({
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-xs whitespace-nowrap text-muted-foreground">
-              <th className="pb-2 pr-4">Position</th>
-              <th className="pb-2 pr-4">Asset</th>
-              <th className="pb-2 pr-4">Quantity</th>
-              <th className="pb-2 pr-4">Current Price</th>
-              <th className="pb-2 pr-4">Value</th>
-              <th className="pb-2">Portfolio %</th>
+              <th scope="col" className="pb-2 pr-4">
+                Position
+              </th>
+              <th scope="col" className="pb-2 pr-4">
+                Asset
+              </th>
+              <th scope="col" className="pb-2 pr-4">
+                Quantity
+              </th>
+              <th scope="col" className="pb-2 pr-4">
+                Current Price
+              </th>
+              <th scope="col" className="pb-2 pr-4">
+                Value
+              </th>
+              <th scope="col" className="pb-2">
+                Portfolio %
+              </th>
             </tr>
           </thead>
           <tbody>

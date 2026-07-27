@@ -62,6 +62,23 @@ describe('DashboardErrorBanner', () => {
     expect(screen.getByRole('button', { name: 'Download recovery copy' })).toBeInTheDocument();
   });
 
+  it('announces itself as an alert, so a screen reader is notified without requiring focus (M5-024, Batch 13)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+    if (viewModel.ok) throw new Error('expected a calculation failure for this fixture');
+
+    render(
+      <DashboardErrorBanner
+        portfolioId={created.data.id}
+        portfolio={record.portfolio}
+        viewModel={viewModel}
+      />,
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
   it('Download recovery copy triggers a real download, matching M4-017 own test pattern', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');

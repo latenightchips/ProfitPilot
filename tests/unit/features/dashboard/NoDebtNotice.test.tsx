@@ -23,4 +23,9 @@ describe('NoDebtNotice — hasDebt false', () => {
       '/portfolio',
     );
   });
+
+  it('announces itself as a polite status region (M5-024, Batch 13)', () => {
+    render(<NoDebtNotice hasDebt={false} />);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
 });

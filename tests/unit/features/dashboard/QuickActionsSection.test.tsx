@@ -43,7 +43,10 @@ describe('QuickActionsSection — calculation succeeded', () => {
     );
 
     const runSimulation = screen.getByRole('button', { name: 'Run simulation' });
-    expect(runSimulation).toBeDisabled();
+    // `aria-disabled`, not the native `disabled` attribute (M5-024, Batch 13) —
+    // keeps the button keyboard-focusable so its `title` reason is reachable
+    // without a mouse; see QuickActionsSection.tsx's own header comment.
+    expect(runSimulation).toHaveAttribute('aria-disabled', 'true');
     expect(runSimulation).toHaveAttribute('title', expect.stringContaining('not yet available'));
 
     expect(screen.getByRole('button', { name: 'Export portfolio (JSON)' })).toBeInTheDocument();
@@ -128,7 +131,7 @@ describe('QuickActionsSection — calculation failed', () => {
     );
 
     const exportButton = screen.getByRole('button', { name: 'Export portfolio' });
-    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute('aria-disabled', 'true');
     expect(exportButton).toHaveAttribute('title', expect.stringContaining('No calculated summary'));
   });
 });

@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–11 (M5-001–M5-007, M5-009–M5-021) are synchronized to GitHub; Batch 12 (M5-023 — Dashboard Responsive Layout) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is in progress**: Batches 1–12 (M5-001–M5-007, M5-009–M5-021, M5-023) are synchronized to GitHub; Batch 13 (M5-024 — Dashboard Accessibility Pass) is implemented and awaiting approval. M5-008 remains wholly blocked on Conflict #1. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -5813,6 +5813,173 @@ documented rather than silently ignored or invented.
 
 ---
 
+### Batch 13 — Dashboard Accessibility Pass (M5-024)
+
+Thirteenth Milestone 5 batch. M5-024's own dependency (M5-023) is now
+satisfied. Chose M5-024 over M5-022 (Developer Mode) for the same
+reasoning Batch 12 used to choose M5-023 over M5-022: M5-024 is P0
+(M5-022 is P2) and is the other half of `06_TASKS.md`'s own coarse
+"Responsive and Accessible States" Implementation Order bucket, which
+M5-023 already began.
+
+**M5-024's own DoD names a section that turns out to carry no concrete
+content.** "The Dashboard meets the accessibility requirements defined
+in the Build Guide" points to `04_BUILD_GUIDE.md`'s own "ACCESSIBILITY"
+line — a single checklist tick ("✓ Accessibility") with nothing else
+under it anywhere in that document. Not a blocking conflict (a real,
+concrete, cross-document-consistent target exists elsewhere): `01_PRD.md`'s
+REQ-008-F and REQ-011-E both state "WCAG AA Compliance... Target WCAG
+AAA where practical," and `03_UI.md`'s own "ACCESSIBILITY" section
+states "Minimum Target: WCAG AA" — three independent sections agreeing
+on the same bar. This batch verifies against WCAG AA (the actual,
+documented, agreed-upon standard), not the empty Build Guide checkbox
+literally named in the DoD text, and not an invented bar of its own.
+
+**Added `@axe-core/playwright` as a new devDependency** — the
+industry-standard automated WCAG checker, the only honest way to verify
+"meets WCAG AA" as a real, repeatable, re-checkable claim rather than a
+one-time manual eyeball. A real browser, run against every structurally
+distinct Dashboard state, is also the only way to test "Keyboard
+navigation" and "Focus visibility" at all — Vitest/Testing Library run
+in jsdom, which does not compute real focus/tab order or visual styling.
+
+**Investigated each of M5-024's 8 Review items individually**, exactly
+the per-item discipline Batches 5, 9, and 12 already established for
+their own multi-item tasks:
+
+- **Heading order** — audited every heading tag across the whole
+  Dashboard render tree (`app/page.tsx` and every `features/dashboard/`
+  component): `h1` (route) → `h2` (portfolio name, Summary Header) →
+  `h3` (every section: Data Freshness, Quick Actions, Risk Warnings,
+  Health Factor Status, Liquidation Risk, Portfolio Composition, Debt
+  and Interest, Leverage Summary, Recommendations) — strictly
+  sequential, no skipped levels, no `h3` appearing before its own `h2`.
+  **Already correct; no fix needed.** Confirmed via code review, not
+  assumed.
+- **Keyboard navigation** — confirmed via a real scripted Tab-through
+  (`tests/e2e/accessibility.spec.ts`) that every interactive control
+  (links, buttons, the portfolio switcher `<select>`, the newly
+  `aria-disabled` Quick Actions buttons) is reachable and that known
+  controls are actually hit. **Already correct** given this codebase's
+  consistent use of real `<button>`/`<a>`/`<select>` elements throughout
+  every prior batch — no component here invents a fake, unreachable
+  "clickable div."
+- **Focus visibility** — confirmed via `app/globals.css` (no
+  `outline-none`/`focus:outline-none` anywhere in this codebase) and a
+  real scripted check that every focused element's computed
+  `outline-style`/`outline-width` is non-empty. **Already correct**,
+  since nothing here ever strips the browser's own default focus ring.
+- **Status announcements — 2 real, found-not-assumed gaps closed.**
+  `DashboardErrorBanner` (M5-021) had no live-region role at all —
+  fixed with `role="alert"`, mirroring `RiskWarningBanner`'s own
+  already-existing `role="alert"` (M5-010) for the identical class of
+  condition. `NoDebtNotice` (M5-020) also had none — fixed with
+  `role="status"` (polite, not assertive, since it is informational, not
+  an error), matching the polite/assertive distinction
+  `DashboardSummaryHeader`'s own storage-status line already establishes.
+- **Chart alternatives — structurally not applicable, not skipped.**
+  No chart exists anywhere on the Dashboard: M5-012 ("Implement
+  Portfolio Allocation Chart") was already resolved with no component
+  built, since `composition.showAllocationChart` is always `false`
+  under Conflict A (single-asset scope). There is nothing to provide an
+  alternative _for_.
+- **Table semantics — 1 real, found-not-assumed gap closed.** The one
+  real `<table>` (`PortfolioCompositionSection`, M5-011) had no
+  `scope="col"` on any header cell — a screen reader navigating
+  cell-by-cell could not announce which column a data cell belonged to
+  (WCAG 1.3.1). Fixed on all 6 header cells.
+- **Tooltip accessibility — 2 real, found-not-assumed gaps closed,
+  both already flagged as this exact task's own future work by earlier
+  batches' own comments** (`KpiCard.tsx`'s own M5-005 comment, and
+  `QuickActionsSection.tsx`'s own M5-016 comment). `KpiCard`'s `title`
+  attribute lived on a non-focusable `<div>`, only ever reachable by
+  mouse hover — fixed by adding `tabIndex={0}` exactly when a `tooltip`
+  is actually provided (not unconditionally, which would add a useless
+  empty tab stop). `QuickActionsSection`'s unavailable-action buttons
+  used the native `disabled` attribute, which removes an element from
+  the tab order in every browser — meaning the "explain why" reason
+  (this task's own M5-016 Requirement) was **never reachable without a
+  mouse**. Fixed by switching to `aria-disabled="true"` (kept focusable,
+  no `onClick` exists to guard against regardless). Both are still the
+  native `title` mechanism — a richer, dismissible/hoverable tooltip
+  component remains M5-022's ("Implement Dashboard Developer Mode") own
+  scope, not built here.
+- **Color-independent warnings — already correct, confirmed via
+  review, not a new fix.** `KpiCard`'s own status label (M5-005) already
+  renders "Warning"/"Unavailable" as visible text, not color alone
+  (documented in that component's own header comment); `RiskWarningBanner`/
+  `DashboardErrorBanner`/`NoDebtNotice` all pair their color-coded
+  styling with full explanatory text, never color alone.
+
+**Automated axe-core scans (WCAG 2A + 2AA rule sets) across 4
+structurally distinct Dashboard states — zero violations in every
+one**, both before and after the fixes above (the fixes address gaps
+axe cannot fully automate — keyboard reachability of `title` tooltips,
+live-region choice — not violations axe itself flagged): no portfolio
+selected, a healthy portfolio with active recommendations, a
+calculation failure (Dashboard Error Banner), and a zero-debt portfolio
+(Risk Warning Banner + No-Debt Notice together).
+
+**Scope discipline**: `git diff --stat -- engine/ stores/ types/
+services/` empty — zero Engine/Store/type/Service files touched. Every
+component change is an accessibility-attribute addition
+(`role`, `scope`, `tabIndex`, `aria-disabled`) to already-existing
+render output; no new calculation, Store action, or Service call. The
+one dependency change (`@axe-core/playwright`, devDependency only) is
+test tooling, not shipped application code.
+
+**Validation — Batch 13**
+
+| Command                      | Result                                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                       |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                       |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                       |
+| `pnpm test` (Vitest)         | ✅ Pass, 1046/1046 (5 net new)                                                                                                                |
+| `pnpm test:coverage`         | ✅ 95.55% statements / 89.24% branches / 100% functions / 98.83% lines (project-wide) — consistent with Batch 12's 95.55%/89.22%/100%/98.83%. |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 23/23 (7 net new — see below)                                                                                                        |
+| `pnpm build`                 | ✅ Pass — `/` grew from 8.09 kB to 8.12 kB (217 kB First Load JS)                                                                             |
+
+**New permanent regression tests — `tests/e2e/accessibility.spec.ts`**
+(new file, 7 tests): 4 axe-core WCAG-AA scans across the states named
+above; a scripted keyboard-only Tab-through confirming real controls are
+reached; a scripted focus-visibility check across 15 Tab presses; a
+dedicated test confirming the unavailable Quick Actions button's reason
+is reachable via `.focus()` (the specific fix this task made). One
+found-and-fixed test-authoring issue along the way: an initial
+`getByRole('alert')` assertion was ambiguous against Next.js's own
+built-in SPA route announcer (`#__next-route-announcer__`, framework-
+injected, also `role="alert"`) — rescoped to the error banner's own
+text. Six small companion unit tests
+(`KpiCard.test.tsx`, `DashboardErrorBanner.test.tsx`, `NoDebtNotice.test.tsx`,
+`PortfolioCompositionSection.test.tsx`, plus the `toBeDisabled()` →
+`aria-disabled` assertion updates in `QuickActionsSection.test.tsx`/
+`page.test.tsx` that the `aria-disabled` switch required) assert each
+fix's own attributes remain present.
+
+**Manual/automated browser verification**: ran the axe-core scans and
+scripted keyboard/focus checks against the real compiled dev server
+(not mocked), driving the actual Creation Flow through to the Dashboard
+for each of the 4 states. Confirmed zero WCAG AA violations in every
+state, confirmed the previously-mouse-only tooltip reasons are now
+reachable via `.focus()`, and confirmed Tab order reaches every real
+control without getting stuck.
+
+**Architecture audit**: `git diff --stat -- engine/ stores/ types/
+services/` empty. Every changed component file already existed; no new
+component, type, or builder was added. `package.json`'s only change is
+the one new devDependency.
+
+**Traceability**: all 8 of M5-024's Review items are addressed
+individually above — 4 confirmed already correct via direct
+investigation (not assumed), 4 real gaps found and fixed, 1 confirmed
+structurally not applicable (chart alternatives) — and its DoD is
+addressed by substituting the verifiable, cross-document-consistent
+WCAG AA target for the Build Guide's own empty checklist reference,
+documented rather than silently reinterpreted.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -6844,9 +7011,9 @@ Service already supports).
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 5 Batch 12
-   (M5-023 — Dashboard Responsive Layout) before committing, per
-   instruction. Batches 1–11 (M5-001–M5-007, M5-009–M5-021) are
+2. **This pass stops here for approval** of Milestone 5 Batch 13
+   (M5-024 — Dashboard Accessibility Pass) before committing, per
+   instruction. Batches 1–12 (M5-001–M5-007, M5-009–M5-021, M5-023) are
    synchronized to GitHub.
 3. **Milestone 4 is complete and synchronized to GitHub.** All 18 tasks
    (M4-001 through M4-018) addressed; a permanent snapshot lives in
@@ -6861,12 +7028,12 @@ Service already supports).
    the Dashboard reads the Store's existing single-position,
    in-memory-only `Portfolio` records, adding no new position model or
    persistence mechanism.
-4. **Milestone 5 — Dashboard is in progress.** Batches 1–11
-   (M5-001–M5-007, M5-009–M5-021) are synchronized; Batch 12 (Dashboard
-   Responsive Layout: M5-023) is implemented and awaiting approval.
-   **M5-008 remains wholly unbuilt**, still blocked on Conflict #1. The
-   remaining Milestone 5 tasks are M5-022 and M5-024 through M5-028
-   (Developer Mode, Accessibility, and Testing) — not yet reviewed in
+4. **Milestone 5 — Dashboard is in progress.** Batches 1–12
+   (M5-001–M5-007, M5-009–M5-021, M5-023) are synchronized; Batch 13
+   (Dashboard Accessibility Pass: M5-024) is implemented and awaiting
+   approval. **M5-008 remains wholly unbuilt**, still blocked on
+   Conflict #1. The remaining Milestone 5 tasks are M5-022 and M5-025
+   through M5-028 (Developer Mode and Testing) — not yet reviewed in
    detail.
 5. **Batch 1 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
@@ -7055,7 +7222,32 @@ Service already supports).
     was found and documented but not built (no sidebar replacement below
     `md:`) — out of scope for a Dashboard-content task. See the Batch 12
     write-up above for the full reasoning.
-17. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+17. **Milestone 5 Batch 13 raised no new numbered conflict, but found
+    M5-024's own DoD points to an empty section.** "Meets the
+    accessibility requirements defined in the Build Guide" names
+    `04_BUILD_GUIDE.md`'s own "ACCESSIBILITY" line, which is a bare
+    checklist tick with no actual content anywhere in that document.
+    Resolved by verifying against WCAG AA instead — the real, concrete,
+    cross-document-consistent target three separate sections agree on
+    (`01_PRD.md` REQ-008-F/REQ-011-E, `03_UI.md`'s own "ACCESSIBILITY"
+    section), not an invented bar. Added `@axe-core/playwright`
+    (devDependency) and ran automated WCAG-AA scans across 4
+    structurally distinct Dashboard states — zero violations in all
+    four. Investigated all 8 of the task's own Review items
+    individually: 4 confirmed already correct (heading order, keyboard
+    navigation, focus visibility, color-independent warnings), 1
+    confirmed structurally not applicable (chart alternatives — no
+    chart exists, Conflict A), 2 real, found-not-assumed gaps fixed
+    (table semantics — missing `scope="col"`; status announcements —
+    `DashboardErrorBanner`/`NoDebtNotice` had no live-region role), and
+    1 real gap fixed that two earlier batches' own comments had already
+    flagged as this exact task's future work (tooltip accessibility —
+    `KpiCard`'s and `QuickActionsSection`'s `title` tooltips were only
+    reachable by mouse hover, never by keyboard, silently failing
+    M5-016's own "explain why" Requirement for keyboard/screen-reader
+    users specifically). See the Batch 13 write-up above for the full
+    per-item reasoning.
+18. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -7063,7 +7255,7 @@ Service already supports).
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-18. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+19. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -7074,44 +7266,44 @@ Service already supports).
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-19. **From Batch 6, still open**: conflict #27 — M4-012 never says
+20. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-20. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+21. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-21. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+22. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-22. **From Batch 3, still open — recurred in Batch 7 with the same
+23. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-23. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+24. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-24. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+25. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-25. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+26. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-26. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+27. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-27. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+28. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -7124,13 +7316,13 @@ Service already supports).
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-28. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+29. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-29. **From Milestone 3/4, still open — final tally at Milestone 4's
+30. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

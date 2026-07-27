@@ -56,6 +56,18 @@ describe('KpiCard — tooltip', () => {
       'F-022 — see docs/02_Formulas.md',
     );
   });
+
+  it('is keyboard-focusable when a tooltip is present, so it is reachable without a mouse (M5-024, Batch 13)', () => {
+    render(
+      <KpiCard title="Health Factor" primaryValue="4" tooltip="F-022 — see docs/02_Formulas.md" />,
+    );
+    expect(screen.getByText('Health Factor').closest('[title]')).toHaveAttribute('tabIndex', '0');
+  });
+
+  it('is not an extra tab stop when no tooltip is provided', () => {
+    render(<KpiCard title="Health Factor" primaryValue="4" />);
+    expect(screen.getByText('Health Factor').closest('div')).not.toHaveAttribute('tabIndex');
+  });
 });
 
 describe('KpiCard — trend', () => {

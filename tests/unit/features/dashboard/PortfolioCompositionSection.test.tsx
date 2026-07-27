@@ -74,6 +74,17 @@ describe('PortfolioCompositionSection — responsive table container (M5-023, Ba
   });
 });
 
+describe('PortfolioCompositionSection — table semantics (M5-024, Batch 13)', () => {
+  it('marks every header cell scope="col" so a screen reader can announce column membership', () => {
+    render(<PortfolioCompositionSection composition={buildComposition()} />);
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers.length).toBe(6);
+    for (const header of headers) {
+      expect(header).toHaveAttribute('scope', 'col');
+    }
+  });
+});
+
 describe('PortfolioCompositionSection — protocol parameters', () => {
   it('renders every protocol parameter', () => {
     render(<PortfolioCompositionSection composition={buildComposition()} />);

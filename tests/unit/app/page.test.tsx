@@ -298,7 +298,10 @@ describe('DashboardPage — Quick Actions Section (M5-016, Batch 11)', () => {
       'href',
       '/portfolio',
     );
-    expect(screen.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run simulation' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(screen.getByRole('button', { name: 'Export portfolio (JSON)' })).toBeInTheDocument();
   });
 
@@ -313,7 +316,10 @@ describe('DashboardPage — Quick Actions Section (M5-016, Batch 11)', () => {
 
     expect(screen.getByText('Quick Actions')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Edit portfolio' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export portfolio' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export portfolio' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 });
 

@@ -15,11 +15,23 @@ import {
  * `../types/quickActions.ts` for the full reasoning behind which
  * actions are available/unavailable and why.
  *
- * Unavailable links render as disabled buttons carrying their reason as
- * both visible text and a `title` tooltip, matching this task's own
- * Requirement ("Unavailable actions should explain why") rather than
- * omitting them entirely — a user should be able to see that a workflow
- * exists and why it cannot be reached yet, not just that it is missing.
+ * Unavailable links render as inert buttons carrying their reason as a
+ * `title` tooltip, matching this task's own Requirement ("Unavailable
+ * actions should explain why") rather than omitting them entirely — a
+ * user should be able to see that a workflow exists and why it cannot be
+ * reached yet, not just that it is missing.
+ *
+ * **`aria-disabled`, not the native `disabled` attribute (Milestone 5
+ * Batch 13, M5-024 "Complete Dashboard Accessibility Pass")** — a real,
+ * found-not-assumed gap: a native `disabled` button is removed from the
+ * keyboard tab order entirely in every browser, so its `title` "reason"
+ * was never reachable without a mouse, silently failing this component's
+ * own stated Requirement for keyboard-only and screen-reader users
+ * specifically. `aria-disabled="true"` keeps the button focusable (its
+ * `title` becomes reachable on focus, the same fix `KpiCard.tsx` already
+ * applies) while still communicating "not actionable" to assistive
+ * technology; no `onClick` exists on these buttons regardless, so there
+ * is no action to guard against.
  */
 export function QuickActionsSection({
   actions,
@@ -51,7 +63,7 @@ export function QuickActionsSection({
             <button
               key={link.label}
               type="button"
-              disabled
+              aria-disabled="true"
               title={link.unavailableReason ?? undefined}
               className="cursor-not-allowed rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-60"
             >
@@ -93,7 +105,7 @@ export function QuickActionsSection({
         ) : (
           <button
             type="button"
-            disabled
+            aria-disabled="true"
             title={actions.exportUnavailableReason ?? undefined}
             className="cursor-not-allowed rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-60"
           >
