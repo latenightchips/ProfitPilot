@@ -201,6 +201,80 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
   });
 });
 
+describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () => {
+  it('does nothing when no interest scenario is active yet', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
+
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+  });
+
+  it('does not disturb an active price scenario', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const priceInput = screen.getByLabelText('BTC Price');
+    await user.clear(priceInput);
+    await user.type(priceInput, '60000');
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
+
+    expect(useSimulationStore.getState().currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+  });
+
+  it('re-runs the active interest scenario with the newly selected Holding Period', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '0.1');
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({ type: 'interest', timeHorizonDays: 365 });
+    expect(state.currentResult?.assumptions).toEqual(state.currentScenario);
+  });
+
+  it('re-runs the active interest scenario when a valid Custom Holding Period is entered', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '0.1');
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), 'custom');
+    const customInput = screen.getByLabelText('Custom Holding Period (days)');
+    await user.type(customInput, '45');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({ type: 'interest', timeHorizonDays: 45 });
+  });
+
+  it('does not update the Store while the Custom Holding Period is invalid', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '0.1');
+    const scenarioBeforeEdit = useSimulationStore.getState().currentScenario;
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), 'custom');
+    const customInput = screen.getByLabelText('Custom Holding Period (days)');
+    await user.type(customInput, '-1');
+
+    expect(useSimulationStore.getState().currentScenario).toEqual(scenarioBeforeEdit);
+  });
+});
+
 describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 5)', () => {
   it('updates portfolioActionPreview on a valid Collateral Change', async () => {
     const user = userEvent.setup();

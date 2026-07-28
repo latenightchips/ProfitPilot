@@ -1,16 +1,14 @@
 /**
  * Scenario Builder input resolution — 06_TASKS.md M6-006 ("Implement
- * Interest Rate Simulation"). Dependencies: M6-004. Description:
- * "Simulate borrow rate changes." Include: "Rate increase, Rate
- * decrease, Custom rate, Projected interest cost."
- *
- * Pure, Store-independent helpers that turn the Scenario Builder's
- * current form values into the `PriceScenarioInput`/`timeHorizonDays`
- * pieces `simulateScenario`'s own `type: 'interest'` variant requires
- * alongside Borrow Rate. No Engine access, no new calculation — just
- * reading already-validated form state into the Service's own input
- * shape, matching `04_BUILD_GUIDE.md`'s own "Only services communicate
- * directly with the Formula Engine" rule already followed since Batch 4.
+ * Interest Rate Simulation", Batch 6) + M6-007 ("Implement Time
+ * Projection", Batch 7). Pure, Store-independent helpers that turn the
+ * Scenario Builder's current form values into the
+ * `PriceScenarioInput`/`timeHorizonDays` pieces `simulateScenario`'s own
+ * `type: 'interest'` variant requires alongside Borrow Rate. No Engine
+ * access, no new calculation — just reading already-validated form
+ * state into the Service's own input shape, matching
+ * `04_BUILD_GUIDE.md`'s own "Only services communicate directly with
+ * the Formula Engine" rule already followed since Batch 4.
  *
  * **Reuses whichever price input the user already has active** — the
  * same precedence `ScenarioBuilder.tsx`'s own BTC Price/Percentage
@@ -26,11 +24,6 @@
  * validated exactly this field (`holdingPeriod`/`customHoldingPeriodDays`,
  * matching M6-007's own "Support: 30 days/90 days/180 days/1 year/Custom
  * duration" list verbatim) as one of M6-004's own six named fields.
- * Reading its already-validated current value here is not M6-007's own
- * scope — that task's own DoD is about *displaying* projections across
- * multiple horizons, a separate, later, dedicated task. This is simply
- * supplying a required Service input from a field that already exists
- * for exactly this purpose.
  *
  * **"Rate increase," "Rate decrease," and "Custom rate" are not three
  * separate inputs or preset buttons** — unlike M6-005's own "Preset
@@ -38,8 +31,19 @@
  * already-built, free-form Borrow Rate field (any value above, below,
  * or unrelated to the portfolio's own current rate) already satisfies
  * all three by construction.
+ *
+ * **`resolveInterestScenario` (Batch 7)**: the one place that combines
+ * all three pieces (Borrow Rate + resolved price + resolved time
+ * horizon) into a complete `SimulationScenario`. Batch 6 inlined this
+ * directly in `ScenarioBuilder.tsx`'s own Borrow Rate handler; Batch 7
+ * extracts it here so the Holding Period/Custom Duration handlers can
+ * reuse the exact same construction (see `ScenarioBuilder.tsx`'s own
+ * header comment for why Holding Period changes now also re-trigger a
+ * live calculation, satisfying M6-007's own "Project portfolio changes
+ * over time" Description — not just capturing the value passively at
+ * Borrow-Rate-change time, which is all Batch 6 did).
  */
-import type { ApplicationPortfolio, PriceScenarioInput } from '@/services';
+import type { ApplicationPortfolio, PriceScenarioInput, SimulationScenario } from '@/services';
 
 import type { ScenarioBuilderFormValues } from '../types/scenarioBuilder';
 import { validateScenarioBuilderInput } from './validateScenarioBuilderInput';
@@ -69,4 +73,23 @@ export function resolveTimeHorizonDays(values: ScenarioBuilderFormValues): numbe
     return null;
   }
   return customDays;
+}
+
+export function resolveInterestScenario(
+  values: ScenarioBuilderFormValues,
+  portfolio: ApplicationPortfolio,
+): SimulationScenario | null {
+  const errors = validateScenarioBuilderInput(values, portfolio);
+  if (errors.borrowApr !== null) return null;
+
+  const priceScenario = resolvePriceScenarioInput(values, portfolio);
+  const timeHorizonDays = resolveTimeHorizonDays(values);
+  if (priceScenario === null || timeHorizonDays === null) return null;
+
+  return {
+    type: 'interest',
+    priceScenario,
+    timeHorizonDays,
+    borrowApr: Number(values.borrowApr),
+  };
 }

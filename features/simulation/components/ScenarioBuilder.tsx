@@ -10,7 +10,7 @@ import {
   PRICE_PRESETS,
   type ScenarioBuilderFormValues,
 } from '../types/scenarioBuilder';
-import { resolvePriceScenarioInput, resolveTimeHorizonDays } from '../utils/resolveScenarioInputs';
+import { resolveInterestScenario } from '../utils/resolveScenarioInputs';
 import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderInput';
 
 /**
@@ -41,28 +41,48 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * themselves, as opposed to the fixed presets, not a new input type.
  *
  * **Price-scenario fields (BTC Price, Percentage Change), the
- * Collateral/Debt Change fields (M6-008, Batch 5), and Borrow Rate
- * (M6-006, Batch 6) are wired to real calculations; Target Health
- * Factor and Time horizon are not.** Target Health Factor has no later
- * task naming it as an input anywhere, a genuine specification gap —
- * see `../types/scenarioBuilder.ts`'s own header comment. Time horizon
- * (Holding Period) is *read* by the Borrow Rate wiring below (see
- * `../utils/resolveScenarioInputs.ts`'s own header comment for why that
- * is not M6-007's own scope), but changing Holding Period itself does
- * not, on its own, trigger a new calculation this batch — M6-007
- * ("Implement Time Projection") is its own later, dedicated task about
- * *displaying* projections across multiple horizons.
+ * Collateral/Debt Change fields (M6-008, Batch 5), Borrow Rate (M6-006,
+ * Batch 6), and Holding Period/Custom Duration (M6-007, Batch 7) are
+ * wired to real calculations; only Target Health Factor is not.**
+ * Target Health Factor has no later task naming it as an input
+ * anywhere, a genuine specification gap — see
+ * `../types/scenarioBuilder.ts`'s own header comment.
  *
  * **Borrow Rate calls `simulateScenario` with `type: 'interest'`
  * (M6-006, Batch 6)** — `simulateInterestScenario` (M2-020)
  * structurally requires a `priceScenario` and `timeHorizonDays`
  * alongside `borrowApr`, so changing Borrow Rate resolves both from the
  * form's own current, already-validated state
- * (`resolveScenarioInputs.ts`) rather than requiring a fourth "just
- * change the rate" input shape the Service doesn't have. "Rate
- * increase," "Rate decrease," and "Custom rate" (M6-006's own Include
- * list) are all satisfied by this one free-form field — M6-006, unlike
- * M6-005, names no preset buttons.
+ * (`resolveInterestScenario`, `resolveScenarioInputs.ts`) rather than
+ * requiring a fourth "just change the rate" input shape the Service
+ * doesn't have. "Rate increase," "Rate decrease," and "Custom rate"
+ * (M6-006's own Include list) are all satisfied by this one free-form
+ * field — M6-006, unlike M6-005, names no preset buttons.
+ *
+ * **Holding Period / Custom Holding Period Days re-run the interest
+ * scenario when one is already active (M6-007, Batch 7)** — satisfying
+ * M6-007's own Description ("Project portfolio changes over time")
+ * literally: a live projection changes when the assumed time span
+ * changes, not just when Borrow Rate is touched. Gated on
+ * `currentScenario?.type === 'interest'`: changing Holding Period
+ * before any interest scenario exists must not spontaneously invent
+ * one — `03_UI.md` Page 5's own "HOLDING PERIOD" section is explicit
+ * that "Interest calculations use the selected period," a claim about
+ * an *existing* interest calculation, not a trigger to create one from
+ * a price-only or empty state. Time horizon has no meaning for a
+ * `type: 'price'` scenario (`SimulationScenario`'s own price variant
+ * has no `timeHorizonDays` field at all).
+ *
+ * **M6-007's own DoD ("Time assumptions are clearly displayed") is
+ * satisfied by the Holding Period `<select>` and the conditionally
+ * shown Custom Holding Period input themselves** — both are already
+ * real, visible, always-current form controls (Batch 3), not hidden
+ * state; the currently assumed time span is continuously on screen by
+ * construction. This differs from M6-006's own DoD ("Users understand
+ * the cost implications"), which needed a *calculated result* value no
+ * control already displays and was explicitly deferred to M6-009 as a
+ * documented conflict (see Batch 6's own PROJECT_STATUS.md write-up) —
+ * no equivalent gap exists here, so no new display element was built.
  *
  * **Collateral Change / Debt Change call `runPortfolioActionSimulation`
  * (M6-008, `services/simulation/portfolioAction.ts`), a separate Store
@@ -117,6 +137,7 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
   const [values, setValues] = useState<ScenarioBuilderFormValues>(() =>
     defaultFormValues(portfolio),
   );
+  const currentScenario = useSimulationStore((state) => state.currentScenario);
   const setCurrentScenario = useSimulationStore((state) => state.setCurrentScenario);
   const runSimulation = useSimulationStore((state) => state.runSimulation);
   const runPortfolioActionSimulation = useSimulationStore(
@@ -166,19 +187,18 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
     }
 
     if (field === 'borrowApr') {
-      const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
-      if (nextErrors.borrowApr !== null) return;
+      const scenario = resolveInterestScenario(nextValues, portfolio);
+      if (scenario === null) return;
+      setCurrentScenario(scenario);
+      runSimulation(portfolio);
+      return;
+    }
 
-      const priceScenario = resolvePriceScenarioInput(nextValues, portfolio);
-      const timeHorizonDays = resolveTimeHorizonDays(nextValues);
-      if (priceScenario === null || timeHorizonDays === null) return;
-
-      setCurrentScenario({
-        type: 'interest',
-        priceScenario,
-        timeHorizonDays,
-        borrowApr: Number(nextValues.borrowApr),
-      });
+    if (field === 'holdingPeriod' || field === 'customHoldingPeriodDays') {
+      if (currentScenario?.type !== 'interest') return;
+      const scenario = resolveInterestScenario(nextValues, portfolio);
+      if (scenario === null) return;
+      setCurrentScenario(scenario);
       runSimulation(portfolio);
     }
   }
