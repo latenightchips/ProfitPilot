@@ -17,7 +17,23 @@
  * directly — keeps `04_BUILD_GUIDE.md`'s own "Only services communicate
  * directly with the Formula Engine" rule intact (already followed since
  * Batch 4).
+ *
+ * **`ScenarioComparisonResult`/`ScenarioMetric`/`ScenarioMetricDifference`
+ * re-exported here (Batch 9, M6-009)**: also Engine types
+ * (`engine/simulation/compareScenarios.ts`), needed by
+ * `ScenarioSummary.tsx` to render `SimulationResult.comparison.differences`
+ * — the same re-export-through-the-Service-barrel pattern as
+ * `PriceScenarioInput` above, for the same reason.
  */
-export { type PortfolioActionSimulationInput, simulatePortfolioAction } from './portfolioAction';
+export {
+  type PortfolioActionSimulationInput,
+  type PortfolioActionSimulationResult,
+  simulatePortfolioAction,
+} from './portfolioAction';
 export { simulateScenario, type SimulationResult, type SimulationScenario } from './scenario';
-export type { PriceScenarioInput } from '@/engine';
+export type {
+  PriceScenarioInput,
+  ScenarioComparisonResult,
+  ScenarioMetric,
+  ScenarioMetricDifference,
+} from '@/engine';

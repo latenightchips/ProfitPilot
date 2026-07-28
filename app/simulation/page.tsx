@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 
-import { ScenarioBuilder } from '@/features/simulation';
+import { ScenarioBuilder, ScenarioSummary } from '@/features/simulation';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
  * Simulation Workspace Route — 06_TASKS.md M6-001 ("Create Simulation
- * Workspace") + M6-004 ("Create Scenario Builder", this batch).
+ * Workspace") + M6-004 ("Create Scenario Builder") + M6-009 ("Implement
+ * Scenario Summary", Batch 9).
  *
  * **Now a client component** — the Scenario Builder (M6-004, Batch 3)
  * needs the active portfolio from `usePortfolioStore` to validate and
@@ -28,14 +29,12 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * "no active portfolio" gate `app/page.tsx` (Dashboard) already
  * establishes, reused here rather than inventing a second pattern.
  *
- * **Results area and Portfolio Comparison remain the M6-001 placeholder
- * this batch.** M6-004's own DoD is "Scenario inputs are validated
- * before calculation" — about the form, not about displaying results.
- * `runSimulation` (Store, M6-003) is wired and does populate
- * `currentResult` for a valid BTC Price change, but rendering it is
- * M6-009's ("Implement Scenario Summary") own later, dedicated task —
- * see `ScenarioBuilder.tsx`'s own header comment for the full scoping
- * reasoning.
+ * **"Simulation Results" now renders `ScenarioSummary` (Batch 9) — the
+ * M6-001 placeholder is gone.** See that component's own header comment
+ * for the full field-mapping/gap reasoning. "Portfolio Comparison"
+ * remains the M6-001 placeholder — that is M6-010's own later, dedicated
+ * task (comparing multiple *saved* scenarios, a different concern from
+ * this one summary of the *current* scenario).
  */
 function WorkspaceSection({ title, note }: { title: string; note: string }) {
   return (
@@ -80,7 +79,10 @@ export default function SimulationPage() {
           </aside>
 
           <div className="flex flex-1 flex-col gap-6">
-            <WorkspaceSection title="Simulation Results" note={NOT_YET_BUILT} />
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
+              <ScenarioSummary />
+            </section>
             <WorkspaceSection title="Portfolio Comparison" note={NOT_YET_BUILT} />
           </div>
         </div>

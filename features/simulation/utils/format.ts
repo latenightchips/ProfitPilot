@@ -1,0 +1,24 @@
+/**
+ * Simulation-local formatting helpers — 06_TASKS.md M6-009 ("Implement
+ * Scenario Summary"). Same values/behavior as
+ * `features/dashboard/utils/format.ts` (Milestone 5) and
+ * `app/portfolio/page.tsx`'s own local formatters (Milestone 4) — this
+ * project's established convention is each feature owning its own thin
+ * formatting layer rather than a shared, premature abstraction (see
+ * `features/dashboard/utils/format.ts`'s own header comment for the
+ * precedent this file follows).
+ */
+export function formatCurrency(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+}
+
+/** `Intl.NumberFormat` renders `Infinity` as "∞" natively — the correct display for a zero-debt Health Factor / Liquidation Distance. */
+export function formatHealthFactor(value: number): string {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+}
+
+export function formatLeverage(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}x`;
+}

@@ -17,6 +17,7 @@ const INITIAL_STATE = {
   comparisonSelection: [],
   status: 'idle' as const,
   errors: [],
+  warnings: [],
   previewMode: false,
 };
 
@@ -62,6 +63,7 @@ describe('useSimulationStore — initial state', () => {
     expect(state.comparisonSelection).toEqual([]);
     expect(state.status).toBe('idle');
     expect(state.errors).toEqual([]);
+    expect(state.warnings).toEqual([]);
     expect(state.previewMode).toBe(false);
   });
 });
@@ -138,6 +140,8 @@ describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
     expect(state.portfolioActionPreview?.after.collateralValue).toBe(150000);
     expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
     expect(state.portfolioActionPreview?.before.collateralValue).toBe(100000);
+    // $150,000 current collateral value − $100,000 initial = $50,000 profit.
+    expect(state.portfolioActionPreview?.profitOrLoss).toBe(50000);
   });
 
   it('sets status to error and clears portfolioActionPreview when the underlying calculation fails', () => {
@@ -163,6 +167,36 @@ describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
     expect(state.currentScenario).toEqual(PRICE_SCENARIO);
     expect(state.currentResult?.scenario.equity).toBe(100000);
     expect(state.portfolioActionPreview).not.toBeNull();
+  });
+});
+
+describe('useSimulationStore — warnings (M6-009, Batch 9)', () => {
+  it('captures the real Service warnings array on a successful runSimulation', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    expect(useSimulationStore.getState().warnings).toEqual([]);
+  });
+
+  it('clears warnings to an empty array when runSimulation fails', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore
+      .getState()
+      .runSimulation(validPortfolio({ collateral: { asset: 'BTC', quantity: 0 } }));
+    expect(useSimulationStore.getState().warnings).toEqual([]);
+  });
+
+  it('captures the real Service warnings array on a successful runPortfolioActionSimulation', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 1, debtDelta: 0 });
+    expect(useSimulationStore.getState().warnings).toEqual([]);
+  });
+
+  it('clears warnings when a new scenario is set', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    useSimulationStore.getState().setCurrentScenario(null);
+    expect(useSimulationStore.getState().warnings).toEqual([]);
   });
 });
 

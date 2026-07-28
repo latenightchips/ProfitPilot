@@ -43,6 +43,32 @@ describe('simulatePortfolioAction — Add collateral', () => {
   });
 });
 
+describe('simulatePortfolioAction — profitOrLoss (M6-009, Batch 9)', () => {
+  it('computes Profit/Loss via calculatePortfolioGain (F-007) from the collateral value change', () => {
+    const result = simulatePortfolioAction(
+      basePortfolio(),
+      { collateralDelta: 2, debtDelta: 0 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Current value $200,000 − initial investment $100,000 = $100,000.
+    expect(result.data.profitOrLoss).toBe(100000);
+  });
+
+  it('is zero when the collateral value does not change', () => {
+    const result = simulatePortfolioAction(
+      basePortfolio(),
+      { collateralDelta: 0, debtDelta: 10000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.profitOrLoss).toBe(0);
+  });
+});
+
 describe('simulatePortfolioAction — Withdraw collateral', () => {
   it('decreases collateralValue and every derived metric', () => {
     const result = simulatePortfolioAction(

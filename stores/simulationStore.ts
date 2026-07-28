@@ -3,8 +3,9 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
-  type PortfolioActionPreview,
   type PortfolioActionSimulationInput,
+  type PortfolioActionSimulationResult,
+  type ServiceWarning,
   simulatePortfolioAction,
   simulateScenario,
   type SimulationResult,
@@ -61,14 +62,24 @@ import {
  * M6-015's own later UI is what will let a user attach a name.
  *
  * **`portfolioActionPreview` (M6-008, Batch 5)**: a second, independent
- * result field alongside `currentResult` — `PortfolioActionPreview`
- * (`{ before, after }` `PortfolioSummary` objects, from
- * `services/simulation/portfolioAction.ts`) is a structurally different
- * shape from `SimulationResult` (`{ baseline, scenario, comparison,
- * assumptions }`, from price/interest scenarios), so it is not forced
- * into the same field. `runPortfolioActionSimulation` shares the same
- * `status`/`errors` fields as `runSimulation` — both represent "is a
- * calculation currently in flight or failed," regardless of which kind.
+ * result field alongside `currentResult` — `PortfolioActionSimulationResult`
+ * (`{ before, after, profitOrLoss }` — Batch 9 added `profitOrLoss`,
+ * see `services/simulation/portfolioAction.ts`'s own header comment) is
+ * a structurally different shape from `SimulationResult` (`{ baseline,
+ * scenario, comparison, assumptions }`, from price/interest scenarios),
+ * so it is not forced into the same field. `runPortfolioActionSimulation`
+ * shares the same `status`/`errors` fields as `runSimulation` — both
+ * represent "is a calculation currently in flight or failed," regardless
+ * of which kind.
+ *
+ * **`warnings` (Batch 9, M6-009)**: both `simulateScenario` and
+ * `simulatePortfolioAction` already return `ServiceWarning[]` on success
+ * — this Store previously discarded them entirely. M6-009's own Display
+ * list names "Warnings" as one of 8 required Scenario Summary fields;
+ * capturing what the Service already computes (no new warning logic) is
+ * what satisfies it honestly. Shared by both actions, the same way
+ * `status`/`errors` already are — cleared to `[]` on every new run,
+ * exactly like `errors`.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -82,11 +93,12 @@ export interface SavedSimulation {
 export interface SimulationStoreState {
   currentScenario: SimulationScenario | null;
   currentResult: SimulationResult | null;
-  portfolioActionPreview: PortfolioActionPreview | null;
+  portfolioActionPreview: PortfolioActionSimulationResult | null;
   savedScenarios: SavedSimulation[];
   comparisonSelection: string[];
   status: SimulationStatus;
   errors: ApplicationError[];
+  warnings: ServiceWarning[];
   previewMode: boolean;
 }
 
@@ -114,6 +126,7 @@ const INITIAL_STATE: SimulationStoreState = {
   comparisonSelection: [],
   status: 'idle',
   errors: [],
+  warnings: [],
   previewMode: false,
 };
 
@@ -122,7 +135,13 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
     ...INITIAL_STATE,
 
     setCurrentScenario: (scenario) => {
-      set({ currentScenario: scenario, currentResult: null, status: 'idle', errors: [] });
+      set({
+        currentScenario: scenario,
+        currentResult: null,
+        status: 'idle',
+        errors: [],
+        warnings: [],
+      });
     },
 
     runSimulation: (portfolio) => {
@@ -139,11 +158,11 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       );
 
       if (!result.ok) {
-        set({ status: 'error', errors: result.errors, currentResult: null });
+        set({ status: 'error', errors: result.errors, warnings: [], currentResult: null });
         return;
       }
 
-      set({ status: 'idle', errors: [], currentResult: result.data });
+      set({ status: 'idle', errors: [], warnings: result.warnings, currentResult: result.data });
     },
 
     runPortfolioActionSimulation: (portfolio, input) => {
@@ -152,11 +171,16 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       const result = simulatePortfolioAction(portfolio, input, SOURCE_STATUS);
 
       if (!result.ok) {
-        set({ status: 'error', errors: result.errors, portfolioActionPreview: null });
+        set({ status: 'error', errors: result.errors, warnings: [], portfolioActionPreview: null });
         return;
       }
 
-      set({ status: 'idle', errors: [], portfolioActionPreview: result.data });
+      set({
+        status: 'idle',
+        errors: [],
+        warnings: result.warnings,
+        portfolioActionPreview: result.data,
+      });
     },
 
     saveCurrentScenario: () => {
