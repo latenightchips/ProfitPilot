@@ -26,4 +26,5 @@
  */
 export * from './components/ScenarioBuilder';
 export * from './types/scenarioBuilder';
+export * from './utils/resolveScenarioInputs';
 export * from './utils/validateScenarioBuilderInput';

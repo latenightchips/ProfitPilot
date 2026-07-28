@@ -8,6 +8,16 @@
  * own header comment for why it is separate from
  * `services/portfolio/actionPreview.ts`'s own `previewPortfolioAction`
  * (M3-006).
+ *
+ * **`PriceScenarioInput` re-exported here (Batch 6, M6-006)**: it is an
+ * Engine type (`engine/simulation/resolveScenarioPrice.ts`), but
+ * `SimulationScenario`'s own `interest` variant needs it alongside
+ * `borrowApr`/`timeHorizonDays`. Re-exporting it through the Service
+ * barrel — rather than having `features/simulation/` import `@/engine`
+ * directly — keeps `04_BUILD_GUIDE.md`'s own "Only services communicate
+ * directly with the Formula Engine" rule intact (already followed since
+ * Batch 4).
  */
 export { type PortfolioActionSimulationInput, simulatePortfolioAction } from './portfolioAction';
 export { simulateScenario, type SimulationResult, type SimulationScenario } from './scenario';
+export type { PriceScenarioInput } from '@/engine';

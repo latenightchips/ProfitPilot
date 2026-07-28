@@ -147,6 +147,60 @@ describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
   });
 });
 
+describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => {
+  it('runs a real interest scenario using the current price and holding period', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '0.1');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.1,
+    });
+    expect(state.status).toBe('idle');
+    expect(state.currentResult?.assumptions).toEqual(state.currentScenario);
+    // 30-day accrued interest on $20,000 at 10% APR is strictly positive.
+    expect(state.currentResult?.scenario.debtCost).toBeGreaterThan(0);
+  });
+
+  it('resolves the price side from a valid Percentage Change instead of the absolute price when both are set', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
+    await user.type(percentInput, '0.2');
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '0.08');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({
+      type: 'interest',
+      priceScenario: { type: 'percentageChange', percentageChange: 0.2 },
+      borrowApr: 0.08,
+    });
+  });
+
+  it('shows an inline error and does not update the Store for a negative Borrow Rate', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '-1');
+
+    expect(screen.getByText('Borrow rate cannot be negative.')).toBeInTheDocument();
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+  });
+});
+
 describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 5)', () => {
   it('updates portfolioActionPreview on a valid Collateral Change', async () => {
     const user = userEvent.setup();

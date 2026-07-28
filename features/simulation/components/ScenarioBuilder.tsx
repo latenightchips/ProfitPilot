@@ -10,6 +10,7 @@ import {
   PRICE_PRESETS,
   type ScenarioBuilderFormValues,
 } from '../types/scenarioBuilder';
+import { resolvePriceScenarioInput, resolveTimeHorizonDays } from '../utils/resolveScenarioInputs';
 import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderInput';
 
 /**
@@ -39,14 +40,29 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * define custom scenarios") describes the two free-form inputs
  * themselves, as opposed to the fixed presets, not a new input type.
  *
- * **Price-scenario fields (BTC Price, Percentage Change) and the
- * Collateral/Debt Change fields (M6-008, Batch 5) are wired to real
- * calculations; the rest are not.** Borrow rate, Target Health Factor,
- * and Time horizon belong to their own later, dedicated tasks (M6-006,
- * no later task, M6-007 respectively; Target Health Factor has no later
+ * **Price-scenario fields (BTC Price, Percentage Change), the
+ * Collateral/Debt Change fields (M6-008, Batch 5), and Borrow Rate
+ * (M6-006, Batch 6) are wired to real calculations; Target Health
+ * Factor and Time horizon are not.** Target Health Factor has no later
  * task naming it as an input anywhere, a genuine specification gap —
- * see `../types/scenarioBuilder.ts`'s own header comment). Wiring them
- * here would be pre-empting those tasks' own scope.
+ * see `../types/scenarioBuilder.ts`'s own header comment. Time horizon
+ * (Holding Period) is *read* by the Borrow Rate wiring below (see
+ * `../utils/resolveScenarioInputs.ts`'s own header comment for why that
+ * is not M6-007's own scope), but changing Holding Period itself does
+ * not, on its own, trigger a new calculation this batch — M6-007
+ * ("Implement Time Projection") is its own later, dedicated task about
+ * *displaying* projections across multiple horizons.
+ *
+ * **Borrow Rate calls `simulateScenario` with `type: 'interest'`
+ * (M6-006, Batch 6)** — `simulateInterestScenario` (M2-020)
+ * structurally requires a `priceScenario` and `timeHorizonDays`
+ * alongside `borrowApr`, so changing Borrow Rate resolves both from the
+ * form's own current, already-validated state
+ * (`resolveScenarioInputs.ts`) rather than requiring a fourth "just
+ * change the rate" input shape the Service doesn't have. "Rate
+ * increase," "Rate decrease," and "Custom rate" (M6-006's own Include
+ * list) are all satisfied by this one free-form field — M6-006, unlike
+ * M6-005, names no preset buttons.
  *
  * **Collateral Change / Debt Change call `runPortfolioActionSimulation`
  * (M6-008, `services/simulation/portfolioAction.ts`), a separate Store
@@ -146,6 +162,24 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
         collateralDelta: Number(nextValues.collateralDelta),
         debtDelta: Number(nextValues.debtDelta),
       });
+      return;
+    }
+
+    if (field === 'borrowApr') {
+      const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
+      if (nextErrors.borrowApr !== null) return;
+
+      const priceScenario = resolvePriceScenarioInput(nextValues, portfolio);
+      const timeHorizonDays = resolveTimeHorizonDays(nextValues);
+      if (priceScenario === null || timeHorizonDays === null) return;
+
+      setCurrentScenario({
+        type: 'interest',
+        priceScenario,
+        timeHorizonDays,
+        borrowApr: Number(nextValues.borrowApr),
+      });
+      runSimulation(portfolio);
     }
   }
 
