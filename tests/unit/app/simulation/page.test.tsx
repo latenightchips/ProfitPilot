@@ -85,12 +85,18 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
     expect(screen.queryByText(/scaffolded in Milestone 1/)).not.toBeInTheDocument();
   });
 
-  it('renders the real Scenario Summary in place of the M6-001 Simulation Results placeholder (M6-009, Batch 9)', () => {
+  it('renders the real Scenario Summary in place of the M6-001 Simulation Results placeholder (M6-009, Batch 8)', () => {
     selectActivePortfolio();
     render(<SimulationPage />);
     expect(screen.getByText('Change a scenario input to see results here.')).toBeInTheDocument();
+  });
+
+  it('renders the real Scenario Comparison in place of the M6-001 Portfolio Comparison placeholder (M6-010, Batch 9)', () => {
+    selectActivePortfolio();
+    render(<SimulationPage />);
+    expect(screen.getByText(/No scenarios saved yet/)).toBeInTheDocument();
     expect(
-      screen.queryAllByText('Implemented in a later Milestone 6 batch — see PROJECT_STATUS.md.'),
-    ).toHaveLength(1);
+      screen.queryByText('Implemented in a later Milestone 6 batch — see PROJECT_STATUS.md.'),
+    ).not.toBeInTheDocument();
   });
 });

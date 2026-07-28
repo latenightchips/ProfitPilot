@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 
-import { ScenarioBuilder, ScenarioSummary } from '@/features/simulation';
+import { ScenarioBuilder, ScenarioComparison, ScenarioSummary } from '@/features/simulation';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
  * Simulation Workspace Route — 06_TASKS.md M6-001 ("Create Simulation
  * Workspace") + M6-004 ("Create Scenario Builder") + M6-009 ("Implement
- * Scenario Summary", Batch 9).
+ * Scenario Summary") + M6-010 ("Implement Scenario Comparison", Batch 9).
  *
  * **Now a client component** — the Scenario Builder (M6-004, Batch 3)
  * needs the active portfolio from `usePortfolioStore` to validate and
@@ -29,24 +29,11 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * "no active portfolio" gate `app/page.tsx` (Dashboard) already
  * establishes, reused here rather than inventing a second pattern.
  *
- * **"Simulation Results" now renders `ScenarioSummary` (Batch 9) — the
- * M6-001 placeholder is gone.** See that component's own header comment
- * for the full field-mapping/gap reasoning. "Portfolio Comparison"
- * remains the M6-001 placeholder — that is M6-010's own later, dedicated
- * task (comparing multiple *saved* scenarios, a different concern from
- * this one summary of the *current* scenario).
+ * **Both M6-001 placeholders are gone.** "Simulation Results" renders
+ * `ScenarioSummary` (Batch 8); "Portfolio Comparison" renders
+ * `ScenarioComparison` (M6-010, Batch 9) — see each component's own
+ * header comment for its full field-mapping/gap reasoning.
  */
-function WorkspaceSection({ title, note }: { title: string; note: string }) {
-  return (
-    <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
-      <p className="text-sm text-muted-foreground">{note}</p>
-    </section>
-  );
-}
-
-const NOT_YET_BUILT = 'Implemented in a later Milestone 6 batch — see PROJECT_STATUS.md.';
-
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const record = usePortfolioStore((state) =>
@@ -83,7 +70,10 @@ export default function SimulationPage() {
               <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
               <ScenarioSummary />
             </section>
-            <WorkspaceSection title="Portfolio Comparison" note={NOT_YET_BUILT} />
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
+              <ScenarioComparison />
+            </section>
           </div>
         </div>
       )}

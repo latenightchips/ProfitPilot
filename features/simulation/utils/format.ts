@@ -22,3 +22,10 @@ export function formatLeverage(value: number): string {
   if (!Number.isFinite(value)) return '—';
   return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}x`;
 }
+
+/** Same `Intl.DateTimeFormat` options as `features/dashboard/utils/format.ts`'s own `formatDateTime` — M6-010 ("Implement Scenario Comparison", Batch 9) needs it to label saved scenarios by their real `createdAt` timestamp. */
+export function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(value),
+  );
+}
