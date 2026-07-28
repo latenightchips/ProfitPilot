@@ -46,6 +46,27 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
     expect(screen.getByLabelText('Holding Period')).toHaveValue('30');
   });
 
+  it('accepts typed input in Target Health Factor without triggering any calculation (no later task wires it — see the component’s own header comment)', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const input = screen.getByLabelText('Target Health Factor');
+    await user.type(input, '2');
+
+    expect(input).toHaveValue(2);
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+  });
+
+  it('shows an inline error for an invalid Target Health Factor', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const input = screen.getByLabelText('Target Health Factor');
+    await user.type(input, '-1');
+
+    expect(screen.getByText('Target Health Factor must be a positive number.')).toBeInTheDocument();
+  });
+
   it('reveals the custom holding period input only when "Custom" is selected', async () => {
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} />);
@@ -106,6 +127,21 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
     });
     // BTC price $50,000 * 1.2 = $60,000; 2 BTC * $60,000 - $20,000 debt = $100,000.
     expect(state.currentResult?.scenario.equity).toBe(100000);
+  });
+
+  it('does nothing when Percentage Change is cleared back to empty', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+
+    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
+    await user.type(percentInput, '0.2');
+    await user.clear(percentInput);
+
+    expect(percentInput).toHaveValue(null);
+    expect(useSimulationStore.getState().currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: 0.2 },
+    });
   });
 
   it('shows an inline error for a percentage change that would drop the price to zero or below', async () => {

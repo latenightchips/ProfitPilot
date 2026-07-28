@@ -2,13 +2,19 @@
 
 import Link from 'next/link';
 
-import { ScenarioBuilder, ScenarioComparison, ScenarioSummary } from '@/features/simulation';
+import {
+  ScenarioBuilder,
+  ScenarioCharts,
+  ScenarioComparison,
+  ScenarioSummary,
+} from '@/features/simulation';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
  * Simulation Workspace Route — 06_TASKS.md M6-001 ("Create Simulation
  * Workspace") + M6-004 ("Create Scenario Builder") + M6-009 ("Implement
- * Scenario Summary") + M6-010 ("Implement Scenario Comparison", Batch 9).
+ * Scenario Summary") + M6-010 ("Implement Scenario Comparison") +
+ * M6-011 ("Implement Scenario Charts", Batch 10).
  *
  * **Now a client component** — the Scenario Builder (M6-004, Batch 3)
  * needs the active portfolio from `usePortfolioStore` to validate and
@@ -31,8 +37,10 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  *
  * **Both M6-001 placeholders are gone.** "Simulation Results" renders
  * `ScenarioSummary` (Batch 8); "Portfolio Comparison" renders
- * `ScenarioComparison` (M6-010, Batch 9) — see each component's own
- * header comment for its full field-mapping/gap reasoning.
+ * `ScenarioComparison` (M6-010, Batch 9), now followed by a dedicated
+ * "Scenario Charts" section rendering `ScenarioCharts` (M6-011, Batch
+ * 10) — see each component's own header comment for its full
+ * field-mapping/gap reasoning.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -73,6 +81,10 @@ export default function SimulationPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
               <ScenarioComparison />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>
+              <ScenarioCharts />
             </section>
           </div>
         </div>

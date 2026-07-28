@@ -59,12 +59,13 @@ describe('SimulationPage — no active portfolio (M6-001)', () => {
 });
 
 describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
-  it('renders the three named regions from M6-001’s own Include list', () => {
+  it('renders the three named regions from M6-001’s own Include list, plus Scenario Charts (M6-011, Batch 10)', () => {
     selectActivePortfolio();
     render(<SimulationPage />);
     expect(screen.getByRole('heading', { name: 'Scenario Controls' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Simulation Results' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Portfolio Comparison' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Scenario Charts' })).toBeInTheDocument();
   });
 
   it('exposes the Scenario Controls region as a landmark for assistive technology', () => {
@@ -98,5 +99,13 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
     expect(
       screen.queryByText('Implemented in a later Milestone 6 batch — see PROJECT_STATUS.md.'),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders the real Scenario Charts section (M6-011, Batch 10)', () => {
+    selectActivePortfolio();
+    render(<SimulationPage />);
+    expect(
+      screen.getByText('Select scenarios in Portfolio Comparison above to see charts.'),
+    ).toBeInTheDocument();
   });
 });

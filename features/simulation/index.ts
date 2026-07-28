@@ -25,6 +25,7 @@
  * never inside a feature-local `tests/` folder.
  */
 export * from './components/ScenarioBuilder';
+export * from './components/ScenarioCharts';
 export * from './components/ScenarioComparison';
 export * from './components/ScenarioSummary';
 export * from './types/scenarioBuilder';

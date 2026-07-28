@@ -40,6 +40,19 @@ function saveAPriceScenario(btcPriceUsd: number): string {
   return id;
 }
 
+function saveAnInterestScenario(): string {
+  useSimulationStore.getState().setCurrentScenario({
+    type: 'interest',
+    priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+    timeHorizonDays: 30,
+    borrowApr: 0.05,
+  });
+  useSimulationStore.getState().runSimulation(PORTFOLIO);
+  const id = useSimulationStore.getState().saveCurrentScenario();
+  if (id === null) throw new Error('setup failed');
+  return id;
+}
+
 function rowValues(label: string): string[] {
   const row = screen.getByText(label).closest('tr');
   if (row === null) throw new Error(`row not found for ${label}`);
@@ -67,6 +80,12 @@ describe('ScenarioComparison — with saved scenarios, none selected', () => {
     expect(
       screen.getByText('Select scenarios above to compare them side-by-side.'),
     ).toBeInTheDocument();
+  });
+
+  it('labels a saved interest scenario distinctly from a price scenario', () => {
+    saveAnInterestScenario();
+    render(<ScenarioComparison />);
+    expect(screen.getByText(/Interest Scenario/)).toBeInTheDocument();
   });
 });
 
