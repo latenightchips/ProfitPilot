@@ -6,6 +6,7 @@ import {
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
   type ScenarioSummary,
+  type ServiceMetadata,
   type ServiceWarning,
   simulatePortfolioAction,
   simulateScenario,
@@ -104,6 +105,24 @@ import {
  * `runPortfolioActionSimulation`) — overwriting it with only the last of
  * 5 calls' own warnings would misrepresent the other 4; `warnings`
  * continues to reflect whichever single-point calculation last set it.
+ *
+ * **`lastMetadata` (Batch 12, M6-013, "Implement Simulation Assumptions
+ * Panel")**: both `simulateScenario` and `simulatePortfolioAction`
+ * already return a full `ServiceMetadata` (`sourceStatus`,
+ * `calculationTimestamp`, `engineVersion`, `formulaVersion`,
+ * `services/shared/result.ts`) on every call — this Store previously
+ * discarded it entirely, the same gap `warnings` had before Batch 9.
+ * M6-013's own "Formula version" Include item is satisfied by
+ * displaying this already-computed value, not a hardcoded constant.
+ * Shared by both `runSimulation`/`runPortfolioActionSimulation`, the
+ * same way `warnings` already is — set on success, cleared to `null` on
+ * failure (mirroring `currentResult`/`portfolioActionPreview`
+ * themselves, which are also only ever populated on success). Cleared
+ * by `setCurrentScenario` alongside `warnings`/`timelineProjection`, and
+ * — for the same reason `runTimelineProjection` leaves `warnings`
+ * untouched — also left untouched by `runTimelineProjection`, since its
+ * 5 calls would otherwise overwrite it with only the last point's own
+ * metadata.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -126,6 +145,7 @@ export interface SimulationStoreState {
   savedScenarios: SavedSimulation[];
   comparisonSelection: string[];
   timelineProjection: TimelinePoint[] | null;
+  lastMetadata: ServiceMetadata | null;
   status: SimulationStatus;
   errors: ApplicationError[];
   warnings: ServiceWarning[];
@@ -157,6 +177,7 @@ const INITIAL_STATE: SimulationStoreState = {
   savedScenarios: [],
   comparisonSelection: [],
   timelineProjection: null,
+  lastMetadata: null,
   status: 'idle',
   errors: [],
   warnings: [],
@@ -172,6 +193,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         currentScenario: scenario,
         currentResult: null,
         timelineProjection: null,
+        lastMetadata: null,
         status: 'idle',
         errors: [],
         warnings: [],
@@ -192,11 +214,23 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       );
 
       if (!result.ok) {
-        set({ status: 'error', errors: result.errors, warnings: [], currentResult: null });
+        set({
+          status: 'error',
+          errors: result.errors,
+          warnings: [],
+          currentResult: null,
+          lastMetadata: null,
+        });
         return;
       }
 
-      set({ status: 'idle', errors: [], warnings: result.warnings, currentResult: result.data });
+      set({
+        status: 'idle',
+        errors: [],
+        warnings: result.warnings,
+        currentResult: result.data,
+        lastMetadata: result.metadata,
+      });
     },
 
     runPortfolioActionSimulation: (portfolio, input) => {
@@ -205,7 +239,13 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       const result = simulatePortfolioAction(portfolio, input, SOURCE_STATUS);
 
       if (!result.ok) {
-        set({ status: 'error', errors: result.errors, warnings: [], portfolioActionPreview: null });
+        set({
+          status: 'error',
+          errors: result.errors,
+          warnings: [],
+          portfolioActionPreview: null,
+          lastMetadata: null,
+        });
         return;
       }
 
@@ -214,6 +254,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         errors: [],
         warnings: result.warnings,
         portfolioActionPreview: result.data,
+        lastMetadata: result.metadata,
       });
     },
 

@@ -16,6 +16,7 @@ const INITIAL_STATE = {
   savedScenarios: [],
   comparisonSelection: [],
   timelineProjection: null,
+  lastMetadata: null,
   status: 'idle' as const,
   errors: [],
   warnings: [],
@@ -70,6 +71,7 @@ describe('useSimulationStore — initial state', () => {
     expect(state.savedScenarios).toEqual([]);
     expect(state.comparisonSelection).toEqual([]);
     expect(state.timelineProjection).toBeNull();
+    expect(state.lastMetadata).toBeNull();
     expect(state.status).toBe('idle');
     expect(state.errors).toEqual([]);
     expect(state.warnings).toEqual([]);
@@ -84,6 +86,7 @@ describe('useSimulationStore — setCurrentScenario', () => {
       status: 'error',
       errors: [{ category: 'validation', code: 'X', message: 'x' }] as never,
       timelineProjection: [{ day: 0, summary: {} }] as never,
+      lastMetadata: { engineVersion: '0.1.0', formulaVersion: '1.0' } as never,
     });
 
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
@@ -94,6 +97,7 @@ describe('useSimulationStore — setCurrentScenario', () => {
     expect(state.status).toBe('idle');
     expect(state.errors).toEqual([]);
     expect(state.timelineProjection).toBeNull();
+    expect(state.lastMetadata).toBeNull();
   });
 
   it('accepts null to clear the scenario entirely', () => {
@@ -241,6 +245,61 @@ describe('useSimulationStore — runTimelineProjection (M6-012, Batch 11)', () =
     expect(useSimulationStore.getState().warnings).toEqual([
       { code: 'PRE_EXISTING', message: 'x' },
     ]);
+  });
+});
+
+describe('useSimulationStore — lastMetadata (M6-013, Batch 12)', () => {
+  it('captures the real Service metadata on a successful runSimulation', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+
+    const metadata = useSimulationStore.getState().lastMetadata;
+    expect(metadata).not.toBeNull();
+    expect(metadata?.engineVersion).toEqual(expect.any(String));
+    expect(metadata?.formulaVersion).toEqual(expect.any(String));
+  });
+
+  it('clears lastMetadata to null when runSimulation fails', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore
+      .getState()
+      .runSimulation(validPortfolio({ collateral: { asset: 'BTC', quantity: 0 } }));
+    expect(useSimulationStore.getState().lastMetadata).toBeNull();
+  });
+
+  it('captures the real Service metadata on a successful runPortfolioActionSimulation', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 1, debtDelta: 0 });
+
+    const metadata = useSimulationStore.getState().lastMetadata;
+    expect(metadata).not.toBeNull();
+    expect(metadata?.engineVersion).toEqual(expect.any(String));
+    expect(metadata?.formulaVersion).toEqual(expect.any(String));
+  });
+
+  it('clears lastMetadata to null when runPortfolioActionSimulation fails', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: -5, debtDelta: 0 });
+    expect(useSimulationStore.getState().lastMetadata).toBeNull();
+  });
+
+  it('clears lastMetadata when a new scenario is set', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    useSimulationStore.getState().setCurrentScenario(null);
+    expect(useSimulationStore.getState().lastMetadata).toBeNull();
+  });
+
+  it('leaves lastMetadata untouched by runTimelineProjection, unlike runSimulation/runPortfolioActionSimulation', () => {
+    const preExisting = { engineVersion: '0.1.0', formulaVersion: '1.0' } as never;
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore.setState({ lastMetadata: preExisting });
+
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+
+    expect(useSimulationStore.getState().lastMetadata).toBe(preExisting);
   });
 });
 

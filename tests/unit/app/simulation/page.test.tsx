@@ -59,7 +59,7 @@ describe('SimulationPage — no active portfolio (M6-001)', () => {
 });
 
 describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
-  it('renders the three named regions from M6-001’s own Include list, plus Scenario Charts (M6-011, Batch 10) and Scenario Timeline (M6-012, Batch 11)', () => {
+  it('renders the three named regions from M6-001’s own Include list, plus Scenario Charts (M6-011, Batch 10), Scenario Timeline (M6-012, Batch 11), and Simulation Assumptions (M6-013, Batch 12)', () => {
     selectActivePortfolio();
     render(<SimulationPage />);
     expect(screen.getByRole('heading', { name: 'Scenario Controls' })).toBeInTheDocument();
@@ -67,6 +67,7 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
     expect(screen.getByRole('heading', { name: 'Portfolio Comparison' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Scenario Charts' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Scenario Timeline' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Simulation Assumptions' })).toBeInTheDocument();
   });
 
   it('exposes the Scenario Controls region as a landmark for assistive technology', () => {
@@ -118,5 +119,11 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
         'Change Borrow Rate or Holding Period on an interest scenario to see the timeline.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('renders the real Simulation Assumptions section (M6-013, Batch 12)', () => {
+    selectActivePortfolio();
+    render(<SimulationPage />);
+    expect(screen.getByText('Run a simulation to see its assumptions.')).toBeInTheDocument();
   });
 });

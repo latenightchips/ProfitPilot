@@ -8,6 +8,7 @@ import {
   ScenarioComparison,
   ScenarioSummary,
   ScenarioTimeline,
+  SimulationAssumptions,
 } from '@/features/simulation';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -37,12 +38,16 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * establishes, reused here rather than inventing a second pattern.
  *
  * **Both M6-001 placeholders are gone.** "Simulation Results" renders
- * `ScenarioSummary` (Batch 8); "Portfolio Comparison" renders
- * `ScenarioComparison` (M6-010, Batch 9), followed by "Scenario Charts"
- * rendering `ScenarioCharts` (M6-011, Batch 10), followed by "Scenario
- * Timeline" rendering `ScenarioTimeline` (M6-012, Batch 11) — see each
- * component's own header comment for its full field-mapping/gap
- * reasoning.
+ * `ScenarioSummary` (Batch 8), immediately followed by "Simulation
+ * Assumptions" rendering `SimulationAssumptions` (M6-013, Batch 12) —
+ * placed directly after Results per `01_PRD.md`'s own Principle Two
+ * ("Every displayed number must have a documented origin"), answering
+ * "what was assumed" right next to "what was calculated." "Portfolio
+ * Comparison" renders `ScenarioComparison` (M6-010, Batch 9), followed
+ * by "Scenario Charts" rendering `ScenarioCharts` (M6-011, Batch 10),
+ * followed by "Scenario Timeline" rendering `ScenarioTimeline` (M6-012,
+ * Batch 11) — see each component's own header comment for its full
+ * field-mapping/gap reasoning.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -79,6 +84,10 @@ export default function SimulationPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
               <ScenarioSummary />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Simulation Assumptions</h2>
+              <SimulationAssumptions portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
