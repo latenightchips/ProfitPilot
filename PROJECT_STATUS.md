@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-07-27
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is in progress**: Batches 1–9 (M6-001–M6-010) are synchronized to GitHub; Batch 10 (M6-011 — Scenario Charts) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-07-29
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is in progress**: Batches 1–10 (M6-001–M6-011) are synchronized to GitHub; Batch 11 (M6-012 — Scenario Timeline) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -7711,6 +7711,161 @@ rediscover.
 
 ---
 
+### Batch 11 — Scenario Timeline (M6-012)
+
+**Repository re-sync required before this batch began, again.** `git
+ls-remote origin main` showed `claude/profitpilot-repo-review-nty3yy`
+no longer exists remotely (deleted after Batch 10's own PR merged) and
+`origin/main`'s tip carries Batch 10's exact content, re-authored —
+confirmed via an empty `git diff --stat` between the prior local HEAD
+and `origin/main`'s new tip. Restarted the local branch from
+`origin/main`.
+
+**A second, mid-batch recovery was also required.** After this batch's
+implementation, validation, and manual browser verification were
+already complete, the local working tree unexpectedly reverted to an
+earlier commit (`M6-007`), deleting this batch's entire uncommitted
+implementation from disk (not just leaving it unstaged) along with the
+working-tree-only presence of Batches 8–10's own files. A fresh `git
+fetch origin main` confirmed `origin/main`'s real tip was unaffected
+(still Batch 10's `M6-011`, containing all of Batches 1–10 intact);
+the local branch was re-synced to it (`git checkout -B
+claude/profitpilot-repo-review-nty3yy origin/main`), and this batch's
+implementation was redone from scratch on the correct base, then
+re-validated in full — the second validation run reproduced identical
+results (1210/1210 tests, identical coverage percentages, identical
+bundle sizes) to the first, confirming the redo was faithful.
+
+**Dependencies satisfied**: M6-007 (Time Projection) is synchronized
+to GitHub.
+
+**No dedicated timeline/projection function exists anywhere in
+`engine/` or `services/` — confirmed by grep before design began.**
+M6-012's own Description ("Display projected portfolio evolution
+across the selected time horizon") is satisfied entirely by
+composition: `runTimelineProjection` (`stores/simulationStore.ts`)
+calls the already-public `simulateScenario` Service (M3-009)
+repeatedly, holding the active interest scenario's own
+`priceScenario`/`borrowApr` fixed and varying only `timeHorizonDays`.
+No new Formula Engine logic was written.
+
+**5 evenly-spaced points (0/25/50/75/100% of the scenario's own
+`timeHorizonDays`) — a documented granularity choice, not a spec
+requirement.** Neither `06_TASKS.md` nor either spec document names a
+specific point count or spacing for this projection; 5 points was
+chosen as a reasonable, readable default and flagged explicitly as an
+interpretive decision (see the new Unresolved documentation conflicts
+entry below) rather than treated as self-evidently correct.
+
+**Confirmed `timeHorizonDays: 0` is a valid, non-erroring input before
+relying on it.** `calculateProratedInterest` (F-030) validates its day
+count via `validateTimePeriod`, itself a thin wrapper over
+`validateNonNegative` — strict positivity is never required, so the
+timeline's first point needed no special-casing. At day 0, the
+scenario's own price adjustment is still fully applied (via
+`simulateInterestScenario`'s own `resolveScenarioPrice` call) while
+interest accrual is exactly 0 — a coherent, emergent behavior of
+composing the existing function, not a new rule invented for this
+batch.
+
+**Only meaningful for `type: 'interest'` scenarios — the same gating
+`ScenarioBuilder.tsx`'s own Holding Period wiring already established
+in Batch 7.** `type: 'price'` scenarios have no `timeHorizonDays` and
+no time to project across; `runTimelineProjection` clears
+`timelineProjection` to `null` (rather than erroring) when no interest
+scenario is active, so it is safe to call unconditionally from every
+interest-relevant `ScenarioBuilder.tsx` field (Borrow Rate, Holding
+Period, Custom Holding Period Days) — mirroring the existing
+`runSimulation` calls in the same branches.
+
+**`warnings` deliberately left untouched by `runTimelineProjection` —
+a design decision made and corrected during implementation, before any
+test was written.** An initial draft mirrored `runSimulation`'s own
+`warnings: result.warnings` / `warnings: []` pattern; on review this
+was recognized as misleading, since `runTimelineProjection` makes 5
+separate calculation calls and overwriting `warnings` with only the
+last point's own value (or blanking it on any single point's failure)
+would misrepresent the other 4 calls' own state. `warnings` is now
+left untouched by this action entirely, documented in
+`stores/simulationStore.ts`'s own header comment, and verified by a
+dedicated test.
+
+**`ScenarioSummary` (Engine type, `engine/simulation/compareScenarios.ts`)
+reused wholesale for `TimelinePoint`, not a narrower invented type** —
+the same "reuse existing types" discipline already applied to
+`ScenarioComparisonResult` (Batch 9) and `PortfolioActionPreview`
+(Batch 5). Re-exported through `services/simulation/index.ts` rather
+than importing `@/engine` directly from the Store, preserving
+`04_BUILD_GUIDE.md`'s own "Only services communicate directly with the
+Formula Engine" rule.
+
+**`ScenarioTimeline.tsx` renders 3 `recharts` `LineChart`s — Portfolio
+Value, Health Factor, Interest Cost — over the 5 projected points**,
+each in a `role="img"` container with a text `aria-label` summarizing
+its own values, the same accessible-alternative pattern
+`ScenarioCharts.tsx` (Batch 10) established. **M6-012, unlike M6-011,
+names no `Requirements` section in `06_TASKS.md` at all** — this
+treatment is applied for internal consistency with the rest of the
+Simulation Workspace, not because M6-012 itself requires it; the
+write-up here is careful not to claim it satisfies a named M6-012
+requirement that does not exist. Line charts, not bar charts, since
+this is a single scenario's own values across a continuous day axis,
+not a comparison of discrete saved scenarios.
+
+**Manual browser verification needed no temporary debug hook this
+time — unlike Batches 9/10.** A real portfolio was created through the
+real Portfolio creation flow, navigated to Simulation via in-app
+`<Link>` navigation (not `page.goto()`, which would wipe the in-memory
+Store per Conflict B), and Borrow Rate was set to a real, non-default
+value on the Scenario Builder. Screenshots confirmed: (1) the empty
+state renders before any interest scenario is active; (2) after
+setting Borrow Rate, all 3 timeline charts render with 5 points each,
+correct `aria-label` text (`"Day 0 $80,000.00, Day 7.5 $79,958.90, ...
+Day 30 $79,835.62"` for Portfolio Value; `"Day 0 $0.00, ... Day 30
+$164.38"` for Interest Cost), and the Day-30 endpoint values match the
+existing Simulation Results panel's own already-real
+`$164.38`/`$79,835.62` figures exactly — confirming the timeline and
+the single-point Simulation Results share the same underlying
+calculation, not a second, divergent one.
+
+**Validation — Batch 11**
+
+| Command                      | Result                                                                                                                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                                                                 |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                                                                 |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                                                                 |
+| `pnpm test` (Vitest)         | ✅ Pass, 1210/1210 (9 net new: `ScenarioTimeline.tsx`'s own 3 tests, `runTimelineProjection`'s own 5 Store tests, 1 new `ScenarioBuilder.tsx` wiring assertion added to existing tests) |
+| `pnpm test:coverage`         | ✅ 96.1% statements / 90.72% branches / 100% functions / 99% lines (project-wide); `ScenarioTimeline.tsx` and the new `stores/simulationStore.ts` code are both fully covered           |
+| `pnpm build`                 | ✅ Pass — `/simulation` grew from 95.8 kB to 105 kB (3 additional `LineChart`s; no new dependency, `recharts` already bundled since Batch 10)                                           |
+| `pnpm test:e2e` (Playwright) | ✅ Pass, 35/35 (unchanged)                                                                                                                                                              |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/
+stores/` shows real, expected changes for the first time since
+Batch 5 — `services/simulation/index.ts` (+7 lines, a type re-export
+only) and `stores/simulationStore.ts` (+64 lines, the new
+`TimelinePoint` type, `timelineProjection` field, and
+`runTimelineProjection` action). Both are the justified footprint of
+this batch's own genuine need (a new multi-call Store action reusing
+an existing Engine type), not an unintended deviation — `engine/` and
+`types/` show zero changes, confirming no new Formula Engine logic was
+written. `git status --porcelain` shows 8 modified files (4 source, 4
+unit test) and 2 new files (1 source, 1 unit test), no deletions.
+
+**Traceability**: M6-012's Dependencies (M6-007) were satisfied as of
+Batch 7; its Description ("Display projected portfolio evolution
+across the selected time horizon") is satisfied by
+`runTimelineProjection` + `ScenarioTimeline.tsx` together, composing
+only already-public Service calls; its DoD ("Users can visualize
+projected changes over time") is satisfied by 3 real, correctly-scaled
+line charts rendered from real computed values, verified by 9 new
+tests and direct manual browser confirmation, including a cross-check
+against the existing Simulation Results panel's own already-real
+figures. M6-012 names no `Requirements` section — noted explicitly
+above rather than silently assumed absent.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -8803,9 +8958,9 @@ other unresolved conflict in this list is handled.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 6 Batch 10
-   (M6-011 — Scenario Charts) before committing, per instruction.
-   Batches 1–9 (M6-001–M6-010) are synchronized to GitHub; Milestone 5
+2. **This pass stops here for approval** of Milestone 6 Batch 11
+   (M6-012 — Scenario Timeline) before committing, per instruction.
+   Batches 1–10 (M6-001–M6-011) are synchronized to GitHub; Milestone 5
    (M5-001–M5-007, M5-009–M5-028, excluding M5-008) is complete and
    synchronized, with a permanent snapshot in
    `MILESTONE_5_COMPLETION.md`.
@@ -8835,13 +8990,14 @@ other unresolved conflict in this list is handled.
    resolved in favor of `06_TASKS.md` (the spec this whole build has
    correctly followed throughout), not retrofitted, and flagged for a
    product decision on Page 3 itself.
-5. **Milestone 6 — Simulation Workspace is in progress.** Batches 1–9
+5. **Milestone 6 — Simulation Workspace is in progress.** Batches 1–10
    (Simulation Foundation: M6-001, M6-002; Simulation Store: M6-003;
    Scenario Builder: M6-004; Price Scenario Simulation: M6-005;
    Portfolio Action Simulation: M6-008; Interest Rate Simulation:
    M6-006; Time Projection: M6-007; Scenario Summary: M6-009; Scenario
-   Comparison: M6-010) are synchronized to GitHub; Batch 10 (Scenario
-   Charts: M6-011) is implemented and awaiting approval. The Simulation
+   Comparison: M6-010; Scenario Charts: M6-011) are synchronized to
+   GitHub; Batch 11 (Scenario Timeline: M6-012) is implemented and
+   awaiting approval. The Simulation
    Engine/Service layer this milestone's UI consumes already exists
    from Milestones
    2–3 (`engine/simulation/`, `services/simulation/scenario.ts`) —
@@ -8898,6 +9054,27 @@ other unresolved conflict in this list is handled.
    already found on Page 3 (a "Portfolio Score" card `06_TASKS.md`'s
    own M6-009/M6-010 Display/Compare lists do not name) remains open,
    per `MILESTONE_5_COMPLETION.md`'s own Section 8 recommendation.
+   Batch 11 (M6-012, "Implement Scenario Timeline") added no new
+   Formula Engine logic — `runTimelineProjection`
+   (`stores/simulationStore.ts`) composes the already-public
+   `simulateScenario` Service repeatedly at 5 evenly-spaced points
+   (0/25/50/75/100% of the active interest scenario's own
+   `timeHorizonDays`), a documented granularity choice since neither
+   `06_TASKS.md` nor either spec document names a specific point count.
+   `ScenarioTimeline.tsx` renders 3 `recharts` `LineChart`s (Portfolio
+   Value, Health Factor, Interest Cost), the same `role="img"` +
+   `aria-label` accessible-summary pattern `ScenarioCharts.tsx` (Batch 10) established, applied as consistent practice since M6-012 —
+   unlike M6-011 — names no `Requirements` section at all. This batch
+   also required a mid-batch recovery: after implementation and
+   validation were complete, the local working tree unexpectedly
+   reverted to an earlier commit, deleting the batch's uncommitted work;
+   a fresh `git fetch` confirmed `origin/main` itself was unaffected,
+   the local branch was re-synced to it, and the implementation was
+   redone from scratch and re-validated, reproducing identical results.
+   Manual browser verification needed no temporary debug hook: the
+   timeline is driven entirely by the already-real Borrow Rate/Holding
+   Period fields on an active interest scenario, fully reachable through
+   real UI interaction alone.
 6. **Batch 2 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: `SavedSimulation` (`stores/simulationStore.ts`)
    deliberately carries only `id`/`scenario`/`result`/`createdAt`, not
@@ -9024,7 +9201,35 @@ other unresolved conflict in this list is handled.
     portfolio-action results. Manual browser verification reused Batch
     9's own temporary `window.__simStoreDebug` seeding technique, again
     fully reverted and confirmed via an empty `git diff`.
-15. **Batch 1 raised no new numbered conflict, but recorded one deliberate
+15. **Batch 11 (M6-012) raised no new numbered conflict, but recorded
+    one deliberate scoping decision worth flagging.** M6-012's own
+    Description ("Display projected portfolio evolution across the
+    selected time horizon") names no point count or spacing for the
+    projection, and neither `02_Formulas.md` nor `03_UI.md` names a
+    dedicated timeline/projection function anywhere — confirmed absent
+    by grep across `engine/`/`services/` before design began. Resolved
+    by composing the already-public `simulateScenario` Service function
+    (M3-009) repeatedly at 5 evenly-spaced points (0/25/50/75/100% of
+    the active interest scenario's own `timeHorizonDays`), holding
+    `priceScenario`/`borrowApr` fixed — no new Formula Engine logic, the
+    same "reuse, never invent" discipline this milestone has followed
+    throughout. Also confirmed, before implementing, that
+    `calculateProratedInterest` (F-030) accepts `days: 0` as a valid,
+    non-erroring input via its own `validateTimePeriod` (a thin wrapper
+    over `validateNonNegative`), so the timeline's first point needed no
+    special-casing. Unlike M6-011, M6-012 has no `Requirements` section
+    in `06_TASKS.md` — the same "Accessible alternatives" (`role="img"`
+    - `aria-label`) and "Responsive" (`ResponsiveContainer`) treatment
+      `ScenarioCharts.tsx` (Batch 10) established is still applied to
+      `ScenarioTimeline.tsx` for internal consistency, not because M6-012
+      itself names either as a requirement. Manual browser verification
+      needed no temporary debug hook this time — the timeline is driven
+      entirely by the already-real Borrow Rate/Holding Period fields on an
+      active interest scenario, fully reachable through real UI
+      interaction. A mid-batch working-tree reset also required redoing
+      this batch's implementation from scratch on a re-synced base — see
+      the Batch 11 write-up above for the recovery details.
+16. **Batch 1 raised no new numbered conflict, but recorded one deliberate
     scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
     name a `Portfolio Status`/`Risk Category` field (example values
     "Healthy"/"Low") that is exactly the Health Factor risk-band
@@ -9036,7 +9241,7 @@ other unresolved conflict in this list is handled.
     #1 is very likely to become directly blocking once M5-007 (Health
     Factor Status Component) or M5-010 (Risk Warning Banner) is reached —
     flagged for the next batch that touches either.
-16. **Batch 2 raised no new numbered conflict.** M5-004's "Portfolio
+17. **Batch 2 raised no new numbered conflict.** M5-004's "Portfolio
     switcher"/"Refresh action" Include items initially looked like they
     might require new UI or a live-data mechanism; both resolved by
     reusing already-shipped, real mechanisms instead (`AppHeader`'s
@@ -9049,7 +9254,7 @@ other unresolved conflict in this list is handled.
     needed them most (a calculation failure) — restructured into a shared
     `DashboardViewModelBase`, additive only, all of Batch 1's tests still
     pass unchanged.
-17. **Batch 3 raised no new numbered conflict.** M5-005's "Status" Support
+18. **Batch 3 raised no new numbered conflict.** M5-005's "Status" Support
     item was scoped wider (`'ok' | 'warning' | 'unavailable'`) than
     `DashboardMetric.status` itself (`'ok' | 'unavailable'`, Conflict #1
     avoidance) — the generic card supports all three per its own task
@@ -9061,7 +9266,7 @@ other unresolved conflict in this list is handled.
     own later content) — required a small, documented test update (one
     `"N/A (no debt)"` occurrence instead of three) since the KPI grid it
     replaced Batch 1's plain list, which had rendered all three.
-18. **Batch 4 raised one new conflict (#29)**: `generateRecommendationSet`
+19. **Batch 4 raised one new conflict (#29)**: `generateRecommendationSet`
     (M3-012) needs a full `RecommendationRuleConfig` with 5 fields no
     `Portfolio` field carries and no specification page defaults —
     discovered while trying to build M5-007's "Required action to restore
@@ -9075,7 +9280,7 @@ other unresolved conflict in this list is handled.
     attempted partially — see the Batch 4 write-up's own opening
     paragraph for why each is scoped out this batch specifically, not
     silently dropped.
-19. **Milestone 5 Batch 5 raised no new conflict — it independently
+20. **Milestone 5 Batch 5 raised no new conflict — it independently
     re-confirmed Batch 4's M5-008/M5-010 conclusions, per instruction, by
     re-researching each Warning case individually rather than trusting
     the prior summary.** M5-008 remains wholly blocked (no partial
@@ -9091,7 +9296,7 @@ other unresolved conflict in this list is handled.
     all — "Portfolio percentage" (always 100%) and M5-012's "hide the
     chart" condition are both direct, mechanical consequences of Conflict
     A already approved in Milestone 4, not new interpretation.
-20. **Batch 6 raised no new conflict — both of its two deliberately
+21. **Batch 6 raised no new conflict — both of its two deliberately
     unbuilt items carry forward already-established decisions, not new
     gaps.** M5-013's "Projected debt where available" reuses Conflict
     #7's existing block (compound interest has no documented formula).
@@ -9106,7 +9311,7 @@ other unresolved conflict in this list is handled.
     `Monthly = Daily × 30` (F-030/F-031) do not equal `Annual / 365` /
     `Annual / 12` — resolved by calling the real, already-public Engine
     functions via a new Service rather than approximating.
-21. **Batch 7 raised no new numbered conflict — it resolved the M5-015
+22. **Batch 7 raised no new numbered conflict — it resolved the M5-015
     scoping question conflict #29 itself had left open since Batch 4**,
     overdue since Batch 6's own note. Three options were on the table:
     (a) scope M5-015 to only the repayment/additionalCollateral
@@ -9125,7 +9330,7 @@ other unresolved conflict in this list is handled.
     followed `06_TASKS.md` as authoritative per established practice; the
     practical difference is softened since the scoped-down universe never
     exceeds 2 items anyway.
-22. **Milestone 5 Batch 8 raised no new numbered conflict.** M5-017
+23. **Milestone 5 Batch 8 raised no new numbered conflict.** M5-017
     (Data Freshness Indicators) needed no new Engine or Service call —
     every field it displays was already threaded through
     `DashboardFreshness` by Batch 2 (M5-004). Its "Fresh or stale
@@ -9143,7 +9348,7 @@ other unresolved conflict in this list is handled.
     already true for free, since `recomputeSummary` never fetches and so
     cannot lose or overwrite valid data. See the Batch 8 write-up above
     for the full field-by-field reasoning.
-23. **Milestone 5 Batch 9 raised no new numbered conflict.** M5-019
+24. **Milestone 5 Batch 9 raised no new numbered conflict.** M5-019
     (Loading States) found and fixed a real, pre-existing "layout shift"
     bug (the old "Loading…" line and the no-portfolio/portfolio branch
     below it rendered simultaneously) rather than just adding a skeleton
@@ -9163,7 +9368,7 @@ other unresolved conflict in this list is handled.
     render nothing — Batch 7 had no task asking for an explanation yet;
     M5-020 now does. See the Batch 9 write-up above for the full
     per-item reasoning.
-24. **Milestone 5 Batch 10 raised no new numbered conflict.** M5-021's
+25. **Milestone 5 Batch 10 raised no new numbered conflict.** M5-021's
     own cross-document investigation (mirroring M4-017's own method)
     found two real, concrete gaps a literal `06_TASKS.md`-only reading
     would have missed: 03_UI.md's Dashboard-specific "ERROR HANDLING"
@@ -9176,7 +9381,7 @@ other unresolved conflict in this list is handled.
     (validate-before-mutate already guarantees this) rather than
     re-deriving it or inventing a new summary cache. See the Batch 10
     write-up above for the full reasoning.
-25. **Milestone 5 Batch 11 raised no new numbered conflict.** M5-016's
+26. **Milestone 5 Batch 11 raised no new numbered conflict.** M5-016's
     "Export portfolio" Action item was cross-referenced against
     03_UI.md's own "EXPORT OPTIONS" section (CSV, JSON, calculation
     timestamps — PDF explicitly deferred as "Future Version") rather
@@ -9192,7 +9397,7 @@ other unresolved conflict in this list is handled.
     gives explicit grounds for it, more cautious than the sidebar's own
     pre-existing (M1-scaffold) links to the same routes. See the Batch
     11 write-up above for the full reasoning.
-26. **Milestone 5 Batch 12 raised no new numbered conflict, but found
+27. **Milestone 5 Batch 12 raised no new numbered conflict, but found
     and fixed two real horizontal-overflow bugs via actual Playwright
     viewport checks** — reading Tailwind class names alone would not
     have caught either: `AppHeader`'s portfolio switcher had no width
@@ -9211,7 +9416,7 @@ other unresolved conflict in this list is handled.
     was found and documented but not built (no sidebar replacement below
     `md:`) — out of scope for a Dashboard-content task. See the Batch 12
     write-up above for the full reasoning.
-27. **Milestone 5 Batch 13 raised no new numbered conflict, but found
+28. **Milestone 5 Batch 13 raised no new numbered conflict, but found
     M5-024's own DoD points to an empty section.** "Meets the
     accessibility requirements defined in the Build Guide" names
     `04_BUILD_GUIDE.md`'s own "ACCESSIBILITY" line, which is a bare
@@ -9236,7 +9441,7 @@ other unresolved conflict in this list is handled.
     M5-016's own "explain why" Requirement for keyboard/screen-reader
     users specifically). See the Batch 13 write-up above for the full
     per-item reasoning.
-28. **Milestone 5 Batch 14 raised no new numbered conflict, but found
+29. **Milestone 5 Batch 14 raised no new numbered conflict, but found
     where M5-022's own toggle state should live had no documented
     answer.** 03_UI.md's "DEVELOPER MODE" section implies a persistent,
     app-wide control, but its own "SETTINGS" page's literal Version 1
@@ -9255,7 +9460,7 @@ other unresolved conflict in this list is handled.
     already-visible information from normal users would contradict this
     task's own DoD. See the Batch 14 write-up above for the full
     reasoning.
-29. **Milestone 5 Batch 15 raised no new numbered conflict.** M5-025
+30. **Milestone 5 Batch 15 raised no new numbered conflict.** M5-025
     ("Create Dashboard Component Tests") turned out to be an audit task,
     not a build task — every one of the 15 Dashboard components already
     had its own test file from incremental development across Batches
@@ -9270,7 +9475,7 @@ other unresolved conflict in this list is handled.
     values, a 200-character portfolio name and a 24-character formatted
     KPI value). Zero production code changed — only 7 test files. See
     the Batch 15 write-up above for the full reasoning.
-30. **Milestone 5 Batch 16 raised no new numbered conflict.** M5-026
+31. **Milestone 5 Batch 16 raised no new numbered conflict.** M5-026
     ("Create Dashboard Integration Tests") was resolved by finding and
     following an existing, exact precedent (`tests/integration/portfolio/
 portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
@@ -9288,7 +9493,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     price rather than a stale cached one — no existing test had ever
     changed the price _before_ exercising Refresh. Zero production code
     changed. See the Batch 16 write-up above for the full reasoning.
-31. **Milestone 5 Batch 17 raised no new numbered conflict.** M5-027
+32. **Milestone 5 Batch 17 raised no new numbered conflict.** M5-027
     ("Create Dashboard End-to-End Tests") followed
     `tests/e2e/portfolioWorkflows.spec.ts`'s (M4-018) own established
     convention exactly. Built a new `tests/e2e/dashboardWorkflows.spec.ts`
@@ -9307,7 +9512,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     viewport, resizing only to check the completed workflow's own
     rendered result). Zero production code changed. See the Batch 17
     write-up above for the full reasoning.
-32. **Milestone 5 Batch 18 raised one new, significant conflict
+33. **Milestone 5 Batch 18 raised one new, significant conflict
     (#30) — the largest found in this entire engagement.** M5-028
     ("Validate Dashboard Against UI Specification"), the final
     Milestone 5 task, required reading `03_UI.md` in full for the
@@ -9333,7 +9538,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     Criteria directly. This closes Milestone 5's task list
     (M5-001–M5-028, M5-008 excepted). See the Batch 18 write-up above
     for the full reasoning.
-33. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+34. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -9341,7 +9546,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-34. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+35. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -9352,44 +9557,44 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-35. **From Batch 6, still open**: conflict #27 — M4-012 never says
+36. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-36. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+37. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-37. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+38. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-38. **From Batch 3, still open — recurred in Batch 7 with the same
+39. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-39. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+40. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-40. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+41. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-41. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+42. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-42. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+43. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-43. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+44. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -9402,13 +9607,13 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-44. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+45. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-45. **From Milestone 3/4, still open — final tally at Milestone 4's
+46. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

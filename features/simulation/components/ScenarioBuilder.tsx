@@ -106,6 +106,15 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * re-deriving F-051's own formula a second time in the UI layer
  * (duplicated calculation). The resolved price becomes visible once
  * M6-009 ("Implement Scenario Summary") renders `currentResult`.
+ *
+ * **Borrow Rate / Holding Period / Custom Holding Period Days also call
+ * `runTimelineProjection` (M6-012, Batch 11)** right after `runSimulation`
+ * — the Scenario Timeline (`ScenarioTimeline.tsx`) needs to stay in sync
+ * with whatever interest scenario is currently active, the same "every
+ * input updates immediately" principle already governing every other
+ * field. `runTimelineProjection` itself no-ops (clears the timeline)
+ * when no interest scenario is active, so this is safe to call from
+ * every interest-relevant field unconditionally.
  */
 function defaultFormValues(portfolio: ApplicationPortfolio): ScenarioBuilderFormValues {
   return {
@@ -143,6 +152,7 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
   const runPortfolioActionSimulation = useSimulationStore(
     (state) => state.runPortfolioActionSimulation,
   );
+  const runTimelineProjection = useSimulationStore((state) => state.runTimelineProjection);
   const resetSimulation = useSimulationStore((state) => state.reset);
 
   const errors = validateScenarioBuilderInput(values, portfolio);
@@ -191,6 +201,7 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
       if (scenario === null) return;
       setCurrentScenario(scenario);
       runSimulation(portfolio);
+      runTimelineProjection(portfolio);
       return;
     }
 
@@ -200,6 +211,7 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
       if (scenario === null) return;
       setCurrentScenario(scenario);
       runSimulation(portfolio);
+      runTimelineProjection(portfolio);
     }
   }
 

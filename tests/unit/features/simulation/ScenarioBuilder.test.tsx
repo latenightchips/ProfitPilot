@@ -203,6 +203,9 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
     expect(state.currentResult?.assumptions).toEqual(state.currentScenario);
     // 30-day accrued interest on $20,000 at 10% APR is strictly positive.
     expect(state.currentResult?.scenario.debtCost).toBeGreaterThan(0);
+    // Scenario Timeline (M6-012, Batch 11) also re-populates from the
+    // same interest-scenario field change.
+    expect(state.timelineProjection).toHaveLength(5);
   });
 
   it('resolves the price side from a valid Percentage Change instead of the absolute price when both are set', async () => {
@@ -276,6 +279,9 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
     const state = useSimulationStore.getState();
     expect(state.currentScenario).toMatchObject({ type: 'interest', timeHorizonDays: 365 });
     expect(state.currentResult?.assumptions).toEqual(state.currentScenario);
+    // Scenario Timeline (M6-012, Batch 11) re-populates with day values
+    // spanning the newly selected 365-day horizon.
+    expect(state.timelineProjection?.map((p) => p.day)).toEqual([0, 91.25, 182.5, 273.75, 365]);
   });
 
   it('re-runs the active interest scenario when a valid Custom Holding Period is entered', async () => {

@@ -28,6 +28,7 @@ export * from './components/ScenarioBuilder';
 export * from './components/ScenarioCharts';
 export * from './components/ScenarioComparison';
 export * from './components/ScenarioSummary';
+export * from './components/ScenarioTimeline';
 export * from './types/scenarioBuilder';
 export * from './utils/format';
 export * from './utils/resolveScenarioInputs';

@@ -7,6 +7,7 @@ import {
   ScenarioCharts,
   ScenarioComparison,
   ScenarioSummary,
+  ScenarioTimeline,
 } from '@/features/simulation';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -37,10 +38,11 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  *
  * **Both M6-001 placeholders are gone.** "Simulation Results" renders
  * `ScenarioSummary` (Batch 8); "Portfolio Comparison" renders
- * `ScenarioComparison` (M6-010, Batch 9), now followed by a dedicated
- * "Scenario Charts" section rendering `ScenarioCharts` (M6-011, Batch
- * 10) — see each component's own header comment for its full
- * field-mapping/gap reasoning.
+ * `ScenarioComparison` (M6-010, Batch 9), followed by "Scenario Charts"
+ * rendering `ScenarioCharts` (M6-011, Batch 10), followed by "Scenario
+ * Timeline" rendering `ScenarioTimeline` (M6-012, Batch 11) — see each
+ * component's own header comment for its full field-mapping/gap
+ * reasoning.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -85,6 +87,10 @@ export default function SimulationPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>
               <ScenarioCharts />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Scenario Timeline</h2>
+              <ScenarioTimeline />
             </section>
           </div>
         </div>

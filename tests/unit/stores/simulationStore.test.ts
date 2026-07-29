@@ -15,6 +15,7 @@ const INITIAL_STATE = {
   portfolioActionPreview: null,
   savedScenarios: [],
   comparisonSelection: [],
+  timelineProjection: null,
   status: 'idle' as const,
   errors: [],
   warnings: [],
@@ -53,6 +54,13 @@ const PRICE_SCENARIO: SimulationScenario = {
   priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
 };
 
+const INTEREST_SCENARIO: SimulationScenario = {
+  type: 'interest',
+  priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+  borrowApr: 0.1,
+  timeHorizonDays: 100,
+};
+
 describe('useSimulationStore — initial state', () => {
   it('starts with every field at its documented default', () => {
     const state = useSimulationStore.getState();
@@ -61,6 +69,7 @@ describe('useSimulationStore — initial state', () => {
     expect(state.portfolioActionPreview).toBeNull();
     expect(state.savedScenarios).toEqual([]);
     expect(state.comparisonSelection).toEqual([]);
+    expect(state.timelineProjection).toBeNull();
     expect(state.status).toBe('idle');
     expect(state.errors).toEqual([]);
     expect(state.warnings).toEqual([]);
@@ -74,6 +83,7 @@ describe('useSimulationStore — setCurrentScenario', () => {
       currentResult: { baseline: {} } as never,
       status: 'error',
       errors: [{ category: 'validation', code: 'X', message: 'x' }] as never,
+      timelineProjection: [{ day: 0, summary: {} }] as never,
     });
 
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
@@ -83,6 +93,7 @@ describe('useSimulationStore — setCurrentScenario', () => {
     expect(state.currentResult).toBeNull();
     expect(state.status).toBe('idle');
     expect(state.errors).toEqual([]);
+    expect(state.timelineProjection).toBeNull();
   });
 
   it('accepts null to clear the scenario entirely', () => {
@@ -167,6 +178,69 @@ describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
     expect(state.currentScenario).toEqual(PRICE_SCENARIO);
     expect(state.currentResult?.scenario.equity).toBe(100000);
     expect(state.portfolioActionPreview).not.toBeNull();
+  });
+});
+
+describe('useSimulationStore — runTimelineProjection (M6-012, Batch 11)', () => {
+  it('does nothing (leaves timelineProjection null) when no scenario is set', () => {
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+    expect(useSimulationStore.getState().timelineProjection).toBeNull();
+    expect(useSimulationStore.getState().status).toBe('idle');
+  });
+
+  it('clears timelineProjection when a price scenario (no time horizon) is active', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+    expect(useSimulationStore.getState().timelineProjection).toBeNull();
+  });
+
+  it('populates 5 real, evenly-spaced timeline points for an active interest scenario', () => {
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    expect(state.errors).toEqual([]);
+    expect(state.timelineProjection).not.toBeNull();
+    const points = state.timelineProjection!;
+    expect(points).toHaveLength(5);
+    expect(points.map((p) => p.day)).toEqual([0, 25, 50, 75, 100]);
+
+    // Day 0: no interest accrued yet, but the scenario price is already
+    // fully applied (2 BTC * $60,000 - $20,000 = $100,000).
+    expect(points[0].summary.equity).toBe(100000);
+    // Day 100: $20,000 debt * 10% APR / 365 * 100 days ≈ $547.95 accrued
+    // interest, reducing equity by that amount from the day-0 figure.
+    expect(points[4].summary.equity).toBeCloseTo(100000 - (20000 * 0.1 * 100) / 365, 2);
+    // debtCost strictly increases as days increase, since the scenario
+    // price is fixed across all 5 points and only the day count varies.
+    for (let i = 1; i < points.length; i += 1) {
+      expect(points[i].summary.debtCost).toBeGreaterThan(points[i - 1].summary.debtCost);
+    }
+  });
+
+  it('sets status to error and clears timelineProjection when the underlying calculation fails', () => {
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore
+      .getState()
+      .runTimelineProjection(validPortfolio({ collateral: { asset: 'BTC', quantity: 0 } }));
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.timelineProjection).toBeNull();
+  });
+
+  it('leaves warnings untouched, unlike runSimulation/runPortfolioActionSimulation', () => {
+    useSimulationStore.setState({ warnings: [{ code: 'PRE_EXISTING', message: 'x' }] as never });
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore.setState({ warnings: [{ code: 'PRE_EXISTING', message: 'x' }] as never });
+
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+
+    expect(useSimulationStore.getState().warnings).toEqual([
+      { code: 'PRE_EXISTING', message: 'x' },
+    ]);
   });
 });
 

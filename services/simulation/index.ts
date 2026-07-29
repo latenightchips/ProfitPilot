@@ -24,6 +24,12 @@
  * `ScenarioSummary.tsx` to render `SimulationResult.comparison.differences`
  * — the same re-export-through-the-Service-barrel pattern as
  * `PriceScenarioInput` above, for the same reason.
+ *
+ * **`ScenarioSummary` re-exported here (Batch 11, M6-012)**: also an
+ * Engine type, needed by `stores/simulationStore.ts`'s own new
+ * `TimelinePoint` (Scenario Timeline, M6-012) to hold each projected
+ * point's full set of already-computed fields — the same
+ * re-export-through-the-Service-barrel pattern as the others above.
  */
 export {
   type PortfolioActionSimulationInput,
@@ -36,4 +42,5 @@ export type {
   ScenarioComparisonResult,
   ScenarioMetric,
   ScenarioMetricDifference,
+  ScenarioSummary,
 } from '@/engine';

@@ -5,6 +5,7 @@ import {
   type ApplicationPortfolio,
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
+  type ScenarioSummary,
   type ServiceWarning,
   simulatePortfolioAction,
   simulateScenario,
@@ -80,6 +81,29 @@ import {
  * what satisfies it honestly. Shared by both actions, the same way
  * `status`/`errors` already are — cleared to `[]` on every new run,
  * exactly like `errors`.
+ *
+ * **`timelineProjection` (Batch 11, M6-012, "Implement Scenario
+ * Timeline")**: "Display projected portfolio evolution across the
+ * selected time horizon" needs *multiple* points in time, not the
+ * single endpoint `runSimulation` already computes. No new Formula
+ * Engine logic — `runTimelineProjection` calls the exact same, already-
+ * public `simulateScenario` (M3-009) repeatedly, holding the active
+ * interest scenario's own `priceScenario`/`borrowApr` fixed and varying
+ * only `timeHorizonDays` across 5 evenly-spaced points from `0` to the
+ * scenario's own `timeHorizonDays` (0%, 25%, 50%, 75%, 100% — a
+ * reasonable, documented granularity choice, since neither
+ * `06_TASKS.md` nor either spec document names a specific point count).
+ * Each point's own `day` is stored alongside the full `ScenarioSummary`
+ * that day's call already produces — reusing that existing type rather
+ * than inventing a narrower one. Only meaningful for `type: 'interest'`
+ * scenarios (`type: 'price'` has no `timeHorizonDays` at all, and no
+ * time to project across) — the same "time only matters for interest
+ * scenarios" reasoning `ScenarioBuilder.tsx`'s own Holding Period wiring
+ * already established in Batch 7. `runTimelineProjection` deliberately
+ * leaves `warnings` untouched (unlike `runSimulation`/
+ * `runPortfolioActionSimulation`) — overwriting it with only the last of
+ * 5 calls' own warnings would misrepresent the other 4; `warnings`
+ * continues to reflect whichever single-point calculation last set it.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -90,12 +114,18 @@ export interface SavedSimulation {
   createdAt: string;
 }
 
+export interface TimelinePoint {
+  day: number;
+  summary: ScenarioSummary;
+}
+
 export interface SimulationStoreState {
   currentScenario: SimulationScenario | null;
   currentResult: SimulationResult | null;
   portfolioActionPreview: PortfolioActionSimulationResult | null;
   savedScenarios: SavedSimulation[];
   comparisonSelection: string[];
+  timelineProjection: TimelinePoint[] | null;
   status: SimulationStatus;
   errors: ApplicationError[];
   warnings: ServiceWarning[];
@@ -109,6 +139,7 @@ export interface SimulationStoreActions {
     portfolio: ApplicationPortfolio,
     input: PortfolioActionSimulationInput,
   ) => void;
+  runTimelineProjection: (portfolio: ApplicationPortfolio) => void;
   saveCurrentScenario: () => string | null;
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
@@ -117,6 +148,7 @@ export interface SimulationStoreActions {
 }
 
 const SOURCE_STATUS = 'manual';
+const TIMELINE_POINT_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 
 const INITIAL_STATE: SimulationStoreState = {
   currentScenario: null,
@@ -124,6 +156,7 @@ const INITIAL_STATE: SimulationStoreState = {
   portfolioActionPreview: null,
   savedScenarios: [],
   comparisonSelection: [],
+  timelineProjection: null,
   status: 'idle',
   errors: [],
   warnings: [],
@@ -138,6 +171,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       set({
         currentScenario: scenario,
         currentResult: null,
+        timelineProjection: null,
         status: 'idle',
         errors: [],
         warnings: [],
@@ -181,6 +215,36 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         warnings: result.warnings,
         portfolioActionPreview: result.data,
       });
+    },
+
+    runTimelineProjection: (portfolio) => {
+      const { currentScenario } = get();
+      if (currentScenario === null || currentScenario.type !== 'interest') {
+        set({ timelineProjection: null });
+        return;
+      }
+
+      set({ status: 'calculating' });
+
+      const points: TimelinePoint[] = [];
+      for (const fraction of TIMELINE_POINT_FRACTIONS) {
+        const day = currentScenario.timeHorizonDays * fraction;
+        const result = simulateScenario(
+          portfolio,
+          { ...currentScenario, timeHorizonDays: day },
+          'Simulated Scenario',
+          SOURCE_STATUS,
+        );
+
+        if (!result.ok) {
+          set({ status: 'error', errors: result.errors, timelineProjection: null });
+          return;
+        }
+
+        points.push({ day, summary: result.data.scenario });
+      }
+
+      set({ status: 'idle', errors: [], timelineProjection: points });
     },
 
     saveCurrentScenario: () => {
