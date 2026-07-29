@@ -53,15 +53,30 @@ import {
  * `MILESTONE_4_COMPLETION.md`'s own "Lessons Learned" for why an honest
  * partial reality is preferable to a fabricated one).
  *
- * **`SavedSimulation` deliberately carries only `id`/`scenario`/`result`/
- * `createdAt`, not `name`/`description`/a portfolio reference** — those
- * three fields are M6-015's ("Save Simulation") own explicit "Include"
- * list, a separate, later, `P1` task whose own Dependencies name only
- * M6-003. Building its full field shape here would be inventing that
- * task's own scope, the same discipline `services/portfolio/models.ts`'s
- * own header comment already established for `ApplicationPortfolio` vs.
- * M4-001. `saveCurrentScenario` below returns the new record's `id`;
- * M6-015's own later UI is what will let a user attach a name.
+ * **`SavedSimulation` now carries `name`/`description`/`portfolioId`
+ * (Batch 14, M6-015, "Save Simulation")** — M6-015's own literal
+ * "Include: Name, Description, Timestamp, Portfolio reference" list.
+ * "Timestamp" was already `createdAt` (Batch 2); the other three were
+ * deliberately withheld until this task, per this same header comment's
+ * own prior text (see git history) — building them earlier would have
+ * been inventing M6-015's own scope ahead of time, the same discipline
+ * `services/portfolio/models.ts`'s own header comment already
+ * established for `ApplicationPortfolio` vs. M4-001. `description` is
+ * optional (`string | null`), matching M6-015's own "Include" wording
+ * ("Description," not "Required description") and this project's
+ * existing `Portfolio.description?: string` precedent
+ * (`types/portfolio.ts`, M4-001). `portfolioId` is a plain reference
+ * string, not a live binding — `04_BUILD_GUIDE.md`'s own "MULTI-PORTFOLIO
+ * SUPPORT" section lists "Saved Simulations" as something each portfolio
+ * conceptually owns, satisfied here by storing which portfolio was
+ * active at save time; no actual per-portfolio persistence exists yet
+ * (Conflict B, Milestone 8's own concern). `saveCurrentScenario` now
+ * takes a `SaveSimulationInput` (`name`/`description?`/`portfolioId`)
+ * instead of no arguments; its own existing guard
+ * (`currentScenario === null || currentResult === null`) and Store
+ * independence (no live `usePortfolioStore` import) are both unchanged
+ * — the caller supplies `portfolioId` as a plain value, the same
+ * pattern `runSimulation` already uses for `portfolio` itself.
  *
  * **`portfolioActionPreview` (M6-008, Batch 5)**: a second, independent
  * result field alongside `currentResult` — `PortfolioActionSimulationResult`
@@ -128,9 +143,18 @@ export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
 export interface SavedSimulation {
   id: string;
+  name: string;
+  description: string | null;
+  portfolioId: string;
   scenario: SimulationScenario;
   result: SimulationResult;
   createdAt: string;
+}
+
+export interface SaveSimulationInput {
+  name: string;
+  description?: string;
+  portfolioId: string;
 }
 
 export interface TimelinePoint {
@@ -160,7 +184,7 @@ export interface SimulationStoreActions {
     input: PortfolioActionSimulationInput,
   ) => void;
   runTimelineProjection: (portfolio: ApplicationPortfolio) => void;
-  saveCurrentScenario: () => string | null;
+  saveCurrentScenario: (input: SaveSimulationInput) => string | null;
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
   setPreviewMode: (enabled: boolean) => void;
@@ -288,12 +312,15 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       set({ status: 'idle', errors: [], timelineProjection: points });
     },
 
-    saveCurrentScenario: () => {
+    saveCurrentScenario: (input) => {
       const { currentScenario, currentResult } = get();
       if (currentScenario === null || currentResult === null) return null;
 
       const saved: SavedSimulation = {
         id: crypto.randomUUID(),
+        name: input.name,
+        description: input.description ?? null,
+        portfolioId: input.portfolioId,
         scenario: currentScenario,
         result: currentResult,
         createdAt: new Date().toISOString(),

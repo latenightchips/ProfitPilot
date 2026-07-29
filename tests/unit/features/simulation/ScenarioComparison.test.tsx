@@ -29,13 +29,15 @@ beforeEach(() => {
   useSimulationStore.getState().reset();
 });
 
-function saveAPriceScenario(btcPriceUsd: number): string {
+function saveAPriceScenario(btcPriceUsd: number, name = 'Test Scenario'): string {
   useSimulationStore.getState().setCurrentScenario({
     type: 'price',
     priceScenario: { type: 'absolute', btcPriceUsd },
   });
   useSimulationStore.getState().runSimulation(PORTFOLIO);
-  const id = useSimulationStore.getState().saveCurrentScenario();
+  const id = useSimulationStore
+    .getState()
+    .saveCurrentScenario({ name, portfolioId: 'portfolio-1' });
   if (id === null) throw new Error('setup failed');
   return id;
 }
@@ -48,7 +50,9 @@ function saveAnInterestScenario(): string {
     borrowApr: 0.05,
   });
   useSimulationStore.getState().runSimulation(PORTFOLIO);
-  const id = useSimulationStore.getState().saveCurrentScenario();
+  const id = useSimulationStore
+    .getState()
+    .saveCurrentScenario({ name: 'Test Scenario', portfolioId: 'portfolio-1' });
   if (id === null) throw new Error('setup failed');
   return id;
 }
@@ -62,10 +66,9 @@ function rowValues(label: string): string[] {
 }
 
 describe('ScenarioComparison — empty state', () => {
-  it('explains that saving is not built yet, rather than showing a blank comparison', () => {
+  it('explains that nothing is saved yet, rather than showing a blank comparison', () => {
     render(<ScenarioComparison />);
-    expect(screen.getByText(/No scenarios saved yet/)).toBeInTheDocument();
-    expect(screen.getByText(/M6-015/)).toBeInTheDocument();
+    expect(screen.getByText('No scenarios saved yet.')).toBeInTheDocument();
   });
 });
 
@@ -76,7 +79,7 @@ describe('ScenarioComparison — with saved scenarios, none selected', () => {
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
-    expect(screen.getByText(/Price Scenario/)).toBeInTheDocument();
+    expect(screen.getByText(/Test Scenario \(Price Scenario\)/)).toBeInTheDocument();
     expect(
       screen.getByText('Select scenarios above to compare them side-by-side.'),
     ).toBeInTheDocument();
@@ -92,8 +95,8 @@ describe('ScenarioComparison — with saved scenarios, none selected', () => {
 describe('ScenarioComparison — selecting scenarios renders a real comparison table', () => {
   it('renders each selected scenario’s own already-saved metrics, unchanged by selection order', async () => {
     const user = userEvent.setup();
-    saveAPriceScenario(60000);
-    saveAPriceScenario(70000);
+    saveAPriceScenario(60000, 'Bull Case');
+    saveAPriceScenario(70000, 'Bull Case Plus');
 
     render(<ScenarioComparison />);
     const checkboxes = screen.getAllByRole('checkbox');
@@ -102,6 +105,8 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
 
     // 2 BTC * $60,000 − $20,000 = $100,000; 2 BTC * $70,000 − $20,000 = $120,000.
     expect(rowValues('Equity')).toEqual(['$100,000.00', '$120,000.00']);
+    expect(screen.getByRole('columnheader', { name: 'Bull Case' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Bull Case Plus' })).toBeInTheDocument();
     expect(screen.getByText('Health Factor')).toBeInTheDocument();
     expect(screen.getByText('Interest')).toBeInTheDocument();
     expect(screen.getByText('Leverage')).toBeInTheDocument();

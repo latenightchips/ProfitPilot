@@ -333,26 +333,47 @@ describe('useSimulationStore — warnings (M6-009, Batch 9)', () => {
   });
 });
 
-describe('useSimulationStore — saveCurrentScenario', () => {
+describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => {
   it('returns null and saves nothing when there is no current result yet', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
-    const id = useSimulationStore.getState().saveCurrentScenario();
+    const id = useSimulationStore
+      .getState()
+      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
     expect(id).toBeNull();
     expect(useSimulationStore.getState().savedScenarios).toEqual([]);
   });
 
-  it('saves the current scenario and result, returning a real id', () => {
+  it('saves the current scenario and result with the real name/description/portfolioId, returning a real id', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
 
-    const id = useSimulationStore.getState().saveCurrentScenario();
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      description: 'A test description',
+      portfolioId: 'portfolio-1',
+    });
 
     expect(id).not.toBeNull();
     const saved = useSimulationStore.getState().savedScenarios;
     expect(saved).toHaveLength(1);
     expect(saved[0].id).toBe(id);
+    expect(saved[0].name).toBe('My Scenario');
+    expect(saved[0].description).toBe('A test description');
+    expect(saved[0].portfolioId).toBe('portfolio-1');
     expect(saved[0].scenario).toEqual(PRICE_SCENARIO);
     expect(saved[0].result.scenario.equity).toBe(100000);
+    expect(saved[0].createdAt).toEqual(expect.any(String));
+  });
+
+  it('defaults description to null when omitted', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+
+    useSimulationStore
+      .getState()
+      .saveCurrentScenario({ name: 'No Description', portfolioId: 'p1' });
+
+    expect(useSimulationStore.getState().savedScenarios[0].description).toBeNull();
   });
 });
 
@@ -360,7 +381,9 @@ describe('useSimulationStore — deleteSavedScenario', () => {
   it('removes the scenario and clears it from the comparison selection', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
-    const id = useSimulationStore.getState().saveCurrentScenario();
+    const id = useSimulationStore
+      .getState()
+      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
     if (id === null) throw new Error('setup failed');
     useSimulationStore.getState().toggleComparisonSelection(id);
 
@@ -394,7 +417,9 @@ describe('useSimulationStore — reset', () => {
   it('restores every field to its initial default', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
-    useSimulationStore.getState().saveCurrentScenario();
+    useSimulationStore
+      .getState()
+      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
     useSimulationStore.getState().setPreviewMode(true);
     useSimulationStore
       .getState()

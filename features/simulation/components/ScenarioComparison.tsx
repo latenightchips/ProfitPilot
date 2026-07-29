@@ -40,21 +40,15 @@ import {
  * fields already sitting in the Store — it never calls
  * `runSimulation`/`simulateScenario` itself.
  *
- * **No "Save Scenario" button exists anywhere in the app yet — a
- * genuine, load-bearing gap, not overlooked.** `06_TASKS.md` M6-015
- * ("Save Simulation") is a separate, later, P1 task (Dependencies:
- * M6-003 only) that owns building the real save UI, with its own
- * "Include: Name, Description, Timestamp, Portfolio reference" list —
- * exactly the three fields `SavedSimulation`'s own Batch 2 header
- * comment already documented as deliberately excluded pending that
- * task. Building even a bare-bones save trigger here would invent part
- * of M6-015's own scope. This means `savedScenarios` is honestly empty
- * for every real user today; the empty-state message below says so
- * explicitly rather than implying the feature is broken.
+ * **The "Save Scenario" button now exists (`SaveSimulationForm.tsx`,
+ * Batch 14, M6-015) — `savedScenarios` is no longer honestly-empty by
+ * construction.** Each entry now carries a real user-given `name` and
+ * optional `description` (`stores/simulationStore.ts`'s own Batch 14
+ * fields), used below instead of a generic type label.
  *
- * **Each saved scenario is labeled by type + real timestamp
- * (`formatDateTime`), not a name** — for the same reason: `name` is
- * M6-015's own field, not yet built.
+ * **Each saved scenario is labeled by its own real `name`, then type +
+ * real timestamp (`formatDateTime`)** — `name` (Batch 14) replaces the
+ * generic type-only label this component used before M6-015 existed.
  *
  * **Same two documented field-availability gaps `ScenarioSummary`
  * already found (Batch 8), carried forward, not re-litigated**: "Debt"
@@ -82,12 +76,7 @@ export function ScenarioComparison() {
   const toggleComparisonSelection = useSimulationStore((state) => state.toggleComparisonSelection);
 
   if (savedScenarios.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No scenarios saved yet. Saving a scenario is implemented in a later Milestone 6 batch
-        (M6-015) — see PROJECT_STATUS.md.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
   }
 
   const selected = savedScenarios.filter((saved) => comparisonSelection.includes(saved.id));
@@ -103,7 +92,7 @@ export function ScenarioComparison() {
               onChange={() => toggleComparisonSelection(saved.id)}
             />
             <span>
-              {scenarioLabel(saved.scenario)} — {formatDateTime(saved.createdAt)}
+              {saved.name} ({scenarioLabel(saved.scenario)}) — {formatDateTime(saved.createdAt)}
             </span>
           </label>
         ))}
@@ -121,7 +110,7 @@ export function ScenarioComparison() {
                 <th className="pr-4 text-left text-muted-foreground">Metric</th>
                 {selected.map((saved) => (
                   <th key={saved.id} className="px-2 text-left font-medium text-foreground">
-                    {scenarioLabel(saved.scenario)}
+                    {saved.name}
                   </th>
                 ))}
               </tr>

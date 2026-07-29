@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import {
+  SaveSimulationForm,
   ScenarioBuilder,
   ScenarioCharts,
   ScenarioComparison,
@@ -45,12 +46,15 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * 13) — grouped together directly after Results per `01_PRD.md`'s own
  * Principle Two ("Every displayed number must have a documented
  * origin"), answering "what was assumed"/"what should I be careful
- * about" right next to "what was calculated." "Portfolio Comparison"
- * renders `ScenarioComparison` (M6-010, Batch 9), followed by "Scenario
- * Charts" rendering `ScenarioCharts` (M6-011, Batch 10), followed by
- * "Scenario Timeline" rendering `ScenarioTimeline` (M6-012, Batch 11) —
- * see each component's own header comment for its full
- * field-mapping/gap reasoning.
+ * about" right next to "what was calculated." "Save Scenario" (new,
+ * M6-015, Batch 14) renders `SaveSimulationForm`, the bridge between a
+ * currently-active scenario and "Portfolio Comparison" (which renders
+ * `ScenarioComparison`, M6-010, Batch 9) — a scenario must be saved
+ * before it can appear there. Followed by "Scenario Charts" rendering
+ * `ScenarioCharts` (M6-011, Batch 10), then "Scenario Timeline"
+ * rendering `ScenarioTimeline` (M6-012, Batch 11) — see each
+ * component's own header comment for its full field-mapping/gap
+ * reasoning.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -95,6 +99,10 @@ export default function SimulationPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Simulation Warnings</h2>
               <SimulationWarnings portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Save Scenario</h2>
+              <SaveSimulationForm portfolioId={record.portfolio.id} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
