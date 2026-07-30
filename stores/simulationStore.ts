@@ -167,6 +167,29 @@ import {
  * displayed. A missing `id` is a silent no-op, the same defensive-but-
  * practically-unreachable pattern `deleteSavedScenario`/
  * `toggleComparisonSelection` already accept for an unknown `id`.
+ *
+ * **`duplicateSavedScenario` (Batch 16, M6-017, "Duplicate Simulation")**:
+ * M6-017 names no `Requirements` section of its own — only a Description
+ * ("Allow users to duplicate a saved scenario for experimentation") and
+ * a DoD ("Copies are fully independent"). Rather than invent a shape for
+ * "fully independent" from nothing, this reuses
+ * `stores/portfolioStore.ts`'s own already-approved `duplicate` action
+ * (M4-011) verbatim as precedent for what "duplicate" already means in
+ * this exact codebase: a new identity (`crypto.randomUUID()`), a fresh
+ * `createdAt`, and the name suffixed with `" (Copy)"`. `scenario`/
+ * `result`/`description`/`portfolioId`/`portfolioUpdatedAt` are carried
+ * over unchanged — the duplicate represents the same assumptions, ready
+ * to be loaded and further experimented with (M6-016's own
+ * `loadSavedScenario`), not a blank slate. "Fully independent" is
+ * satisfied structurally: the new entry gets its own `id`, so
+ * `deleteSavedScenario`/`toggleComparisonSelection` acting on one never
+ * touches the other, and neither this Store nor any component ever
+ * mutates a `SavedSimulation`'s own fields in place after creation — the
+ * copy and the original share no mutable reference either has a way to
+ * corrupt. Returns the new record's real `id` (or `null` if the source
+ * `id` does not match any saved scenario), the same `string | null`
+ * contract `saveCurrentScenario` already uses for "creates a new saved
+ * record."
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -217,6 +240,7 @@ export interface SimulationStoreActions {
   runTimelineProjection: (portfolio: ApplicationPortfolio) => void;
   saveCurrentScenario: (input: SaveSimulationInput) => string | null;
   loadSavedScenario: (id: string) => void;
+  duplicateSavedScenario: (id: string) => string | null;
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
   setPreviewMode: (enabled: boolean) => void;
@@ -376,6 +400,21 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         errors: [],
         warnings: [],
       });
+    },
+
+    duplicateSavedScenario: (id) => {
+      const existing = get().savedScenarios.find((saved) => saved.id === id);
+      if (existing === undefined) return null;
+
+      const duplicate: SavedSimulation = {
+        ...existing,
+        id: crypto.randomUUID(),
+        name: `${existing.name} (Copy)`,
+        createdAt: new Date().toISOString(),
+      };
+
+      set((state) => ({ savedScenarios: [...state.savedScenarios, duplicate] }));
+      return duplicate.id;
     },
 
     deleteSavedScenario: (id) => {

@@ -174,4 +174,43 @@ describe('ScenarioSummary — warnings', () => {
     expect(screen.getByText('Warnings')).toBeInTheDocument();
     expect(screen.getByText('This is a test warning.')).toBeInTheDocument();
   });
+
+  it('renders two warnings sharing the same code as two distinct rows (Batch 16 fix)', () => {
+    useSimulationStore.setState({
+      currentResult: {
+        baseline: {
+          label: 'Current Portfolio',
+          equity: 80000,
+          profitOrLoss: 0,
+          healthFactor: 4,
+          liquidationDistance: 3,
+          debtCost: 1000,
+          leverage: 1.25,
+        },
+        scenario: {
+          label: 'Simulated Scenario',
+          equity: -5000,
+          profitOrLoss: -85000,
+          healthFactor: -1,
+          liquidationDistance: -2,
+          debtCost: 1000,
+          leverage: 1.2,
+        },
+        comparison: {
+          scenarioALabel: 'Current Portfolio',
+          scenarioBLabel: 'Simulated Scenario',
+          differences: [],
+        },
+        assumptions: { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 1 } },
+      },
+      warnings: [
+        { code: 'NEGATIVE_EQUITY', message: 'Equity is negative under this scenario.' },
+        { code: 'NEGATIVE_EQUITY', message: 'Equity is negative under this scenario, again.' },
+      ],
+    });
+
+    render(<ScenarioSummary />);
+    expect(screen.getByText('Equity is negative under this scenario.')).toBeInTheDocument();
+    expect(screen.getByText('Equity is negative under this scenario, again.')).toBeInTheDocument();
+  });
 });

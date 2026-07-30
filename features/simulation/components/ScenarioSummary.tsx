@@ -64,6 +64,18 @@ import { formatCurrency, formatHealthFactor, formatLeverage } from '../utils/for
  * Stale prices, Invalid assumptions) — a genuinely richer concern this
  * batch does not pre-empt. What is shown here is only whatever the
  * Simulation/Portfolio Action Service calls already returned.
+ *
+ * **Warning list keying fixed (Batch 16, M6-017's own mandatory manual
+ * browser verification) — a real, pre-existing bug, unrelated to
+ * M6-017's own scope, found and fixed the same way Batch 8's "both
+ * sections render simultaneously" finding above was.** `warnings.map`
+ * previously keyed each row by `warning.code` alone; a `ServiceWarning[]`
+ * can genuinely contain two entries with the same `code` (for example,
+ * a deeply negative-equity intermediate price briefly producing more
+ * than one `NEGATIVE_EQUITY`-coded entry), which produced a real React
+ * "duplicate key" console error and put list-identity at risk. Keyed by
+ * `` `${warning.code}-${index}` `` instead — no change to what is
+ * displayed, only to React's own row identity.
  */
 const METRIC_LABELS: Record<ScenarioMetric, string> = {
   equity: 'Portfolio Value',
@@ -199,8 +211,8 @@ export function ScenarioSummary() {
       {warnings.length > 0 && (
         <div className="flex flex-col gap-1 border-t border-border pt-2">
           <span className="text-xs font-medium text-foreground">Warnings</span>
-          {warnings.map((warning) => (
-            <p key={warning.code} className="text-xs text-destructive">
+          {warnings.map((warning, index) => (
+            <p key={`${warning.code}-${index}`} className="text-xs text-destructive">
               {warning.message}
             </p>
           ))}

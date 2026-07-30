@@ -52,7 +52,10 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `ScenarioComparison`, M6-010, Batch 9) — a scenario must be saved
  * before it can appear there — `ScenarioComparison` now also owns
  * loading a saved scenario back (M6-016, Batch 15), so it takes the
- * active `Portfolio` as a prop to detect drift since save time.
+ * active `Portfolio` as a prop to detect drift since save time, and
+ * owns duplicating one (M6-017, Batch 16) — neither needed a new prop
+ * or a new section here, since both act on the same already-rendered
+ * `savedScenarios` list.
  * Followed by "Scenario Charts" rendering `ScenarioCharts` (M6-011,
  * Batch 10), then "Scenario Timeline" rendering `ScenarioTimeline`
  * (M6-012, Batch 11) — see each component's own header comment for its

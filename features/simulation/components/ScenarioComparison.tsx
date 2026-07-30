@@ -98,6 +98,17 @@ import {
  * scenario's own numbers are correctly reproduced everywhere they are
  * displayed (Simulation Results, Assumptions); only the Scenario
  * Builder's own input fields keep showing whatever was last typed.
+ *
+ * **"Duplicate" now exists (Batch 16, M6-017, "Duplicate Simulation") —
+ * placed here for the same reason "Load" is: this is the only place a
+ * saved scenario is ever rendered.** Calls `duplicateSavedScenario`
+ * (`stores/simulationStore.ts`), which reuses `stores/portfolioStore.ts`'s
+ * own already-approved "duplicate" convention (new identity, `" (Copy)"`
+ * name suffix, fresh timestamp) rather than inventing a new one — M6-017
+ * itself names no `Requirements` section to define what "duplicate"
+ * should mean here. The new copy appears as its own row immediately,
+ * with its own independent checkbox/Load/Duplicate controls, satisfying
+ * the DoD ("Copies are fully independent") visibly, not just internally.
  */
 function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
@@ -119,6 +130,7 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
   const comparisonSelection = useSimulationStore((state) => state.comparisonSelection);
   const toggleComparisonSelection = useSimulationStore((state) => state.toggleComparisonSelection);
   const loadSavedScenario = useSimulationStore((state) => state.loadSavedScenario);
+  const duplicateSavedScenario = useSimulationStore((state) => state.duplicateSavedScenario);
 
   if (savedScenarios.length === 0) {
     return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
@@ -150,6 +162,13 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
                 className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
               >
                 Load
+              </button>
+              <button
+                type="button"
+                onClick={() => duplicateSavedScenario(saved.id)}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+              >
+                Duplicate
               </button>
             </div>
           );

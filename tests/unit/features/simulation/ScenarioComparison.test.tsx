@@ -208,3 +208,34 @@ describe('ScenarioComparison — Load (M6-016, Batch 15)', () => {
     expect(screen.getByText(/Saved against a different portfolio\./)).toBeInTheDocument();
   });
 });
+
+describe('ScenarioComparison — Duplicate (M6-017, Batch 16)', () => {
+  it('adds an independent copy with an appended name as its own new row', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    expect(screen.getByText(/Bull Case \(Price Scenario\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Bull Case \(Copy\) \(Price Scenario\)/)).toBeInTheDocument();
+    expect(useSimulationStore.getState().savedScenarios).toHaveLength(2);
+  });
+
+  it('leaves the original selectable/loadable after the duplicate is deleted', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    const state = useSimulationStore.getState();
+    const copy = state.savedScenarios.find((saved) => saved.name === 'Bull Case (Copy)');
+    if (copy === undefined) throw new Error('copy not found');
+
+    useSimulationStore.getState().deleteSavedScenario(copy.id);
+
+    expect(useSimulationStore.getState().savedScenarios).toHaveLength(1);
+    expect(useSimulationStore.getState().savedScenarios[0].name).toBe('Bull Case');
+  });
+});

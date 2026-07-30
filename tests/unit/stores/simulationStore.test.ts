@@ -529,3 +529,66 @@ describe('useSimulationStore — loadSavedScenario (M6-016, Batch 15)', () => {
     expect(useSimulationStore.getState().errors).toEqual([]);
   });
 });
+
+describe('useSimulationStore — duplicateSavedScenario (M6-017, Batch 16)', () => {
+  it('returns null and creates nothing when the id does not match any saved scenario', () => {
+    const id = useSimulationStore.getState().duplicateSavedScenario('does-not-exist');
+    expect(id).toBeNull();
+    expect(useSimulationStore.getState().savedScenarios).toEqual([]);
+  });
+
+  it('creates an independent copy with a new identity, appended name, and fresh timestamp', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const originalId = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      description: 'A test description',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (originalId === null) throw new Error('setup failed');
+    const original = useSimulationStore.getState().savedScenarios[0];
+
+    const copyId = useSimulationStore.getState().duplicateSavedScenario(originalId);
+    expect(copyId).not.toBeNull();
+    expect(copyId).not.toBe(originalId);
+
+    const saved = useSimulationStore.getState().savedScenarios;
+    expect(saved).toHaveLength(2);
+    const copy = saved.find((scenario) => scenario.id === copyId);
+    if (copy === undefined) throw new Error('copy not found');
+
+    expect(copy.name).toBe('My Scenario (Copy)');
+    expect(copy.description).toBe(original.description);
+    expect(copy.portfolioId).toBe(original.portfolioId);
+    expect(copy.portfolioUpdatedAt).toBe(original.portfolioUpdatedAt);
+    expect(copy.scenario).toEqual(original.scenario);
+    expect(copy.result).toEqual(original.result);
+  });
+
+  it('is fully independent from the original — deleting one does not affect the other', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const originalId = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (originalId === null) throw new Error('setup failed');
+    const copyId = useSimulationStore.getState().duplicateSavedScenario(originalId);
+    if (copyId === null) throw new Error('setup failed');
+    useSimulationStore.getState().toggleComparisonSelection(copyId);
+
+    useSimulationStore.getState().deleteSavedScenario(originalId);
+
+    const saved = useSimulationStore.getState().savedScenarios;
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe(copyId);
+    // Selecting the copy for comparison was untouched by deleting the original.
+    expect(useSimulationStore.getState().comparisonSelection).toEqual([copyId]);
+
+    // Loading the surviving copy still restores its own scenario/result correctly.
+    useSimulationStore.getState().loadSavedScenario(copyId);
+    expect(useSimulationStore.getState().currentResult?.scenario.equity).toBe(100000);
+  });
+});
