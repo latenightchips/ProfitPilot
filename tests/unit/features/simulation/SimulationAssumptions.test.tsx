@@ -101,6 +101,29 @@ describe('SimulationAssumptions — interest scenario', () => {
   });
 });
 
+describe('SimulationAssumptions — Formula Version survives Load (Batch 18, M6-019 fix)', () => {
+  it('still shows Formula Version after loading a saved scenario, not just a freshly-run one', () => {
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(PORTFOLIO);
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (id === null) throw new Error('setup failed');
+
+    useSimulationStore.getState().setCurrentScenario(null);
+    useSimulationStore.getState().loadSavedScenario(id);
+
+    render(<SimulationAssumptions portfolio={PORTFOLIO} />);
+    expect(screen.getByText('Formula Version')).toBeInTheDocument();
+    expect(screen.getByText(/Engine .+ · Formula/)).toBeInTheDocument();
+  });
+});
+
 describe('SimulationAssumptions — portfolio action', () => {
   it('shows the current market price, unmodified, with no Rate Assumptions row', () => {
     useSimulationStore

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import {
+  ExportSimulation,
   SaveSimulationForm,
   ScenarioBuilder,
   ScenarioCharts,
@@ -60,6 +61,14 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * Batch 10), then "Scenario Timeline" rendering `ScenarioTimeline`
  * (M6-012, Batch 11) — see each component's own header comment for its
  * full field-mapping/gap reasoning.
+ *
+ * **"Export" (new, M6-019, Batch 18) renders `ExportSimulation`,
+ * placed directly after "Simulation Warnings" and before "Save
+ * Scenario"** — a user has now seen the results, assumptions, and
+ * warnings for the currently active scenario, and can either export it
+ * or save it next. It reads the active `Portfolio` the same way
+ * `SimulationAssumptions` already does (for live Protocol Parameters),
+ * not a new pattern.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -104,6 +113,10 @@ export default function SimulationPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Simulation Warnings</h2>
               <SimulationWarnings portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Export</h2>
+              <ExportSimulation portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Save Scenario</h2>

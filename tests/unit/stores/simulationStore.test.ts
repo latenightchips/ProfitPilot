@@ -367,6 +367,8 @@ describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => 
     expect(saved[0].scenario).toEqual(PRICE_SCENARIO);
     expect(saved[0].result.scenario.equity).toBe(100000);
     expect(saved[0].createdAt).toEqual(expect.any(String));
+    expect(saved[0].metadata).toEqual(useSimulationStore.getState().lastMetadata);
+    expect(saved[0].metadata?.formulaVersion).toEqual(expect.any(String));
   });
 
   it('defaults description to null when omitted', () => {
@@ -504,7 +506,7 @@ describe('useSimulationStore — loadSavedScenario (M6-016, Batch 15)', () => {
     expect(useSimulationStore.getState().currentResult).toEqual(savedResult);
   });
 
-  it('clears warnings/lastMetadata/timelineProjection — none were captured at save time', () => {
+  it('clears warnings/timelineProjection — neither was captured at save time', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
     const id = useSimulationStore.getState().saveCurrentScenario({
@@ -518,15 +520,43 @@ describe('useSimulationStore — loadSavedScenario (M6-016, Batch 15)', () => {
     useSimulationStore.getState().runSimulation(validPortfolio());
     useSimulationStore.getState().runTimelineProjection(validPortfolio());
     expect(useSimulationStore.getState().timelineProjection).not.toBeNull();
-    expect(useSimulationStore.getState().lastMetadata).not.toBeNull();
 
     useSimulationStore.getState().loadSavedScenario(id);
 
     expect(useSimulationStore.getState().timelineProjection).toBeNull();
-    expect(useSimulationStore.getState().lastMetadata).toBeNull();
     expect(useSimulationStore.getState().warnings).toEqual([]);
     expect(useSimulationStore.getState().status).toBe('idle');
     expect(useSimulationStore.getState().errors).toEqual([]);
+  });
+
+  it('restores lastMetadata from the saved record (Batch 18, M6-019) — a correction to Batch 15, which previously cleared it', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (id === null) throw new Error('setup failed');
+    const savedMetadata = useSimulationStore.getState().savedScenarios[0].metadata;
+    expect(savedMetadata).not.toBeNull();
+
+    // Simulate something else having changed lastMetadata before Load —
+    // a direct state override, since two real calculations can otherwise
+    // land in the same millisecond and produce an identical timestamp.
+    useSimulationStore.setState({
+      lastMetadata: {
+        sourceStatus: 'manual',
+        calculationTimestamp: '1999-01-01T00:00:00.000Z',
+        engineVersion: 'stale',
+        formulaVersion: 'stale',
+      },
+    });
+    expect(useSimulationStore.getState().lastMetadata).not.toEqual(savedMetadata);
+
+    useSimulationStore.getState().loadSavedScenario(id);
+
+    expect(useSimulationStore.getState().lastMetadata).toEqual(savedMetadata);
   });
 });
 
@@ -564,6 +594,7 @@ describe('useSimulationStore — duplicateSavedScenario (M6-017, Batch 16)', () 
     expect(copy.portfolioUpdatedAt).toBe(original.portfolioUpdatedAt);
     expect(copy.scenario).toEqual(original.scenario);
     expect(copy.result).toEqual(original.result);
+    expect(copy.metadata).toEqual(original.metadata);
   });
 
   it('is fully independent from the original — deleting one does not affect the other', () => {

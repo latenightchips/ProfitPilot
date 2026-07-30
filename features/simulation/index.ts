@@ -24,6 +24,7 @@
  * `tests/integration/`, `tests/e2e/` — M1-003's own convention too),
  * never inside a feature-local `tests/` folder.
  */
+export * from './components/ExportSimulation';
 export * from './components/SaveSimulationForm';
 export * from './components/ScenarioBuilder';
 export * from './components/ScenarioCharts';
@@ -35,6 +36,7 @@ export * from './components/SimulationWarnings';
 export * from './types/scenarioBuilder';
 export * from './types/simulationWarnings';
 export * from './utils/buildSimulationWarnings';
+export * from './utils/exportSimulation';
 export * from './utils/format';
 export * from './utils/resolveScenarioInputs';
 export * from './utils/validateScenarioBuilderInput';

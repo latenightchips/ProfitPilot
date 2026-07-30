@@ -190,6 +190,32 @@ import {
  * `id` does not match any saved scenario), the same `string | null`
  * contract `saveCurrentScenario` already uses for "creates a new saved
  * record."
+ *
+ * **`SavedSimulation.metadata` (Batch 18, M6-019, "Export Simulation")**:
+ * a snapshot of `lastMetadata` at save time, needed because M6-019's own
+ * "Include: Timestamp, Formula version" cannot be satisfied honestly
+ * without it — `lastMetadata` itself is ephemeral (overwritten by the
+ * next calculation, cleared by `setCurrentScenario`), so a *saved*
+ * record needs its own copy, the same "each task adds exactly what its
+ * own scope requires" discipline `portfolioUpdatedAt` (Batch 15)
+ * already established. Captured internally from `get().lastMetadata`
+ * inside `saveCurrentScenario` — not caller-supplied, since the Store
+ * already owns this value, unlike `portfolioId`/`portfolioUpdatedAt`
+ * which come from the portfolio this Store deliberately never reads
+ * itself.
+ *
+ * **`loadSavedScenario` now restores `lastMetadata: saved.metadata`
+ * instead of clearing it to `null`** — a deliberate correction to
+ * Batch 15's own prior behavior, made necessary by this batch's own
+ * requirements, not a silent regression. Batch 15 cleared it because
+ * nothing was captured at save time yet; now that `metadata` is a real
+ * saved field, clearing it on Load would misrepresent a loaded
+ * simulation as having no known Formula version, when it verifiably
+ * does. This also fixes a latent, previously-unreachable gap in
+ * `SimulationAssumptions.tsx`'s own "Formula Version" row (M6-013,
+ * Batch 12), which silently disappeared after every Load before this
+ * batch — confirmed by manual browser testing this batch, not merely
+ * assumed.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -201,6 +227,7 @@ export interface SavedSimulation {
   portfolioUpdatedAt: string;
   scenario: SimulationScenario;
   result: SimulationResult;
+  metadata: ServiceMetadata | null;
   createdAt: string;
 }
 
@@ -369,7 +396,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
     },
 
     saveCurrentScenario: (input) => {
-      const { currentScenario, currentResult } = get();
+      const { currentScenario, currentResult, lastMetadata } = get();
       if (currentScenario === null || currentResult === null) return null;
 
       const saved: SavedSimulation = {
@@ -380,6 +407,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         portfolioUpdatedAt: input.portfolioUpdatedAt,
         scenario: currentScenario,
         result: currentResult,
+        metadata: lastMetadata,
         createdAt: new Date().toISOString(),
       };
 
@@ -395,7 +423,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         currentScenario: saved.scenario,
         currentResult: saved.result,
         timelineProjection: null,
-        lastMetadata: null,
+        lastMetadata: saved.metadata,
         status: 'idle',
         errors: [],
         warnings: [],
