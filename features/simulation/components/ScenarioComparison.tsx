@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import { useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -109,6 +111,22 @@ import {
  * should mean here. The new copy appears as its own row immediately,
  * with its own independent checkbox/Load/Duplicate controls, satisfying
  * the DoD ("Copies are fully independent") visibly, not just internally.
+ *
+ * **"Delete" now exists (Batch 17, M6-018, "Delete Simulation") —
+ * `deleteSavedScenario` (`stores/simulationStore.ts`) has been real
+ * since Batch 2/M6-003, but nothing ever called it until this batch.**
+ * DoD "Deletion cannot occur accidentally" is satisfied by reusing
+ * `app/portfolios/page.tsx`'s own already-approved inline, per-row
+ * confirmation pattern (M4-012, "Implement Portfolio Archive and
+ * Delete") rather than inventing a second confirmation UX: clicking
+ * "Delete" opens an inline panel naming the scenario and warning the
+ * action is permanent; only "Confirm Delete" inside that panel actually
+ * calls `deleteSavedScenario`, "Cancel" (or picking Load/Duplicate on
+ * another row) dismisses it with nothing deleted. Unlike the Portfolio
+ * page's own version, no "replacement" selection step is needed here —
+ * saved scenarios have no "active" concept a deletion could leave
+ * dangling, so that entire branch of the Portfolio pattern is not
+ * reused, only the confirm/cancel shape is.
  */
 function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
@@ -131,6 +149,8 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
   const toggleComparisonSelection = useSimulationStore((state) => state.toggleComparisonSelection);
   const loadSavedScenario = useSimulationStore((state) => state.loadSavedScenario);
   const duplicateSavedScenario = useSimulationStore((state) => state.duplicateSavedScenario);
+  const deleteSavedScenario = useSimulationStore((state) => state.deleteSavedScenario);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   if (savedScenarios.length === 0) {
     return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
@@ -138,38 +158,80 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
 
   const selected = savedScenarios.filter((saved) => comparisonSelection.includes(saved.id));
 
+  function confirmDelete(id: string) {
+    deleteSavedScenario(id);
+    setConfirmingDeleteId(null);
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         {savedScenarios.map((saved) => {
           const notice = driftNotice(saved, portfolio);
           return (
-            <div key={saved.id} className="flex items-center gap-2 text-sm">
-              <label className="flex flex-1 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={comparisonSelection.includes(saved.id)}
-                  onChange={() => toggleComparisonSelection(saved.id)}
-                />
-                <span>
-                  {saved.name} ({scenarioLabel(saved.scenario)}) — {formatDateTime(saved.createdAt)}
-                  {notice !== null && <span className="text-xs text-destructive"> — {notice}</span>}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => loadSavedScenario(saved.id)}
-                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
-              >
-                Load
-              </button>
-              <button
-                type="button"
-                onClick={() => duplicateSavedScenario(saved.id)}
-                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
-              >
-                Duplicate
-              </button>
+            <div key={saved.id} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 text-sm">
+                <label className="flex flex-1 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={comparisonSelection.includes(saved.id)}
+                    onChange={() => toggleComparisonSelection(saved.id)}
+                  />
+                  <span>
+                    {saved.name} ({scenarioLabel(saved.scenario)}) —{' '}
+                    {formatDateTime(saved.createdAt)}
+                    {notice !== null && (
+                      <span className="text-xs text-destructive"> — {notice}</span>
+                    )}
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => loadSavedScenario(saved.id)}
+                  className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  onClick={() => duplicateSavedScenario(saved.id)}
+                  className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDeleteId(saved.id)}
+                  className="rounded-md border border-destructive/40 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+                >
+                  Delete
+                </button>
+              </div>
+
+              {confirmingDeleteId === saved.id && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                  <p className="font-medium text-foreground">Delete &ldquo;{saved.name}&rdquo;?</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This permanently removes this saved simulation. This cannot be undone.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => confirmDelete(saved.id)}
+                      className="rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDeleteId(null)}
+                      className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

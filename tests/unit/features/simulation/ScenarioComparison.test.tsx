@@ -239,3 +239,72 @@ describe('ScenarioComparison — Duplicate (M6-017, Batch 16)', () => {
     expect(useSimulationStore.getState().savedScenarios[0].name).toBe('Bull Case');
   });
 });
+
+describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
+  it('does not delete on a bare click — only opens an inline confirmation', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(useSimulationStore.getState().savedScenarios).toHaveLength(1);
+    expect(screen.getByText('Delete “Bull Case”?')).toBeInTheDocument();
+    expect(
+      screen.getByText('This permanently removes this saved simulation. This cannot be undone.'),
+    ).toBeInTheDocument();
+  });
+
+  it('deletes only after Confirm Delete is clicked', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
+
+    expect(useSimulationStore.getState().savedScenarios).toEqual([]);
+    expect(screen.getByText('No scenarios saved yet.')).toBeInTheDocument();
+  });
+
+  it('deletes nothing when Cancel is clicked', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(useSimulationStore.getState().savedScenarios).toHaveLength(1);
+    expect(screen.queryByText('Delete “Bull Case”?')).not.toBeInTheDocument();
+  });
+
+  it('confirming delete on one row does not affect an unrelated saved scenario', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+    saveAPriceScenario(70000, 'Bear Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+    await user.click(deleteButtons[0]);
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
+
+    const remaining = useSimulationStore.getState().savedScenarios;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].name).toBe('Bear Case');
+  });
+
+  it('removes a deleted scenario from the comparison selection', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    await user.click(screen.getByRole('checkbox'));
+    expect(rowValues('Equity')).toEqual(['$100,000.00']);
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
+
+    expect(useSimulationStore.getState().comparisonSelection).toEqual([]);
+  });
+});
