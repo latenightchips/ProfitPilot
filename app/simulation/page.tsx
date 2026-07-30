@@ -50,11 +50,13 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * M6-015, Batch 14) renders `SaveSimulationForm`, the bridge between a
  * currently-active scenario and "Portfolio Comparison" (which renders
  * `ScenarioComparison`, M6-010, Batch 9) — a scenario must be saved
- * before it can appear there. Followed by "Scenario Charts" rendering
- * `ScenarioCharts` (M6-011, Batch 10), then "Scenario Timeline"
- * rendering `ScenarioTimeline` (M6-012, Batch 11) — see each
- * component's own header comment for its full field-mapping/gap
- * reasoning.
+ * before it can appear there — `ScenarioComparison` now also owns
+ * loading a saved scenario back (M6-016, Batch 15), so it takes the
+ * active `Portfolio` as a prop to detect drift since save time.
+ * Followed by "Scenario Charts" rendering `ScenarioCharts` (M6-011,
+ * Batch 10), then "Scenario Timeline" rendering `ScenarioTimeline`
+ * (M6-012, Batch 11) — see each component's own header comment for its
+ * full field-mapping/gap reasoning.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -102,11 +104,14 @@ export default function SimulationPage() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Save Scenario</h2>
-              <SaveSimulationForm portfolioId={record.portfolio.id} />
+              <SaveSimulationForm
+                portfolioId={record.portfolio.id}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
-              <ScenarioComparison />
+              <ScenarioComparison portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>

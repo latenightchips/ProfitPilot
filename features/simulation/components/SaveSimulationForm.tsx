@@ -49,8 +49,22 @@ import { useSimulationStore } from '@/stores/simulationStore';
  * null between render and submit) is treated as "nothing to save" and
  * silently no-ops, the same defensive-but-unreachable-in-practice
  * pattern already accepted elsewhere in this codebase.
+ *
+ * **`portfolioUpdatedAt` (Batch 15, M6-016) is also passed through, not
+ * a new form field** — `app/simulation/page.tsx`'s own
+ * `record.portfolio.updatedAt`, the same "already-active portfolio,
+ * never a second picker" reasoning as `portfolioId` above. Captured at
+ * save time so `ScenarioComparison.tsx`'s own Load flow can later
+ * detect whether the portfolio has changed since (M6-016's own
+ * Requirement).
  */
-export function SaveSimulationForm({ portfolioId }: { portfolioId: string }) {
+export function SaveSimulationForm({
+  portfolioId,
+  portfolioUpdatedAt,
+}: {
+  portfolioId: string;
+  portfolioUpdatedAt: string;
+}) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +93,7 @@ export function SaveSimulationForm({ portfolioId }: { portfolioId: string }) {
       name: name.trim(),
       description: description.trim() === '' ? undefined : description.trim(),
       portfolioId,
+      portfolioUpdatedAt,
     });
     if (id === null) return;
 

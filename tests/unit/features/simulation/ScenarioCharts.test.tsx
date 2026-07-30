@@ -35,9 +35,11 @@ function saveAPriceScenario(btcPriceUsd: number): string {
     priceScenario: { type: 'absolute', btcPriceUsd },
   });
   useSimulationStore.getState().runSimulation(PORTFOLIO);
-  const id = useSimulationStore
-    .getState()
-    .saveCurrentScenario({ name: 'Test Scenario', portfolioId: 'portfolio-1' });
+  const id = useSimulationStore.getState().saveCurrentScenario({
+    name: 'Test Scenario',
+    portfolioId: 'portfolio-1',
+    portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+  });
   if (id === null) throw new Error('setup failed');
   return id;
 }
@@ -50,9 +52,11 @@ function saveAnInterestScenario(): string {
     borrowApr: 0.05,
   });
   useSimulationStore.getState().runSimulation(PORTFOLIO);
-  const id = useSimulationStore
-    .getState()
-    .saveCurrentScenario({ name: 'Test Scenario', portfolioId: 'portfolio-1' });
+  const id = useSimulationStore.getState().saveCurrentScenario({
+    name: 'Test Scenario',
+    portfolioId: 'portfolio-1',
+    portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+  });
   if (id === null) throw new Error('setup failed');
   return id;
 }

@@ -336,9 +336,11 @@ describe('useSimulationStore — warnings (M6-009, Batch 9)', () => {
 describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => {
   it('returns null and saves nothing when there is no current result yet', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
-    const id = useSimulationStore
-      .getState()
-      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
     expect(id).toBeNull();
     expect(useSimulationStore.getState().savedScenarios).toEqual([]);
   });
@@ -351,6 +353,7 @@ describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => 
       name: 'My Scenario',
       description: 'A test description',
       portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
     });
 
     expect(id).not.toBeNull();
@@ -360,6 +363,7 @@ describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => 
     expect(saved[0].name).toBe('My Scenario');
     expect(saved[0].description).toBe('A test description');
     expect(saved[0].portfolioId).toBe('portfolio-1');
+    expect(saved[0].portfolioUpdatedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(saved[0].scenario).toEqual(PRICE_SCENARIO);
     expect(saved[0].result.scenario.equity).toBe(100000);
     expect(saved[0].createdAt).toEqual(expect.any(String));
@@ -369,9 +373,11 @@ describe('useSimulationStore — saveCurrentScenario (M6-015, Batch 14)', () => 
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
 
-    useSimulationStore
-      .getState()
-      .saveCurrentScenario({ name: 'No Description', portfolioId: 'p1' });
+    useSimulationStore.getState().saveCurrentScenario({
+      name: 'No Description',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
 
     expect(useSimulationStore.getState().savedScenarios[0].description).toBeNull();
   });
@@ -381,9 +387,11 @@ describe('useSimulationStore — deleteSavedScenario', () => {
   it('removes the scenario and clears it from the comparison selection', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
-    const id = useSimulationStore
-      .getState()
-      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
     if (id === null) throw new Error('setup failed');
     useSimulationStore.getState().toggleComparisonSelection(id);
 
@@ -417,9 +425,11 @@ describe('useSimulationStore — reset', () => {
   it('restores every field to its initial default', () => {
     useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
     useSimulationStore.getState().runSimulation(validPortfolio());
-    useSimulationStore
-      .getState()
-      .saveCurrentScenario({ name: 'My Scenario', portfolioId: 'portfolio-1' });
+    useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
     useSimulationStore.getState().setPreviewMode(true);
     useSimulationStore
       .getState()
@@ -462,5 +472,60 @@ describe('useSimulationStore — independence from portfolio state (M6-003 DoD)'
     // Portfolio Store's own state.
     useSimulationStore.getState().reset();
     expect(usePortfolioStore.getState().activePortfolioId).toBe(created.data.id);
+  });
+});
+
+describe('useSimulationStore — loadSavedScenario (M6-016, Batch 15)', () => {
+  it('does nothing when the id does not match any saved scenario', () => {
+    useSimulationStore.getState().loadSavedScenario('does-not-exist');
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+    expect(useSimulationStore.getState().currentResult).toBeNull();
+  });
+
+  it('restores the saved scenario/result exactly, without recalculating against a different portfolio', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (id === null) throw new Error('setup failed');
+    const savedResult = useSimulationStore.getState().currentResult;
+
+    // Switch to a completely different scenario/result before loading.
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio({ market: { btcPriceUsd: 90000 } }));
+    expect(useSimulationStore.getState().currentResult).not.toEqual(savedResult);
+
+    useSimulationStore.getState().loadSavedScenario(id);
+
+    expect(useSimulationStore.getState().currentScenario).toEqual(PRICE_SCENARIO);
+    expect(useSimulationStore.getState().currentResult).toEqual(savedResult);
+  });
+
+  it('clears warnings/lastMetadata/timelineProjection — none were captured at save time', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    if (id === null) throw new Error('setup failed');
+
+    useSimulationStore.getState().setCurrentScenario(INTEREST_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    useSimulationStore.getState().runTimelineProjection(validPortfolio());
+    expect(useSimulationStore.getState().timelineProjection).not.toBeNull();
+    expect(useSimulationStore.getState().lastMetadata).not.toBeNull();
+
+    useSimulationStore.getState().loadSavedScenario(id);
+
+    expect(useSimulationStore.getState().timelineProjection).toBeNull();
+    expect(useSimulationStore.getState().lastMetadata).toBeNull();
+    expect(useSimulationStore.getState().warnings).toEqual([]);
+    expect(useSimulationStore.getState().status).toBe('idle');
+    expect(useSimulationStore.getState().errors).toEqual([]);
   });
 });

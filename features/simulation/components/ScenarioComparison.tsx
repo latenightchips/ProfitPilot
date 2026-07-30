@@ -1,6 +1,7 @@
 'use client';
 
 import { useSimulationStore } from '@/stores/simulationStore';
+import type { Portfolio } from '@/types/portfolio';
 
 import {
   formatCurrency,
@@ -65,15 +66,59 @@ import {
  * anywhere for turning a Health Factor into a risk category. Not built;
  * flagged the same way Milestone 5 already flagged it for the
  * Dashboard.
+ *
+ * **"Load" now exists (Batch 15, M6-016, "Load Saved Simulation") —
+ * this is the only place a saved scenario can be reopened, so it owns
+ * that action rather than a separate new component.** Calls
+ * `loadSavedScenario` (`stores/simulationStore.ts`), which restores the
+ * saved `scenario`/`result` exactly as computed at save time —
+ * satisfying M6-016's own Requirement "Preserve original assumptions"
+ * and DoD "Historical simulations remain reproducible" literally, never
+ * recalculating against the *current* portfolio.
+ *
+ * **"Display if portfolio has changed since creation" (M6-016's own
+ * second Requirement)** reuses `Portfolio.updatedAt` (real, already
+ * bumped by `stores/portfolioStore.ts` on every mutation) against each
+ * saved scenario's own `portfolioUpdatedAt` snapshot (Batch 15) — a
+ * real comparison, not an invented staleness heuristic. A saved
+ * scenario belonging to a *different* portfolio entirely (`portfolioId`
+ * mismatch) is flagged distinctly from "same portfolio, since changed,"
+ * since `savedScenarios` lives in the Simulation Store and is never
+ * cleared when the active portfolio is switched (M6-003's own
+ * independence design) — a saved scenario from another portfolio can
+ * genuinely still be sitting in this list.
+ *
+ * **Loading does not resync `ScenarioBuilder.tsx`'s own local form
+ * fields — a known, documented limitation, not an oversight.**
+ * `ScenarioBuilder`'s `values` state only ever writes to the Store, it
+ * never reads `currentScenario` back out (true since Batch 3); making
+ * it do so would be a broader architecture change this task's own
+ * narrow DoD ("Historical simulations remain reproducible" — about the
+ * displayed *result*, not the input form) does not ask for. The loaded
+ * scenario's own numbers are correctly reproduced everywhere they are
+ * displayed (Simulation Results, Assumptions); only the Scenario
+ * Builder's own input fields keep showing whatever was last typed.
  */
 function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
 }
 
-export function ScenarioComparison() {
+function driftNotice(
+  saved: { portfolioId: string; portfolioUpdatedAt: string },
+  portfolio: Portfolio,
+): string | null {
+  if (saved.portfolioId !== portfolio.id) return 'Saved against a different portfolio.';
+  if (saved.portfolioUpdatedAt !== portfolio.updatedAt) {
+    return 'Portfolio has changed since this was saved.';
+  }
+  return null;
+}
+
+export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
   const savedScenarios = useSimulationStore((state) => state.savedScenarios);
   const comparisonSelection = useSimulationStore((state) => state.comparisonSelection);
   const toggleComparisonSelection = useSimulationStore((state) => state.toggleComparisonSelection);
+  const loadSavedScenario = useSimulationStore((state) => state.loadSavedScenario);
 
   if (savedScenarios.length === 0) {
     return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
@@ -84,18 +129,31 @@ export function ScenarioComparison() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        {savedScenarios.map((saved) => (
-          <label key={saved.id} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={comparisonSelection.includes(saved.id)}
-              onChange={() => toggleComparisonSelection(saved.id)}
-            />
-            <span>
-              {saved.name} ({scenarioLabel(saved.scenario)}) — {formatDateTime(saved.createdAt)}
-            </span>
-          </label>
-        ))}
+        {savedScenarios.map((saved) => {
+          const notice = driftNotice(saved, portfolio);
+          return (
+            <div key={saved.id} className="flex items-center gap-2 text-sm">
+              <label className="flex flex-1 items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={comparisonSelection.includes(saved.id)}
+                  onChange={() => toggleComparisonSelection(saved.id)}
+                />
+                <span>
+                  {saved.name} ({scenarioLabel(saved.scenario)}) — {formatDateTime(saved.createdAt)}
+                  {notice !== null && <span className="text-xs text-destructive"> — {notice}</span>}
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => loadSavedScenario(saved.id)}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+              >
+                Load
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {selected.length === 0 ? (

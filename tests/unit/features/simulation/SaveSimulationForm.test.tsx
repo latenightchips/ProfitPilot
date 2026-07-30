@@ -24,13 +24,17 @@ const PORTFOLIO: ApplicationPortfolio = {
   },
 };
 
+const PORTFOLIO_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
 beforeEach(() => {
   useSimulationStore.getState().reset();
 });
 
 describe('SaveSimulationForm — no active scenario result', () => {
   it('prompts the user to run a scenario, rather than rendering an empty form', () => {
-    render(<SaveSimulationForm portfolioId="portfolio-1" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
     expect(screen.getByText('Run a price or interest scenario to save it.')).toBeInTheDocument();
   });
 
@@ -38,7 +42,9 @@ describe('SaveSimulationForm — no active scenario result', () => {
     useSimulationStore
       .getState()
       .runPortfolioActionSimulation(PORTFOLIO, { collateralDelta: 1, debtDelta: 0 });
-    render(<SaveSimulationForm portfolioId="portfolio-1" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
     expect(screen.getByText('Run a price or interest scenario to save it.')).toBeInTheDocument();
   });
 });
@@ -55,7 +61,9 @@ describe('SaveSimulationForm — active scenario result', () => {
   it('shows an inline error and does not save when Name is empty', async () => {
     const user = userEvent.setup();
     activateScenario();
-    render(<SaveSimulationForm portfolioId="portfolio-1" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Save Scenario' }));
 
@@ -66,7 +74,9 @@ describe('SaveSimulationForm — active scenario result', () => {
   it('saves the current scenario with the real name/description/portfolioId on submit', async () => {
     const user = userEvent.setup();
     activateScenario();
-    render(<SaveSimulationForm portfolioId="portfolio-42" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-42" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
 
     await user.type(screen.getByLabelText('Name'), 'My Bull Case');
     await user.type(screen.getByLabelText('Description'), 'BTC to 60k');
@@ -77,6 +87,7 @@ describe('SaveSimulationForm — active scenario result', () => {
     expect(saved[0].name).toBe('My Bull Case');
     expect(saved[0].description).toBe('BTC to 60k');
     expect(saved[0].portfolioId).toBe('portfolio-42');
+    expect(saved[0].portfolioUpdatedAt).toBe(PORTFOLIO_UPDATED_AT);
     expect(saved[0].result.scenario.equity).toBe(100000);
     expect(screen.getByText('Saved.')).toBeInTheDocument();
   });
@@ -84,7 +95,9 @@ describe('SaveSimulationForm — active scenario result', () => {
   it('saves with description as null when left blank', async () => {
     const user = userEvent.setup();
     activateScenario();
-    render(<SaveSimulationForm portfolioId="portfolio-1" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
 
     await user.type(screen.getByLabelText('Name'), 'No Description Scenario');
     await user.click(screen.getByRole('button', { name: 'Save Scenario' }));
@@ -95,7 +108,9 @@ describe('SaveSimulationForm — active scenario result', () => {
   it('clears the form fields after a successful save', async () => {
     const user = userEvent.setup();
     activateScenario();
-    render(<SaveSimulationForm portfolioId="portfolio-1" />);
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
 
     const nameInput = screen.getByLabelText('Name');
     await user.type(nameInput, 'Clears After Save');

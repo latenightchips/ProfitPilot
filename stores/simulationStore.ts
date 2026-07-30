@@ -138,6 +138,35 @@ import {
  * untouched — also left untouched by `runTimelineProjection`, since its
  * 5 calls would otherwise overwrite it with only the last point's own
  * metadata.
+ *
+ * **`portfolioUpdatedAt` (Batch 15, M6-016, "Load Saved Simulation")**:
+ * a new snapshot field on `SavedSimulation`/`SaveSimulationInput`,
+ * distinct from `portfolioId` — M6-016's own explicit Requirement
+ * "Display if portfolio has changed since creation" needs a value to
+ * compare *against*, which `portfolioId` alone cannot provide. Captured
+ * as a plain caller-supplied string (the active portfolio's own real
+ * `Portfolio.updatedAt`, bumped unconditionally by
+ * `stores/portfolioStore.ts`'s own `update` action on every mutation) —
+ * this Store never imports `usePortfolioStore` to read it itself, the
+ * same independence `portfolioId` already established in Batch 14. The
+ * actual drift *comparison* is deliberately left to the UI layer
+ * (`ScenarioComparison.tsx`), not built here — this Store only stores
+ * the snapshot.
+ *
+ * **`loadSavedScenario` (Batch 15, M6-016)**: restores a saved
+ * scenario's own already-computed `scenario`/`result` directly onto
+ * `currentScenario`/`currentResult` — never calling `runSimulation`
+ * again. This is what satisfies M6-016's other Requirement, "Preserve
+ * original assumptions," literally: recalculating against whichever
+ * portfolio happens to be active *now* would silently break
+ * reproducibility the moment that portfolio has changed, exactly the
+ * drift this same task's own second Requirement exists to surface, not
+ * paper over. `timelineProjection`/`lastMetadata`/`warnings` are all
+ * cleared, the same as `setCurrentScenario` already does — none of them
+ * were captured at the original save time, so nothing stale is left
+ * displayed. A missing `id` is a silent no-op, the same defensive-but-
+ * practically-unreachable pattern `deleteSavedScenario`/
+ * `toggleComparisonSelection` already accept for an unknown `id`.
  */
 export type SimulationStatus = 'idle' | 'calculating' | 'error';
 
@@ -146,6 +175,7 @@ export interface SavedSimulation {
   name: string;
   description: string | null;
   portfolioId: string;
+  portfolioUpdatedAt: string;
   scenario: SimulationScenario;
   result: SimulationResult;
   createdAt: string;
@@ -155,6 +185,7 @@ export interface SaveSimulationInput {
   name: string;
   description?: string;
   portfolioId: string;
+  portfolioUpdatedAt: string;
 }
 
 export interface TimelinePoint {
@@ -185,6 +216,7 @@ export interface SimulationStoreActions {
   ) => void;
   runTimelineProjection: (portfolio: ApplicationPortfolio) => void;
   saveCurrentScenario: (input: SaveSimulationInput) => string | null;
+  loadSavedScenario: (id: string) => void;
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
   setPreviewMode: (enabled: boolean) => void;
@@ -321,6 +353,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         name: input.name,
         description: input.description ?? null,
         portfolioId: input.portfolioId,
+        portfolioUpdatedAt: input.portfolioUpdatedAt,
         scenario: currentScenario,
         result: currentResult,
         createdAt: new Date().toISOString(),
@@ -328,6 +361,21 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
 
       set((state) => ({ savedScenarios: [...state.savedScenarios, saved] }));
       return saved.id;
+    },
+
+    loadSavedScenario: (id) => {
+      const saved = get().savedScenarios.find((scenario) => scenario.id === id);
+      if (saved === undefined) return;
+
+      set({
+        currentScenario: saved.scenario,
+        currentResult: saved.result,
+        timelineProjection: null,
+        lastMetadata: null,
+        status: 'idle',
+        errors: [],
+        warnings: [],
+      });
     },
 
     deleteSavedScenario: (id) => {
