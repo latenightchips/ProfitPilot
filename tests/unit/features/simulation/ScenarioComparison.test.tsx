@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -29,6 +29,7 @@ const PORTFOLIO: ApplicationPortfolio = {
 };
 
 const PORTFOLIO_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+const PORTFOLIO_NAMES: Record<string, string> = { 'portfolio-1': 'Test Portfolio' };
 
 function testPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
   return {
@@ -95,7 +96,7 @@ function rowValues(label: string): string[] {
 
 describe('ScenarioComparison — empty state', () => {
   it('explains that nothing is saved yet, rather than showing a blank comparison', () => {
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     expect(screen.getByText('No scenarios saved yet.')).toBeInTheDocument();
   });
 });
@@ -103,7 +104,7 @@ describe('ScenarioComparison — empty state', () => {
 describe('ScenarioComparison — with saved scenarios, none selected', () => {
   it('lists every saved scenario as an unchecked, selectable option', () => {
     saveAPriceScenario(60000);
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
@@ -115,7 +116,7 @@ describe('ScenarioComparison — with saved scenarios, none selected', () => {
 
   it('labels a saved interest scenario distinctly from a price scenario', () => {
     saveAnInterestScenario();
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     expect(screen.getByText(/Interest Scenario/)).toBeInTheDocument();
   });
 });
@@ -126,7 +127,7 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
     saveAPriceScenario(60000, 'Bull Case');
     saveAPriceScenario(70000, 'Bull Case Plus');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     const checkboxes = screen.getAllByRole('checkbox');
     await user.click(checkboxes[0]);
     await user.click(checkboxes[1]);
@@ -145,7 +146,7 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
     const user = userEvent.setup();
     saveAPriceScenario(60000);
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     const checkbox = screen.getByRole('checkbox');
     await user.click(checkbox);
     expect(rowValues('Equity')).toEqual(['$100,000.00']);
@@ -160,7 +161,7 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
     const user = userEvent.setup();
     saveAPriceScenario(60000);
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('checkbox'));
 
     expect(screen.queryByText('Debt')).not.toBeInTheDocument();
@@ -176,7 +177,7 @@ describe('ScenarioComparison — Load (M6-016, Batch 15)', () => {
     saveAPriceScenario(60000, 'Bull Case');
     useSimulationStore.getState().setCurrentScenario(null);
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Load' }));
 
     const state = useSimulationStore.getState();
@@ -189,7 +190,7 @@ describe('ScenarioComparison — Load (M6-016, Batch 15)', () => {
 
   it('shows no drift notice when the portfolio has not changed since saving', () => {
     saveAPriceScenario(60000);
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     expect(screen.queryByText(/Portfolio has changed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Saved against a different portfolio/)).not.toBeInTheDocument();
   });
@@ -197,14 +198,22 @@ describe('ScenarioComparison — Load (M6-016, Batch 15)', () => {
   it('shows a drift notice when the same portfolio has changed since saving', () => {
     saveAPriceScenario(60000);
     render(
-      <ScenarioComparison portfolio={testPortfolio({ updatedAt: '2026-06-01T00:00:00.000Z' })} />,
+      <ScenarioComparison
+        portfolio={testPortfolio({ updatedAt: '2026-06-01T00:00:00.000Z' })}
+        portfolioNames={PORTFOLIO_NAMES}
+      />,
     );
     expect(screen.getByText(/Portfolio has changed since this was saved\./)).toBeInTheDocument();
   });
 
   it('shows a distinct notice when the scenario was saved against a different portfolio', () => {
     saveAPriceScenario(60000);
-    render(<ScenarioComparison portfolio={testPortfolio({ id: 'portfolio-2' })} />);
+    render(
+      <ScenarioComparison
+        portfolio={testPortfolio({ id: 'portfolio-2' })}
+        portfolioNames={PORTFOLIO_NAMES}
+      />,
+    );
     expect(screen.getByText(/Saved against a different portfolio\./)).toBeInTheDocument();
   });
 });
@@ -214,7 +223,7 @@ describe('ScenarioComparison — Duplicate (M6-017, Batch 16)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Duplicate' }));
 
     expect(screen.getByText(/Bull Case \(Price Scenario\)/)).toBeInTheDocument();
@@ -226,7 +235,7 @@ describe('ScenarioComparison — Duplicate (M6-017, Batch 16)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Duplicate' }));
 
     const state = useSimulationStore.getState();
@@ -245,7 +254,7 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(useSimulationStore.getState().savedScenarios).toHaveLength(1);
@@ -259,7 +268,7 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
 
@@ -271,7 +280,7 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -284,9 +293,13 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     saveAPriceScenario(60000, 'Bull Case');
     saveAPriceScenario(70000, 'Bear Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
-    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
-    await user.click(deleteButtons[0]);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    const bullCaseRow = screen
+      .getByText(/Bull Case \(Price Scenario\)/)
+      .closest('div.flex.flex-col');
+    if (bullCaseRow === null) throw new Error('row not found');
+    const { getByRole } = within(bullCaseRow as HTMLElement);
+    await user.click(getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
 
     const remaining = useSimulationStore.getState().savedScenarios;
@@ -298,7 +311,7 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000, 'Bull Case');
 
-    render(<ScenarioComparison portfolio={testPortfolio()} />);
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('checkbox'));
     expect(rowValues('Equity')).toEqual(['$100,000.00']);
 
@@ -306,5 +319,80 @@ describe('ScenarioComparison — Delete (M6-018, Batch 17)', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
 
     expect(useSimulationStore.getState().comparisonSelection).toEqual([]);
+  });
+});
+
+describe('ScenarioComparison — Sorting (M6-020, Batch 19)', () => {
+  function rowLabels(): string[] {
+    return screen
+      .getAllByRole('checkbox')
+      .map((checkbox) => checkbox.closest('label')?.textContent ?? '');
+  }
+
+  it('defaults to Date, newest-first', () => {
+    saveAPriceScenario(60000, 'First Saved');
+    saveAPriceScenario(70000, 'Second Saved');
+    useSimulationStore.setState((state) => ({
+      savedScenarios: state.savedScenarios.map((saved) => ({
+        ...saved,
+        createdAt:
+          saved.name === 'First Saved' ? '2026-01-01T00:00:00.000Z' : '2026-02-01T00:00:00.000Z',
+      })),
+    }));
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('date');
+    const labels = rowLabels();
+    expect(labels[0]).toContain('Second Saved');
+    expect(labels[1]).toContain('First Saved');
+  });
+
+  it('sorts alphabetically by scenario name when Scenario name is selected', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Zebra');
+    saveAPriceScenario(70000, 'Alpha');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'Scenario name');
+
+    const labels = rowLabels();
+    expect(labels[0]).toContain('Alpha');
+    expect(labels[1]).toContain('Zebra');
+  });
+
+  it('sorts alphabetically by resolved portfolio name when Portfolio is selected', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'From Zed Portfolio');
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 70000 },
+    });
+    useSimulationStore.getState().runSimulation(PORTFOLIO);
+    useSimulationStore.getState().saveCurrentScenario({
+      name: 'From Alpha Portfolio',
+      portfolioId: 'portfolio-2',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+
+    render(
+      <ScenarioComparison
+        portfolio={testPortfolio()}
+        portfolioNames={{ 'portfolio-1': 'Zed Portfolio', 'portfolio-2': 'Alpha Portfolio' }}
+      />,
+    );
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'Portfolio');
+
+    const labels = rowLabels();
+    expect(labels[0]).toContain('From Alpha Portfolio');
+    expect(labels[1]).toContain('From Zed Portfolio');
+  });
+
+  it('displays "(Unknown Portfolio)" for a saved scenario whose portfolio no longer exists', () => {
+    saveAPriceScenario(60000, 'Orphaned Scenario');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={{}} />);
+
+    expect(screen.getByText(/\(Unknown Portfolio\)/)).toBeInTheDocument();
   });
 });

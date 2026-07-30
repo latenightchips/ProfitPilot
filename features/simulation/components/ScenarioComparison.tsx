@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { useSimulationStore } from '@/stores/simulationStore';
+import { type SavedSimulation, useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
 
 import {
@@ -127,6 +127,43 @@ import {
  * saved scenarios have no "active" concept a deletion could leave
  * dangling, so that entire branch of the Portfolio pattern is not
  * reused, only the confirm/cancel shape is.
+ *
+ * **Sorting now exists (Batch 19, M6-020, "Simulation History") —
+ * added here, not a separate view, since this is already "the only
+ * place a saved scenario is ever rendered."** Building a second,
+ * parallel list with the exact same records for the sake of a
+ * differently-named feature would duplicate this component's own
+ * Load/Duplicate/Delete/drift-notice logic for no benefit; M6-020's
+ * own DoD ("Users can quickly locate previous analyses") is about
+ * *this* list's presentation, not a new page. `06_TASKS.md`'s own
+ * literal "Sort: Date, Portfolio, Scenario name" list is implemented
+ * as a single `<select>` (no dedicated `03_UI.md` mockup exists for
+ * this task — it names no "History" section anywhere on Page 5 — so
+ * the task's own wording is the sole source of truth, the same
+ * precedent every other un-mocked task in this milestone already
+ * established). "Date" defaults to newest-first (a documented,
+ * reasonable choice for "quickly locate *previous* analyses," since
+ * neither document specifies a direction); "Scenario name" is a plain
+ * alphabetical sort on the real `name` field. No ascending/descending
+ * toggle was built — 06_TASKS.md names three sort *keys*, not a
+ * direction control, and inventing one would be scope beyond what was
+ * asked.
+ *
+ * **"Portfolio" sort needed a portfolio *name*, not the opaque
+ * `portfolioId` this component already had — resolved via a new
+ * `portfolioNames` prop supplied by `app/simulation/page.tsx`, not by
+ * importing `usePortfolioStore` here.** `stores/simulationStore.ts`
+ * itself never imports the Portfolio Store (its own DoD); this
+ * component has followed the same discipline since Batch 15
+ * (`driftNotice` takes a plain `Portfolio` value, not a live
+ * subscription). A saved scenario can reference a portfolio that is no
+ * longer the active one — `savedScenarios` is never cleared on
+ * portfolio switch (M6-003) — so resolving names needs the *full*
+ * `portfolios` dictionary the page already holds, not just the single
+ * active `portfolio` prop this component already received. A
+ * `portfolioId` with no matching entry (e.g. a since-deleted
+ * portfolio) shows literally as "(Unknown Portfolio)" rather than a
+ * blank string or a crash.
  */
 function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
@@ -143,7 +180,41 @@ function driftNotice(
   return null;
 }
 
-export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
+type SortKey = 'date' | 'portfolio' | 'name';
+
+function portfolioNameFor(saved: SavedSimulation, portfolioNames: Record<string, string>): string {
+  return portfolioNames[saved.portfolioId] ?? '(Unknown Portfolio)';
+}
+
+function sortSavedScenarios(
+  savedScenarios: SavedSimulation[],
+  sortKey: SortKey,
+  portfolioNames: Record<string, string>,
+): SavedSimulation[] {
+  const sorted = [...savedScenarios];
+  switch (sortKey) {
+    case 'date':
+      sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      break;
+    case 'portfolio':
+      sorted.sort((a, b) =>
+        portfolioNameFor(a, portfolioNames).localeCompare(portfolioNameFor(b, portfolioNames)),
+      );
+      break;
+    case 'name':
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+  }
+  return sorted;
+}
+
+export function ScenarioComparison({
+  portfolio,
+  portfolioNames,
+}: {
+  portfolio: Portfolio;
+  portfolioNames: Record<string, string>;
+}) {
   const savedScenarios = useSimulationStore((state) => state.savedScenarios);
   const comparisonSelection = useSimulationStore((state) => state.comparisonSelection);
   const toggleComparisonSelection = useSimulationStore((state) => state.toggleComparisonSelection);
@@ -151,12 +222,14 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
   const duplicateSavedScenario = useSimulationStore((state) => state.duplicateSavedScenario);
   const deleteSavedScenario = useSimulationStore((state) => state.deleteSavedScenario);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('date');
 
   if (savedScenarios.length === 0) {
     return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
   }
 
   const selected = savedScenarios.filter((saved) => comparisonSelection.includes(saved.id));
+  const sortedScenarios = sortSavedScenarios(savedScenarios, sortKey, portfolioNames);
 
   function confirmDelete(id: string) {
     deleteSavedScenario(id);
@@ -165,8 +238,21 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <label className="flex items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Sort by</span>
+        <select
+          value={sortKey}
+          onChange={(event) => setSortKey(event.target.value as SortKey)}
+          className="rounded-md border border-border bg-transparent px-2 py-1 text-sm text-foreground"
+        >
+          <option value="date">Date</option>
+          <option value="portfolio">Portfolio</option>
+          <option value="name">Scenario name</option>
+        </select>
+      </label>
+
       <div className="flex flex-col gap-1">
-        {savedScenarios.map((saved) => {
+        {sortedScenarios.map((saved) => {
           const notice = driftNotice(saved, portfolio);
           return (
             <div key={saved.id} className="flex flex-col gap-1">
@@ -179,7 +265,7 @@ export function ScenarioComparison({ portfolio }: { portfolio: Portfolio }) {
                   />
                   <span>
                     {saved.name} ({scenarioLabel(saved.scenario)}) —{' '}
-                    {formatDateTime(saved.createdAt)}
+                    {portfolioNameFor(saved, portfolioNames)} — {formatDateTime(saved.createdAt)}
                     {notice !== null && (
                       <span className="text-xs text-destructive"> — {notice}</span>
                     )}

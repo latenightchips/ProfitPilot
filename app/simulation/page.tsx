@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo } from 'react';
 
 import {
   ExportSimulation,
@@ -69,11 +70,36 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * or save it next. It reads the active `Portfolio` the same way
  * `SimulationAssumptions` already does (for live Protocol Parameters),
  * not a new pattern.
+ *
+ * **`portfolioNames` (Batch 19, M6-020, "Simulation History") is built
+ * here, not inside `ScenarioComparison.tsx`.** Sorting saved scenarios
+ * "by Portfolio" needs a human-readable name for every portfolio a
+ * saved scenario references — not just the currently active one, since
+ * `savedScenarios` is never cleared when the active portfolio changes
+ * (M6-003's own independence design). `stores/simulationStore.ts`
+ * itself never imports `usePortfolioStore` (its own DoD), and no other
+ * Simulation feature component does either — this page is the one
+ * place that already reads the full `portfolios` dictionary, so it
+ * resolves `{ id: name }` here and passes only that plain map down,
+ * the same "page composes across Stores, feature components receive
+ * plain props" convention `portfolio`/`portfolioUpdatedAt` already
+ * established.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const record = usePortfolioStore((state) =>
     state.activePortfolioId !== null ? state.portfolios[state.activePortfolioId] : undefined,
+  );
+  const portfolios = usePortfolioStore((state) => state.portfolios);
+  const portfolioNames = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(portfolios).map(([id, portfolioRecord]) => [
+          id,
+          portfolioRecord.portfolio.name,
+        ]),
+      ),
+    [portfolios],
   );
 
   return (
@@ -127,7 +153,7 @@ export default function SimulationPage() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
-              <ScenarioComparison portfolio={record.portfolio} />
+              <ScenarioComparison portfolio={record.portfolio} portfolioNames={portfolioNames} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>
