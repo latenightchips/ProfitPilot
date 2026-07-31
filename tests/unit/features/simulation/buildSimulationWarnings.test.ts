@@ -71,6 +71,20 @@ describe('buildSimulationWarnings — Unsafe Health Factor', () => {
     const portfolio = basePortfolio();
     expect(buildSimulationWarnings(portfolio, 0.5)).toEqual([]);
   });
+
+  it('does not warn for a zero-debt Infinity Health Factor, even with a configured target (Batch 22, M6-023)', () => {
+    // A zero-debt Health Factor is real, computed `Infinity` (M2-009's
+    // own NO_DEBT design), not a sentinel or invented value. This
+    // function's own `Number.isFinite` guard exists specifically to
+    // stop `Infinity < target` from ever producing a nonsensical
+    // "unsafe" warning for the safest possible position — verified
+    // directly here rather than only relied upon as a mathematical
+    // fact, since `Infinity < 2` is already `false` regardless of the
+    // guard, meaning a future accidental removal of the guard would not
+    // be caught without this explicit check.
+    const portfolio = basePortfolio({ settings: { safetyTargets: { targetHealthFactor: 2 } } });
+    expect(buildSimulationWarnings(portfolio, Infinity)).toEqual([]);
+  });
 });
 
 describe('buildSimulationWarnings — Stale prices', () => {

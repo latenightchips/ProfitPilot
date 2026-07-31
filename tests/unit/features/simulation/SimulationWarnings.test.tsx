@@ -111,4 +111,21 @@ describe('SimulationWarnings — Unsafe Health Factor (real Store + real Portfol
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByText(/is below your configured target \(5\)/)).toBeInTheDocument();
   });
+
+  it('does not fire for a zero-debt portfolio, whose real simulated Health Factor is Infinity (Batch 22, M6-023)', () => {
+    const portfolio = createPortfolio({
+      debt: { asset: 'USDC', balance: 0 },
+      settings: { safetyTargets: { targetHealthFactor: 5 } },
+    });
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(portfolio);
+
+    render(<SimulationWarnings portfolio={portfolio} />);
+
+    expect(screen.getByText('No warnings for this simulation.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
