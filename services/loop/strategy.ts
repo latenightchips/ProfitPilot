@@ -37,6 +37,26 @@
  * `RecommendationRuleConfig` (M3-012). When M3-008 exists, its output
  * naturally becomes the source of this same field; nothing here needs
  * to change.
+ *
+ * **`maxLoanToValueOverride`/`borrowAprOverride` — added Milestone 7
+ * Batch 2 (M7-008, "Implement Loop Strategy Controls").** Both are
+ * optional caller-supplied substitutes for the portfolio's own
+ * `protocol.maxLoanToValue`/`protocol.borrowApr`, applied to a locally
+ * constructed `ProtocolParameters` object before either the safety
+ * validation or the cost calculation runs — zero Engine changes, the
+ * same "Service constructs a modified input value" pattern
+ * `simulateInterestScenario`'s own caller-supplied `borrowApr`
+ * parameter (M2-020/M6-006) already established. When omitted, the
+ * portfolio's own real values are used unchanged.
+ *
+ * **`btcExposure` — added Milestone 7 Batch 2 (M7-011, "Implement Loop
+ * Strategy Summary").** The final-state BTC exposure (`calculateExposure`,
+ * F-010) was already being computed internally to feed `calculateLoopCosts`
+ * but discarded; it is now surfaced on `LoopStrategyPreview` — the same
+ * "surface an already-computed internal value" pattern
+ * `simulationStore.ts`'s own `warnings`/`lastMetadata` additions already
+ * established. Null alongside `strategy`/`costs` when the strategy is
+ * not viable.
  */
 import {
   calculateExposure,
@@ -44,6 +64,7 @@ import {
   type LoopCostResult,
   type LoopSafetyFinding,
   type LoopStrategyResult,
+  type ProtocolParameters,
   validateLoopStrategySafety,
 } from '@/engine';
 
@@ -56,6 +77,10 @@ export interface LoopStrategySettings {
   targetBorrowPercentage: number;
   maxLoops: number;
   minHealthFactor: number;
+  /** Overrides the portfolio's own `protocol.maxLoanToValue` for this calculation only, when supplied. */
+  maxLoanToValueOverride?: number;
+  /** Overrides the portfolio's own `protocol.borrowApr` for this calculation only, when supplied. */
+  borrowAprOverride?: number;
 }
 
 export interface LoopStrategyPreview {
@@ -65,6 +90,8 @@ export interface LoopStrategyPreview {
   strategy: LoopStrategyResult | null;
   /** null alongside `strategy` — no final position exists to cost. */
   costs: LoopCostResult | null;
+  /** Final BTC exposure (F-010). Null alongside `strategy`/`costs`. */
+  btcExposure: number | null;
 }
 
 /**
@@ -77,11 +104,25 @@ export function planLoopStrategy(
   settings: LoopStrategySettings,
   sourceStatus: string,
 ): ServiceResult<LoopStrategyPreview> {
-  const engineInput = mapApplicationPortfolioToEngineInput(portfolio);
+  const mappedInput = mapApplicationPortfolioToEngineInput(portfolio);
+  const protocol: ProtocolParameters = {
+    ...mappedInput.protocol,
+    ...(settings.maxLoanToValueOverride !== undefined && {
+      maxLoanToValue: settings.maxLoanToValueOverride,
+    }),
+    ...(settings.borrowAprOverride !== undefined && { borrowApr: settings.borrowAprOverride }),
+  };
+  const engineInput = { ...mappedInput, protocol };
+  const { targetBorrowPercentage, maxLoops, minHealthFactor } = settings;
   const warnings: ServiceWarning[] = [];
 
   const safetyStep = formulaStep(
-    validateLoopStrategySafety({ ...engineInput, ...settings }),
+    validateLoopStrategySafety({
+      ...engineInput,
+      targetBorrowPercentage,
+      maxLoops,
+      minHealthFactor,
+    }),
     null,
     sourceStatus,
   );
@@ -92,7 +133,13 @@ export function planLoopStrategy(
 
   if (safety.strategy === null) {
     return createServiceSuccess(
-      { viable: safety.viable, findings: safety.findings, strategy: null, costs: null },
+      {
+        viable: safety.viable,
+        findings: safety.findings,
+        strategy: null,
+        costs: null,
+        btcExposure: null,
+      },
       optionsFromTracked(sourceStatus, tracked),
       warnings,
     );
@@ -126,6 +173,7 @@ export function planLoopStrategy(
       findings: safety.findings,
       strategy: safety.strategy,
       costs: costsStep.value,
+      btcExposure: exposureStep.value,
     },
     optionsFromTracked(sourceStatus, tracked),
     warnings,

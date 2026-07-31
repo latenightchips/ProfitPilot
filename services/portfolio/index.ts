@@ -10,13 +10,17 @@
  * transformation, not an independent calculation.
  * `calculateDebtInterestBreakdown` was added in Milestone 5 Batch 6 to
  * support M5-013's Monthly/Daily interest cost Display items — see that
- * file's own header comment.
+ * file's own header comment. `calculatePortfolioExposure` was added in
+ * Milestone 7 Batch 2 to support M7-011's "BTC exposure" Display item
+ * for the current (pre-strategy) portfolio state — see that file's own
+ * header comment.
  */
 export {
   type PortfolioAction,
   type PortfolioActionPreview,
   previewPortfolioAction,
 } from './actionPreview';
+export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
   mapApplicationPortfolioToEngineInput,

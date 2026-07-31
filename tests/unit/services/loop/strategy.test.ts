@@ -43,6 +43,32 @@ describe('planLoopStrategy (M3-010)', () => {
     expect(result.data.costs).not.toBeNull();
   });
 
+  it('returns a real, positive btcExposure for a viable strategy (M7-011)', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.btcExposure).not.toBeNull();
+    expect(result.data.btcExposure).toBeGreaterThan(0);
+  });
+
+  it('returns a null btcExposure alongside a null strategy for a non-viable result', () => {
+    const atLiquidation: ApplicationPortfolio = {
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 9000 },
+      market: { btcPriceUsd: 10000 },
+      protocol: {
+        maxLoanToValue: 0.5,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = planLoopStrategy(atLiquidation, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.btcExposure).toBeNull();
+  });
+
   it('itemizes swap fees, slippage, gas estimate, and total cost as unavailable (conflict #8)', () => {
     const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
     expect(result.ok).toBe(true);
@@ -147,5 +173,57 @@ describe('planLoopStrategy (M3-010)', () => {
     const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
     expect(result.ok).toBe(true);
     expect('errors' in result).toBe(false);
+  });
+});
+
+/**
+ * `maxLoanToValueOverride`/`borrowAprOverride` — Milestone 7 Batch 2
+ * (M7-008, "Implement Loop Strategy Controls"). Zero Engine changes;
+ * these tests confirm the Service-layer substitution actually reaches
+ * both the safety validation and the cost calculation, not just one.
+ */
+describe('planLoopStrategy — protocol overrides (M7-008)', () => {
+  it('uses the real portfolio borrowApr for costs when no override is supplied', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    const expectedInterest = result.data.strategy.finalDebt * 0.05;
+    expect(result.data.costs?.borrowingInterest).toBeCloseTo(expectedInterest, 5);
+  });
+
+  it('uses borrowAprOverride for cost calculation instead of the real portfolio rate', () => {
+    const settings: LoopStrategySettings = { ...healthySettings(), borrowAprOverride: 0.2 };
+    const result = planLoopStrategy(healthyPortfolio(), settings, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    const expectedInterest = result.data.strategy.finalDebt * 0.2;
+    expect(result.data.costs?.borrowingInterest).toBeCloseTo(expectedInterest, 5);
+  });
+
+  it('rejects an invalid maxLoanToValueOverride the same way an invalid real protocol value is rejected', () => {
+    const settings: LoopStrategySettings = { ...healthySettings(), maxLoanToValueOverride: 1.5 };
+    const result = planLoopStrategy(healthyPortfolio(), settings, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.viable).toBe(false);
+    expect(result.data.findings).toContainEqual(
+      expect.objectContaining({ check: 'VALID_PROTOCOL_PARAMETERS', severity: 'error' }),
+    );
+  });
+
+  it('a stricter maxLoanToValueOverride changes the computed strategy outcome versus the real, looser protocol value', () => {
+    const unrestricted = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    const restricted = planLoopStrategy(
+      healthyPortfolio(),
+      { ...healthySettings(), maxLoanToValueOverride: 0.1 },
+      'live',
+    );
+    expect(unrestricted.ok).toBe(true);
+    expect(restricted.ok).toBe(true);
+    if (!unrestricted.ok || !restricted.ok) return;
+    // A much tighter LTV ceiling than the portfolio's own real 0.5 must
+    // change the resulting stop reason or final debt — proves the
+    // override reaches the actual calculation, not just validation.
+    expect(restricted.data.strategy?.finalDebt).not.toEqual(unrestricted.data.strategy?.finalDebt);
   });
 });

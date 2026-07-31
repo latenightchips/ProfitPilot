@@ -57,7 +57,7 @@ import type { PortfolioSummary } from '@/services';
  * M7-003's 9 "Support" metrics (Collateral → `collateralValue`, Debt →
  * `debtValue`, Net equity, Health Factor, LTV → `loanToValue`,
  * Leverage, Liquidation price → `liquidation.price`, Interest cost).
- * `btcExposure` covers the 9th (`calculateExposure`, F-002 — not part of
+ * `btcExposure` covers the 9th (`calculateExposure`, F-010 — not part of
  * `PortfolioSummary` itself). Computing both is each tool's own Store's
  * responsibility once it exists (M7-007, M7-020) — this file defines
  * only the shape, not a new calculation.

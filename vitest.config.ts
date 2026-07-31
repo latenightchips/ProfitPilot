@@ -25,6 +25,7 @@ export default defineConfig({
         'app/portfolios/**',
         'app/page.tsx',
         'app/simulation/**',
+        'app/loop-builder/**',
         'features/dashboard/**',
         'features/simulation/**',
         'features/loop-builder/**',

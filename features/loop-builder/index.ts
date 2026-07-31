@@ -23,4 +23,8 @@
  * `tests/` directory (both established by M1-003) — never nested inside
  * a feature.
  */
-export {};
+export { LoopPresets } from './components/LoopPresets';
+export { LoopStepTable } from './components/LoopStepTable';
+export { LoopStrategyControls } from './components/LoopStrategyControls';
+export { LoopStrategySummary } from './components/LoopStrategySummary';
+export * from './types/loopStrategyControls';
