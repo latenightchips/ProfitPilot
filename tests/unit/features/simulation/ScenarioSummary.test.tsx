@@ -127,6 +127,36 @@ describe('ScenarioSummary — both result kinds populated at once (real bug foun
   });
 });
 
+describe('ScenarioSummary — calculation failure (Batch 25, M6-026)', () => {
+  it('shows a real error message, not a blank or stale result, when the underlying calculation fails', () => {
+    // Zero collateral with nonzero debt — a valid, creatable Milestone
+    // 4 portfolio state, the same one `DashboardErrorBanner` (M5-021)
+    // already handles for the Dashboard — makes `simulateScenario`'s
+    // own baseline re-snapshot fail for a real Service reason, not a
+    // hand-crafted error.
+    const brokenPortfolio: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      collateral: { asset: 'BTC', quantity: 0 },
+    };
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(brokenPortfolio);
+
+    render(<ScenarioSummary />);
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText('Unable to calculate this simulation.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your portfolio is unchanged. Adjust the scenario inputs to try again.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Change a scenario input to see results here.'),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('ScenarioSummary — warnings', () => {
   it('renders no Warnings section when there are none', () => {
     useSimulationStore.getState().setCurrentScenario({

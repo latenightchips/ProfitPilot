@@ -76,6 +76,30 @@ import { formatCurrency, formatHealthFactor, formatLeverage } from '../utils/for
  * "duplicate key" console error and put list-identity at risk. Keyed by
  * `` `${warning.code}-${index}` `` instead — no change to what is
  * displayed, only to React's own row identity.
+ *
+ * **A calculation-failure error display now exists (Batch 25, M6-026,
+ * "UI Specification Audit" — Review item "States") — a real,
+ * previously-unbuilt gap found by this batch's own audit, not merely a
+ * cosmetic addition.** Before this batch, `stores/simulationStore.ts`'s
+ * own `status`/`errors` fields (set correctly on every `runSimulation`/
+ * `runPortfolioActionSimulation` failure, and already tested at the
+ * Store level since Batch 1) were never read by any component
+ * anywhere in the Simulation Workspace — confirmed by a direct search
+ * across every `features/simulation/components/*.tsx` file. This is
+ * genuinely reachable, not defensive-but-unreachable code: a portfolio
+ * with zero collateral and nonzero debt (a valid, creatable Milestone
+ * 4 portfolio state — the same state `DashboardErrorBanner`, M5-021,
+ * already handles for the Dashboard) makes `simulateScenario`'s own
+ * internal baseline re-snapshot fail, and `validateScenarioBuilderInput`
+ * (M6-004) has no rule that could ever catch this, since the problem is
+ * with the *portfolio itself*, not the scenario delta being entered.
+ * Reuses `DashboardErrorBanner`'s own `role="alert"`/error-code display
+ * shape, but deliberately omits its Retry/recovery-copy buttons —
+ * Simulation's own governing "every input updates immediately, no
+ * Calculate/Retry button" design philosophy (`03_UI.md` Page 5's own
+ * DESIGN PHILOSOPHY, already cited throughout this milestone) means
+ * the next input change is the retry; inventing a redundant button
+ * would contradict that principle rather than follow it.
  */
 const METRIC_LABELS: Record<ScenarioMetric, string> = {
   equity: 'Portfolio Value',
@@ -197,6 +221,28 @@ export function ScenarioSummary() {
   const currentResult = useSimulationStore((state) => state.currentResult);
   const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
   const warnings = useSimulationStore((state) => state.warnings);
+  const status = useSimulationStore((state) => state.status);
+  const errors = useSimulationStore((state) => state.errors);
+
+  if (status === 'error' && errors.length > 0) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm"
+      >
+        <p className="font-medium text-destructive">Unable to calculate this simulation.</p>
+        {errors.map((error) => (
+          <div key={error.code} className="mt-1">
+            <p className="text-destructive">{error.message}</p>
+            <p className="text-xs text-muted-foreground">Error code: {error.code}</p>
+          </div>
+        ))}
+        <p className="mt-2 text-xs text-muted-foreground">
+          Your portfolio is unchanged. Adjust the scenario inputs to try again.
+        </p>
+      </div>
+    );
+  }
 
   if (currentResult === null && portfolioActionPreview === null) {
     return (
