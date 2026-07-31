@@ -115,6 +115,22 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * field. `runTimelineProjection` itself no-ops (clears the timeline)
  * when no interest scenario is active, so this is safe to call from
  * every interest-relevant field unconditionally.
+ *
+ * **Per-field validation errors were investigated for M6-022's own
+ * "Forms" Review item (Batch 21, "Accessibility Review") and
+ * deliberately left as visually-adjacent text, not given
+ * `aria-describedby`/`aria-invalid`.** A real, targeted `axe-core` scan
+ * against a triggered validation error found zero WCAG violations — the
+ * visible error text alone already satisfies the automated bar. Adding
+ * programmatic field/error association would be a genuine, real
+ * improvement, but it is the exact same pattern every other form in
+ * this codebase already uses (`app/portfolios/new/page.tsx`,
+ * `app/portfolio/page.tsx`, both Milestone 4), unchanged since before
+ * this milestone began — fixing it only here would be inconsistent,
+ * and fixing it everywhere would be scope beyond M6-022's own
+ * "Simulation Workspace" DoD. Flagged here, not silently ignored; not
+ * fixed, to avoid inventing a codebase-wide pattern this task's own
+ * scope does not ask for.
  */
 function defaultFormValues(portfolio: ApplicationPortfolio): ScenarioBuilderFormValues {
   return {

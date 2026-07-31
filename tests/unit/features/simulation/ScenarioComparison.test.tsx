@@ -142,6 +142,21 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
     expect(screen.getByText('Liquidation Distance')).toBeInTheDocument();
   });
 
+  it('marks every column header with scope="col" (Batch 21, M6-022 accessibility fix)', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Bull Case');
+    saveAPriceScenario(70000, 'Bull Case Plus');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    for (const header of screen.getAllByRole('columnheader')) {
+      expect(header).toHaveAttribute('scope', 'col');
+    }
+  });
+
   it('removes a scenario from the table when its checkbox is unchecked', async () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000);

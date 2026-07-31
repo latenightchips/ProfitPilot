@@ -71,6 +71,18 @@ describe('SaveSimulationForm — active scenario result', () => {
     expect(useSimulationStore.getState().savedScenarios).toEqual([]);
   });
 
+  it('announces the validation error via role="alert" (Batch 21, M6-022)', async () => {
+    const user = userEvent.setup();
+    activateScenario();
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save Scenario' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Name is required.');
+  });
+
   it('saves the current scenario with the real name/description/portfolioId on submit', async () => {
     const user = userEvent.setup();
     activateScenario();
@@ -90,6 +102,19 @@ describe('SaveSimulationForm — active scenario result', () => {
     expect(saved[0].portfolioUpdatedAt).toBe(PORTFOLIO_UPDATED_AT);
     expect(saved[0].result.scenario.equity).toBe(100000);
     expect(screen.getByText('Saved.')).toBeInTheDocument();
+  });
+
+  it('announces the save confirmation via role="status" (Batch 21, M6-022)', async () => {
+    const user = userEvent.setup();
+    activateScenario();
+    render(
+      <SaveSimulationForm portfolioId="portfolio-1" portfolioUpdatedAt={PORTFOLIO_UPDATED_AT} />,
+    );
+
+    await user.type(screen.getByLabelText('Name'), 'Announced Scenario');
+    await user.click(screen.getByRole('button', { name: 'Save Scenario' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Saved.');
   });
 
   it('saves with description as null when left blank', async () => {

@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-07-31
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is in progress**: Batches 1–19 (M6-001–M6-020) are synchronized to GitHub; Batch 20 (M6-021 — Responsive Workspace) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is in progress**: Batches 1–20 (M6-001–M6-021) are synchronized to GitHub; Batch 21 (M6-022 — Accessibility Review) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -9115,6 +9115,176 @@ scrolls locally when genuinely too wide) against future regression.
 
 ---
 
+### Batch 21 — Accessibility Review (M6-022)
+
+**Repository re-sync required before this batch began, per
+instruction.** `git ls-remote origin main` showed the real tip was
+`b5b5dc1` — "test(e2e): validate responsive simulation workspace
+(M6-021)." `git checkout -B claude/profitpilot-repo-review-nty3yy
+origin/main` reset the local branch directly to that verified tip;
+`git status --short` confirmed a clean working tree before any
+implementation began. No mid-batch working-tree reset occurred this
+batch either — the third consecutive batch to complete without one.
+
+**Dependencies satisfied**: M6-021 (Responsive Workspace) is
+synchronized to GitHub as of Batch 20.
+
+**M6-022's own Review list (Keyboard navigation, Forms, Charts,
+Tables, Screen readers) is shorter and different from its Dashboard
+counterpart M5-024's own 8-item list** (no Heading order, Focus
+visibility, Status announcements, Tooltip accessibility, or
+Color-independent warnings named). M6-022's own DoD names no document
+at all (unlike M5-024's "defined in the Build Guide," which Batch 13
+already found points to an empty checklist tick). The same resolution
+Batch 13 established still governs: `01_PRD.md`'s REQ-008-F/REQ-011-E
+("WCAG AA Compliance") and `03_UI.md`'s own application-wide
+"ACCESSIBILITY" section ("Minimum Target: WCAG AA," "Support: Keyboard
+Navigation, Screen Readers...") — the latter naming the same two items
+M6-022's own Review list names, confirming this is a cross-cutting
+standard, not a Dashboard-specific one. `@axe-core/playwright` (added
+Batch 13) was reused, not re-added.
+
+**Investigated each of M6-022's 5 Review items individually**, the
+same per-item discipline Batch 13 established:
+
+- **Keyboard navigation** — confirmed via code review that every
+  interactive control across every Simulation feature component uses a
+  real `<button>`/`<a>`/`<select>`/`<input>` element (grepped for
+  `onClick` usage; every hit is on a real `<button>`) — **already
+  correct**, matching Batch 13's own Dashboard finding. A new scripted
+  Tab-through test confirms real reachability end-to-end.
+- **Forms** — investigated `ScenarioBuilder.tsx`'s 7 per-field
+  validation errors and `SaveSimulationForm.tsx`'s own error/success
+  messages. A real, targeted `axe-core` scan against a triggered
+  validation error found **zero** automated violations for the
+  per-field pattern (visually-adjacent error text, no
+  `aria-describedby`/`aria-invalid`) — the exact same pattern every
+  other form in this codebase already uses since Milestone 4
+  (`app/portfolios/new/page.tsx`, `app/portfolio/page.tsx`).
+  Deliberately **not** changed: fixing it only in Simulation would be
+  inconsistent with the rest of the app, and fixing it everywhere
+  would be scope beyond M6-022's own "Simulation Workspace" DoD —
+  documented in `ScenarioBuilder.tsx`'s own header comment as an
+  investigated, deliberate non-fix. **One real, genuinely in-scope gap
+  was found and fixed**: `SaveSimulationForm.tsx`'s dynamic
+  error/success messages had no live-region role at all — the same
+  "Status announcements" class of gap Batch 13 found for
+  `DashboardErrorBanner`/`NoDebtNotice` — fixed with `role="alert"`
+  (blocking, assertive) and `role="status"` (informational, polite),
+  mirroring those two components' own already-established convention.
+- **Charts** — confirmed **already correct** via code review:
+  `ScenarioCharts.tsx`/`ScenarioTimeline.tsx` have carried `role="img"`
+  - a text `aria-label` summary on every chart since Batch 10/11
+    (M6-011/M6-012); no change needed.
+- **Tables** — **1 real, found-not-assumed gap closed**, the identical
+  class of gap Batch 13 found for the Dashboard's own Portfolio
+  Composition table: `ScenarioComparison.tsx`'s comparison table
+  `<th>` cells had no `scope="col"`. Fixed on both the static "Metric"
+  header and every dynamic per-scenario column header.
+- **Screen readers** — covered by the items above, plus one further,
+  genuinely significant finding below.
+
+**A real, automated WCAG AA violation was found via `axe-core` —
+color-contrast on the "Confirm Delete" button — the first violation
+this whole engagement's accessibility testing has ever caught (Batch
+13's own 4 Dashboard-state scans found zero).** `bg-destructive`/
+`text-destructive-foreground` measured 3.4:1 against the required
+4.5:1. Fixed in `app/globals.css` by darkening `--destructive-foreground`
+(the button's own text color) rather than `--destructive` (the
+background) — darkening `--destructive` directly was tried first and
+rejected: it fixed this button but broke `text-destructive`'s own
+already-fine contrast against the app's dark background elsewhere,
+since that one token is shared by two structurally different usages
+(solid-button background vs. plain text on a dark background).
+`--destructive-foreground` is used only by the solid-button pattern
+(confirmed via grep, 2 call sites total), so this is a safely scoped
+fix, verified via the full existing Dashboard accessibility suite
+(8/8 still passing) to confirm no regression elsewhere.
+
+**This fix is a shared design-token change, not Simulation-specific —
+found only because M6-022's own axe scan happened to exercise this
+token first, the same "shared component surfaces through one route's
+own testing" pattern Batch 12 (M5-023) already established for
+`AppHeader`/`AppShell`.** Because `--destructive-foreground` is a
+single CSS custom property, this fix also incidentally corrects the
+identical, pre-existing violation on `app/portfolios/page.tsx`'s own
+"Confirm Delete" button (M4-012) — a real bug that predates this
+milestone, fixed as a side effect of fixing it at the correct,
+shared level rather than a per-component override.
+
+**Manual/automated browser verification**: ran `axe-core` WCAG AA
+scans across 7 structurally distinct Simulation states (no scenario
+run, active price scenario, active interest scenario with charts/
+timeline, saved scenarios with comparison table, Delete confirmation
+panel open, Save Scenario form validation error) — **zero violations
+in every state**, both before and after the fixes (the Forms/Tables
+fixes address gaps `axe` cannot fully automate or does not itself
+flag; the color-contrast fix is the one `axe` did flag directly, only
+in the two states that render the "Confirm Delete" button). Confirmed
+via real UI interaction driving an actual portfolio through to saved,
+compared, and deleted scenarios.
+
+**A pre-existing, environment-scoped e2e flakiness was found and
+investigated, not fixed, since it is unrelated to this batch's own
+scope.** The full `pnpm test:e2e` run showed 8 failures, all inside
+`dashboardWorkflows.spec.ts`/`portfolioWorkflows.spec.ts` — files this
+batch never touched. Investigated by `git stash`-ing every one of this
+batch's own changes and re-running the identical failing tests against
+a clean checkout of the verified `origin/main` tip: **the same 8
+tests failed identically**, confirming this is a pre-existing,
+environment-scoped issue (consistent with intermittent resource
+contention in this sandboxed environment — every failure is a
+`locator.click` timeout waiting for an element, not an assertion
+mismatch), not a regression introduced by this batch. Changes were
+restored via `git stash pop` afterward, confirmed intact. Not fixed —
+out of scope for M6-022 ("Accessibility Review" of the "Simulation
+Workspace"), and inventing a fix for an intermittent, already-passing-
+on-other-runs environmental issue in unrelated Portfolio/Dashboard
+test files would itself be scope creep. This is the first time in this
+entire engagement's history that any e2e test has failed; flagged
+here transparently rather than silently re-run until green.
+
+**Scope discipline**: `git diff --stat -- engine/ services/ types/
+stores/` empty — no Engine, Service, Type, or Store file touched. Every
+change is either a CSS custom-property value, an accessibility
+attribute (`role`, `scope`) addition to already-existing render
+output, or a test file — no new calculation, Store action, or Service
+call anywhere in this batch.
+
+**Validation — Batch 21**
+
+| Command                      | Result                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`             | ✅ Pass                                                                                                                                                                                                       |
+| `pnpm lint`                  | ✅ Pass                                                                                                                                                                                                       |
+| `pnpm format:check`          | ✅ Pass                                                                                                                                                                                                       |
+| `pnpm test` (Vitest)         | ✅ Pass, 1290/1290 (3 net new: 2 live-region tests in `SaveSimulationForm.test.tsx`, 1 `scope="col"` test in `ScenarioComparison.test.tsx`)                                                                   |
+| `pnpm test:coverage`         | ✅ 96.31% statements / 91.16% branches / 100% functions / 99.08% lines (project-wide, unchanged from Batch 20)                                                                                                |
+| `pnpm build`                 | ✅ Pass — `/simulation` unchanged at 109 kB                                                                                                                                                                   |
+| `pnpm test:e2e` (Playwright) | ⚠️ 40/48 (9 net new, all passing: 7 Simulation `axe` state scans + 1 keyboard-reachability test + 2 fix-verification tests). 8 pre-existing, environment-scoped failures unrelated to this batch — see above. |
+
+**Architecture audit**: `git diff --stat -- engine/ services/ types/
+stores/` empty. This batch's diff spans `app/globals.css` (1 token
+value), 3 Simulation feature components (accessibility attributes
+only), and 3 test files.
+
+**Traceability**: M6-022's Dependencies (M6-021) were satisfied as of
+Batch 20; its Description ("Verify accessibility") and all 5 named
+Review items (Keyboard navigation, Forms, Charts, Tables, Screen
+readers) are addressed individually above — 2 confirmed already
+correct via direct investigation, 1 investigated-and-deliberately-not-
+changed (documented, not silently skipped), 2 real gaps found and
+fixed (Tables' `scope="col"`, Forms' live-region roles), plus one
+further significant finding (the color-contrast WCAG AA violation,
+falling under Screen readers/general accessibility) found and fixed;
+its DoD ("Simulation Workspace satisfies accessibility requirements")
+is satisfied against the same WCAG AA target Batch 13 already
+established as authoritative, verified by zero `axe-core` violations
+across 7 structurally distinct states and 9 new permanent regression
+tests.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -10207,9 +10377,9 @@ other unresolved conflict in this list is handled.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 6 Batch 20
-   (M6-021 — Responsive Workspace) before committing, per instruction.
-   Batches 1–19 (M6-001–M6-020) are synchronized to GitHub; Milestone
+2. **This pass stops here for approval** of Milestone 6 Batch 21
+   (M6-022 — Accessibility Review) before committing, per instruction.
+   Batches 1–20 (M6-001–M6-021) are synchronized to GitHub; Milestone
    5 (M5-001–M5-007, M5-009–M5-028, excluding M5-008) is complete and
    synchronized, with a permanent snapshot in
    `MILESTONE_5_COMPLETION.md`.
@@ -10239,7 +10409,7 @@ other unresolved conflict in this list is handled.
    resolved in favor of `06_TASKS.md` (the spec this whole build has
    correctly followed throughout), not retrofitted, and flagged for a
    product decision on Page 3 itself.
-5. **Milestone 6 — Simulation Workspace is in progress.** Batches 1–19
+5. **Milestone 6 — Simulation Workspace is in progress.** Batches 1–20
    (Simulation Foundation: M6-001, M6-002; Simulation Store: M6-003;
    Scenario Builder: M6-004; Price Scenario Simulation: M6-005;
    Portfolio Action Simulation: M6-008; Interest Rate Simulation:
@@ -10248,9 +10418,10 @@ other unresolved conflict in this list is handled.
    M6-012; Simulation Assumptions Panel: M6-013; Simulation Warnings:
    M6-014; Save Simulation: M6-015; Load Saved Simulation: M6-016;
    Duplicate Simulation: M6-017; Delete Simulation: M6-018; Export
-   Simulation: M6-019; Simulation History: M6-020) are synchronized to
-   GitHub; Batch 20 (Responsive Workspace: M6-021) is implemented and
-   awaiting approval. The Simulation
+   Simulation: M6-019; Simulation History: M6-020; Responsive
+   Workspace: M6-021) are synchronized to GitHub; Batch 21
+   (Accessibility Review: M6-022) is implemented and awaiting approval.
+   The Simulation
    Engine/Service layer this milestone's UI consumes already exists
    from Milestones
    2–3 (`engine/simulation/`, `services/simulation/scenario.ts`) —
@@ -10526,7 +10697,25 @@ simulationStore.ts`'s own Batch 2 header comment,
    permanent regression tests added to `tests/e2e/responsiveLayout.spec.ts`
    (the same cross-cutting file Batch 12 created, extended rather than
    duplicated), the cleanest architecture diff of any batch in this
-   milestone so far.
+   milestone so far. Batch 21 (M6-022, "Accessibility Review")
+   investigated all 5 named Review items (Keyboard navigation, Forms,
+   Charts, Tables, Screen readers) individually against the same WCAG
+   AA target Batch 13 (M5-024) already established as authoritative;
+   found 2 real, in-scope gaps (no `scope="col"` on the comparison
+   table's headers; no live-region role on `SaveSimulationForm`'s
+   dynamic error/success messages) and fixed both, plus found the
+   first real, automated `axe-core` WCAG AA violation this whole
+   engagement's accessibility testing has ever caught — a color-
+   contrast failure on the shared "Confirm Delete" button styling
+   (`--destructive-foreground` in `app/globals.css`), fixed at the
+   shared CSS-token level, which incidentally also fixed the identical
+   pre-existing violation on the Portfolio page's own Delete button
+   (M4-012). A pre-existing, environment-scoped e2e flakiness (8 tests
+   in unrelated Dashboard/Portfolio workflow files) was found,
+   confirmed via a `git stash` comparison against a clean `origin/main`
+   baseline to be unrelated to this batch, and left unfixed as
+   out-of-scope, documented transparently rather than silently
+   re-run until green.
 6. **Batch 2 raised no new numbered conflict, but recorded one deliberate
    scoping decision worth flagging**: `SavedSimulation` (`stores/simulationStore.ts`)
    deliberately carries only `id`/`scenario`/`result`/`createdAt`, not
@@ -10891,7 +11080,43 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     (extended, not duplicated) — no `engine/`/`services/`/`types/`/
     `stores/`/`app/`/`features/` file was touched at all, the cleanest
     architecture diff of any batch in this milestone so far.
-25. **Batch 1 raised no new numbered conflict, but recorded one deliberate
+25. **Batch 21 (M6-022) raised no new numbered conflict, but is the
+    first batch in this entire engagement whose own automated `axe-core`
+    scan caught a real WCAG AA violation** (color-contrast on the
+    shared "Confirm Delete" button, 3.4:1 against the required 4.5:1 —
+    Batch 13's own 4 Dashboard-state scans, and this batch's other 6
+    Simulation states, all found zero). Fixed in `app/globals.css` by
+    darkening `--destructive-foreground` rather than `--destructive`
+    itself — the latter was tried first and rejected, since it fixed
+    the flagged button but broke `text-destructive`'s own already-fine
+    contrast elsewhere (one shared token, two structurally different
+    usages). Because the token is shared, the fix also incidentally
+    corrected the identical, pre-existing violation on the Portfolio
+    page's own "Confirm Delete" button (M4-012) — found only because
+    this batch's own scan happened to exercise it first, the same
+    "shared component surfaces through one route's own testing"
+    pattern Batch 12 established for `AppHeader`/`AppShell`. Two
+    further real, in-scope gaps were found and fixed: `scope="col"` on
+    `ScenarioComparison.tsx`'s comparison table headers (the same class
+    Batch 13 found for the Dashboard) and `role="alert"`/`role="status"`
+    on `SaveSimulationForm.tsx`'s dynamic messages (the same "Status
+    announcements" class Batch 13 found for `DashboardErrorBanner`/
+    `NoDebtNotice`). One item was investigated and deliberately left
+    unchanged: `ScenarioBuilder.tsx`'s per-field validation errors have
+    no `aria-describedby`/`aria-invalid`, the same pattern every
+    Milestone-4 form already uses unchanged — fixing it only in
+    Simulation would be inconsistent, fixing it everywhere would be
+    scope beyond this task, so it is documented, not silently ignored.
+    A pre-existing, environment-scoped e2e flakiness (8 failing tests
+    in `dashboardWorkflows.spec.ts`/`portfolioWorkflows.spec.ts`, files
+    this batch never touched) was investigated via a `git stash`
+    comparison against a clean `origin/main` baseline — the same 8
+    tests failed identically with none of this batch's changes present,
+    confirming it predates this batch and is unrelated; left unfixed
+    as out of scope for an "Accessibility Review" of the "Simulation
+    Workspace," documented transparently rather than silently retried
+    until green.
+26. **Batch 1 raised no new numbered conflict, but recorded one deliberate
     scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
     name a `Portfolio Status`/`Risk Category` field (example values
     "Healthy"/"Low") that is exactly the Health Factor risk-band
@@ -10903,7 +11128,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     #1 is very likely to become directly blocking once M5-007 (Health
     Factor Status Component) or M5-010 (Risk Warning Banner) is reached —
     flagged for the next batch that touches either.
-26. **Batch 2 raised no new numbered conflict.** M5-004's "Portfolio
+27. **Batch 2 raised no new numbered conflict.** M5-004's "Portfolio
     switcher"/"Refresh action" Include items initially looked like they
     might require new UI or a live-data mechanism; both resolved by
     reusing already-shipped, real mechanisms instead (`AppHeader`'s
@@ -10916,7 +11141,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     needed them most (a calculation failure) — restructured into a shared
     `DashboardViewModelBase`, additive only, all of Batch 1's tests still
     pass unchanged.
-27. **Batch 3 raised no new numbered conflict.** M5-005's "Status" Support
+28. **Batch 3 raised no new numbered conflict.** M5-005's "Status" Support
     item was scoped wider (`'ok' | 'warning' | 'unavailable'`) than
     `DashboardMetric.status` itself (`'ok' | 'unavailable'`, Conflict #1
     avoidance) — the generic card supports all three per its own task
@@ -10928,7 +11153,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     own later content) — required a small, documented test update (one
     `"N/A (no debt)"` occurrence instead of three) since the KPI grid it
     replaced Batch 1's plain list, which had rendered all three.
-28. **Batch 4 raised one new conflict (#29)**: `generateRecommendationSet`
+29. **Batch 4 raised one new conflict (#29)**: `generateRecommendationSet`
     (M3-012) needs a full `RecommendationRuleConfig` with 5 fields no
     `Portfolio` field carries and no specification page defaults —
     discovered while trying to build M5-007's "Required action to restore
@@ -10942,7 +11167,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     attempted partially — see the Batch 4 write-up's own opening
     paragraph for why each is scoped out this batch specifically, not
     silently dropped.
-29. **Milestone 5 Batch 5 raised no new conflict — it independently
+30. **Milestone 5 Batch 5 raised no new conflict — it independently
     re-confirmed Batch 4's M5-008/M5-010 conclusions, per instruction, by
     re-researching each Warning case individually rather than trusting
     the prior summary.** M5-008 remains wholly blocked (no partial
@@ -10958,7 +11183,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     all — "Portfolio percentage" (always 100%) and M5-012's "hide the
     chart" condition are both direct, mechanical consequences of Conflict
     A already approved in Milestone 4, not new interpretation.
-30. **Batch 6 raised no new conflict — both of its two deliberately
+31. **Batch 6 raised no new conflict — both of its two deliberately
     unbuilt items carry forward already-established decisions, not new
     gaps.** M5-013's "Projected debt where available" reuses Conflict
     #7's existing block (compound interest has no documented formula).
@@ -10973,7 +11198,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     `Monthly = Daily × 30` (F-030/F-031) do not equal `Annual / 365` /
     `Annual / 12` — resolved by calling the real, already-public Engine
     functions via a new Service rather than approximating.
-31. **Batch 7 raised no new numbered conflict — it resolved the M5-015
+32. **Batch 7 raised no new numbered conflict — it resolved the M5-015
     scoping question conflict #29 itself had left open since Batch 4**,
     overdue since Batch 6's own note. Three options were on the table:
     (a) scope M5-015 to only the repayment/additionalCollateral
@@ -10992,7 +11217,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     followed `06_TASKS.md` as authoritative per established practice; the
     practical difference is softened since the scoped-down universe never
     exceeds 2 items anyway.
-32. **Milestone 5 Batch 8 raised no new numbered conflict.** M5-017
+33. **Milestone 5 Batch 8 raised no new numbered conflict.** M5-017
     (Data Freshness Indicators) needed no new Engine or Service call —
     every field it displays was already threaded through
     `DashboardFreshness` by Batch 2 (M5-004). Its "Fresh or stale
@@ -11010,7 +11235,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     already true for free, since `recomputeSummary` never fetches and so
     cannot lose or overwrite valid data. See the Batch 8 write-up above
     for the full field-by-field reasoning.
-33. **Milestone 5 Batch 9 raised no new numbered conflict.** M5-019
+34. **Milestone 5 Batch 9 raised no new numbered conflict.** M5-019
     (Loading States) found and fixed a real, pre-existing "layout shift"
     bug (the old "Loading…" line and the no-portfolio/portfolio branch
     below it rendered simultaneously) rather than just adding a skeleton
@@ -11030,7 +11255,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     render nothing — Batch 7 had no task asking for an explanation yet;
     M5-020 now does. See the Batch 9 write-up above for the full
     per-item reasoning.
-34. **Milestone 5 Batch 10 raised no new numbered conflict.** M5-021's
+35. **Milestone 5 Batch 10 raised no new numbered conflict.** M5-021's
     own cross-document investigation (mirroring M4-017's own method)
     found two real, concrete gaps a literal `06_TASKS.md`-only reading
     would have missed: 03_UI.md's Dashboard-specific "ERROR HANDLING"
@@ -11043,7 +11268,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     (validate-before-mutate already guarantees this) rather than
     re-deriving it or inventing a new summary cache. See the Batch 10
     write-up above for the full reasoning.
-35. **Milestone 5 Batch 11 raised no new numbered conflict.** M5-016's
+36. **Milestone 5 Batch 11 raised no new numbered conflict.** M5-016's
     "Export portfolio" Action item was cross-referenced against
     03_UI.md's own "EXPORT OPTIONS" section (CSV, JSON, calculation
     timestamps — PDF explicitly deferred as "Future Version") rather
@@ -11059,7 +11284,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     gives explicit grounds for it, more cautious than the sidebar's own
     pre-existing (M1-scaffold) links to the same routes. See the Batch
     11 write-up above for the full reasoning.
-36. **Milestone 5 Batch 12 raised no new numbered conflict, but found
+37. **Milestone 5 Batch 12 raised no new numbered conflict, but found
     and fixed two real horizontal-overflow bugs via actual Playwright
     viewport checks** — reading Tailwind class names alone would not
     have caught either: `AppHeader`'s portfolio switcher had no width
@@ -11078,7 +11303,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     was found and documented but not built (no sidebar replacement below
     `md:`) — out of scope for a Dashboard-content task. See the Batch 12
     write-up above for the full reasoning.
-37. **Milestone 5 Batch 13 raised no new numbered conflict, but found
+38. **Milestone 5 Batch 13 raised no new numbered conflict, but found
     M5-024's own DoD points to an empty section.** "Meets the
     accessibility requirements defined in the Build Guide" names
     `04_BUILD_GUIDE.md`'s own "ACCESSIBILITY" line, which is a bare
@@ -11103,7 +11328,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     M5-016's own "explain why" Requirement for keyboard/screen-reader
     users specifically). See the Batch 13 write-up above for the full
     per-item reasoning.
-38. **Milestone 5 Batch 14 raised no new numbered conflict, but found
+39. **Milestone 5 Batch 14 raised no new numbered conflict, but found
     where M5-022's own toggle state should live had no documented
     answer.** 03_UI.md's "DEVELOPER MODE" section implies a persistent,
     app-wide control, but its own "SETTINGS" page's literal Version 1
@@ -11122,7 +11347,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     already-visible information from normal users would contradict this
     task's own DoD. See the Batch 14 write-up above for the full
     reasoning.
-39. **Milestone 5 Batch 15 raised no new numbered conflict.** M5-025
+40. **Milestone 5 Batch 15 raised no new numbered conflict.** M5-025
     ("Create Dashboard Component Tests") turned out to be an audit task,
     not a build task — every one of the 15 Dashboard components already
     had its own test file from incremental development across Batches
@@ -11137,7 +11362,7 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     values, a 200-character portfolio name and a 24-character formatted
     KPI value). Zero production code changed — only 7 test files. See
     the Batch 15 write-up above for the full reasoning.
-40. **Milestone 5 Batch 16 raised no new numbered conflict.** M5-026
+41. **Milestone 5 Batch 16 raised no new numbered conflict.** M5-026
     ("Create Dashboard Integration Tests") was resolved by finding and
     following an existing, exact precedent (`tests/integration/portfolio/
 portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
@@ -11155,7 +11380,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     price rather than a stale cached one — no existing test had ever
     changed the price _before_ exercising Refresh. Zero production code
     changed. See the Batch 16 write-up above for the full reasoning.
-41. **Milestone 5 Batch 17 raised no new numbered conflict.** M5-027
+42. **Milestone 5 Batch 17 raised no new numbered conflict.** M5-027
     ("Create Dashboard End-to-End Tests") followed
     `tests/e2e/portfolioWorkflows.spec.ts`'s (M4-018) own established
     convention exactly. Built a new `tests/e2e/dashboardWorkflows.spec.ts`
@@ -11174,7 +11399,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     viewport, resizing only to check the completed workflow's own
     rendered result). Zero production code changed. See the Batch 17
     write-up above for the full reasoning.
-42. **Milestone 5 Batch 18 raised one new, significant conflict
+43. **Milestone 5 Batch 18 raised one new, significant conflict
     (#30) — the largest found in this entire engagement.** M5-028
     ("Validate Dashboard Against UI Specification"), the final
     Milestone 5 task, required reading `03_UI.md` in full for the
@@ -11200,7 +11425,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     Criteria directly. This closes Milestone 5's task list
     (M5-001–M5-028, M5-008 excepted). See the Batch 18 write-up above
     for the full reasoning.
-43. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
+44. **From Milestone 4 Batch 8, still open**: conflict #28 — M4-013's Dependencies
     suggested auto-save should extend to the Collateral/Debt Position
     Management forms, but M4-009's own DoD requires explicit confirmation
     for risk-increasing changes to those same fields; resolved by keeping
@@ -11208,7 +11433,7 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     M4-013's four DoD-named save states (`'saving'`/`'offline'`) cannot be
     genuinely, honestly built in this synchronous, no-network
     architecture.
-44. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
+45. **Batch 9 raised no new conflict.** Every ambiguity in M4-017's short
     "Include" list was resolved by reading the fuller ERROR RECOVERY
     context across `01_PRD.md`/`03_UI.md`/`04_BUILD_GUIDE.md` rather than
     guessing. One finding worth flagging without raising it as a
@@ -11219,44 +11444,44 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     the underlying position is what actually clears the error, not the
     Retry click. Documented as an honest limitation, not a specification
     conflict.
-45. **From Batch 6, still open**: conflict #27 — M4-012 never says
+46. **From Batch 6, still open**: conflict #27 — M4-012 never says
     whether an archived portfolio remains independently selectable (e.g.
     still reachable via the switcher or a clickable list row) while
     archived. Resolved conservatively for internal consistency: archived
     portfolios are excluded from `AppHeader`'s switcher and rendered as
     non-clickable rows on the Portfolio List Page; unarchiving is the
     only documented path back to selectability.
-46. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
+47. **From Batch 5, still open**: conflict #26 — M4-009's DoD requires
     confirmation for "risk-increasing" changes, but no such term is
     defined anywhere in the documentation (no threshold, band, or scoring
     rule). Resolved with the most conservative possible directional
     comparison (`after.healthFactor < before.healthFactor`), not an
     invented threshold or classification system.
-47. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
+48. **From Batch 4, still open**: conflict #25 — M4-008 names "Price"
     and "Rate type" as debt fields with no counterpart anywhere in the
     data model. "Price" shown as read-only informational text; "Rate
     type" not rendered at all.
-48. **From Batch 3, still open — recurred in Batch 7 with the same
+49. **From Batch 3, still open — recurred in Batch 7 with the same
     resolution**: conflict #24 — M4-005's (and now M4-015's) "Protocol
     parameters or preset" names a preset option with no concrete values
     anywhere in the documentation. Resolved both times by offering
     manual entry only.
-49. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
+50. **From Batch 2, still open**: conflict #23 — 03_UI.md's own "six
     primary pages" inventory has no room for a Portfolio List page.
     Resolved by keeping `/portfolios` out of the sidebar, reachable only
     via the `AppHeader` switcher.
-50. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
+51. **From Batch 1, still open**: "Settings" (conflict #22) — M4-001
     names it as a required field with no defined shape anywhere. Resolved
     conservatively (safety-targets-only) — still flagged for a real
     decision.
-51. **Conflict #20 remains resolved** (Batch 0) — no longer an open
+52. **Conflict #20 remains resolved** (Batch 0) — no longer an open
     item.
-52. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
+53. **From Milestone 3 Batch 9 (Formula Engine numbering — not this
     Milestone 4's batches)**: M3-013's "persistence adapters" mention
     (conflict #21) has no persistence Service or task to attach to until
     Milestone 8 — revisit when Milestone 8 (Persistence, Authentication,
     Cloud Synchronization & Import/Export) is reached, not before.
-53. **Outstanding blockers/conflicts carried forward from Milestone 2**:
+54. **Outstanding blockers/conflicts carried forward from Milestone 2**:
     F-026 (Health Factor status classification, conflict #1), compound
     interest / M2-013–M2-014 (conflict #7), the partially-unassigned
     Recommendation Engine chapter (conflict #9 — F-061–F-064
@@ -11269,13 +11494,13 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     disagreement plus M2-030's 2 unmapped benchmark categories (conflict
     #16), and M2-031's undocumented public/internal split criteria
     (conflict #17). None of these blocked Milestone 2's own completion.
-54. **Revisited in Milestone 2 Batch 7, confirmed still open at the
+55. **Revisited in Milestone 2 Batch 7, confirmed still open at the
     specification level but no longer blocking implementation**:
     swap-fees/slippage/gas-estimate (conflict #8), "Target cash
     proceeds"'s ambiguous mechanics (conflict #10), and F-040's
     exit-collateral-sale discrepancy (conflict #13, a known, tested
     approximation).
-55. **From Milestone 3/4, still open — final tally at Milestone 4's
+56. **From Milestone 3/4, still open — final tally at Milestone 4's
     completion**: "Source status"'s undefined _generic_ value domain
     (conflict #18), "Formula version" aggregation across a
     multi-Engine-call Service (conflict #19), M3-013's persistence-

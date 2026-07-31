@@ -164,6 +164,14 @@ import {
  * `portfolioId` with no matching entry (e.g. a since-deleted
  * portfolio) shows literally as "(Unknown Portfolio)" rather than a
  * blank string or a crash.
+ *
+ * **The comparison table's own header cells carry `scope="col"`
+ * (Batch 21, M6-022, "Accessibility Review" — Review item "Tables")** —
+ * a real, found-not-assumed gap, the same class Batch 13 (M5-024)
+ * found and fixed for the Dashboard's own Portfolio Composition table.
+ * Without it, a screen reader navigating the table cell-by-cell cannot
+ * announce which saved scenario a given metric row's value belongs to
+ * (WCAG 1.3.1).
  */
 function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
@@ -332,9 +340,15 @@ export function ScenarioComparison({
           <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className="pr-4 text-left text-muted-foreground">Metric</th>
+                <th scope="col" className="pr-4 text-left text-muted-foreground">
+                  Metric
+                </th>
                 {selected.map((saved) => (
-                  <th key={saved.id} className="px-2 text-left font-medium text-foreground">
+                  <th
+                    key={saved.id}
+                    scope="col"
+                    className="px-2 text-left font-medium text-foreground"
+                  >
                     {saved.name}
                   </th>
                 ))}

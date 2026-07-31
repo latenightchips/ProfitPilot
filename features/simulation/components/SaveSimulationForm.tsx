@@ -57,6 +57,17 @@ import { useSimulationStore } from '@/stores/simulationStore';
  * save time so `ScenarioComparison.tsx`'s own Load flow can later
  * detect whether the portfolio has changed since (M6-016's own
  * Requirement).
+ *
+ * **The error/success messages carry `role="alert"`/`role="status"`
+ * (Batch 21, M6-022, "Accessibility Review")** — both are dynamic text
+ * that appears after a user action with no other signal a screen
+ * reader would announce, the same "Status announcements" class of gap
+ * Batch 13 (M5-024) found and fixed for `DashboardErrorBanner`/
+ * `NoDebtNotice`. "Name is required." blocks submission, so it uses
+ * the assertive `role="alert"` `DashboardErrorBanner` established for
+ * blocking errors; "Saved." is informational only, so it uses the
+ * polite `role="status"` `NoDebtNotice` established for non-error
+ * confirmations.
  */
 export function SaveSimulationForm({
   portfolioId,
@@ -113,7 +124,11 @@ export function SaveSimulationForm({
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && (
+        <span role="alert" className="text-xs text-destructive">
+          {error}
+        </span>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Description</span>
@@ -130,7 +145,11 @@ export function SaveSimulationForm({
       >
         Save Scenario
       </button>
-      {savedId !== null && <span className="text-xs text-muted-foreground">Saved.</span>}
+      {savedId !== null && (
+        <span role="status" className="text-xs text-muted-foreground">
+          Saved.
+        </span>
+      )}
     </form>
   );
 }
