@@ -2,22 +2,45 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
 /**
- * Dashboard Responsive Layout End-to-End Tests — 06_TASKS.md M5-023
- * ("Implement Dashboard Responsive Layout"). Requirement: "No horizontal
- * page scrolling." DoD: "All Dashboard functionality remains usable on
- * mobile, tablet, and desktop."
+ * Responsive Layout End-to-End Tests — 06_TASKS.md M5-023 ("Implement
+ * Dashboard Responsive Layout") + M6-021 ("Responsive Workspace",
+ * Milestone 6 Batch 20). M5-023 Requirement: "No horizontal page
+ * scrolling." M5-023 DoD: "All Dashboard functionality remains usable
+ * on mobile, tablet, and desktop." M6-021 Description: "Optimize
+ * Simulation Workspace for desktop, tablet and mobile." M6-021 DoD:
+ * "Simulation tools remain usable on supported screen sizes."
  *
  * A real-browser, real-viewport check is the only honest way to verify
  * "no horizontal page scrolling" — Vitest/Testing Library run in jsdom,
  * which does not compute real box layout, so this property cannot be
- * unit-tested. This file is the permanent regression test for the two
- * real overflow bugs Batch 12's own manual audit found and fixed
- * (`AppHeader`'s unconstrained `<select>`, `PortfolioCompositionSection`'s
- * cramped table at exactly the 768px sidebar-appears breakpoint, and the
- * `<main>` `min-w-0` fix in `AppShell` that lets its own
- * `overflow-x-auto` actually contain that table instead of widening the
- * page) — a name-only, viewport-width-only reproduction of a bug that
- * would not otherwise be exercised by any per-component unit test.
+ * unit-tested. The Dashboard section of this file is the permanent
+ * regression test for the two real overflow bugs Batch 12's own manual
+ * audit found and fixed (`AppHeader`'s unconstrained `<select>`,
+ * `PortfolioCompositionSection`'s cramped table at exactly the 768px
+ * sidebar-appears breakpoint, and the `<main>` `min-w-0` fix in
+ * `AppShell` that lets its own `overflow-x-auto` actually contain that
+ * table instead of widening the page) — a name-only, viewport-width-only
+ * reproduction of a bug that would not otherwise be exercised by any
+ * per-component unit test.
+ *
+ * **The Simulation section below found zero equivalent bugs — a
+ * documented negative result, not an omission.** Real-browser checks at
+ * 375/768/1280px, with a long portfolio name (`AppHeader`'s own Batch 12
+ * fix already covers every route, including this one) and a populated
+ * Scenario Comparison table (3 saved scenarios selected), found no page-
+ * level horizontal overflow anywhere. `app/simulation/page.tsx`'s own
+ * `flex-col lg:flex-row` sidebar layout (real since M6-001, Batch 1),
+ * `ScenarioComparison.tsx`'s own `overflow-x-auto` comparison-table
+ * container (real since M6-010, Batch 9), and `ScenarioCharts.tsx`/
+ * `ScenarioTimeline.tsx`'s own recharts `ResponsiveContainer` usage (real
+ * since M6-011/M6-012, Batches 10–11) already independently satisfy
+ * M6-021's own Description and DoD — this batch's job was to verify that
+ * empirically, the same way Batch 12 verified the Dashboard, not to
+ * invent a redundant second layout mechanism. No Simulation source file
+ * was changed for M6-021; only these permanent regression tests were
+ * added, mirroring the Dashboard section's own already-approved
+ * structure and the "table needs its own scroll container at narrow
+ * widths" pattern below.
  */
 async function fillByLabel(page: Page, labelText: string, value: string) {
   const label = page.locator('label', { hasText: labelText });
@@ -94,5 +117,95 @@ test('Cover: Portfolio Composition table scrolls within its own container, not t
     el.scrollLeft = el.scrollWidth;
   });
   await expect(page.getByText('Portfolio %')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+async function fillByLabelExact(page: Page, labelText: string, value: string) {
+  await page.getByRole('textbox', { name: labelText, exact: true }).fill(value);
+}
+
+async function createPortfolioAndNavigateToSimulation(page: Page, name: string) {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  await fillByLabel(page, 'Portfolio name', name);
+  await fillByLabel(page, 'BTC quantity', '2');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '20000');
+  await fillByLabel(page, 'Current BTC price (USD)', '50000');
+  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
+  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
+  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
+  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+  await page.locator('a', { hasText: 'Simulation' }).click();
+  await page.waitForURL('**/simulation');
+}
+
+async function saveScenario(page: Page, btcPriceUsd: number, name: string) {
+  await fillByLabel(page, 'BTC Price', String(btcPriceUsd));
+  await page.waitForTimeout(150);
+  await fillByLabelExact(page, 'Name', name);
+  await page.getByRole('button', { name: 'Save Scenario' }).click();
+  await page.waitForTimeout(150);
+}
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`Cover: no horizontal page scrolling on the Simulation Workspace — ${name}`, async ({
+    page,
+  }) => {
+    // Same resize-after-navigate approach as the Dashboard tests above,
+    // for the same reason (Conflict B: no persistence, and the sidebar's
+    // own "Simulation" link is hidden below `md:`).
+    await createPortfolioAndNavigateToSimulation(
+      page,
+      'A Reasonably Long Simulation Workspace Overflow Check Portfolio Name',
+    );
+    await saveScenario(page, 65000, 'Bull Case');
+    // Populate Scenario Charts/Timeline (interest scenario) and the
+    // Comparison table (3 saved scenarios, all selected) — the
+    // heaviest real content this route renders.
+    await fillByLabel(page, 'Borrow Rate (0–1)', '0.1');
+    await page.waitForTimeout(150);
+    await saveScenario(page, 60000, 'Bear Case');
+    await saveScenario(page, 70000, 'Base Case');
+    const checkboxes = page.getByRole('checkbox');
+    await checkboxes.nth(0).check();
+    await checkboxes.nth(1).check();
+    await checkboxes.nth(2).check();
+
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+
+    await expect(page.getByRole('heading', { name: 'Simulation', exact: true })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('Cover: Scenario Comparison table scrolls within its own container, not the page, at mobile width', async ({
+  page,
+}) => {
+  await createPortfolioAndNavigateToSimulation(page, 'Simulation Table Scroll Check');
+  await saveScenario(page, 60000, 'Scenario Alpha');
+  await saveScenario(page, 70000, 'Scenario Bravo');
+  await saveScenario(page, 80000, 'Scenario Charlie');
+  const checkboxes = page.getByRole('checkbox');
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await checkboxes.nth(2).check();
+
+  await page.setViewportSize(VIEWPORTS.mobile);
+  await page.waitForTimeout(100);
+
+  const tableContainer = page.locator('table').locator('..');
+  const scrollInfo = await tableContainer.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(scrollInfo.scrollWidth).toBeGreaterThan(scrollInfo.clientWidth);
+
+  await tableContainer.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth;
+  });
+  await expect(page.getByRole('columnheader', { name: 'Scenario Charlie' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
