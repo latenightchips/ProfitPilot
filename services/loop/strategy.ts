@@ -57,10 +57,36 @@
  * `simulationStore.ts`'s own `warnings`/`lastMetadata` additions already
  * established. Null alongside `strategy`/`costs` when the strategy is
  * not viable.
+ *
+ * **`remainingBorrowCapacity`/`monthlyInterestCost` — added Milestone 7
+ * Batch 3 (M7-013 "Implement Loop Safety Analysis" / M7-014 "Implement
+ * Loop Cost Analysis").** Both reuse already-public Engine functions —
+ * zero new Formula Engine logic. `remainingBorrowCapacity` calls
+ * `calculateAvailableBorrow` (F-013) against the final position, reusing
+ * `exposureStep.value` as its own `collateralValue` input rather than
+ * calling `calculateCollateralValue` a second time: `calculateExposure`'s
+ * own header comment states Exposure (F-010) is numerically identical to
+ * Collateral Value (F-002) under this codebase's single-collateral-asset
+ * scope ("Exposure equals Collateral Value... reused rather than
+ * recomputed") — the exact same identity, one layer further. Passing the
+ * override-resolved `engineInput.protocol.maxLoanToValue`/`finalDebt`
+ * means "remaining capacity" reflects the same effective protocol
+ * parameters the safety check and cost calculation already used, not the
+ * portfolio's own un-overridden values. `monthlyInterestCost` calls
+ * `calculateMonthlyInterest` (F-031) against the same `finalDebt`/
+ * `engineInput.protocol.borrowApr` pair `calculateLoopCosts` already uses
+ * for `borrowingInterest` (F-032, Annual) — the same non-simple-division
+ * day-count convention `services/portfolio/interestBreakdown.ts` (M5-013)
+ * already established (`Monthly ≠ Annual / 12`), reused rather than
+ * approximated. Both null alongside `strategy`/`costs` when the strategy
+ * is not viable, the same convention every other post-safety-gate field
+ * already follows.
  */
 import {
+  calculateAvailableBorrow,
   calculateExposure,
   calculateLoopCosts,
+  calculateMonthlyInterest,
   type LoopCostResult,
   type LoopSafetyFinding,
   type LoopStrategyResult,
@@ -92,6 +118,10 @@ export interface LoopStrategyPreview {
   costs: LoopCostResult | null;
   /** Final BTC exposure (F-010). Null alongside `strategy`/`costs`. */
   btcExposure: number | null;
+  /** Remaining borrow capacity (F-013) on the final position. Null alongside `strategy`/`costs`. */
+  remainingBorrowCapacity: number | null;
+  /** Monthly interest cost (F-031) on the final debt. Null alongside `strategy`/`costs`. */
+  monthlyInterestCost: number | null;
 }
 
 /**
@@ -139,6 +169,8 @@ export function planLoopStrategy(
         strategy: null,
         costs: null,
         btcExposure: null,
+        remainingBorrowCapacity: null,
+        monthlyInterestCost: null,
       },
       optionsFromTracked(sourceStatus, tracked),
       warnings,
@@ -167,6 +199,28 @@ export function planLoopStrategy(
   tracked = costsStep.tracked;
   warnings.push(...costsStep.warnings);
 
+  const capacityStep = formulaStep(
+    calculateAvailableBorrow(
+      exposureStep.value,
+      engineInput.protocol.maxLoanToValue,
+      safety.strategy.finalDebt,
+    ),
+    tracked,
+    sourceStatus,
+  );
+  if (!capacityStep.ok) return capacityStep.failure;
+  tracked = capacityStep.tracked;
+  warnings.push(...capacityStep.warnings);
+
+  const monthlyInterestStep = formulaStep(
+    calculateMonthlyInterest(safety.strategy.finalDebt, engineInput.protocol.borrowApr),
+    tracked,
+    sourceStatus,
+  );
+  if (!monthlyInterestStep.ok) return monthlyInterestStep.failure;
+  tracked = monthlyInterestStep.tracked;
+  warnings.push(...monthlyInterestStep.warnings);
+
   return createServiceSuccess(
     {
       viable: safety.viable,
@@ -174,6 +228,8 @@ export function planLoopStrategy(
       strategy: safety.strategy,
       costs: costsStep.value,
       btcExposure: exposureStep.value,
+      remainingBorrowCapacity: capacityStep.value,
+      monthlyInterestCost: monthlyInterestStep.value,
     },
     optionsFromTracked(sourceStatus, tracked),
     warnings,

@@ -4,11 +4,14 @@ import { formatCurrency } from '@/components/strategy/format';
 import { StrategyComparison } from '@/components/strategy/StrategyComparison';
 import {
   type ApplicationPortfolio,
+  buildFinalLoopPortfolio,
   calculatePortfolioExposure,
   calculatePortfolioSummary,
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import type { StrategyComparisonResult } from '@/types/strategy';
+
+import { stopReasonLabel } from '../utils/stopReasonLabel';
 
 /**
  * Loop Strategy Summary — 06_TASKS.md M7-011 ("Implement Loop Strategy
@@ -83,13 +86,14 @@ import type { StrategyComparisonResult } from '@/types/strategy';
  * unreachable. None are force-tested just to move a coverage
  * percentage, the same discipline this engagement has applied
  * consistently since Milestone 6 Batch 22's own audit.
+ *
+ * **Final-portfolio construction and the Stop Reason label are now
+ * shared utilities (`services/loop/finalPortfolio.ts`,
+ * `features/loop-builder/utils/stopReasonLabel.ts`), extracted at
+ * Milestone 7 Batch 3 once `LoopSafetyAnalysis.tsx` (M7-013) became a
+ * second consumer of both** — no behavior change, purely removing what
+ * would otherwise become duplicated code between the two components.
  */
-const STOP_REASON_LABELS: Record<string, string> = {
-  MAX_LOOPS_REACHED: 'Maximum number of loops reached',
-  MIN_HEALTH_FACTOR_REACHED: 'Minimum Health Factor reached',
-  NO_AVAILABLE_BORROW: 'No further borrowing capacity available',
-};
-
 export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
 
@@ -112,12 +116,7 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
 
   let after: StrategyComparisonResult['after'] = null;
   if (currentResult.strategy !== null && currentResult.btcExposure !== null) {
-    const finalPortfolio: ApplicationPortfolio = {
-      collateral: currentResult.strategy.finalCollateral,
-      debt: { asset: portfolio.debt.asset, balance: currentResult.strategy.finalDebt },
-      market: portfolio.market,
-      protocol: portfolio.protocol,
-    };
+    const finalPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
     const afterSummary = calculatePortfolioSummary(finalPortfolio, 'manual');
     if (afterSummary.ok) {
       after = { summary: afterSummary.data, btcExposure: currentResult.btcExposure };
@@ -154,8 +153,7 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Stop Reason</span>
             <span className="font-medium text-foreground">
-              {STOP_REASON_LABELS[currentResult.strategy.stopReason] ??
-                currentResult.strategy.stopReason}
+              {stopReasonLabel(currentResult.strategy.stopReason)}
             </span>
           </div>
         )}

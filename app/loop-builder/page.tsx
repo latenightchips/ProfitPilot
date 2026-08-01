@@ -5,10 +5,17 @@ import Link from 'next/link';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
 import {
+  ApplyLoopAsSimulation,
+  LoopCostAnalysis,
   LoopPresets,
+  LoopSafetyAnalysis,
+  LoopScenarioSensitivity,
   LoopStepTable,
   LoopStrategyControls,
+  LoopStrategyExport,
+  LoopStrategyLibrary,
   LoopStrategySummary,
+  SaveLoopStrategyForm,
 } from '@/features/loop-builder';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -38,21 +45,22 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * `app/simulation/page.tsx` already established (a loop strategy needs
  * a real starting position to loop from).
  *
- * **Of the 6 named Include items, 4 have real content this batch
- * (Strategy controls, Current portfolio baseline, Results summary, Loop
- * steps); 2 remain explicit, labeled placeholders (Safety analysis,
- * Cost analysis) — their own dedicated, later Batch 3 tasks (M7-013,
- * M7-014).** This mirrors `app/simulation/page.tsx`'s own M6-001-era
- * placeholders exactly, not a new pattern. **"Warnings" is not one of
- * M7-006's own 6 named Include items, but is rendered anyway** — this
- * batch's own Store (`stores/loopBuilderStore.ts`, M7-007) already
- * generates real `StrategyWarning[]` from the Service's own safety
- * findings, and leaving real, already-computed safety information
- * completely unsurfaced until Batch 3 would contradict this
- * engagement's own "never let genuinely available data sit unused"
- * discipline (the same reasoning `ScenarioSummary.tsx`'s own Batch 9
- * "Warnings" section already applied for Simulation, a section M6-009
- * itself didn't name either).
+ * **All 6 named Include items now have real content (Strategy controls,
+ * Current portfolio baseline, Results summary, Loop steps, Safety
+ * analysis, Cost analysis)** — Safety Analysis and Cost Analysis were
+ * explicit, labeled placeholders through Batch 2; Milestone 7 Batch 3
+ * (M7-013/M7-014) replaces both with real components. **"Warnings" is
+ * not one of M7-006's own 6 named Include items, but has been rendered
+ * since Batch 2** — see that batch's own note, unchanged here.
+ *
+ * **Milestone 7 Batch 3 adds 5 more sections, one per remaining Batch 3
+ * task** (M7-015 Scenario Sensitivity, M7-016 Apply as Simulation,
+ * M7-017 Save/Load, M7-018 Export) — none of these are named in
+ * M7-006's own original 6-item Include list, the same "surface
+ * genuinely available functionality from its own dedicated task,
+ * placed on this same route since it is the one place a Loop Builder
+ * result is ever shown" reasoning `app/simulation/page.tsx` already
+ * established for its own later-added Simulation Workspace sections.
  */
 export default function LoopBuilderPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -126,15 +134,34 @@ export default function LoopBuilderPage() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Safety Analysis</h2>
-              <p className="text-sm text-muted-foreground">
-                Not yet implemented — see M7-013 (&ldquo;Implement Loop Safety Analysis&rdquo;).
-              </p>
+              <LoopSafetyAnalysis portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Cost Analysis</h2>
-              <p className="text-sm text-muted-foreground">
-                Not yet implemented — see M7-014 (&ldquo;Implement Loop Cost Analysis&rdquo;).
-              </p>
+              <LoopCostAnalysis />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Scenario Sensitivity</h2>
+              <LoopScenarioSensitivity portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Apply as Simulation</h2>
+              <ApplyLoopAsSimulation portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Save Strategy</h2>
+              <SaveLoopStrategyForm
+                portfolioId={record.portfolio.id}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Saved Strategies</h2>
+              <LoopStrategyLibrary portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Export Strategy</h2>
+              <LoopStrategyExport portfolio={record.portfolio} />
             </section>
           </div>
         </div>

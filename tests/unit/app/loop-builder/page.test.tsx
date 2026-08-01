@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import LoopBuilderPage from '@/app/loop-builder/page';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import { useSimulationStore } from '@/stores/simulationStore';
 
 /**
  * Loop Builder Route — 06_TASKS.md M7-006. DoD: "Users can open the
  * Loop Builder from the Dashboard and Simulation Workspace." Include:
  * "Strategy controls, Current portfolio baseline, Results summary, Loop
- * steps, Safety analysis, Cost analysis."
+ * steps, Safety analysis, Cost analysis." Milestone 7 Batch 3 adds 5
+ * more sections (Scenario Sensitivity, Apply as Simulation, Save
+ * Strategy, Saved Strategies, Export Strategy) — see this route's own
+ * header comment.
  */
 beforeEach(() => {
   usePortfolioStore.setState({
@@ -29,6 +33,21 @@ beforeEach(() => {
     lastMetadata: null,
     savedStrategies: [],
     selectedStrategyId: null,
+    sensitivityResult: null,
+    sensitivityErrors: [],
+  });
+  useSimulationStore.setState({
+    currentScenario: null,
+    currentResult: null,
+    portfolioActionPreview: null,
+    savedScenarios: [],
+    comparisonSelection: [],
+    timelineProjection: null,
+    lastMetadata: null,
+    status: 'idle',
+    errors: [],
+    warnings: [],
+    previewMode: false,
   });
 });
 
@@ -75,13 +94,22 @@ describe('LoopBuilderPage — active portfolio (Include items)', () => {
     expect(screen.getByText('Loop Steps')).toBeInTheDocument();
   });
 
-  it('labels Safety Analysis and Cost Analysis as not yet implemented, without hiding the sections', () => {
+  it('renders real Safety Analysis and Cost Analysis sections, no longer placeholders (M7-013/M7-014)', () => {
     selectActivePortfolio();
     render(<LoopBuilderPage />);
     expect(screen.getByText('Safety Analysis')).toBeInTheDocument();
-    expect(screen.getByText(/M7-013/)).toBeInTheDocument();
     expect(screen.getByText('Cost Analysis')).toBeInTheDocument();
-    expect(screen.getByText(/M7-014/)).toBeInTheDocument();
+    expect(screen.queryByText(/Not yet implemented/i)).not.toBeInTheDocument();
+  });
+
+  it('renders all 5 new Milestone 7 Batch 3 sections: Scenario Sensitivity, Apply as Simulation, Save Strategy, Saved Strategies, Export Strategy', () => {
+    selectActivePortfolio();
+    render(<LoopBuilderPage />);
+    expect(screen.getByText('Scenario Sensitivity')).toBeInTheDocument();
+    expect(screen.getByText('Apply as Simulation')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Save Strategy' })).toBeInTheDocument();
+    expect(screen.getByText('Saved Strategies')).toBeInTheDocument();
+    expect(screen.getByText('Export Strategy')).toBeInTheDocument();
   });
 
   it('renders a Warnings section sourced from the Loop Builder Store specifically', () => {

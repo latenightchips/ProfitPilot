@@ -3,11 +3,15 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
+  buildFinalLoopPortfolio,
   type LoopSafetyCheck,
   type LoopStrategyPreview,
   type LoopStrategySettings,
   planLoopStrategy,
   type ServiceMetadata,
+  simulateScenario,
+  type SimulationResult,
+  type SimulationScenario,
 } from '@/services';
 import type { StrategyWarning, StrategyWarningCategory } from '@/types/strategy';
 
@@ -36,6 +40,36 @@ import type { StrategyWarning, StrategyWarningCategory } from '@/types/strategy'
  * own "never let genuinely available data sit unused" discipline (the
  * same reasoning `ScenarioSummary.tsx`'s own Batch 9 "Warnings" section
  * already applied for Simulation).
+ *
+ * Milestone 7 Batch 3 adds `runSensitivityScenario` (M7-015) and
+ * `saveStrategy`/`loadStrategy`/`duplicateStrategy`/`deleteStrategy`
+ * (M7-017). `runSensitivityScenario` reuses `simulateScenario` (M3-009)
+ * directly against `buildFinalLoopPortfolio`'s output (the proposed
+ * loop's own final state, not the starting portfolio) — "baseline" in
+ * the resulting `SimulationResult` is therefore the proposed loop
+ * itself, and "scenario" is that same position under an adverse
+ * price/rate assumption. No new calculation; this Store's only job is
+ * holding the result, the same "trigger an already-real Service call,
+ * hold the result" precedent `runSimulation`
+ * (`stores/simulationStore.ts`) already established. A no-op without a
+ * viable `currentResult.strategy`. Cleared by `setSettings` alongside
+ * `currentResult` itself, since a changed strategy invalidates any
+ * sensitivity result computed against the old one.
+ *
+ * `saveStrategy`/`loadStrategy`/`duplicateStrategy`/`deleteStrategy`
+ * mirror `stores/simulationStore.ts`'s own
+ * `saveCurrentScenario`/`loadSavedScenario`/`duplicateSavedScenario`/
+ * `deleteSavedScenario` verbatim in shape: `crypto.randomUUID()`
+ * identity, `" (Copy)"` duplicate-naming convention, Load restores
+ * already-computed values directly without recalculating (preserving
+ * original assumptions). `SavedLoopStrategy` gains
+ * `portfolioId`/`portfolioUpdatedAt` (the same drift-detection snapshot
+ * `SavedSimulation` already carries) and `warnings`/`metadata` (frozen
+ * snapshots of this Store's own ephemeral fields at save time). M7-017's
+ * own Store list also names "Assumptions" — deliberately not stored as
+ * its own field, since it is fully reconstructable from
+ * `settings`/`portfolioId` at load time via the already-shared
+ * `StrategyAssumptionsPanel` (M7-005).
  */
 const CHECK_CATEGORY: Record<LoopSafetyCheck, StrategyWarningCategory> = {
   VALID_PROTOCOL_PARAMETERS: 'safety',
@@ -74,9 +108,19 @@ function toStrategyWarning(finding: {
 export interface SavedLoopStrategy {
   id: string;
   name: string;
+  portfolioId: string;
+  portfolioUpdatedAt: string;
   settings: LoopStrategySettings;
   result: LoopStrategyPreview;
+  warnings: StrategyWarning[];
+  metadata: ServiceMetadata | null;
   createdAt: string;
+}
+
+export interface SaveLoopStrategyInput {
+  name: string;
+  portfolioId: string;
+  portfolioUpdatedAt: string;
 }
 
 export type LoopBuilderStatus = 'idle' | 'calculating' | 'error';
@@ -90,11 +134,18 @@ export interface LoopBuilderStoreState {
   lastMetadata: ServiceMetadata | null;
   savedStrategies: SavedLoopStrategy[];
   selectedStrategyId: string | null;
+  sensitivityResult: SimulationResult | null;
+  sensitivityErrors: ApplicationError[];
 }
 
 export interface LoopBuilderStoreActions {
   setSettings: (settings: LoopStrategySettings) => void;
   runLoopStrategy: (portfolio: ApplicationPortfolio) => void;
+  runSensitivityScenario: (portfolio: ApplicationPortfolio, scenario: SimulationScenario) => void;
+  saveStrategy: (input: SaveLoopStrategyInput) => string | null;
+  loadStrategy: (id: string) => void;
+  duplicateStrategy: (id: string) => string | null;
+  deleteStrategy: (id: string) => void;
   reset: () => void;
 }
 
@@ -109,6 +160,8 @@ const INITIAL_STATE: LoopBuilderStoreState = {
   lastMetadata: null,
   savedStrategies: [],
   selectedStrategyId: null,
+  sensitivityResult: null,
+  sensitivityErrors: [],
 };
 
 export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderStoreActions>(
@@ -116,7 +169,7 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
     ...INITIAL_STATE,
 
     setSettings: (settings) => {
-      set({ settings, currentResult: null });
+      set({ settings, currentResult: null, sensitivityResult: null, sensitivityErrors: [] });
     },
 
     runLoopStrategy: (portfolio) => {
@@ -144,6 +197,78 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
         lastMetadata: result.metadata,
         warnings: result.data.findings.map(toStrategyWarning),
       });
+    },
+
+    runSensitivityScenario: (portfolio, scenario) => {
+      const { currentResult } = get();
+      if (currentResult === null || currentResult.strategy === null) return;
+
+      const finalPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
+      const result = simulateScenario(finalPortfolio, scenario, 'Loop Sensitivity', SOURCE_STATUS);
+
+      if (!result.ok) {
+        set({ sensitivityErrors: result.errors, sensitivityResult: null });
+        return;
+      }
+
+      set({ sensitivityErrors: [], sensitivityResult: result.data });
+    },
+
+    saveStrategy: (input) => {
+      const { settings, currentResult, warnings, lastMetadata } = get();
+      if (settings === null || currentResult === null) return null;
+
+      const saved: SavedLoopStrategy = {
+        id: crypto.randomUUID(),
+        name: input.name,
+        portfolioId: input.portfolioId,
+        portfolioUpdatedAt: input.portfolioUpdatedAt,
+        settings,
+        result: currentResult,
+        warnings,
+        metadata: lastMetadata,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({ savedStrategies: [...state.savedStrategies, saved] }));
+      return saved.id;
+    },
+
+    loadStrategy: (id) => {
+      const saved = get().savedStrategies.find((strategy) => strategy.id === id);
+      if (saved === undefined) return;
+
+      set({
+        settings: saved.settings,
+        currentResult: saved.result,
+        warnings: saved.warnings,
+        lastMetadata: saved.metadata,
+        status: 'idle',
+        errors: [],
+        sensitivityResult: null,
+        sensitivityErrors: [],
+        selectedStrategyId: saved.id,
+      });
+    },
+
+    duplicateStrategy: (id) => {
+      const existing = get().savedStrategies.find((saved) => saved.id === id);
+      if (existing === undefined) return null;
+
+      const duplicate: SavedLoopStrategy = {
+        ...existing,
+        id: crypto.randomUUID(),
+        name: `${existing.name} (Copy)`,
+        createdAt: new Date().toISOString(),
+      };
+      set((state) => ({ savedStrategies: [...state.savedStrategies, duplicate] }));
+      return duplicate.id;
+    },
+
+    deleteStrategy: (id) => {
+      set((state) => ({
+        savedStrategies: state.savedStrategies.filter((saved) => saved.id !== id),
+        selectedStrategyId: state.selectedStrategyId === id ? null : state.selectedStrategyId,
+      }));
     },
 
     reset: () => {

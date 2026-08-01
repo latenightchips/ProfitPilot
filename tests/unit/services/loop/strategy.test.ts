@@ -227,3 +227,65 @@ describe('planLoopStrategy — protocol overrides (M7-008)', () => {
     expect(restricted.data.strategy?.finalDebt).not.toEqual(unrestricted.data.strategy?.finalDebt);
   });
 });
+
+/**
+ * Milestone 7 Batch 3 (M7-013 "Implement Loop Safety Analysis" / M7-014
+ * "Implement Loop Cost Analysis") — `remainingBorrowCapacity` (F-013)/
+ * `monthlyInterestCost` (F-031), both reused Engine functions applied
+ * to the final position.
+ */
+describe('planLoopStrategy — remainingBorrowCapacity/monthlyInterestCost (M7-013/M7-014)', () => {
+  it('computes a real remainingBorrowCapacity matching the F-013 formula against the final position', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    const expectedCapacity =
+      result.data.strategy.finalCollateral.quantity * 50000 * 0.5 - result.data.strategy.finalDebt;
+    expect(result.data.remainingBorrowCapacity).toBeCloseTo(expectedCapacity, 5);
+  });
+
+  it('computes a real monthlyInterestCost distinct from simply dividing the annual figure by 12', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    expect(result.data.monthlyInterestCost).not.toBeNull();
+    expect(result.data.monthlyInterestCost).not.toBeCloseTo(
+      (result.data.costs?.borrowingInterest ?? 0) / 12,
+      2,
+    );
+  });
+
+  it('uses the override-resolved protocol values for both fields, not the real portfolio values', () => {
+    const settings: LoopStrategySettings = {
+      ...healthySettings(),
+      borrowAprOverride: 0.2,
+      maxLoanToValueOverride: 0.4,
+    };
+    const overridden = planLoopStrategy(healthyPortfolio(), settings, 'live');
+    const real = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(overridden.ok).toBe(true);
+    expect(real.ok).toBe(true);
+    if (!overridden.ok || !real.ok) return;
+    expect(overridden.data.remainingBorrowCapacity).not.toEqual(real.data.remainingBorrowCapacity);
+    expect(overridden.data.monthlyInterestCost).not.toEqual(real.data.monthlyInterestCost);
+  });
+
+  it('reports both fields as null alongside a non-viable result', () => {
+    const atLiquidation: ApplicationPortfolio = {
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 9000 },
+      market: { btcPriceUsd: 10000 },
+      protocol: {
+        maxLoanToValue: 0.5,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const result = planLoopStrategy(atLiquidation, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.remainingBorrowCapacity).toBeNull();
+    expect(result.data.monthlyInterestCost).toBeNull();
+  });
+});

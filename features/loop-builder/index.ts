@@ -22,9 +22,22 @@
  * directory, and every test file lives in the project's one top-level
  * `tests/` directory (both established by M1-003) — never nested inside
  * a feature.
+ *
+ * Milestone 7 Batch 3 adds `LoopSafetyAnalysis` (M7-013),
+ * `LoopCostAnalysis` (M7-014), `LoopScenarioSensitivity` (M7-015),
+ * `ApplyLoopAsSimulation` (M7-016), `SaveLoopStrategyForm`/
+ * `LoopStrategyLibrary` (M7-017), and `LoopStrategyExport` (M7-018).
  */
+export { ApplyLoopAsSimulation } from './components/ApplyLoopAsSimulation';
+export { LoopCostAnalysis } from './components/LoopCostAnalysis';
 export { LoopPresets } from './components/LoopPresets';
+export { LoopSafetyAnalysis } from './components/LoopSafetyAnalysis';
+export { LoopScenarioSensitivity } from './components/LoopScenarioSensitivity';
 export { LoopStepTable } from './components/LoopStepTable';
 export { LoopStrategyControls } from './components/LoopStrategyControls';
+export { LoopStrategyExport } from './components/LoopStrategyExport';
+export { LoopStrategyLibrary } from './components/LoopStrategyLibrary';
 export { LoopStrategySummary } from './components/LoopStrategySummary';
+export { SaveLoopStrategyForm } from './components/SaveLoopStrategyForm';
 export * from './types/loopStrategyControls';
+export * from './utils/exportLoopStrategy';

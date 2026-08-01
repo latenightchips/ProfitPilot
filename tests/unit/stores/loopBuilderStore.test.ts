@@ -19,6 +19,8 @@ const INITIAL_STATE = {
   lastMetadata: null,
   savedStrategies: [],
   selectedStrategyId: null,
+  sensitivityResult: null,
+  sensitivityErrors: [],
 };
 
 beforeEach(() => {
@@ -128,6 +130,180 @@ describe('runLoopStrategy', () => {
     const state = useLoopBuilderStore.getState();
     expect(state.currentResult?.viable).toBe(false);
     expect(state.warnings.some((warning) => warning.category === 'safety')).toBe(true);
+  });
+});
+
+describe('runSensitivityScenario (M7-015)', () => {
+  it('is a no-op without a viable strategy', () => {
+    useLoopBuilderStore.getState().runSensitivityScenario(validPortfolio(), {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+    expect(useLoopBuilderStore.getState().sensitivityResult).toBeNull();
+  });
+
+  it('computes a real price-decline sensitivity result against the proposed loop', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    useLoopBuilderStore.getState().runSensitivityScenario(validPortfolio(), {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityErrors).toEqual([]);
+    expect(state.sensitivityResult).not.toBeNull();
+    expect(state.sensitivityResult?.scenario.healthFactor).toBeLessThan(
+      state.sensitivityResult?.baseline.healthFactor ?? Infinity,
+    );
+  });
+
+  it('computes a real interest-scenario sensitivity result', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    useLoopBuilderStore.getState().runSensitivityScenario(validPortfolio(), {
+      type: 'interest',
+      priceScenario: { type: 'percentageChange', percentageChange: 0 },
+      timeHorizonDays: 365,
+      borrowApr: 0.1,
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityErrors).toEqual([]);
+    expect(state.sensitivityResult).not.toBeNull();
+  });
+
+  it('reports errors, not a thrown exception, for a genuinely invalid scenario', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    useLoopBuilderStore.getState().runSensitivityScenario(validPortfolio(), {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -1 },
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityResult).toBeNull();
+    expect(state.sensitivityErrors.length).toBeGreaterThan(0);
+  });
+
+  it('is cleared by setSettings', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    useLoopBuilderStore.getState().runSensitivityScenario(validPortfolio(), {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+    expect(useLoopBuilderStore.getState().sensitivityResult).not.toBeNull();
+
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    expect(useLoopBuilderStore.getState().sensitivityResult).toBeNull();
+  });
+});
+
+describe('saveStrategy/loadStrategy/duplicateStrategy/deleteStrategy (M7-017)', () => {
+  it('saveStrategy returns null and saves nothing without a current result', () => {
+    const id = useLoopBuilderStore
+      .getState()
+      .saveStrategy({ name: 'My Loop', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    expect(id).toBeNull();
+    expect(useLoopBuilderStore.getState().savedStrategies).toEqual([]);
+  });
+
+  it('saveStrategy captures a frozen snapshot of settings/result/warnings/metadata', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+
+    const id = useLoopBuilderStore
+      .getState()
+      .saveStrategy({ name: 'My Loop', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    expect(id).not.toBeNull();
+
+    const saved = useLoopBuilderStore.getState().savedStrategies[0];
+    expect(saved.name).toBe('My Loop');
+    expect(saved.portfolioId).toBe('p1');
+    expect(saved.portfolioUpdatedAt).toBe('t1');
+    expect(saved.settings).toEqual(VALID_SETTINGS);
+    expect(saved.result).toEqual(useLoopBuilderStore.getState().currentResult);
+    expect(saved.metadata).not.toBeNull();
+  });
+
+  it('loadStrategy restores settings/result without recalculating', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore
+      .getState()
+      .saveStrategy({ name: 'My Loop', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+
+    useLoopBuilderStore.getState().reset();
+    expect(useLoopBuilderStore.getState().currentResult).toBeNull();
+
+    // Restore the saved strategy without calling reset on savedStrategies.
+    useLoopBuilderStore.setState({
+      savedStrategies: [
+        {
+          id,
+          name: 'My Loop',
+          portfolioId: 'p1',
+          portfolioUpdatedAt: 't1',
+          settings: VALID_SETTINGS,
+          result: { viable: true } as never,
+          warnings: [],
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    useLoopBuilderStore.getState().loadStrategy(id);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings).toEqual(VALID_SETTINGS);
+    expect(state.currentResult).toEqual({ viable: true });
+    expect(state.selectedStrategyId).toBe(id);
+  });
+
+  it('loadStrategy no-ops for an unknown id', () => {
+    useLoopBuilderStore.getState().loadStrategy('does-not-exist');
+    expect(useLoopBuilderStore.getState().currentResult).toBeNull();
+  });
+
+  it('duplicateStrategy creates an independent copy with a new id and " (Copy)" suffix', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore
+      .getState()
+      .saveStrategy({ name: 'My Loop', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+
+    const duplicateId = useLoopBuilderStore.getState().duplicateStrategy(id);
+    expect(duplicateId).not.toBeNull();
+    expect(duplicateId).not.toBe(id);
+
+    const saved = useLoopBuilderStore.getState().savedStrategies;
+    expect(saved).toHaveLength(2);
+    const duplicate = saved.find((strategy) => strategy.id === duplicateId);
+    expect(duplicate?.name).toBe('My Loop (Copy)');
+  });
+
+  it('duplicateStrategy returns null for an unknown id', () => {
+    const result = useLoopBuilderStore.getState().duplicateStrategy('does-not-exist');
+    expect(result).toBeNull();
+  });
+
+  it('deleteStrategy removes the matching record and clears selectedStrategyId when it matches', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore
+      .getState()
+      .saveStrategy({ name: 'My Loop', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+    useLoopBuilderStore.setState({ selectedStrategyId: id });
+
+    useLoopBuilderStore.getState().deleteStrategy(id);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.savedStrategies).toEqual([]);
+    expect(state.selectedStrategyId).toBeNull();
   });
 });
 
