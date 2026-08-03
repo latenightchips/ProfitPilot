@@ -37,6 +37,10 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * change / Borrow APR — no RHF/Zod, since M7-015 names no Requirements
  * section calling for validated form input, unlike M7-008's Loop
  * Strategy Controls).
+ *
+ * **`overflow-x-auto` + `tabIndex={0}` wrapper (M7-039/M7-040, Batch
+ * 7)** — the same fix, and the same reasoning, as
+ * `ExitPriceSensitivity.tsx`'s own header comment documents.
  */
 type PresetId = 'priceDecline' | 'rateIncrease' | 'combined' | 'custom';
 
@@ -166,59 +170,62 @@ export function LoopScenarioSensitivity({ portfolio }: { portfolio: ApplicationP
       )}
 
       {sensitivityResult !== null && activePreset !== null && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-muted-foreground">
-              <th scope="col" className="py-1">
-                Metric
-              </th>
-              <th scope="col" className="py-1">
-                Proposed Loop
-              </th>
-              <th scope="col" className="py-1">
-                Under Stress
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="py-1 text-muted-foreground">Health Factor</td>
-              <td className="py-1 text-foreground">
-                {formatHealthFactor(sensitivityResult.baseline.healthFactor)}
-              </td>
-              <td className="py-1 text-foreground">
-                {formatHealthFactor(sensitivityResult.scenario.healthFactor)}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1 text-muted-foreground">Liquidation Distance</td>
-              <td className="py-1 text-foreground">
-                {formatPercent(sensitivityResult.baseline.liquidationDistance)}
-              </td>
-              <td className="py-1 text-foreground">
-                {formatPercent(sensitivityResult.scenario.liquidationDistance)}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1 text-muted-foreground">Equity</td>
-              <td className="py-1 text-foreground">
-                {formatCurrency(sensitivityResult.baseline.equity)}
-              </td>
-              <td className="py-1 text-foreground">
-                {formatCurrency(sensitivityResult.scenario.equity)}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1 text-muted-foreground">Debt Cost</td>
-              <td className="py-1 text-foreground">
-                {formatCurrency(sensitivityResult.baseline.debtCost)}
-              </td>
-              <td className="py-1 text-foreground">
-                {formatCurrency(sensitivityResult.scenario.debtCost)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="overflow-x-auto" tabIndex={0}>
+          <table className="w-full min-w-[480px] text-sm">
+            <caption className="sr-only">Loop scenario sensitivity</caption>
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th scope="col" className="py-1">
+                  Metric
+                </th>
+                <th scope="col" className="py-1">
+                  Proposed Loop
+                </th>
+                <th scope="col" className="py-1">
+                  Under Stress
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="py-1 text-muted-foreground">Health Factor</td>
+                <td className="py-1 text-foreground">
+                  {formatHealthFactor(sensitivityResult.baseline.healthFactor)}
+                </td>
+                <td className="py-1 text-foreground">
+                  {formatHealthFactor(sensitivityResult.scenario.healthFactor)}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-1 text-muted-foreground">Liquidation Distance</td>
+                <td className="py-1 text-foreground">
+                  {formatPercent(sensitivityResult.baseline.liquidationDistance)}
+                </td>
+                <td className="py-1 text-foreground">
+                  {formatPercent(sensitivityResult.scenario.liquidationDistance)}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-1 text-muted-foreground">Equity</td>
+                <td className="py-1 text-foreground">
+                  {formatCurrency(sensitivityResult.baseline.equity)}
+                </td>
+                <td className="py-1 text-foreground">
+                  {formatCurrency(sensitivityResult.scenario.equity)}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-1 text-muted-foreground">Debt Cost</td>
+                <td className="py-1 text-foreground">
+                  {formatCurrency(sensitivityResult.baseline.debtCost)}
+                </td>
+                <td className="py-1 text-foreground">
+                  {formatCurrency(sensitivityResult.scenario.debtCost)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

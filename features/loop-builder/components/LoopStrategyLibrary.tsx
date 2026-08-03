@@ -30,6 +30,12 @@ import type { Portfolio } from '@/types/portfolio';
  * Store, which the already-shared `StrategyAssumptionsPanel` (M7-005)
  * then renders from, the same "do not store what is already derivable"
  * reasoning `stores/loopBuilderStore.ts`'s own header comment documents.
+ *
+ * **Empty-state next action (M7-037 "Strategy Loading and Empty
+ * States", Batch 7)**: the bare "No strategies saved yet." left the
+ * task's own DoD ("provides a clear next action") unmet — a first-time
+ * user had no indication of what to do about it. Now names the real
+ * control that gets a strategy here (Save Strategy, in this same route).
  */
 function driftNotice(
   saved: { portfolioId: string; portfolioUpdatedAt: string },
@@ -54,7 +60,11 @@ export function LoopStrategyLibrary({ portfolio }: { portfolio: Portfolio }) {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   if (savedStrategies.length === 0) {
-    return <p className="text-sm text-muted-foreground">No strategies saved yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No strategies saved yet. Configure a strategy above and use Save Strategy to see it here.
+      </p>
+    );
   }
 
   const sorted = sortByNewest(savedStrategies);

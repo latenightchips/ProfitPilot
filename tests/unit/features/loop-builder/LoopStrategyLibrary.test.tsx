@@ -67,10 +67,13 @@ beforeEach(() => {
   useLoopBuilderStore.setState(INITIAL_STATE);
 });
 
-describe('LoopStrategyLibrary — empty state', () => {
-  it('shows a message when no strategies are saved', () => {
+describe('LoopStrategyLibrary — empty state (M7-037)', () => {
+  it('shows a message and a clear next action when no strategies are saved', () => {
     render(<LoopStrategyLibrary portfolio={fakePortfolio()} />);
-    expect(screen.getByText('No strategies saved yet.')).toBeInTheDocument();
+    expect(screen.getByText(/No strategies saved yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Configure a strategy above and use Save Strategy/),
+    ).toBeInTheDocument();
   });
 });
 

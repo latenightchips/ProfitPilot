@@ -138,3 +138,35 @@ describe('ExitPlannerPage — active portfolio (Include items)', () => {
     expect(screen.getByText('Export Plan')).toBeInTheDocument();
   });
 });
+
+describe('ExitPlannerPage — error recovery (M7-038)', () => {
+  it('shows StrategyErrorBanner with the real Engine error message when status is error', () => {
+    selectActivePortfolio();
+    useExitPlannerStore.setState({
+      status: 'error',
+      errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
+    });
+
+    render(<ExitPlannerPage />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
+  });
+
+  it('keeps the last valid Full Exit Result visible underneath the error banner', () => {
+    const portfolio = selectActivePortfolio();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+    expect(useExitPlannerStore.getState().currentResult).not.toBeNull();
+
+    const { rerender } = render(<ExitPlannerPage />);
+    expect(screen.getByText('Full Exit Result')).toBeInTheDocument();
+
+    useExitPlannerStore.setState({
+      status: 'error',
+      errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
+    });
+    rerender(<ExitPlannerPage />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
+    expect(screen.getByText('Full Exit Result')).toBeInTheDocument();
+  });
+});

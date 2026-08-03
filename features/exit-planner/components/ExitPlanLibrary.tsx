@@ -20,6 +20,10 @@ import type { Portfolio } from '@/types/portfolio';
  * here — M7-029 names no such Requirement, the same "do not invent
  * scope beyond what the task asks for" discipline
  * `LoopStrategyLibrary.tsx`'s own header comment already applies.
+ *
+ * **Empty-state next action (M7-037 "Strategy Loading and Empty
+ * States", Batch 7)** — the same fix as `LoopStrategyLibrary.tsx`'s own,
+ * naming the real control (Save Plan, in this same route).
  */
 function driftNotice(
   saved: { portfolioId: string; portfolioUpdatedAt: string },
@@ -44,7 +48,11 @@ export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   if (savedPlans.length === 0) {
-    return <p className="text-sm text-muted-foreground">No exit plans saved yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No exit plans saved yet. Configure an exit target above and use Save Plan to see it here.
+      </p>
+    );
   }
 
   const sorted = sortByNewest(savedPlans);

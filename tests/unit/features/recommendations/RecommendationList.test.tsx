@@ -8,13 +8,31 @@ import {
   type RecommendationCenterState,
   useRecommendationCenterStore,
 } from '@/stores/recommendationCenterStore';
+import type { Portfolio } from '@/types/portfolio';
 
 /**
  * Recommendation List — 06_TASKS.md M7-032. Group by
  * Critical/High/Medium/Informational, filter by category. DoD:
  * "Ordering is deterministic and consistent across sessions." Also
- * exercises M7-035 (Acknowledgement) row interactions.
+ * exercises M7-035 (Acknowledgement) row interactions, M7-037's idle
+ * empty state, and M7-038's error recovery (`StrategyErrorBanner`).
  */
+const PORTFOLIO: Portfolio = {
+  id: 'portfolio-1',
+  name: 'Test Portfolio',
+  baseCurrency: 'USD',
+  collateral: { asset: 'BTC', quantity: 2 },
+  debt: { asset: 'USDC', balance: 20000 },
+  market: { btcPriceUsd: 50000 },
+  protocol: { maxLoanToValue: 0.75, liquidationThreshold: 0.8, borrowApr: 0.05, supplyApr: 0.02 },
+  settings: {},
+  archivedAt: null,
+  marketUpdatedAt: '2026-01-01T00:00:00.000Z',
+  protocolUpdatedAt: '2026-01-01T00:00:00.000Z',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
 const INITIAL_STATE = {
   status: 'idle' as const,
   portfolioId: null,
@@ -76,26 +94,53 @@ function setReady(overrides: Partial<RecommendationCenterState> = {}) {
   });
 }
 
-describe('RecommendationList — status gates', () => {
-  it('renders nothing before any recalculation has run', () => {
-    const { container } = render(<RecommendationList />);
-    expect(container).toBeEmptyDOMElement();
+describe('RecommendationList — status gates (M7-037 loading/empty states)', () => {
+  it('shows a real "preparing" message before any recalculation has run', () => {
+    render(<RecommendationList portfolio={PORTFOLIO} />);
+    expect(screen.getByText('Preparing recommendations…')).toBeInTheDocument();
   });
 
   it('shows a real message when no target Health Factor is configured', () => {
     useRecommendationCenterStore.setState({ ...INITIAL_STATE, status: 'noTarget' });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
     expect(screen.getByText(/No target Health Factor is configured/)).toBeInTheDocument();
   });
+});
 
-  it('shows the real Engine error message on failure', () => {
+describe('RecommendationList — error recovery (M7-038)', () => {
+  it('shows the real Engine error via StrategyErrorBanner, with recovery actions, when no prior result exists', () => {
     useRecommendationCenterStore.setState({
       ...INITIAL_STATE,
       status: 'error',
+      portfolioId: 'portfolio-1',
       errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
     });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
+
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
+    expect(screen.getByRole('link', { name: /Return to Portfolio/ })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
+    expect(screen.getByRole('button', { name: 'Download recovery copy' })).toBeInTheDocument();
+  });
+
+  it('restores the last valid recommendations alongside the error banner', () => {
+    useRecommendationCenterStore.setState({
+      ...INITIAL_STATE,
+      status: 'error',
+      portfolioId: 'portfolio-1',
+      actions: ACTIONS,
+      errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
+    expect(
+      screen.getByText(
+        'Current debt exceeds the target debt required to reach the requested Health Factor.',
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -107,7 +152,7 @@ describe('RecommendationList — unavailable categories', () => {
     ['leverage', /conflict #29/],
   ] as const)('shows a real, traceable reason for the %s filter', (category, expected) => {
     setReady({ categoryFilter: category });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
     expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
@@ -116,7 +161,7 @@ describe('RecommendationList — unavailable categories', () => {
 describe('RecommendationList — real recommendations, grouping and filtering', () => {
   it('shows both real recommendations under the same severity group when both share a Decision Priority tier', () => {
     setReady();
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     expect(screen.getByRole('heading', { name: 'High' })).toBeInTheDocument();
     expect(
@@ -131,7 +176,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('filters to only the Debt category', () => {
     setReady({ categoryFilter: 'debt' });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     expect(screen.getByText(/Current debt exceeds/)).toBeInTheDocument();
     expect(screen.queryByText(/Current collateral is insufficient/)).not.toBeInTheDocument();
@@ -139,7 +184,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('filters to only the Collateral category', () => {
     setReady({ categoryFilter: 'collateral' });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     expect(screen.queryByText(/Current debt exceeds/)).not.toBeInTheDocument();
     expect(screen.getByText(/Current collateral is insufficient/)).toBeInTheDocument();
@@ -147,7 +192,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('renders items in a fixed, deterministic order (repayment before additionalCollateral within the same severity group)', () => {
     setReady();
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     const rows = screen.getAllByRole('button', { name: /High · Maintain Target Health Factor/ });
     expect(rows[0]).toHaveTextContent('Current debt exceeds');
@@ -159,7 +204,7 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
   it('acknowledging an item moves it out of the active groups and into the Acknowledged section', async () => {
     const user = userEvent.setup();
     setReady();
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     const acknowledgeButtons = screen.getAllByRole('button', { name: 'Acknowledge' });
     expect(acknowledgeButtons).toHaveLength(2);
@@ -177,7 +222,7 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
         'portfolio-1': { repayment: { ...ACTIONS.repayment.relevantValues } },
       },
     });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     expect(screen.getByRole('heading', { name: 'Acknowledged' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Un-acknowledge' }));
@@ -193,7 +238,7 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
         'portfolio-1': { repayment: { ...ACTIONS.repayment.relevantValues } },
       },
     });
-    render(<RecommendationList />);
+    render(<RecommendationList portfolio={PORTFOLIO} />);
 
     expect(screen.getByText(/No active recommendations in this category/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Acknowledged' })).toBeInTheDocument();

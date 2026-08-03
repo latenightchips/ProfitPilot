@@ -63,11 +63,22 @@ describe('Loop Builder Store independence (M7-007 DoD)', () => {
 });
 
 describe('setSettings', () => {
-  it('stores the settings and clears any prior result', () => {
-    useLoopBuilderStore.setState({ currentResult: { viable: true } as never });
+  it('stores the settings without clearing a prior result (M7-038 "Restore last valid result")', () => {
+    const priorResult = { viable: true } as never;
+    useLoopBuilderStore.setState({ currentResult: priorResult });
     useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
     expect(useLoopBuilderStore.getState().settings).toEqual(VALID_SETTINGS);
-    expect(useLoopBuilderStore.getState().currentResult).toBeNull();
+    expect(useLoopBuilderStore.getState().currentResult).toBe(priorResult);
+  });
+
+  it('clears sensitivityResult/sensitivityErrors — invalidated by any settings change', () => {
+    useLoopBuilderStore.setState({
+      sensitivityResult: { baseline: {} } as never,
+      sensitivityErrors: [{ category: 'calculation', code: 'X', message: 'x' }],
+    });
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    expect(useLoopBuilderStore.getState().sensitivityResult).toBeNull();
+    expect(useLoopBuilderStore.getState().sensitivityErrors).toEqual([]);
   });
 });
 
@@ -107,7 +118,7 @@ describe('runLoopStrategy', () => {
     expect(finding?.suggestedResponse.length).toBeGreaterThan(0);
   });
 
-  it('clears currentResult and lastMetadata, and preserves errors, on a genuine Engine failure', () => {
+  it('sets status/errors on a genuine Engine failure, with no prior result to preserve', () => {
     const invalidPortfolio: ApplicationPortfolio = {
       ...validPortfolio(),
       collateral: { asset: 'BTC', quantity: -1 },
@@ -121,6 +132,28 @@ describe('runLoopStrategy', () => {
     expect(state.currentResult).toBeNull();
     expect(state.lastMetadata).toBeNull();
     expect(state.warnings).toEqual([]);
+  });
+
+  it('preserves a real prior valid result and its metadata/warnings across a subsequent failure (M7-038 "Restore last valid result")', () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const validState = useLoopBuilderStore.getState();
+    expect(validState.currentResult).not.toBeNull();
+    expect(validState.lastMetadata).not.toBeNull();
+
+    const invalidPortfolio: ApplicationPortfolio = {
+      ...validPortfolio(),
+      collateral: { asset: 'BTC', quantity: -1 },
+    };
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(invalidPortfolio);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.currentResult).toEqual(validState.currentResult);
+    expect(state.lastMetadata).toEqual(validState.lastMetadata);
+    expect(state.warnings).toEqual(validState.warnings);
   });
 
   it('applies maxLoanToValueOverride/borrowAprOverride through to the real Service call', () => {

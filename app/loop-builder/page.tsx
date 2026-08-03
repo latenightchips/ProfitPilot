@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
+import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
 import {
   ApplyLoopAsSimulation,
@@ -61,6 +62,21 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * placed on this same route since it is the one place a Loop Builder
  * result is ever shown" reasoning `app/simulation/page.tsx` already
  * established for its own later-added Simulation Workspace sections.
+ *
+ * **`StrategyErrorBanner` (M7-038, Batch 7)** renders at the top of the
+ * results column on `status === 'error'` — `stores/loopBuilderStore.ts`'s
+ * own `runLoopStrategy` failure branch no longer clears `currentResult`,
+ * so the last valid Results Summary/Loop Steps/etc. stay visible
+ * underneath it, stale but real, rather than the page reverting to a
+ * blank state.
+ *
+ * **`min-w-0` on the content column (M7-039, Batch 7)** — a real, found
+ * CSS bug: `<main>`'s own `min-w-0` (Milestone 5 Batch 12) does not
+ * cascade through nested flex containers, so this column's own wide
+ * child (`LoopStepTable`'s `min-w-[640px]` table) forced the whole page
+ * to overflow horizontally at mobile widths even though the table
+ * itself already sits in its own `overflow-x-auto` wrapper. Each nested
+ * flex item needs its own `min-w-0`.
  */
 export default function LoopBuilderPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -70,6 +86,8 @@ export default function LoopBuilderPage() {
   const lastMetadata = useLoopBuilderStore((state) => state.lastMetadata);
   const warnings = useLoopBuilderStore((state) => state.warnings);
   const settings = useLoopBuilderStore((state) => state.settings);
+  const status = useLoopBuilderStore((state) => state.status);
+  const errors = useLoopBuilderStore((state) => state.errors);
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,7 +129,14 @@ export default function LoopBuilderPage() {
             </div>
           </aside>
 
-          <div className="flex flex-1 flex-col gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-6">
+            {status === 'error' && (
+              <StrategyErrorBanner
+                errors={errors}
+                portfolio={record.portfolio}
+                retryHint="Adjust your strategy inputs to try again."
+              />
+            )}
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Current Portfolio Baseline</h2>
               <StrategyAssumptionsPanel

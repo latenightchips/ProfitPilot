@@ -48,7 +48,11 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * dedicated mobile layout pass is M7-039's own later, larger task
  * ("Implement Responsive Strategy Layouts," Batch 7); this satisfies
  * M7-012's own narrower Include item now, without pre-empting that
- * task's broader scope.
+ * task's broader scope. `tabIndex={0}` on the wrapper (added Batch 7,
+ * M7-040) fixes the same axe-core `scrollable-region-focusable`
+ * violation `ExitPriceSensitivity.tsx`'s own header comment documents
+ * finding on its own, newer `overflow-x-auto` wrapper — applied here
+ * defensively, since this wrapper shares the identical structural risk.
  *
  * **"Expandable details"**: a native `<details>`/`<summary>` disclosure
  * per row, revealing `availableBorrow`/`loopCapital`/
@@ -72,7 +76,7 @@ export function LoopStepTable() {
   const { steps } = currentResult.strategy;
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" tabIndex={0}>
       <table className="w-full min-w-[640px] text-sm">
         <caption className="sr-only">Loop strategy steps</caption>
         <thead>

@@ -106,7 +106,7 @@ export default function RecommendationsPage() {
               className="flex flex-1 flex-col gap-2 rounded-md border border-border p-4"
             >
               <h2 className="text-sm font-medium text-foreground">Recommendations</h2>
-              <RecommendationList />
+              <RecommendationList portfolio={record.portfolio} />
             </section>
 
             <section

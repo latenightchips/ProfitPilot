@@ -207,7 +207,7 @@ describe('runExitCalculation', () => {
     expect(partialRepaymentSuggestion).not.toBe(targetDebtBalanceSuggestion);
   });
 
-  it('clears currentResult/lastMetadata and populates errors on a genuine Engine failure', () => {
+  it('sets status/errors on a genuine Engine failure, with no prior result to preserve', () => {
     const invalidPortfolio: ApplicationPortfolio = {
       ...validPortfolio(),
       collateral: { asset: 'BTC', quantity: -1 },
@@ -221,6 +221,26 @@ describe('runExitCalculation', () => {
     expect(state.currentResult).toBeNull();
     expect(state.lastMetadata).toBeNull();
     expect(state.warnings).toEqual([]);
+  });
+
+  it('preserves a real prior valid result across a subsequent failure for the same exit type (M7-038 "Restore last valid result")', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const validState = useExitPlannerStore.getState();
+    expect(validState.currentResult).not.toBeNull();
+    expect(validState.lastMetadata).not.toBeNull();
+
+    const invalidPortfolio: ApplicationPortfolio = {
+      ...validPortfolio(),
+      collateral: { asset: 'BTC', quantity: -1 },
+    };
+    useExitPlannerStore.getState().runExitCalculation(invalidPortfolio);
+
+    const state = useExitPlannerStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.currentResult).toEqual(validState.currentResult);
+    expect(state.lastMetadata).toEqual(validState.lastMetadata);
   });
 });
 

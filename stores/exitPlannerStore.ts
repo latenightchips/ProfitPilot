@@ -336,13 +336,16 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       const result = planExit(portfolio, target, SOURCE_STATUS, targetInputs?.scenarioBtcPriceUsd);
 
       if (!result.ok) {
-        set({
-          status: 'error',
-          errors: result.errors,
-          currentResult: null,
-          lastMetadata: null,
-          warnings: [],
-        });
+        // `currentResult`/`lastMetadata`/`warnings` are deliberately left
+        // untouched — M7-038 "Restore last valid result," the same fix
+        // `stores/loopBuilderStore.ts`'s own `runLoopStrategy` applies.
+        // `setTargetInputs` (below) already never touched `currentResult`
+        // itself, so no companion fix is needed there the way
+        // `loopBuilderStore.ts`'s own `setSettings` needed one.
+        // `setExitType` deliberately still nulls `currentResult` — a
+        // genuine semantic jump to a different exit type has no result
+        // yet, unlike an incremental target-input edit.
+        set({ status: 'error', errors: result.errors });
         return;
       }
 

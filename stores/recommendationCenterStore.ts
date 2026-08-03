@@ -205,11 +205,17 @@ export const useRecommendationCenterStore = create<
     const result = calculateTargetHealthFactorActions(portfolio, target, SOURCE_STATUS);
 
     if (!result.ok) {
+      // `actions` preserves the last valid recommendations when
+      // recalculating the *same* portfolio (M7-038 "Restore last valid
+      // result") — the same `portfolioChanged` guard `selectedItemId`
+      // already uses. Only nulled on a genuine portfolio *switch* to a
+      // different, already-broken portfolio, where a stale result from a
+      // different portfolio would be misleading rather than useful.
       set({
         status: 'error',
         portfolioId: portfolio.id,
         targetHealthFactor: target,
-        actions: null,
+        actions: portfolioChanged ? null : get().actions,
         errors: result.errors,
         lastMetadata: result.metadata,
         selectedItemId: portfolioChanged ? null : get().selectedItemId,

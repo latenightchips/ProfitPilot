@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
+import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
 import {
   ExitFeasibilityAnalysis,
@@ -61,6 +62,11 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * task, placed on this same route since it is the one place an exit
  * plan result is ever shown" reasoning `app/loop-builder/page.tsx`
  * already established for its own later-added Batch 3 sections.
+ *
+ * **`StrategyErrorBanner` (M7-038, Batch 7)** and **`min-w-0` on the
+ * content column (M7-039, Batch 7)** — the same fixes, and the same
+ * reasoning, as `app/loop-builder/page.tsx`'s own header comment
+ * documents for its identical additions.
  */
 export default function ExitPlannerPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -70,6 +76,8 @@ export default function ExitPlannerPage() {
   const lastMetadata = useExitPlannerStore((state) => state.lastMetadata);
   const warnings = useExitPlannerStore((state) => state.warnings);
   const currentResult = useExitPlannerStore((state) => state.currentResult);
+  const status = useExitPlannerStore((state) => state.status);
+  const errors = useExitPlannerStore((state) => state.errors);
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,7 +106,14 @@ export default function ExitPlannerPage() {
             </div>
           </aside>
 
-          <div className="flex flex-1 flex-col gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-6">
+            {status === 'error' && (
+              <StrategyErrorBanner
+                errors={errors}
+                portfolio={record.portfolio}
+                retryHint="Adjust your exit target to try again."
+              />
+            )}
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Current Portfolio Baseline</h2>
               <StrategyAssumptionsPanel

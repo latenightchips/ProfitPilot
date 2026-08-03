@@ -169,7 +169,13 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
     ...INITIAL_STATE,
 
     setSettings: (settings) => {
-      set({ settings, currentResult: null, sensitivityResult: null, sensitivityErrors: [] });
+      // `currentResult` is deliberately left untouched — M7-038 "Restore
+      // last valid result." Every real caller (`LoopStrategyControls.tsx`'s
+      // debounced handler, `LoopPresets.tsx`) calls `runLoopStrategy`
+      // immediately after this, which either overwrites `currentResult`
+      // with a real new value on success or, on failure, now preserves
+      // whatever was here — see `runLoopStrategy`'s own comment below.
+      set({ settings, sensitivityResult: null, sensitivityErrors: [] });
     },
 
     runLoopStrategy: (portfolio) => {
@@ -180,13 +186,16 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
       const result = planLoopStrategy(portfolio, settings, SOURCE_STATUS);
 
       if (!result.ok) {
-        set({
-          status: 'error',
-          errors: result.errors,
-          currentResult: null,
-          lastMetadata: null,
-          warnings: [],
-        });
+        // `currentResult`/`lastMetadata`/`warnings` are deliberately left
+        // untouched — M7-038 "Restore last valid result." A failed
+        // calculation only updates `status`/`errors`; whatever the last
+        // successful `planLoopStrategy` call produced (or `null`, if
+        // there never was one) stays exactly as it was, so
+        // `app/loop-builder/page.tsx`'s existing result section keeps
+        // showing it — stale, but real — underneath the new
+        // `StrategyErrorBanner`, rather than the calculation silently
+        // reverting to a blank "not configured" state.
+        set({ status: 'error', errors: result.errors });
         return;
       }
 

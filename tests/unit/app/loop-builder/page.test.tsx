@@ -126,3 +126,42 @@ describe('LoopBuilderPage — active portfolio (Include items)', () => {
     expect(useLoopBuilderStore.getState().warnings.length).toBeGreaterThan(0);
   });
 });
+
+describe('LoopBuilderPage — error recovery (M7-038)', () => {
+  it('shows StrategyErrorBanner with the real Engine error message when status is error', () => {
+    selectActivePortfolio();
+    useLoopBuilderStore.setState({
+      status: 'error',
+      errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
+    });
+
+    render(<LoopBuilderPage />);
+    const alerts = screen.getAllByRole('alert');
+    expect(
+      alerts.some((alert) => alert.textContent?.includes('Invalid collateral quantity.')),
+    ).toBe(true);
+  });
+
+  it('keeps the last valid Loop Steps result visible underneath the error banner', () => {
+    const portfolio = selectActivePortfolio();
+    useLoopBuilderStore.getState().setSettings({
+      targetBorrowPercentage: 0.5,
+      maxLoops: 3,
+      minHealthFactor: 1.1,
+    });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult).not.toBeNull();
+
+    useLoopBuilderStore.setState({
+      status: 'error',
+      errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
+    });
+
+    render(<LoopBuilderPage />);
+    const alerts = screen.getAllByRole('alert');
+    expect(
+      alerts.some((alert) => alert.textContent?.includes('Invalid collateral quantity.')),
+    ).toBe(true);
+    expect(screen.getByRole('table', { name: 'Loop strategy steps' })).toBeInTheDocument();
+  });
+});

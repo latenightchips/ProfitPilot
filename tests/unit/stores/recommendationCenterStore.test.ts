@@ -92,6 +92,38 @@ describe('recalculate — a real target', () => {
     expect(state.actions).toBeNull();
     expect(state.errors.length).toBeGreaterThan(0);
   });
+
+  it('preserves a real prior valid result for the same portfolio across a subsequent failure (M7-038 "Restore last valid result")', () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    const validState = useRecommendationCenterStore.getState();
+    expect(validState.actions).not.toBeNull();
+
+    useRecommendationCenterStore
+      .getState()
+      .recalculate(portfolioFixture({ collateral: { asset: 'BTC', quantity: -1 } }));
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.actions).toEqual(validState.actions);
+  });
+
+  it('clears actions when a failure follows a switch to a different, already-broken portfolio', () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    expect(useRecommendationCenterStore.getState().actions).not.toBeNull();
+
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        id: 'portfolio-2',
+        collateral: { asset: 'BTC', quantity: -1 },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.portfolioId).toBe('portfolio-2');
+    expect(state.actions).toBeNull();
+  });
 });
 
 describe('setCategoryFilter / selectItem', () => {

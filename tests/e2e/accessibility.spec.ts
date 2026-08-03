@@ -339,3 +339,184 @@ test('Cover: Save Scenario form error/success messages are announced via role="a
   await page.getByRole('button', { name: 'Save Scenario' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
 });
+
+/**
+ * Loop Builder / Exit Planner / Recommendation Center — 06_TASKS.md
+ * M7-040 ("Complete Strategy Accessibility Pass"). Review: "Form labels,
+ * Keyboard navigation, Focus management, Warnings, Tables, Expandable
+ * details, Status announcements, Color-independent risk communication."
+ * DoD: "Strategy tools meet the accessibility standards in the Build
+ * Guide" — the same WCAG AA target established above.
+ *
+ * **Real, found-not-assumed violation: `scrollable-region-focusable`
+ * (WCAG 2.1.1/2.1.3) on `ExitPriceSensitivity.tsx`'s new
+ * `overflow-x-auto` wrapper (M7-039, this same batch).** A scrollable
+ * region with no focusable content of its own is unreachable via
+ * keyboard/Safari. Fixed with `tabIndex={0}`, and applied defensively to
+ * `LoopScenarioSensitivity.tsx`'s own new wrapper and
+ * `LoopStepTable.tsx`'s pre-existing one — see each component's own
+ * header comment.
+ *
+ * **`status: 'error'` (the `StrategyErrorBanner`, M7-038) is only
+ * genuinely reachable via real UI input for Exit Planner, not Loop
+ * Builder or Recommendation Center** — confirmed by direct source
+ * inspection, not assumed: `validateLoopStrategySafety`'s own starting-
+ * Health-Factor gate and `calculateRepaymentRecommendation`/
+ * `calculateAdditionalCollateralRecommendation` all absorb a zero-
+ * collateral position into a real `viable: false`/"no action needed"
+ * *success* result (data, not a thrown Engine failure) before ever
+ * reaching a genuinely failing calculation; negative collateral (the
+ * only input that *would* fail them) is blocked by
+ * `collateralPositionSchema`'s own `nonnegative()` at the Portfolio
+ * form. Exit Planner's own `calculateExitPosition` has a real, UI-
+ * reachable failure mode instead: a Target BTC Price low enough that the
+ * required BTC sale exceeds actual holdings returns a genuine
+ * `INSUFFICIENT_COLLATERAL` Engine error — used below for the one error-
+ * state axe scan this section runs against a real, not synthetic,
+ * failure. Loop Builder's and Recommendation Center's own error-banner
+ * rendering is already covered by `StrategyErrorBanner.test.tsx` (shared
+ * by all three) and each route's own component/page-level unit tests
+ * (direct Store `setState`), the correct level for a state this batch's
+ * own source-level research shows is provably unreachable through the
+ * real UI today — the same "documented, not force-tested" precedent
+ * `RecommendationList.tsx`'s own header comment already establishes for
+ * its analogous unreachable branches.
+ */
+async function createPortfolioAndOpenLoopBuilder(page: Page, name: string) {
+  await createPortfolio(page, { name });
+  await page.locator('a', { hasText: 'Loop Builder' }).click();
+  await page.waitForURL('**/loop-builder');
+}
+
+async function createPortfolioAndOpenExitPlanner(page: Page, name: string) {
+  await createPortfolio(page, { name });
+  await page.locator('a', { hasText: 'Exit Planner' }).click();
+  await page.waitForURL('**/exit-planner');
+}
+
+async function createPortfolioAndOpenRecommendations(page: Page, name: string) {
+  await createPortfolio(page, { name, targetHealthFactor: '8' });
+  await page.locator('a', { hasText: 'Recommendations' }).click();
+  await page.waitForURL('**/recommendations');
+}
+
+test('Cover: no WCAG AA violations — Loop Builder, viable strategy result', async ({ page }) => {
+  await createPortfolioAndOpenLoopBuilder(page, 'A11y Loop Builder Portfolio');
+  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await page.waitForTimeout(300);
+  await expect(page.getByText('Loop Steps')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Exit Planner, Full Exit result with price sensitivity', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenExitPlanner(page, 'A11y Exit Planner Portfolio');
+  await page.getByRole('button', { name: 'Full Exit' }).click();
+  await page.waitForTimeout(200);
+  await page.getByRole('button', { name: 'Run Price Sensitivity' }).click();
+  await page.waitForTimeout(200);
+  await expect(page.getByText('Full Exit Result')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Exit Planner, StrategyErrorBanner (real INSUFFICIENT_COLLATERAL failure)', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenExitPlanner(page, 'A11y Exit Planner Error Portfolio');
+  await page.getByRole('button', { name: 'Full Exit' }).click();
+  await page.waitForTimeout(200);
+  // A Target BTC Price low enough that repaying the full debt would
+  // require selling far more BTC than the portfolio holds — a real,
+  // UI-reachable INSUFFICIENT_COLLATERAL Engine failure.
+  await page.getByLabel(/Target BTC Price/).fill('100');
+  await page.waitForTimeout(300);
+  await expect(page.getByText('Unable to calculate this result.')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Recommendation Center, active recommendations', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenRecommendations(page, 'A11y Recommendation Portfolio');
+  await expect(page.getByRole('heading', { name: 'High' })).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Recommendation Center, Detail Panel selected', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenRecommendations(page, 'A11y Recommendation Detail Portfolio');
+  await expect(page.getByRole('heading', { name: 'High' })).toBeVisible();
+  await page
+    .getByRole('button', { name: /Maintain Target Health Factor/ })
+    .first()
+    .click();
+  await page.waitForTimeout(150);
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every interactive Loop Builder control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenLoopBuilder(page, 'A11y Loop Builder Keyboard Portfolio');
+  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await page.waitForTimeout(300);
+
+  const reachableRoles = new Set<string>();
+  for (let i = 0; i < 60; i++) {
+    await page.keyboard.press('Tab');
+    const info = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el === null || el === document.body) return null;
+      return { tag: el.tagName, text: el.textContent?.trim() };
+    });
+    if (info !== null) reachableRoles.add(`${info.tag}:${info.text?.slice(0, 30)}`);
+  }
+
+  const reached = [...reachableRoles].join(' | ');
+  expect(reached).toContain('Save Strategy');
+});
+
+test('Cover: every interactive Exit Planner control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenExitPlanner(page, 'A11y Exit Planner Keyboard Portfolio');
+  await page.getByRole('button', { name: 'Full Exit' }).click();
+  await page.waitForTimeout(200);
+
+  const reachableRoles = new Set<string>();
+  for (let i = 0; i < 60; i++) {
+    await page.keyboard.press('Tab');
+    const info = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el === null || el === document.body) return null;
+      return { tag: el.tagName, text: el.textContent?.trim() };
+    });
+    if (info !== null) reachableRoles.add(`${info.tag}:${info.text?.slice(0, 30)}`);
+  }
+
+  const reached = [...reachableRoles].join(' | ');
+  expect(reached).toContain('Save Plan');
+});
+
+test('Cover: every interactive Recommendation Center control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenRecommendations(page, 'A11y Recommendation Keyboard Portfolio');
+  await expect(page.getByRole('heading', { name: 'High' })).toBeVisible();
+
+  const reachableRoles = new Set<string>();
+  for (let i = 0; i < 60; i++) {
+    await page.keyboard.press('Tab');
+    const info = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el === null || el === document.body) return null;
+      return { tag: el.tagName, text: el.textContent?.trim() };
+    });
+    if (info !== null) reachableRoles.add(`${info.tag}:${info.text?.slice(0, 30)}`);
+  }
+
+  const reached = [...reachableRoles].join(' | ');
+  expect(reached).toContain('Acknowledge');
+});

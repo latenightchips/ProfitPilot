@@ -26,6 +26,15 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * point's own `result.feasible` is `false` (a genuinely reachable case
  * for `healthFactor`/`retainedBtc` targets, whose resolved target debt
  * is price-dependent), never a fabricated number.
+ *
+ * **`overflow-x-auto` + `tabIndex={0}` wrapper (M7-039/M7-040, Batch
+ * 7)** — the same `ScenarioComparison.tsx` (M6-010) horizontal-scroll
+ * pattern `LoopStepTable.tsx` (M7-012) already established, applied
+ * here too: without it, this table forced the whole page to overflow
+ * horizontally at mobile widths. `tabIndex={0}` fixes a real axe-core
+ * `scrollable-region-focusable` violation the scroll container
+ * introduced (WCAG 2.1.1/2.1.3) — a scrollable region with no focusable
+ * content of its own is unreachable via keyboard.
  */
 export function ExitPriceSensitivity({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const exitType = useExitPlannerStore((state) => state.exitType);
@@ -59,54 +68,57 @@ export function ExitPriceSensitivity({ portfolio }: { portfolio: ApplicationPort
       )}
 
       {priceSensitivity !== null && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-muted-foreground">
-              <th scope="col" className="py-1">
-                Scenario
-              </th>
-              <th scope="col" className="py-1">
-                BTC Price
-              </th>
-              <th scope="col" className="py-1">
-                Net Proceeds
-              </th>
-              <th scope="col" className="py-1">
-                BTC Retained
-              </th>
-              <th scope="col" className="py-1">
-                Resulting Equity
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {priceSensitivity.map((point) => (
-              <tr key={point.label}>
-                <td className="py-1 text-muted-foreground">{point.label}</td>
-                <td className="py-1 text-foreground">{formatCurrency(point.priceUsd)}</td>
-                {point.result.feasible &&
-                point.result.transaction !== null &&
-                point.result.after !== null ? (
-                  <>
-                    <td className="py-1 text-foreground">
-                      {formatCurrency(point.result.transaction.repayment)}
-                    </td>
-                    <td className="py-1 text-foreground">
-                      {point.result.transaction.btcRetained.toFixed(8)}
-                    </td>
-                    <td className="py-1 text-foreground">
-                      {formatCurrency(point.result.after.netEquity)}
-                    </td>
-                  </>
-                ) : (
-                  <td colSpan={3} className="py-1 text-destructive">
-                    Infeasible — {point.result.infeasibleReason ?? 'target not achievable.'}
-                  </td>
-                )}
+        <div className="overflow-x-auto" tabIndex={0}>
+          <table className="w-full min-w-[640px] text-sm">
+            <caption className="sr-only">Exit price sensitivity</caption>
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th scope="col" className="py-1">
+                  Scenario
+                </th>
+                <th scope="col" className="py-1">
+                  BTC Price
+                </th>
+                <th scope="col" className="py-1">
+                  Net Proceeds
+                </th>
+                <th scope="col" className="py-1">
+                  BTC Retained
+                </th>
+                <th scope="col" className="py-1">
+                  Resulting Equity
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {priceSensitivity.map((point) => (
+                <tr key={point.label}>
+                  <td className="py-1 text-muted-foreground">{point.label}</td>
+                  <td className="py-1 text-foreground">{formatCurrency(point.priceUsd)}</td>
+                  {point.result.feasible &&
+                  point.result.transaction !== null &&
+                  point.result.after !== null ? (
+                    <>
+                      <td className="py-1 text-foreground">
+                        {formatCurrency(point.result.transaction.repayment)}
+                      </td>
+                      <td className="py-1 text-foreground">
+                        {point.result.transaction.btcRetained.toFixed(8)}
+                      </td>
+                      <td className="py-1 text-foreground">
+                        {formatCurrency(point.result.after.netEquity)}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={3} className="py-1 text-destructive">
+                      Infeasible — {point.result.infeasibleReason ?? 'target not achievable.'}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

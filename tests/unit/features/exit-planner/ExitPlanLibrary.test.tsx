@@ -69,10 +69,13 @@ beforeEach(() => {
   useExitPlannerStore.setState(INITIAL_STATE);
 });
 
-describe('ExitPlanLibrary — empty state', () => {
-  it('shows a message when no plans are saved', () => {
+describe('ExitPlanLibrary — empty state (M7-037)', () => {
+  it('shows a message and a clear next action when no plans are saved', () => {
     render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
-    expect(screen.getByText('No exit plans saved yet.')).toBeInTheDocument();
+    expect(screen.getByText(/No exit plans saved yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Configure an exit target above and use Save Plan/),
+    ).toBeInTheDocument();
   });
 });
 

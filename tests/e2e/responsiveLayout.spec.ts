@@ -209,3 +209,140 @@ test('Cover: Scenario Comparison table scrolls within its own container, not the
   await expect(page.getByRole('columnheader', { name: 'Scenario Charlie' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
+
+/**
+ * Loop Builder / Exit Planner / Recommendation Center — 06_TASKS.md
+ * M7-039 ("Implement Responsive Strategy Layouts"). Requirements: "Step
+ * tables adapt to small screens," "Forms remain usable without
+ * horizontal scrolling." DoD: "All strategy workflows remain functional
+ * on supported screen sizes." Same real-browser, real-viewport
+ * discipline as the Dashboard/Simulation sections above — this is the
+ * only honest way to verify "no horizontal page scrolling."
+ *
+ * A real, found-not-assumed bug this section's own manual verification
+ * caught: the content column on both `app/loop-builder/page.tsx` and
+ * `app/exit-planner/page.tsx` lacked `min-w-0`, so a wide table inside it
+ * (`LoopStepTable.tsx`'s own `min-w-[640px]`) forced the whole page to
+ * overflow horizontally at mobile widths, even though the table itself
+ * already sat in its own `overflow-x-auto` wrapper — `<main>`'s own
+ * `min-w-0` (Milestone 5 Batch 12) does not cascade through nested flex
+ * containers; each nested flex item needs its own. Fixed in both routes.
+ */
+async function createPortfolioAndNavigateTo(page: Page, name: string, navLinkName: string) {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  await fillByLabel(page, 'Portfolio name', name);
+  await fillByLabel(page, 'BTC quantity', '2');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '20000');
+  await fillByLabel(page, 'Current BTC price (USD)', '50000');
+  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
+  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
+  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
+  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: navLinkName, exact: true })
+    .click();
+}
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`Cover: no horizontal page scrolling on the Loop Builder — ${name}`, async ({ page }) => {
+    await createPortfolioAndNavigateTo(page, 'Loop Builder Overflow Check', 'Loop Builder');
+    await page.waitForURL('**/loop-builder');
+    // 0.5 is the form's own default — a genuinely different value is
+    // required to force a real, observable recalculation.
+    await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+    await page.waitForTimeout(400);
+
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+
+    await expect(page.getByRole('heading', { name: 'Loop Builder' })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('Cover: Loop Steps table scrolls within its own container, not the page, at mobile width', async ({
+  page,
+}) => {
+  await createPortfolioAndNavigateTo(page, 'Loop Builder Table Scroll Check', 'Loop Builder');
+  await page.waitForURL('**/loop-builder');
+  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await page.waitForTimeout(400);
+
+  await page.setViewportSize(VIEWPORTS.mobile);
+  await page.waitForTimeout(100);
+
+  const table = page.getByRole('table', { name: 'Loop strategy steps' });
+  await expect(table).toBeVisible();
+  const tableContainer = table.locator('..');
+  const scrollInfo = await tableContainer.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(scrollInfo.scrollWidth).toBeGreaterThan(scrollInfo.clientWidth);
+  await expectNoHorizontalOverflow(page);
+});
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`Cover: no horizontal page scrolling on the Exit Planner — ${name}`, async ({ page }) => {
+    await createPortfolioAndNavigateTo(page, 'Exit Planner Overflow Check', 'Exit Planner');
+    await page.waitForURL('**/exit-planner');
+    await page.getByRole('button', { name: 'Full Exit' }).click();
+    await page.waitForTimeout(200);
+    await page.getByRole('button', { name: 'Run Price Sensitivity' }).click();
+    await page.waitForTimeout(200);
+
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+
+    await expect(page.getByRole('heading', { name: 'Exit Planner' })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('Cover: Exit Price Sensitivity table scrolls within its own container, not the page, at mobile width', async ({
+  page,
+}) => {
+  await createPortfolioAndNavigateTo(page, 'Exit Planner Table Scroll Check', 'Exit Planner');
+  await page.waitForURL('**/exit-planner');
+  await page.getByRole('button', { name: 'Full Exit' }).click();
+  await page.waitForTimeout(200);
+  await page.getByRole('button', { name: 'Run Price Sensitivity' }).click();
+  await page.waitForTimeout(200);
+
+  await page.setViewportSize(VIEWPORTS.mobile);
+  await page.waitForTimeout(100);
+
+  const table = page.getByRole('table', { name: 'Exit price sensitivity' });
+  await expect(table).toBeVisible();
+  const tableContainer = table.locator('..');
+  const scrollInfo = await tableContainer.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(scrollInfo.scrollWidth).toBeGreaterThan(scrollInfo.clientWidth);
+  await expectNoHorizontalOverflow(page);
+});
+
+for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+  test(`Cover: no horizontal page scrolling on the Recommendation Center — ${name}`, async ({
+    page,
+  }) => {
+    await createPortfolioAndNavigateTo(
+      page,
+      'Recommendation Center Overflow Check',
+      'Recommendations',
+    );
+    await page.waitForURL('**/recommendations');
+    await page.waitForTimeout(200);
+
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+
+    await expect(page.getByRole('heading', { name: 'Recommendation Center' })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+}
