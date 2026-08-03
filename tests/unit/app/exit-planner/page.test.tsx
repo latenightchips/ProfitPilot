@@ -11,6 +11,10 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * Exit Planner from the Dashboard and strategy navigation." Include:
  * "Exit target controls, Current portfolio baseline, Exit result, Debt
  * repayment breakdown, Retained BTC, Cash proceeds, Warnings."
+ * Milestone 7 Batch 5 replaces the placeholder Exit Result section with
+ * 3 real components and adds Feasibility Analysis/Price
+ * Sensitivity/Save/Saved Plans/Export — see this route's own header
+ * comment.
  */
 beforeEach(() => {
   usePortfolioStore.setState({
@@ -29,7 +33,10 @@ beforeEach(() => {
     errors: [],
     warnings: [],
     lastMetadata: null,
+    priceSensitivity: null,
+    priceSensitivityErrors: [],
     savedPlans: [],
+    selectedPlanId: null,
   });
 });
 
@@ -75,15 +82,14 @@ describe('ExitPlannerPage — active portfolio (Include items)', () => {
     expect(screen.getByText('Warnings')).toBeInTheDocument();
   });
 
-  it('labels the not-yet-built Exit Result section, citing M7-024/M7-025, without hiding it', () => {
+  it('prompts to configure a target before a calculation has run, not a placeholder', () => {
     selectActivePortfolio();
     render(<ExitPlannerPage />);
-    expect(screen.getByText('Exit Result')).toBeInTheDocument();
-    expect(screen.getByText(/M7-024/)).toBeInTheDocument();
-    expect(screen.getByText(/M7-025/)).toBeInTheDocument();
+    expect(screen.getByText('Configure an exit target to see the result.')).toBeInTheDocument();
+    expect(screen.queryByText(/M7-024/)).not.toBeInTheDocument();
   });
 
-  it('lets a user pick a type and see a real, computed exit result end-to-end', async () => {
+  it('lets a user pick a type and see a real, computed exit result end-to-end, including Full Exit Result', async () => {
     const user = userEvent.setup();
     selectActivePortfolio();
     render(<ExitPlannerPage />);
@@ -92,6 +98,19 @@ describe('ExitPlannerPage — active portfolio (Include items)', () => {
 
     expect(useExitPlannerStore.getState().currentResult).not.toBeNull();
     expect(useExitPlannerStore.getState().currentResult?.feasible).toBe(true);
+    expect(screen.getByText('Full Exit Result')).toBeInTheDocument();
+  });
+
+  it('shows the "not feasible" message, not a crash, for an infeasible target', () => {
+    const portfolio = selectActivePortfolio();
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 999999 });
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+
+    render(<ExitPlannerPage />);
+    expect(
+      screen.getByText('This target is not feasible — see Warnings below.'),
+    ).toBeInTheDocument();
   });
 
   it('renders a Warnings section sourced from the Exit Planner Store specifically', () => {
@@ -107,5 +126,15 @@ describe('ExitPlannerPage — active portfolio (Include items)', () => {
     render(<ExitPlannerPage />);
     expect(screen.getByText('Warnings')).toBeInTheDocument();
     expect(useExitPlannerStore.getState().warnings.length).toBeGreaterThan(0);
+  });
+
+  it('renders all 5 new Milestone 7 Batch 5 sections: Feasibility Analysis, Price Sensitivity, Save Plan, Saved Exit Plans, Export Plan', () => {
+    selectActivePortfolio();
+    render(<ExitPlannerPage />);
+    expect(screen.getByText('Feasibility Analysis')).toBeInTheDocument();
+    expect(screen.getByText('Price Sensitivity')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Save Plan' })).toBeInTheDocument();
+    expect(screen.getByText('Saved Exit Plans')).toBeInTheDocument();
+    expect(screen.getByText('Export Plan')).toBeInTheDocument();
   });
 });

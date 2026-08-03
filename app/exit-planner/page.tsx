@@ -4,7 +4,18 @@ import Link from 'next/link';
 
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
-import { ExitTargetForm, ExitTypeSelector } from '@/features/exit-planner';
+import {
+  ExitFeasibilityAnalysis,
+  ExitPlanExport,
+  ExitPlanLibrary,
+  ExitPriceSensitivity,
+  ExitTargetForm,
+  ExitTypeSelector,
+  FullExitResult,
+  PartialExitResult,
+  SaveExitPlanForm,
+  TargetHealthFactorResult,
+} from '@/features/exit-planner';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -17,44 +28,39 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * navigation."
  *
  * **"Users can access the Exit Planner from the Dashboard and strategy
- * navigation" is already satisfied** — the same two precedents
- * `app/loop-builder/page.tsx`'s own header comment already documents
- * for the identically-shaped M7-006 DoD clause:
- * `features/dashboard/utils/buildQuickActions.ts`'s own Exit Planner
- * Quick Action already links to `/exit-planner`, and `AppSidebar`'s
- * persistent "Exit Planner" link (M1-006, `constants/navigation.ts`) is
- * reachable from every route. No Dashboard or navigation component was
- * touched by this batch.
+ * navigation" is already satisfied** — see this route's own Batch 4
+ * note (unchanged): `buildQuickActions.ts`'s own Exit Planner Quick
+ * Action, `AppSidebar`'s persistent link.
  *
- * **Now a client component**, replacing the M1-006 `PlaceholderPage` —
- * the same first-real-content transition `app/loop-builder/page.tsx`'s
- * own header comment documents for M7-006. Gated on an active
- * portfolio, the same "no portfolio, no strategy to build" reasoning —
- * an exit needs a real starting position to exit from.
+ * **All 7 named Include items now have real content.** "Exit result,"
+ * "Debt repayment breakdown," "Retained BTC," and "Cash proceeds" were
+ * one explicit, labeled placeholder section through Batch 4; Milestone
+ * 7 Batch 5 (M7-024/M7-025/M7-026) replaces it with 3 real, independently-
+ * gated components — see each one's own header comment for exactly
+ * which fields it covers and why.
  *
- * **Of the 7 named Include items, 3 have real content this batch (Exit
- * target controls, Current portfolio baseline, Warnings); 4 remain one
- * explicit, labeled placeholder section (Exit result, Debt repayment
- * breakdown, Retained BTC, Cash proceeds) citing M7-024 ("Implement
- * Full Exit Result") and M7-025 ("Implement Partial Exit Result",
- * Batch 5) — their own dedicated, later tasks.** This mirrors
- * `app/loop-builder/page.tsx`'s own M7-006-era Safety/Cost Analysis
- * placeholders exactly, not a new pattern; the 4 items are grouped into
- * one section rather than four, since all four are facets of the same
- * not-yet-built result display (`ExitPlanResult.transaction`'s own
- * `repayment`/`btcSold`/`btcRetained` fields), not four separate
- * components. **"Warnings" is rendered even though M7-019 does not name
- * a Requirements/DoD text of its own for it** — `stores/exitPlannerStore.ts`
- * (M7-020) already maps a real, computed infeasibility reason into
- * `StrategyWarning[]` this same batch, and leaving it completely
- * unsurfaced would contradict this engagement's own "never let
- * genuinely available data sit unused" discipline, the same reasoning
- * `app/loop-builder/page.tsx`'s own Batch 2 "Warnings" section already
- * applied for Loop.
+ * **`FullExitResult`/`PartialExitResult` are mutually exclusive, chosen
+ * by the *result* (`after.debtValue === 0`), not by which of the 5
+ * exit types was selected — see `FullExitResult.tsx`'s own header
+ * comment.** This route owns the shared "not configured yet"/
+ * "infeasible" messaging once, below, rather than duplicating it
+ * inside both components — a deliberate deviation from
+ * `app/loop-builder/page.tsx`'s own per-component-independence
+ * precedent (Loop's own Safety/Cost/Sensitivity sections are shown
+ * *simultaneously* and independently; Full/Partial Exit Result are
+ * alternative views of the *same* single result, so a single shared
+ * gate avoids showing two different "nothing to show" messages side by
+ * side for one calculation). `TargetHealthFactorResult` renders
+ * additionally, only for that one type, alongside whichever of
+ * Full/Partial also applies.
  *
- * **"Exit target controls" is two components, not one** — `ExitTypeSelector`
- * (M7-021) and `ExitTargetForm` (M7-022), the same one-task-one-component
- * split `LoopPresets.tsx`/`LoopStrategyControls.tsx` already establish.
+ * **Milestone 7 Batch 5 adds 5 more sections** (M7-027 Feasibility
+ * Analysis, M7-028 Price Sensitivity, M7-029 Save/Load, M7-030 Export)
+ * — none named in M7-019's own original 7-item Include list, the same
+ * "surface genuinely available functionality from its own dedicated
+ * task, placed on this same route since it is the one place an exit
+ * plan result is ever shown" reasoning `app/loop-builder/page.tsx`
+ * already established for its own later-added Batch 3 sections.
  */
 export default function ExitPlannerPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -63,6 +69,7 @@ export default function ExitPlannerPage() {
   );
   const lastMetadata = useExitPlannerStore((state) => state.lastMetadata);
   const warnings = useExitPlannerStore((state) => state.warnings);
+  const currentResult = useExitPlannerStore((state) => state.currentResult);
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,14 +109,48 @@ export default function ExitPlannerPage() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Exit Result</h2>
-              <p className="text-sm text-muted-foreground">
-                Not yet implemented — see M7-024 (&ldquo;Implement Full Exit Result&rdquo;) and
-                M7-025 (&ldquo;Implement Partial Exit Result&rdquo;).
-              </p>
+              {currentResult === null ? (
+                <p className="text-sm text-muted-foreground">
+                  Configure an exit target to see the result.
+                </p>
+              ) : !currentResult.feasible ? (
+                <p className="text-sm text-muted-foreground">
+                  This target is not feasible — see Warnings below.
+                </p>
+              ) : (
+                <>
+                  <FullExitResult />
+                  <PartialExitResult />
+                  <TargetHealthFactorResult />
+                </>
+              )}
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Feasibility Analysis</h2>
+              <ExitFeasibilityAnalysis portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Price Sensitivity</h2>
+              <ExitPriceSensitivity portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Warnings</h2>
               <StrategyWarnings warnings={warnings} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Save Plan</h2>
+              <SaveExitPlanForm
+                portfolioId={record.portfolio.id}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Saved Exit Plans</h2>
+              <ExitPlanLibrary portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Export Plan</h2>
+              <ExitPlanExport portfolio={record.portfolio} />
             </section>
           </div>
         </div>

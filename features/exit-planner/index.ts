@@ -5,12 +5,24 @@
  * reasoning shared by all three Milestone 7 feature modules (Dependency
  * list, DoD, the deliberate `state/`/`tests/` omission).
  *
- * **`hooks/`, `services/`, `utils/` still hold only a `.gitkeep`** — no
- * task through this batch has needed them yet. Milestone 7 Batch 4
- * (M7-019–M7-023) adds the first real components (`ExitTypeSelector`,
- * `ExitTargetForm`) and the first real `types/` content
- * (`exitTargetForm.ts`).
+ * **`hooks/`, `services/` still hold only a `.gitkeep`** — no task
+ * through this batch has needed them yet. Milestone 7 Batch 4
+ * (M7-019–M7-023) added the first real components (`ExitTypeSelector`,
+ * `ExitTargetForm`). Milestone 7 Batch 5 (M7-024–M7-030) adds
+ * `FullExitResult`, `PartialExitResult`, `TargetHealthFactorResult`,
+ * `ExitFeasibilityAnalysis`, `ExitPriceSensitivity`, `SaveExitPlanForm`,
+ * `ExitPlanLibrary`, `ExitPlanExport`, and the first real `utils/`
+ * content (`exportExitPlan.ts`).
  */
+export { ExitFeasibilityAnalysis } from './components/ExitFeasibilityAnalysis';
+export { ExitPlanExport } from './components/ExitPlanExport';
+export { ExitPlanLibrary } from './components/ExitPlanLibrary';
+export { ExitPriceSensitivity } from './components/ExitPriceSensitivity';
 export { ExitTargetForm } from './components/ExitTargetForm';
 export { ExitTypeSelector } from './components/ExitTypeSelector';
+export { FullExitResult } from './components/FullExitResult';
+export { PartialExitResult } from './components/PartialExitResult';
+export { SaveExitPlanForm } from './components/SaveExitPlanForm';
+export { TargetHealthFactorResult } from './components/TargetHealthFactorResult';
 export * from './types/exitTargetForm';
+export * from './utils/exportExitPlan';

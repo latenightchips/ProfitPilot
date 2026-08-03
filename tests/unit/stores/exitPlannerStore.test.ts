@@ -17,7 +17,10 @@ const INITIAL_STATE = {
   errors: [],
   warnings: [],
   lastMetadata: null,
+  priceSensitivity: null,
+  priceSensitivityErrors: [],
   savedPlans: [],
+  selectedPlanId: null,
 };
 
 beforeEach(() => {
@@ -189,6 +192,21 @@ describe('runExitCalculation', () => {
     expect(state.warnings[0].suggestedResponse.length).toBeGreaterThan(0);
   });
 
+  it('gives a type-specific suggestedResponse, not one generic sentence for every type (M7-027)', () => {
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 25000 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const partialRepaymentSuggestion = useExitPlannerStore.getState().warnings[0].suggestedResponse;
+
+    useExitPlannerStore.getState().setExitType('targetDebtBalance');
+    useExitPlannerStore.getState().setTargetInputs({ targetDebtBalance: -1 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const targetDebtBalanceSuggestion =
+      useExitPlannerStore.getState().warnings[0].suggestedResponse;
+
+    expect(partialRepaymentSuggestion).not.toBe(targetDebtBalanceSuggestion);
+  });
+
   it('clears currentResult/lastMetadata and populates errors on a genuine Engine failure', () => {
     const invalidPortfolio: ApplicationPortfolio = {
       ...validPortfolio(),
@@ -203,6 +221,204 @@ describe('runExitCalculation', () => {
     expect(state.currentResult).toBeNull();
     expect(state.lastMetadata).toBeNull();
     expect(state.warnings).toEqual([]);
+  });
+});
+
+describe('runPriceSensitivity (M7-028)', () => {
+  it('is a no-op when no exit type has been selected yet', () => {
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+    expect(useExitPlannerStore.getState().priceSensitivity).toBeNull();
+  });
+
+  it('is a no-op when the selected type still needs a required field — reachable at the Store-API level even though the UI never exposes it this way', () => {
+    // The real UI (ExitPriceSensitivity.tsx) only shows its own "Run
+    // Price Sensitivity" button once a `currentResult` already exists,
+    // which itself requires the same target inputs `runExitCalculation`
+    // already resolved successfully — but this Store action has no such
+    // structural guard of its own, so calling it directly with an
+    // incomplete `targetInputs` is a real path through this Store's own
+    // public contract, not a hypothetical.
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+    expect(useExitPlannerStore.getState().priceSensitivity).toBeNull();
+  });
+
+  it('computes 4 real points via the real Exit Planning Service, reusing the same target at each price', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+
+    const points = useExitPlannerStore.getState().priceSensitivity;
+    expect(points).toHaveLength(4);
+    expect(points?.map((point) => point.label)).toEqual([
+      'Current Price',
+      'User Target Price',
+      'Lower-Price Case (-20%)',
+      'Higher-Price Case (+20%)',
+    ]);
+    // Selling at a lower price requires selling more BTC to raise the
+    // same $20,000 repayment for this Full Exit target.
+    const lower = points?.find((point) => point.label.startsWith('Lower'));
+    const higher = points?.find((point) => point.label.startsWith('Higher'));
+    expect(lower?.result.transaction?.btcSold).toBeGreaterThan(
+      higher?.result.transaction?.btcSold ?? 0,
+    );
+  });
+
+  it('carries a genuinely infeasible per-point result through unchanged, rather than dropping it', () => {
+    // A repayment amount larger than the current debt resolves to a
+    // negative target debt balance, price-independently — genuinely
+    // infeasible at every one of the 4 points, not gated out by the
+    // whole feature.
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 25000 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+
+    const points = useExitPlannerStore.getState().priceSensitivity;
+    expect(points).toHaveLength(4);
+    expect(points?.every((point) => point.result.feasible === false)).toBe(true);
+    expect(points?.every((point) => point.result.transaction === null)).toBe(true);
+  });
+
+  it('reflects a real scenarioBtcPriceUsd override as the User Target Price point', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().setTargetInputs({ scenarioBtcPriceUsd: 40000 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+
+    const points = useExitPlannerStore.getState().priceSensitivity;
+    const userTarget = points?.find((point) => point.label === 'User Target Price');
+    expect(userTarget?.priceUsd).toBe(40000);
+  });
+
+  it('never mutates the active portfolio value passed in', () => {
+    const portfolio = validPortfolio();
+    const snapshot = JSON.parse(JSON.stringify(portfolio));
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+    useExitPlannerStore.getState().runPriceSensitivity(portfolio);
+    expect(portfolio).toEqual(snapshot);
+  });
+
+  it('is cleared by setTargetInputs', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
+    expect(useExitPlannerStore.getState().priceSensitivity).not.toBeNull();
+
+    useExitPlannerStore.getState().setTargetInputs({});
+    expect(useExitPlannerStore.getState().priceSensitivity).toBeNull();
+  });
+});
+
+describe('saveExitPlan/loadExitPlan/duplicateExitPlan/deleteExitPlan (M7-029)', () => {
+  it('saveExitPlan returns null and saves nothing without a current result', () => {
+    const id = useExitPlannerStore
+      .getState()
+      .saveExitPlan({ name: 'My Exit', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    expect(id).toBeNull();
+    expect(useExitPlannerStore.getState().savedPlans).toEqual([]);
+  });
+
+  it('saveExitPlan captures a frozen snapshot of exitType/targetInputs/result/warnings/metadata', () => {
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 5000 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+
+    const id = useExitPlannerStore
+      .getState()
+      .saveExitPlan({ name: 'My Exit', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    expect(id).not.toBeNull();
+
+    const saved = useExitPlannerStore.getState().savedPlans[0];
+    expect(saved.name).toBe('My Exit');
+    expect(saved.portfolioId).toBe('p1');
+    expect(saved.portfolioUpdatedAt).toBe('t1');
+    expect(saved.exitType).toBe('partialDebtRepayment');
+    expect(saved.targetInputs).toEqual({ repaymentAmount: 5000 });
+    expect(saved.result).toEqual(useExitPlannerStore.getState().currentResult);
+    expect(saved.metadata).not.toBeNull();
+  });
+
+  it('loadExitPlan restores exitType/targetInputs/result without recalculating', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore
+      .getState()
+      .saveExitPlan({ name: 'My Exit', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+
+    useExitPlannerStore.getState().reset();
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+
+    useExitPlannerStore.setState({
+      savedPlans: [
+        {
+          id,
+          name: 'My Exit',
+          portfolioId: 'p1',
+          portfolioUpdatedAt: 't1',
+          exitType: 'fullExit',
+          targetInputs: {},
+          result: { feasible: true } as never,
+          warnings: [],
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    useExitPlannerStore.getState().loadExitPlan(id);
+
+    const state = useExitPlannerStore.getState();
+    expect(state.exitType).toBe('fullExit');
+    expect(state.targetInputs).toEqual({});
+    expect(state.currentResult).toEqual({ feasible: true });
+    expect(state.selectedPlanId).toBe(id);
+  });
+
+  it('loadExitPlan no-ops for an unknown id', () => {
+    useExitPlannerStore.getState().loadExitPlan('does-not-exist');
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+  });
+
+  it('duplicateExitPlan creates an independent copy with a new id and " (Copy)" suffix', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore
+      .getState()
+      .saveExitPlan({ name: 'My Exit', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+
+    const duplicateId = useExitPlannerStore.getState().duplicateExitPlan(id);
+    expect(duplicateId).not.toBeNull();
+    expect(duplicateId).not.toBe(id);
+
+    const saved = useExitPlannerStore.getState().savedPlans;
+    expect(saved).toHaveLength(2);
+    const duplicate = saved.find((plan) => plan.id === duplicateId);
+    expect(duplicate?.name).toBe('My Exit (Copy)');
+  });
+
+  it('duplicateExitPlan returns null for an unknown id', () => {
+    const result = useExitPlannerStore.getState().duplicateExitPlan('does-not-exist');
+    expect(result).toBeNull();
+  });
+
+  it('deleteExitPlan removes the matching record and clears selectedPlanId when it matches', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore
+      .getState()
+      .saveExitPlan({ name: 'My Exit', portfolioId: 'p1', portfolioUpdatedAt: 't1' });
+    if (id === null) throw new Error('expected a saved id');
+    useExitPlannerStore.setState({ selectedPlanId: id });
+
+    useExitPlannerStore.getState().deleteExitPlan(id);
+
+    const state = useExitPlannerStore.getState();
+    expect(state.savedPlans).toEqual([]);
+    expect(state.selectedPlanId).toBeNull();
   });
 });
 
