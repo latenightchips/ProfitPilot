@@ -32,20 +32,33 @@ import { exitTargetFormSchemas } from '../types/exitTargetForm';
  * by the shared `StrategyAssumptionsPanel` this route also shows —
  * satisfying "Clearly distinguish target price from current price."
  *
- * **Remounted via `key={exitType}` in the parent `ExitTargetForm`
- * export, not resynced via a `reset()` effect like
- * `LoopStrategyControls.tsx`.** A full remount is the simpler,
- * equally-deterministic choice here: unlike Loop Builder (where
- * `LoopPresets.tsx` writes full `LoopStrategySettings` values directly,
- * requiring the controls form to resync its displayed values to match),
- * nothing in this batch writes `targetInputs` from outside this form —
- * `ExitTypeSelector.tsx` only ever writes `exitType`, and switching
- * `exitType` is exactly the case a remount already handles correctly
- * (fresh `useForm` state, no stale field values from the previous
- * type). If a later batch adds an Exit equivalent of Loop Presets that
- * writes `targetInputs` directly while the same type stays selected,
- * this form will need the same resync-effect treatment
- * `LoopStrategyControls.tsx` already established — not needed yet.
+ * **Remounted via `key={exitType}` whenever `exitType` itself changes,
+ * PLUS a resync effect for the same-type case — Milestone 7 Batch 6's
+ * own Recommendation Action Links (M7-034) are exactly the
+ * "later batch" this file's own Batch 4 comment anticipated.**
+ * `RecommendationDetailPanel.tsx` calls `setExitType` + `setTargetInputs`
+ * directly, bypassing this form entirely, the same "writes `targetInputs`
+ * from outside this form" case `LoopPresets.tsx` (M7-009) already
+ * established for Loop Builder's `LoopStrategyControls.tsx`. Two real
+ * gaps were found and fixed during Batch 6's own mandatory manual
+ * browser verification, not hypothetical: (1) `defaultValues: {}` meant
+ * a fresh mount (the common case — navigating in from the
+ * Recommendation Center, which always calls `setExitType` first,
+ * forcing a remount via the changed `key`) never actually displayed the
+ * prefilled value, even though the Store's own `targetInputs` was
+ * already correct; (2) if the *same* `exitType` was already selected
+ * (no remount), an external `setTargetInputs` call had no effect on the
+ * displayed fields at all. `defaultValues: exitInitialTargetInputs`
+ * fixes (1); the `useEffect` below, modeled directly on
+ * `LoopStrategyControls.tsx`'s own resync effect, fixes (2) —
+ * `lastPushedTargetInputsRef` distinguishes "the Store changed because
+ * *this form* just typed" (skip, matching `lastPushedSettingsRef`'s own
+ * role there) from "the Store changed because something else set it"
+ * (resync). Calculation-triggering is intentionally NOT this effect's
+ * job — `RecommendationDetailPanel.tsx` calls `runExitCalculation`
+ * itself, pairing it with `setTargetInputs` the same way
+ * `pushTargetInputs` below and the Full Exit mount effect already do;
+ * this effect only keeps the visible fields honest.
  *
  * **Deterministic, structurally-guaranteed calculation triggering — the
  * same field-level `onChange` design `LoopStrategyControls.tsx`
@@ -83,6 +96,17 @@ const FIELD_BY_TYPE: Record<
 
 const DEBOUNCE_MS = 300;
 
+/** Field-by-field, matching `LoopStrategyControls.tsx`'s own `settingsEqual` precedent. */
+function targetInputsEqual(a: ExitPlannerTargetInputs, b: ExitPlannerTargetInputs): boolean {
+  return (
+    a.repaymentAmount === b.repaymentAmount &&
+    a.targetHealthFactor === b.targetHealthFactor &&
+    a.targetRetainedBtc === b.targetRetainedBtc &&
+    a.targetDebtBalance === b.targetDebtBalance &&
+    a.scenarioBtcPriceUsd === b.scenarioBtcPriceUsd
+  );
+}
+
 function ExitTargetFormForType({
   exitType,
   portfolio,
@@ -90,13 +114,20 @@ function ExitTargetFormForType({
   exitType: ExitPlannerType;
   portfolio: ApplicationPortfolio;
 }) {
+  const targetInputs = useExitPlannerStore((state) => state.targetInputs);
   const setTargetInputs = useExitPlannerStore((state) => state.setTargetInputs);
   const runExitCalculation = useExitPlannerStore((state) => state.runExitCalculation);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks what *this form itself* last pushed to the Store, so the
+  // resync effect below can tell that apart from an external write.
+  const lastPushedTargetInputsRef = useRef<ExitPlannerTargetInputs | null>(
+    useExitPlannerStore.getState().targetInputs,
+  );
 
   const {
     register,
     getValues,
+    reset,
     formState: { errors },
   } = useForm<ExitPlannerTargetInputs>({
     // `exitTargetFormSchemas[exitType]` is a per-type schema whose output
@@ -107,7 +138,12 @@ function ExitTargetFormForType({
     // Record<ExitPlannerType, z.ZodType>` constraint already guarantees.
     resolver: zodResolver(exitTargetFormSchemas[exitType]) as Resolver<ExitPlannerTargetInputs>,
     mode: 'onChange',
-    defaultValues: {},
+    // Reads the Store's *current* value once, at construction — this
+    // component always fully remounts when `exitType` changes (`key`
+    // below), so this is the fresh-navigation case (e.g. a
+    // Recommendation Center action link, which always sets `exitType`
+    // first). The same-type case is handled by the resync effect below.
+    defaultValues: useExitPlannerStore.getState().targetInputs ?? {},
   });
 
   function cancelPendingPush() {
@@ -120,6 +156,7 @@ function ExitTargetFormForType({
   function pushTargetInputs() {
     const parsed = exitTargetFormSchemas[exitType].safeParse(getValues());
     if (!parsed.success) return;
+    lastPushedTargetInputsRef.current = parsed.data;
     setTargetInputs(parsed.data);
     runExitCalculation(portfolio);
   }
@@ -133,6 +170,7 @@ function ExitTargetFormForType({
 
   useEffect(() => {
     if (exitType === 'fullExit') {
+      lastPushedTargetInputsRef.current = {};
       setTargetInputs({});
       runExitCalculation(portfolio);
     }
@@ -143,6 +181,19 @@ function ExitTargetFormForType({
     // for this mounted instance's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (targetInputs === null) return;
+    if (
+      lastPushedTargetInputsRef.current !== null &&
+      targetInputsEqual(lastPushedTargetInputsRef.current, targetInputs)
+    ) {
+      return;
+    }
+    cancelPendingPush();
+    lastPushedTargetInputsRef.current = targetInputs;
+    reset(targetInputs);
+  }, [targetInputs, reset]);
 
   const field = FIELD_BY_TYPE[exitType];
 

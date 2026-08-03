@@ -4,13 +4,19 @@
  * `features/loop-builder/index.ts`'s own header comment for the full
  * reasoning shared by all three Milestone 7 feature modules.
  *
- * **`hooks/`, `services/`, `types/`, `utils/` hold only a `.gitkeep`** —
- * no task through M7-002 (Batch 1) has needed any of them yet; the
- * first real component arrives at M7-031 (Batch 6).
- *
- * **Unlike `loop-builder`/`exit-planner`, M7-001's own suggested
- * structure never named a `state/` subdirectory for this feature
- * either** — consistent with this directory omitting it too, for the
- * same reason (Stores live in the top-level `stores/` directory).
+ * Milestone 7 Batch 6 (M7-031–M7-036) adds the first real components
+ * (`RecommendationFilters`, `RecommendationList`,
+ * `RecommendationDetailPanel`) and the first real `utils/` content
+ * (`recommendationTaxonomy.ts`). `hooks/`, `services/`, `types/` still
+ * hold only a `.gitkeep` — no task has needed them: recalculation
+ * triggering lives in `app/recommendations/page.tsx`'s own `useEffect`
+ * (the same pattern Loop Builder/Exit Planner's own routes already
+ * establish), and every type this batch needs is either already public
+ * from `@/services` or owned by `stores/recommendationCenterStore.ts`
+ * (matching `stores/exitPlannerStore.ts`'s own `ExitPlannerType`
+ * precedent).
  */
-export {};
+export { RecommendationDetailPanel } from './components/RecommendationDetailPanel';
+export { RecommendationFilters } from './components/RecommendationFilters';
+export { RecommendationList } from './components/RecommendationList';
+export * from './utils/recommendationTaxonomy';

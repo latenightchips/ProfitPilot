@@ -161,6 +161,45 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   });
 });
 
+describe('ExitTargetForm — prefilled from outside the form (M7-034 Recommendation Action Links)', () => {
+  it('displays a targetInputs value already set in the Store before this component ever mounted', () => {
+    useExitPlannerStore.setState({
+      exitType: 'partialDebtRepayment',
+      targetInputs: { repaymentAmount: 10000 },
+    });
+    render(<ExitTargetForm portfolio={validPortfolio()} />);
+
+    expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(10000);
+  });
+
+  it('resyncs the displayed field when the Store’s targetInputs changes externally while the same type stays selected', () => {
+    useExitPlannerStore.setState({ exitType: 'partialDebtRepayment', targetInputs: {} });
+    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(null);
+
+    act(() => {
+      useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 7500 });
+    });
+
+    expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(7500);
+  });
+
+  it('does not fight with an in-progress edit — a real regression class, the same "Loop Builder race fix" this batch was instructed to respect', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    useExitPlannerStore.setState({ exitType: 'partialDebtRepayment', targetInputs: {} });
+    render(<ExitTargetForm portfolio={validPortfolio()} />);
+
+    await user.type(screen.getByLabelText('Debt Repayment Amount (USD)'), '5000');
+    await vi.advanceTimersByTimeAsync(500);
+
+    // The Store now holds exactly what this form itself just pushed —
+    // the resync effect must recognize that as self-caused and not
+    // reset the field back to blank.
+    expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(5000);
+    expect(useExitPlannerStore.getState().targetInputs?.repaymentAmount).toBe(5000);
+  });
+});
+
 describe('ExitTargetForm — switching type remounts with a clean form', () => {
   it('does not carry a value typed for one type over to a different type', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

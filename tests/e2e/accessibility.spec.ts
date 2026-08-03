@@ -109,7 +109,11 @@ test('Cover: no WCAG AA violations — healthy portfolio with active recommendat
   page,
 }) => {
   await createPortfolio(page, { name: 'A11y Healthy Portfolio', targetHealthFactor: '5' });
-  await expect(page.getByText('Recommendations')).toBeVisible();
+  // `getByText('Recommendations')` is ambiguous since Milestone 7 Batch 6
+  // added a "Recommendations" sidebar link (`constants/navigation.ts`)
+  // alongside the Dashboard's own `RecommendationSummarySection` heading
+  // this test means to check — scoped to the heading specifically.
+  await expect(page.getByRole('heading', { name: 'Recommendations' })).toBeVisible();
   await expectNoWcagAaViolations(page);
 });
 
