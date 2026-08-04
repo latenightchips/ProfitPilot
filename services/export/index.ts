@@ -1,13 +1,16 @@
 /**
- * Export Service — 06_TASKS.md M3-001 ("Create Service Foundation").
+ * Export Service — 06_TASKS.md M8-036–M8-039, M8-045 ("Import & Export").
  *
  * 04_BUILD_GUIDE.md "IMPORT / EXPORT DIRECTORY" names this directory's
- * eventual contents explicitly: `ExportService.ts`, `JsonExporter.ts`,
- * `CsvExporter.ts`, `PdfExporter.ts`.
- *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Export Service's implementation (a
- * separate, dependent, later-milestone task per 04_BUILD_GUIDE.md's own
- * "IMPLEMENTATION ORDER"). This file is that entry point.
+ * contents explicitly: `ExportService.ts`, `JsonExporter.ts`,
+ * `CsvExporter.ts`, `PdfExporter.ts`. This barrel re-exports all of them
+ * plus the shared `types.ts` shapes and `filenames.ts` builder, so callers
+ * (currently only `app/settings/page.tsx`) import from `services/export`
+ * rather than reaching into individual files.
  */
-export {};
+export * from './CsvExporter';
+export * from './ExportService';
+export * from './filenames';
+export * from './JsonExporter';
+export * from './PdfExporter';
+export * from './types';

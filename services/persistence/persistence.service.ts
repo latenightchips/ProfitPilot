@@ -29,6 +29,17 @@
  * validates the envelope it is about to persist, catching a caller that
  * passes a payload not matching its own record type's schema before
  * corrupt data ever reaches storage.
+ *
+ * **`listEnvelopes` (Milestone 8 Batch 3, M8-036/M8-037)** — every other
+ * read method here deliberately unwraps down to the plain payload, since
+ * that is all a Store ever needs. The Export Service needs the opposite:
+ * M8-037's own "Include" list names "Storage envelope... Versions,
+ * Timestamps" as things a full backup must preserve — the real
+ * `createdAt`/`updatedAt`/`checksum` of each record, not values re-stamped
+ * at export time. Adding this method (rather than having
+ * `services/export/` reach for a `PersistenceAdapter` itself) is what
+ * keeps "Do not bypass PersistenceService" true for Export/Import the same
+ * way it already is for every Store.
  */
 import type { MappingResult } from '@/services/shared';
 
@@ -52,6 +63,7 @@ export interface PersistenceService {
   ): Promise<MappingResult<StorageEnvelope<T>>>;
   delete(recordType: PersistedRecordType, id: string): Promise<MappingResult<void>>;
   list<T>(recordType: PersistedRecordType): Promise<MappingResult<T[]>>;
+  listEnvelopes<T>(recordType: PersistedRecordType): Promise<MappingResult<StorageEnvelope<T>[]>>;
   bulkWrite<T>(
     recordType: PersistedRecordType,
     envelopes: StorageEnvelope<T>[],
@@ -111,6 +123,21 @@ export function createPersistenceService(
         payloads.push(validated.data.payload);
       }
       return { ok: true, data: payloads };
+    },
+
+    async listEnvelopes<T>(
+      recordType: PersistedRecordType,
+    ): Promise<MappingResult<StorageEnvelope<T>[]>> {
+      const stored = await adapter.list<unknown>(recordType);
+      if (!stored.ok) return stored;
+
+      const envelopes: StorageEnvelope<T>[] = [];
+      for (const envelope of stored.data) {
+        const validated = validatePersistedRecord<T>(recordType, envelope);
+        if (!validated.ok) return validated;
+        envelopes.push(validated.data);
+      }
+      return { ok: true, data: envelopes };
     },
 
     async bulkWrite<T>(
