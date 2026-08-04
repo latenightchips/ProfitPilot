@@ -1,13 +1,18 @@
 /**
- * Persistence Service — 06_TASKS.md M3-001 ("Create Service Foundation").
+ * Persistence Service — public entry point.
  *
- * Named in M3-001's own "Include" directory tree; its own responsibilities
- * are not yet detailed in 04_BUILD_GUIDE.md's "SERVICE RESPONSIBILITIES"
- * section and are deferred to a future, dedicated Milestone 3 task rather
- * than assumed here.
+ * 06_TASKS.md M8-001 ("Create Persistence Architecture") through M8-005
+ * ("Implement Persistence Validation") — Milestone 8 Batch 1. Replaces
+ * the M3-001 `export {}` placeholder this file was until now.
  *
- * Intentionally empty: M3-001's own scope is the directory structure and
- * its public entry points, not the Persistence Service's implementation.
- * This file is that entry point.
+ * `./sync.service.ts` has no exports yet — see its own header comment
+ * for why (Batch 7, a later dependent Milestone 8 batch).
  */
-export {};
+export * from './adapters';
+export * from './envelope';
+export type { MigrationRegistry, MigrationStep } from './migrations/migrate';
+export { runMigrations } from './migrations/migrate';
+export * from './persistence.service';
+export * from './schemas';
+export * from './types';
+export { validatePersistedRecord } from './validate';
