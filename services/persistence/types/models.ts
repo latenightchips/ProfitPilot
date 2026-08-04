@@ -25,7 +25,7 @@
  * The three models below are genuinely new — no existing type owns
  * "user preferences," "application metadata," or "sync metadata" today.
  */
-import type { PersistedRecordType } from './envelope';
+import type { PersistedRecordType, StorageEnvelope } from './envelope';
 
 /**
  * User preferences payload — 06_TASKS.md M8-002's "User preferences."
@@ -84,4 +84,30 @@ export interface PersistedSyncMetadata {
  */
 export interface PersistedActivePortfolio {
   portfolioId: string | null;
+}
+
+/**
+ * Automatic Local Recovery Snapshot payload — Milestone 8 Batch 4
+ * (M8-046 "Implement Automatic Local Recovery Snapshot"). One record
+ * per snapshot (not a singleton) — `../recoverySnapshot.ts` retains a
+ * capped, most-recent-first list, pruning the oldest once
+ * `MAX_RETAINED_RECOVERY_SNAPSHOTS` is exceeded (M8-046's own "Limit
+ * retained snapshots" / "Avoid excessive storage use" requirements).
+ *
+ * `records` mirrors `services/export/types.ts`'s `FullBackupFile.records`
+ * shape exactly (a `Partial<Record<PersistedRecordType, StorageEnvelope<
+ * unknown>[]>>`) — a recovery snapshot *is* a full-dataset backup, just
+ * one this application creates and restores itself rather than a user
+ * downloading/uploading a file. It never includes a `'recoverySnapshot'`
+ * key of its own (`../types/envelope.ts`'s `EXPORTABLE_RECORD_TYPES` is
+ * what `../recoverySnapshot.ts` snapshots from) — nesting a snapshot's
+ * own snapshot history inside itself would grow without bound.
+ */
+export type RecoverySnapshotReason =
+  'migration' | 'large-import' | 'full-replacement' | 'conflict-resolution' | 'bulk-deletion';
+
+export interface PersistedRecoverySnapshot {
+  reason: RecoverySnapshotReason;
+  createdAt: string;
+  records: Partial<Record<PersistedRecordType, StorageEnvelope<unknown>[]>>;
 }

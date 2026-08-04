@@ -1,8 +1,8 @@
 /**
  * Persistence Service — public entry point.
  *
- * 06_TASKS.md M8-001 ("Create Persistence Architecture") through M8-013
- * ("Implement Local Data Migration Runner") — Milestone 8 Batches 1–2.
+ * 06_TASKS.md M8-001 ("Create Persistence Architecture") through M8-050
+ * ("Document Disaster Recovery Procedure") — Milestone 8 Batches 1–4.
  * Replaces the M3-001 `export {}` placeholder this file originally was.
  *
  * `./sync.service.ts` has no exports yet — see its own header comment
@@ -10,6 +10,7 @@
  */
 export * from './adapters';
 export * from './autoSaveCoordinator';
+export * from './clearLocalData';
 export * from './constants';
 export * from './envelope';
 export type { LocalMigrationReport, LocalMigrationStatus } from './migrations/localDataMigration';
@@ -17,6 +18,7 @@ export { runLocalDataMigration } from './migrations/localDataMigration';
 export type { MigrationRegistry, MigrationStep } from './migrations/migrate';
 export { REGISTERED_MIGRATIONS, runMigrations } from './migrations/migrate';
 export * from './persistence.service';
+export * from './recoverySnapshot';
 export * from './schemas';
 export * from './types';
 export { validatePersistedRecord, validatePersistedRecordSchema } from './validate';

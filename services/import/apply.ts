@@ -21,21 +21,67 @@
  * about what a well-behaved caller does — `applyImport` refuses to run
  * `replaceAll` at all without it, regardless of what `app/settings/page.tsx`
  * does or doesn't check first.
+ *
+ * **`createRecoverySnapshot` (Milestone 8 Batch 4, M8-046) is a
+ * separate, always-persisted precondition — not the same thing as
+ * `snapshotEverything`/`restore` above.** That pair is an in-memory,
+ * function-lifetime-only rollback mechanism (nothing is written to
+ * storage; it only exists in a local variable while `applyImport` runs).
+ * `createRecoverySnapshot` instead writes a real, durable
+ * `'recoverySnapshot'` record the user can browse and restore later from
+ * `app/settings/page.tsx`, satisfying M8-046's own "Create before...
+ * Large import, Full replacement, Conflict resolution" list — it is
+ * called, and must succeed, *before* the transactional snapshot below is
+ * even taken, so that snapshot (and therefore any later rollback) also
+ * protects the just-created recovery snapshot itself.
  */
 import type { MappingResult } from '@/services/shared';
 import { createApplicationError } from '@/services/shared';
 
 import {
   createEnvelope,
+  createRecoverySnapshot,
   PERSISTED_RECORD_TYPES,
   type PersistedRecordType,
   type PersistenceService,
   persistenceService,
+  type RecoverySnapshotReason,
   type StorageEnvelope,
 } from '../persistence';
 import type { ImportValidationIssue } from './ImportValidator';
 import { planRecordAction } from './preview';
 import type { ImportApplyResult, ImportRecordPlan, MergeMode } from './types';
+
+/** M8-046's own "Large import" trigger — a threshold, not an exact spec. */
+const LARGE_IMPORT_RECORD_THRESHOLD = 20;
+
+function countIncomingRecords(
+  validRecordsByType: Partial<Record<PersistedRecordType, StorageEnvelope<unknown>[]>>,
+): number {
+  return Object.values(validRecordsByType).reduce(
+    (total, envelopes) => total + envelopes.length,
+    0,
+  );
+}
+
+/**
+ * Maps a merge mode (plus how much it would import) to M8-046's own
+ * "Create before" list: `replaceAll` is always a "Full replacement",
+ * `replaceSelected` only ever targets already-conflicting records so it
+ * is always a "Conflict resolution", and `addAsNew`/`mergeNonConflicting`
+ * only rise to "Large import" once the incoming record count crosses
+ * `LARGE_IMPORT_RECORD_THRESHOLD` — a small addAsNew/merge import gets no
+ * snapshot, matching "avoid excessive storage use."
+ */
+function determineRecoverySnapshotReason(
+  mergeMode: MergeMode,
+  incomingRecordCount: number,
+): RecoverySnapshotReason | null {
+  if (mergeMode === 'replaceAll') return 'full-replacement';
+  if (mergeMode === 'replaceSelected') return 'conflict-resolution';
+  if (incomingRecordCount > LARGE_IMPORT_RECORD_THRESHOLD) return 'large-import';
+  return null;
+}
 
 type Snapshot = Partial<Record<PersistedRecordType, StorageEnvelope<unknown>[]>>;
 
@@ -111,6 +157,20 @@ export async function applyImport(
     };
   }
 
+  const recoverySnapshotReason = determineRecoverySnapshotReason(
+    mergeMode,
+    countIncomingRecords(validRecordsByType),
+  );
+  let recoverySnapshotEnvelope: StorageEnvelope<unknown> | null = null;
+  if (recoverySnapshotReason !== null) {
+    const recoverySnapshotResult = await createRecoverySnapshot(recoverySnapshotReason, {
+      service,
+      now,
+    });
+    if (!recoverySnapshotResult.ok) return recoverySnapshotResult;
+    recoverySnapshotEnvelope = recoverySnapshotResult.data;
+  }
+
   const snapshotResult = await snapshotEverything(service);
   if (!snapshotResult.ok) return snapshotResult;
   const snapshot = snapshotResult.data;
@@ -128,6 +188,18 @@ export async function applyImport(
     if (!cleared.ok) {
       await restore(service, snapshot);
       return cleared;
+    }
+
+    // `clear()` above just wiped the recovery snapshot created moments
+    // ago (it wipes every record type, including `'recoverySnapshot'`
+    // itself) — re-persist it so M8-046's DoD ("Recent valid data can be
+    // restored") holds even for the one merge mode that clears storage.
+    if (recoverySnapshotEnvelope !== null) {
+      const preserved = await service.bulkWrite('recoverySnapshot', [recoverySnapshotEnvelope]);
+      if (!preserved.ok) {
+        await restore(service, snapshot);
+        return preserved;
+      }
     }
   }
 

@@ -241,3 +241,71 @@ describe('SettingsPage — import preview', () => {
     await waitFor(() => expect(screen.getByText(/^warnings$/i)).toBeInTheDocument());
   });
 });
+
+describe('SettingsPage — storage, sync, and recovery snapshots (M8-047)', () => {
+  it('shows the storage mode and an honest sync-state message', async () => {
+    render(<SettingsPage />);
+    expect(screen.getByText(/storage mode: local storage/i)).toBeInTheDocument();
+    expect(screen.getByText(/sync state: local only/i)).toBeInTheDocument();
+  });
+
+  it('shows "No recovery snapshots yet" when none exist', async () => {
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByText(/no recovery snapshots yet/i)).toBeInTheDocument());
+  });
+
+  it('lists a recovery snapshot created by a replaceAll import and can restore it', async () => {
+    await persistenceService.write('portfolio', 'portfolio-1', samplePortfolio());
+    const { exportFullBackup } = await import('@/services/export');
+    const exported = await exportFullBackup();
+    expect(exported.ok).toBe(true);
+    if (!exported.ok) return;
+
+    render(<SettingsPage />);
+    const file = new File([exported.data.content], 'backup.json', { type: 'application/json' });
+    const input = screen.getByLabelText(/import file/i);
+    await userEvent.upload(input, file);
+
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /replace all local data/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole('radio', { name: /replace all local data/i }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /permanently replace/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /confirm import/i }));
+
+    await waitFor(() => expect(screen.getByText(/imported \d+ record/i)).toBeInTheDocument());
+
+    const snapshotRadio = await screen.findByRole('radio', { name: /full-replacement/i });
+    await userEvent.click(snapshotRadio);
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /replace all current local data/i }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /restore selected snapshot/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/recovery snapshot restored/i)).toBeInTheDocument(),
+    );
+  });
+});
+
+describe('SettingsPage — clear local data (M8-048)', () => {
+  it('disables Clear Local Data until the confirmation checkbox is checked, then clears', async () => {
+    await persistenceService.write('portfolio', 'portfolio-1', samplePortfolio());
+    render(<SettingsPage />);
+
+    const clearButton = screen.getByRole('button', { name: /^clear local data$/i });
+    expect(clearButton).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /permanently delete all local profitpilot data/i }),
+    );
+    expect(clearButton).toBeEnabled();
+
+    await userEvent.click(clearButton);
+
+    await waitFor(() => expect(screen.getByText(/local data cleared/i)).toBeInTheDocument());
+
+    const list = await persistenceService.list('portfolio');
+    expect(list.ok && list.data).toHaveLength(0);
+  });
+});

@@ -1,12 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { CsvExportKind } from '@/services/export';
 import { exportCsv, exportFullBackup, triggerDownload } from '@/services/export';
 import type { ImportFileValidationResult, ImportPreviewBundle } from '@/services/import';
 import type { ImportApplyResult, MergeMode } from '@/services/import';
 import { applyValidatedImport, previewImport } from '@/services/import';
+import {
+  clearLocalData,
+  listRecoverySnapshots,
+  type PersistedRecoverySnapshot,
+  restoreRecoverySnapshot,
+  type StorageEnvelope,
+} from '@/services/persistence';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -14,30 +21,41 @@ import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore
 import { useSimulationStore } from '@/stores/simulationStore';
 
 /**
- * Settings — 06_TASKS.md M8-042/M8-043/M8-044 ("Import & Export"). The
- * one UI entry point every centralized Export/Import Service function
- * this batch adds is actually called from — no feature component builds
- * an export file or applies an import directly (M8-036's own DoD).
+ * Settings — 06_TASKS.md M8-042/M8-043/M8-044 ("Import & Export") and
+ * M8-046/M8-047/M8-048 ("Backup and Recovery"). The one UI entry point
+ * every centralized Export/Import/Recovery Service function these two
+ * batches add is actually called from — no feature component builds an
+ * export file, applies an import, or clears storage directly (M8-036's
+ * own DoD).
  *
  * **A deliberate, documented resolution of a real conflict between two
  * source documents.** 03_UI.md's own "SETTINGS" page section lists
  * "Backup" only under "Future Versions," not "Version 1" — read alone,
- * that would mean no UI at all for this batch. But 06_TASKS.md's own
- * M8-042/M8-043/M8-044 assign this exact batch real, user-facing
- * Definitions of Done that only a real UI can satisfy: "Users understand
- * what will change before confirming import" (M8-042) and "Replacement
- * requires explicit confirmation" (M8-044) are both statements about
- * what a *user* sees and does, not about the Service layer alone. This
- * page is the minimal, functional resolution: it implements exactly the
- * workflows those DoDs require (export buttons, an import preview,
- * merge-mode selection, a required confirmation step before a
- * destructive replace) and nothing beyond that — not the fuller,
+ * that would mean no UI at all for either batch. But 06_TASKS.md's own
+ * M8-042/M8-043/M8-044/M8-047/M8-048 assign these two batches real,
+ * user-facing Definitions of Done that only a real UI can satisfy:
+ * "Users understand what will change before confirming import" (M8-042),
+ * "Replacement requires explicit confirmation" (M8-044), "Users can
+ * manage their data without developer tools" (M8-047), "Users can safely
+ * reset the local application" (M8-048) are all statements about what a
+ * *user* sees and does, not about the Service layer alone. This page is
+ * the minimal, functional resolution: it implements exactly the
+ * workflows those DoDs require and nothing beyond that — not the fuller,
  * polished "Backup" page 03_UI.md's own "Future Versions" section
  * envisions (scheduled backups, cloud sync status, etc.), which stays
- * out of scope for this batch. This is the same "genuine documented
+ * out of scope for these batches. This is the same "genuine documented
  * conflict, resolved narrowly in favor of whichever document has a real,
  * testable DoD for *this* batch" precedent already established earlier
  * in this engagement.
+ *
+ * **"View sync state" (M8-047) and "Explain what cloud data will
+ * remain" (M8-048) are both satisfied with honest, static copy, not a
+ * real sync status widget or cloud-deletion behavior.** No cloud sync or
+ * authentication exists anywhere in this application yet — both are
+ * explicitly out of scope for Milestone 8 Batches 1–4 per this
+ * engagement's own standing instruction. Saying so plainly ("ProfitPilot
+ * does not yet sync to the cloud") is the accurate statement of the
+ * current state, not a placeholder pretending a real feature exists.
  */
 
 const CSV_EXPORTS: { kind: CsvExportKind; label: string }[] = [
@@ -83,6 +101,17 @@ export default function SettingsPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [applyResult, setApplyResult] = useState<ImportApplyResult | null>(null);
 
+  const [snapshots, setSnapshots] = useState<StorageEnvelope<PersistedRecoverySnapshot>[]>([]);
+  const [snapshotsError, setSnapshotsError] = useState<string | null>(null);
+  const [restoreTargetId, setRestoreTargetId] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearStatus, setClearStatus] = useState<string | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
+
   const loadPortfolios = usePortfolioStore((state) => state.load);
   const loadSavedStrategies = useLoopBuilderStore((state) => state.loadSavedStrategies);
   const loadSavedPlans = useExitPlannerStore((state) => state.loadSavedPlans);
@@ -98,6 +127,21 @@ export default function SettingsPage() {
       loadAcknowledgements(),
     ]);
   }
+
+  async function reloadSnapshots(): Promise<void> {
+    const result = await listRecoverySnapshots();
+    if (!result.ok) {
+      setSnapshotsError(result.errors[0]?.message ?? 'Recovery snapshots could not be loaded.');
+      return;
+    }
+    setSnapshotsError(null);
+    setSnapshots(result.data);
+  }
+
+  useEffect(() => {
+    void reloadSnapshots();
+    // Only on mount — `reloadSnapshots` closes over module-level imports only.
+  }, []);
 
   async function handleFullBackup(): Promise<void> {
     setExportError(null);
@@ -176,10 +220,44 @@ export default function SettingsPage() {
     setPreviewBundle(null);
     setRawFileText(null);
     await reloadAllStores();
+    await reloadSnapshots();
+  }
+
+  async function handleRestoreSnapshot(): Promise<void> {
+    if (restoreTargetId === null) return;
+    setRestoreError(null);
+
+    const result = await restoreRecoverySnapshot(restoreTargetId);
+    if (!result.ok) {
+      setRestoreError(result.errors[0]?.message ?? 'Restore failed.');
+      return;
+    }
+
+    setRestoreStatus('Recovery snapshot restored.');
+    setRestoreTargetId(null);
+    setConfirmRestore(false);
+    await reloadAllStores();
+    await reloadSnapshots();
+  }
+
+  async function handleClearLocalData(): Promise<void> {
+    setClearError(null);
+
+    const result = await clearLocalData();
+    if (!result.ok) {
+      setClearError(result.errors[0]?.message ?? 'Clearing local data failed.');
+      return;
+    }
+
+    setClearStatus('Local data cleared. A recovery snapshot was saved beforehand.');
+    setConfirmClear(false);
+    await reloadAllStores();
+    await reloadSnapshots();
   }
 
   const confirmDisabled =
     previewBundle === null || (mergeMode === 'replaceAll' && !confirmReplaceAll);
+  const restoreDisabled = restoreTargetId === null || !confirmRestore;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
@@ -335,6 +413,133 @@ export default function SettingsPage() {
         {applyResult !== null && (
           <p className="text-xs text-muted-foreground" role="status">
             Imported {applyResult.written.length} record(s); skipped {applyResult.skipped.length}.
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-semibold text-foreground">Storage &amp; Sync</h2>
+        <div className="text-xs text-muted-foreground">
+          <p>Storage mode: Local storage (browser)</p>
+          <p>Sync state: Local only — ProfitPilot does not yet sync to the cloud.</p>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-semibold text-foreground">Recovery Snapshots</h2>
+        <p className="text-xs text-muted-foreground">
+          ProfitPilot automatically saves a recovery snapshot before large imports, replacements,
+          and other high-risk changes. Restoring a snapshot replaces your current local data with
+          that snapshot&apos;s contents.
+        </p>
+
+        {snapshotsError !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {snapshotsError}
+          </p>
+        )}
+
+        {snapshots.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No recovery snapshots yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {snapshots.map((snapshot) => (
+              <li key={snapshot.recordId}>
+                <label className="flex items-center gap-2 text-xs text-foreground">
+                  <input
+                    type="radio"
+                    name="restore-target"
+                    checked={restoreTargetId === snapshot.recordId}
+                    onChange={() => {
+                      setRestoreTargetId(snapshot.recordId);
+                      setConfirmRestore(false);
+                      setRestoreStatus(null);
+                    }}
+                  />
+                  {snapshot.payload.reason} — {snapshot.payload.createdAt}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {restoreTargetId !== null && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-destructive">
+              <input
+                type="checkbox"
+                checked={confirmRestore}
+                onChange={(event) => setConfirmRestore(event.target.checked)}
+              />
+              I understand this will replace all current local data with this snapshot.
+            </label>
+            <button
+              type="button"
+              disabled={restoreDisabled}
+              onClick={() => void handleRestoreSnapshot()}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Restore Selected Snapshot
+            </button>
+          </div>
+        )}
+
+        {restoreStatus !== null && (
+          <p className="text-xs text-muted-foreground" role="status">
+            {restoreStatus}
+          </p>
+        )}
+        {restoreError !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {restoreError}
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-semibold text-foreground">Clear Local Data</h2>
+        <p className="text-xs text-muted-foreground">
+          This permanently deletes all portfolios, saved strategies, exit plans, simulations, and
+          preferences stored in this browser. ProfitPilot does not yet sync to the cloud, so nothing
+          else holds a copy of this data unless you export it first. A recovery snapshot is saved
+          automatically before clearing, but exporting a full backup is the safer option if you want
+          to keep this data long-term.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => void handleFullBackup()}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+        >
+          Export Everything First
+        </button>
+
+        <label className="flex items-center gap-2 text-xs font-medium text-destructive">
+          <input
+            type="checkbox"
+            checked={confirmClear}
+            onChange={(event) => setConfirmClear(event.target.checked)}
+          />
+          I understand this will permanently delete all local ProfitPilot data.
+        </label>
+
+        <button
+          type="button"
+          disabled={!confirmClear}
+          onClick={() => void handleClearLocalData()}
+          className="rounded-md border border-destructive px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Clear Local Data
+        </button>
+
+        {clearStatus !== null && (
+          <p className="text-xs text-muted-foreground" role="status">
+            {clearStatus}
+          </p>
+        )}
+        {clearError !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {clearError}
           </p>
         )}
       </section>

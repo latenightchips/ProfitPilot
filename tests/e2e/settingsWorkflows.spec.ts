@@ -4,8 +4,9 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
 /**
- * Settings (Import/Export) End-to-End Tests — 06_TASKS.md M8-036–M8-045
- * ("Import & Export"). Follows `tests/e2e/loopBuilderWorkflows.spec.ts`'s
+ * Settings (Import/Export/Backup/Recovery) End-to-End Tests —
+ * 06_TASKS.md M8-036–M8-045 ("Import & Export") and M8-046–M8-048
+ * ("Backup and Recovery"). Follows `tests/e2e/loopBuilderWorkflows.spec.ts`'s
  * own convention: real browser, real compiled app, exercising the one
  * workflow layer no unit test touches.
  *
@@ -200,4 +201,74 @@ test('Cover: replaceAll requires explicit confirmation before replacing all loca
 
   await page.goto('/portfolios', { waitUntil: 'networkidle' });
   await expect(page.getByRole('list').locator('li', { hasText: 'Solo Portfolio' })).toHaveCount(1);
+});
+
+test('Cover: a recovery snapshot is created before replaceAll and can be restored (M8-046/M8-047)', async ({
+  page,
+}) => {
+  await createPortfolio(page, 'Snapshot Portfolio');
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Full Backup (JSON)' }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  const content = await readFile(path as string, 'utf-8');
+
+  await page.setInputFiles('input[type="file"]', {
+    name: 'backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(content),
+  });
+  await page.getByRole('radio', { name: 'Replace all local data' }).check();
+  await page.getByRole('checkbox', { name: /permanently replace/i }).check();
+  await page.getByRole('button', { name: 'Confirm Import' }).click();
+  await expect(page.getByText(/imported \d+ record/i)).toBeVisible();
+
+  const snapshotRadio = page.getByRole('radio', { name: /full-replacement/i });
+  await expect(snapshotRadio).toBeVisible();
+  await snapshotRadio.check();
+  await page.getByRole('checkbox', { name: /replace all current local data/i }).check();
+  await page.getByRole('button', { name: 'Restore Selected Snapshot' }).click();
+  await expect(page.getByText(/recovery snapshot restored/i)).toBeVisible();
+
+  await page.goto('/portfolios', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('list').locator('li', { hasText: 'Snapshot Portfolio' })).toHaveCount(
+    1,
+  );
+});
+
+test('Cover: Clear Local Data requires confirmation and safely resets the application (M8-048)', async ({
+  page,
+}) => {
+  await createPortfolio(page, 'Doomed Portfolio');
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+
+  const clearButton = page.getByRole('button', { name: 'Clear Local Data' });
+  await expect(clearButton).toBeDisabled();
+
+  await page
+    .getByRole('checkbox', { name: /permanently delete all local profitpilot data/i })
+    .check();
+  await expect(clearButton).toBeEnabled();
+  await clearButton.click();
+  await expect(page.getByText(/local data cleared/i)).toBeVisible();
+
+  const portfolioKeyCount = await page.evaluate(
+    () =>
+      Object.keys(window.localStorage).filter((key) => key.startsWith('profitpilot:v1:portfolio:'))
+        .length,
+  );
+  expect(portfolioKeyCount).toBe(0);
+
+  const snapshotKeyCount = await page.evaluate(
+    () =>
+      Object.keys(window.localStorage).filter((key) =>
+        key.startsWith('profitpilot:v1:recoverySnapshot:'),
+      ).length,
+  );
+  expect(snapshotKeyCount).toBe(1);
+
+  await page.goto('/portfolios', { waitUntil: 'networkidle' });
+  await expect(page.getByText('No portfolios yet', { exact: true })).toBeVisible();
 });

@@ -9,7 +9,7 @@
 import type { MappingResult } from '@/services/shared';
 
 import {
-  PERSISTED_RECORD_TYPES,
+  EXPORTABLE_RECORD_TYPES,
   type PersistenceService,
   persistenceService,
 } from '../persistence';
@@ -39,9 +39,9 @@ export async function previewImport(
 
   const service = options.service ?? persistenceService;
   const existingIdsByType: Partial<
-    Record<(typeof PERSISTED_RECORD_TYPES)[number], ReadonlySet<string>>
+    Record<(typeof EXPORTABLE_RECORD_TYPES)[number], ReadonlySet<string>>
   > = {};
-  for (const recordType of PERSISTED_RECORD_TYPES) {
+  for (const recordType of EXPORTABLE_RECORD_TYPES) {
     const listed = await service.listEnvelopes<unknown>(recordType);
     if (!listed.ok) return listed;
     existingIdsByType[recordType] = new Set(listed.data.map((e) => e.recordId));

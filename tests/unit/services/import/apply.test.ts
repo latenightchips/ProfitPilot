@@ -4,6 +4,7 @@ import { applyImport } from '@/services/import/apply';
 import { createMemoryAdapter } from '@/services/persistence/adapters';
 import { createEnvelope } from '@/services/persistence/envelope';
 import { createPersistenceService } from '@/services/persistence/persistence.service';
+import { listRecoverySnapshots } from '@/services/persistence/recoverySnapshot';
 import type {
   PersistedRecordType,
   PersistenceAdapter,
@@ -195,6 +196,47 @@ describe('applyImport — replaceAll', () => {
     expect(list.data).toHaveLength(1);
     expect(list.data[0]?.id).toBe('strategy-2');
   });
+
+  it('rolls back when clear() itself fails', async () => {
+    const real = createMemoryAdapter();
+    const failure = {
+      ok: false as const,
+      errors: [
+        {
+          category: 'persistence' as const,
+          code: 'SIMULATED_FAILURE',
+          message: 'Simulated failure.',
+        },
+      ],
+    };
+    let clearCalls = 0;
+    const failingAdapter: PersistenceAdapter = {
+      ...real,
+      clear: async () => {
+        clearCalls += 1;
+        if (clearCalls === 1) return failure;
+        return real.clear();
+      },
+    };
+    const service = createPersistenceService(failingAdapter);
+    await service.write('loopStrategy', 'existing', strategyPayload('existing', 'p1'));
+
+    const envelope = createEnvelope(
+      'loopStrategy',
+      'strategy-2',
+      strategyPayload('strategy-2', 'p1'),
+    );
+    const result = await applyImport({ loopStrategy: [envelope] }, 'replaceAll', [], {
+      service,
+      confirmedReplaceAll: true,
+    });
+    expect(result.ok).toBe(false);
+
+    const list = await service.list<{ id: string }>('loopStrategy');
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.data.map((s) => s.id)).toEqual(['existing']);
+  });
 });
 
 describe('applyImport — rollback on failure', () => {
@@ -260,6 +302,109 @@ describe('applyImport — rollback on failure', () => {
     expect(strategies.ok && strategies.data).toHaveLength(1);
     expect(strategies.ok && strategies.data[0]?.id).toBe('existing-strategy');
     expect(plans.ok && plans.data).toHaveLength(0);
+  });
+});
+
+describe('applyImport — recovery snapshot integration (M8-046)', () => {
+  it('creates a full-replacement recovery snapshot before replaceAll, which survives the clear', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    await service.write('loopStrategy', 'strategy-1', strategyPayload('strategy-1', 'p1'));
+
+    const envelope = createEnvelope(
+      'loopStrategy',
+      'strategy-2',
+      strategyPayload('strategy-2', 'p1'),
+    );
+    const result = await applyImport({ loopStrategy: [envelope] }, 'replaceAll', [], {
+      service,
+      confirmedReplaceAll: true,
+    });
+    expect(result.ok).toBe(true);
+
+    const snapshots = await listRecoverySnapshots(service);
+    expect(snapshots.ok).toBe(true);
+    if (!snapshots.ok) return;
+    expect(snapshots.data).toHaveLength(1);
+    expect(snapshots.data[0]?.payload.reason).toBe('full-replacement');
+    expect(snapshots.data[0]?.payload.records.loopStrategy?.[0]?.recordId).toBe('strategy-1');
+  });
+
+  it('creates a conflict-resolution recovery snapshot before replaceSelected', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    await service.write('loopStrategy', 'strategy-1', strategyPayload('strategy-1', 'original'));
+
+    const envelope = createEnvelope(
+      'loopStrategy',
+      'strategy-1',
+      strategyPayload('strategy-1', 'replaced'),
+    );
+    const result = await applyImport({ loopStrategy: [envelope] }, 'replaceSelected', [], {
+      service,
+      selectedRecordIds: new Set(['strategy-1']),
+    });
+    expect(result.ok).toBe(true);
+
+    const snapshots = await listRecoverySnapshots(service);
+    expect(snapshots.ok).toBe(true);
+    if (!snapshots.ok) return;
+    expect(snapshots.data).toHaveLength(1);
+    expect(snapshots.data[0]?.payload.reason).toBe('conflict-resolution');
+  });
+
+  it('does not create a recovery snapshot for a small addAsNew/mergeNonConflicting import', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    const envelope = createEnvelope(
+      'loopStrategy',
+      'strategy-1',
+      strategyPayload('strategy-1', 'p1'),
+    );
+
+    await applyImport({ loopStrategy: [envelope] }, 'addAsNew', [], { service });
+
+    const snapshots = await listRecoverySnapshots(service);
+    expect(snapshots.ok).toBe(true);
+    if (!snapshots.ok) return;
+    expect(snapshots.data).toHaveLength(0);
+  });
+
+  it('rolls back replaceAll when re-persisting the recovery snapshot after clear() fails', async () => {
+    const adapter = createFailingBulkWriteAdapter('recoverySnapshot');
+    const service = createPersistenceService(adapter);
+    await service.write('loopStrategy', 'existing', strategyPayload('existing', 'p1'));
+
+    const envelope = createEnvelope(
+      'loopStrategy',
+      'strategy-2',
+      strategyPayload('strategy-2', 'p1'),
+    );
+    const result = await applyImport({ loopStrategy: [envelope] }, 'replaceAll', [], {
+      service,
+      confirmedReplaceAll: true,
+    });
+    expect(result.ok).toBe(false);
+
+    const list = await service.list<{ id: string }>('loopStrategy');
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.data.map((s) => s.id)).toEqual(['existing']);
+  });
+
+  it('creates a large-import recovery snapshot once the incoming record count crosses the threshold', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    const envelopes = Array.from({ length: 25 }, (_, i) =>
+      createEnvelope('loopStrategy', `strategy-${i}`, strategyPayload(`strategy-${i}`, 'p1')),
+    );
+
+    const result = await applyImport({ loopStrategy: envelopes }, 'mergeNonConflicting', [], {
+      service,
+    });
+    expect(result.ok).toBe(true);
+
+    const snapshots = await listRecoverySnapshots(service);
+    expect(snapshots.ok).toBe(true);
+    if (!snapshots.ok) return;
+    expect(snapshots.data).toHaveLength(1);
+    expect(snapshots.data[0]?.payload.reason).toBe('large-import');
   });
 });
 

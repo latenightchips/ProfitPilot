@@ -34,6 +34,17 @@
  * raw key. It persists as a one-record-per-app singleton, the same
  * pattern `'preferences'`/`'applicationMetadata'` already use (see
  * `../constants.ts`'s `SINGLETON_RECORD_ID`).
+ *
+ * **`'recoverySnapshot'` added in Milestone 8 Batch 4 (M8-046 "Implement
+ * Automatic Local Recovery Snapshot").** Unlike every type above, it is
+ * not a singleton and not business data the user directly authored — it
+ * is this application's own internal safety mechanism, storing whole
+ * point-in-time copies of the other 9 record types (see `./models.ts`'s
+ * `PersistedRecoverySnapshot`). It still goes through the same
+ * envelope/adapter/`PersistenceService` path as everything else, for the
+ * same "no special-cased raw key" reason `'activePortfolio'`'s own
+ * comment above already gives — but see `EXPORTABLE_RECORD_TYPES` below
+ * for why it is deliberately excluded from JSON export and import.
  */
 export const PERSISTED_RECORD_TYPES = [
   'portfolio',
@@ -45,9 +56,28 @@ export const PERSISTED_RECORD_TYPES = [
   'syncMetadata',
   'applicationMetadata',
   'activePortfolio',
+  'recoverySnapshot',
 ] as const;
 
 export type PersistedRecordType = (typeof PERSISTED_RECORD_TYPES)[number];
+
+/**
+ * Every persisted record type except `'recoverySnapshot'` — what
+ * `services/export/JsonExporter.ts`'s full backup and
+ * `services/import/ImportService.ts`'s preview iterate over, instead of
+ * the raw `PERSISTED_RECORD_TYPES`. A recovery snapshot already contains
+ * a full copy of every other record type (`PersistedRecoverySnapshot.records`);
+ * including it in a "full backup" export would nest complete duplicate
+ * copies of the whole dataset inside the file for no benefit, and no
+ * export this application produces will ever contain one — restoring a
+ * snapshot is a distinct, explicit, purely-local action
+ * (`../recoverySnapshot.ts`'s own `restoreRecoverySnapshot`), not a
+ * normal import merge target.
+ */
+export const EXPORTABLE_RECORD_TYPES = PERSISTED_RECORD_TYPES.filter(
+  (recordType): recordType is Exclude<PersistedRecordType, 'recoverySnapshot'> =>
+    recordType !== 'recoverySnapshot',
+);
 
 /**
  * Storage Envelope — M8-003's own "Include" list, verbatim field-for-field:

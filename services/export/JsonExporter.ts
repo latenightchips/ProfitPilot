@@ -22,11 +22,14 @@
  * structurally, not by an explicit filter: no such data exists anywhere
  * in this application yet (Milestone 8's Authentication/Cloud Sync
  * batches, both explicitly out of scope for this batch) — every record
- * type a full backup can include (`PERSISTED_RECORD_TYPES`) is already
- * one of the 9 that `services/persistence/types/envelope.ts` documents,
- * and `'syncMetadata'` (the one record type that could one day carry
- * something session-like) is still an always-empty stub (`syncMetadata.ts`
- * has no writer yet — see that file's own header comment).
+ * type a full backup can include (`EXPORTABLE_RECORD_TYPES`) is already
+ * one of the record types `services/persistence/types/envelope.ts`
+ * documents, and `'syncMetadata'` (the one record type that could one day
+ * carry something session-like) is still an always-empty stub
+ * (`syncMetadata.ts` has no writer yet — see that file's own header
+ * comment). `'recoverySnapshot'` (Milestone 8 Batch 4, M8-046) is
+ * deliberately excluded from `EXPORTABLE_RECORD_TYPES` for a different
+ * reason — see that constant's own header comment.
  *
  * **`service: PersistenceService` is a parameter, not a fixed import of
  * the shared `persistenceService` singleton** — the same
@@ -40,7 +43,7 @@ import { createApplicationError } from '@/services/shared';
 import {
   APP_NAME,
   APP_VERSION,
-  PERSISTED_RECORD_TYPES,
+  EXPORTABLE_RECORD_TYPES,
   type PersistedRecordType,
   type PersistenceService,
   persistenceService,
@@ -75,7 +78,7 @@ export async function buildFullBackupFile(
   const service = options.service ?? persistenceService;
   const records: FullBackupFile['records'] = {};
 
-  for (const recordType of PERSISTED_RECORD_TYPES) {
+  for (const recordType of EXPORTABLE_RECORD_TYPES) {
     const result = await service.listEnvelopes<unknown>(recordType);
     if (!result.ok) return result;
     if (result.data.length > 0) records[recordType] = result.data;
