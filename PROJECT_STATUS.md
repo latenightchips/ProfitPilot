@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-07-31
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25. Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. A permanent `MILESTONE_6_COMPLETION.md` snapshot has not yet been created — outstanding, mirroring the Milestone 4/5 precedent; noted as a follow-up, not a blocker. **Milestone 7 — Strategy Tools is in progress**, using coarser "logical feature batch" grouping (5–8 related tasks per batch, 8 batches total) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction. Batch 1 (Shared Strategy Foundation: M7-001–M7-005) is implemented and awaiting approval. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-08-04
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10013,6 +10013,353 @@ once both tools use it).
 
 ---
 
+### Batch 2 — Loop Builder Foundation (M7-006–M7-012)
+
+**Dependencies satisfied**: M7-001–M7-005 (Batch 1) synchronized.
+
+**M7-006–M7-012** built the Loop Builder route, Store, Strategy
+Controls, Presets, Calculation Workflow, Strategy Summary, and Step
+Table. `stores/loopBuilderStore.ts` establishes structural
+independence from `portfolioStore`/`simulationStore` (never imports
+either; accepts a plain `ApplicationPortfolio` at call time), the same
+precedent `stores/simulationStore.ts` established at M6-003, and maps
+the Engine's 6-value `LoopSafetyCheck` union
+(`validateLoopStrategySafety`, M2-018) into the shared `StrategyWarning`
+shape (`toStrategyWarning`) — a display mapping only, no new
+classification logic. `LoopStrategyControls.tsx` is the one Milestone 7
+component using React Hook Form + Zod directly (M7-008's own
+Requirements name it explicitly); "Swap fee"/"Slippage"/"Gas estimate"
+were deliberately excluded as form fields (Conflict #8 — no Formula ID
+for any of the three), avoiding a dead affordance. "Maximum LTV" and
+"Borrow-rate assumption" are real, wired per-calculation overrides
+(`maxLoanToValueOverride`/`borrowAprOverride`) added to
+`services/loop/strategy.ts` this batch. A new thin Service wrapper,
+`services/portfolio/exposure.ts`, was added specifically to give
+`LoopStrategySummary` a way to show the _current_ (pre-strategy) BTC
+exposure alongside the strategy's own already-computed final exposure.
+`LoopPresets.tsx` ships 3 fixed presets (Conservative/Balanced/
+Aggressive) as reasonable, clearly-labeled starting points, not
+derived from any documented formula (the same "no documented preset
+values" gap Conflict #24 already found for Portfolio's own protocol
+presets). `LoopStepTable.tsx`: 7 of 8 named columns map directly to
+`LoopStepRecord` fields with zero recalculation; "Cumulative cost" is
+rendered as honestly unavailable (Conflict #8 again).
+
+**Conflicts discussed**: #8 (swap fees/slippage/gas — cited for
+excluded form fields and the Step Table's "Cumulative cost" column),
+#24 (referenced by analogy for Loop Presets' own undocumented values).
+No new conflict raised.
+
+**Validation**: full pipeline (format/lint/typecheck/test/coverage/
+build/e2e) passed before commit `98cd28f`. Per-batch historical
+validation numbers for Batches 2–6 were not individually preserved in
+this record — see `MILESTONE_7_COMPLETION.md` for the milestone's
+final, authoritative validation totals.
+
+---
+
+### Batch 3 — Loop Builder Analysis, Simulation Integration, Persistence, Export (M7-013–M7-018)
+
+**Dependencies satisfied**: Batch 2 synchronized.
+
+**M7-013–M7-018** added Loop Safety Analysis, Cost Analysis, Scenario
+Sensitivity, Apply-Loop-as-Simulation, Save/Load, and Export.
+`LoopSafetyAnalysis.tsx`: 6 of 7 named Display items read directly
+from already-computed data; "Risk classification" is deliberately left
+unbuilt, citing Conflict #1 (Health Factor risk-band thresholds
+disagree across four documents) rather than inventing a banding
+scheme. `services/loop/strategy.ts` gained `remainingBorrowCapacity`
+(F-013) and `monthlyInterestCost` (F-031, deliberately not
+`borrowingInterest / 12` — matching the non-simple-division day-count
+convention `services/portfolio/interestBreakdown.ts` already
+established) — both reusing already-public Engine functions, zero new
+Formula Engine logic. `services/loop/finalPortfolio.ts`
+(`buildFinalLoopPortfolio`) was extracted this batch once it gained a
+third consumer (Summary, Safety Analysis, Store's own
+`runSensitivityScenario`). `LoopScenarioSensitivity.tsx` reuses
+`simulateScenario` (M3-009) directly against the loop's own final
+state — 4 stress presets (BTC −25%, Borrow-rate +5pp, Combined,
+Custom), each a documented, labeled assumption, not derived from any
+spec. **`ApplyLoopAsSimulation.tsx` resolved a flagged architectural
+question** (extend `SimulationScenario`, or reuse something else) in
+favor of the already-existing `PortfolioActionSimulationInput`
+(`{collateralDelta, debtDelta}`, M6-008) rather than inventing a third
+`SimulationScenario` variant — the one deliberate exception in
+`features/loop-builder/**` that imports `useSimulationStore`, a
+pattern this same mechanism was reused for twice more later in
+Milestone 7 (Recommendation Center's action links, Batch 6; Exit
+Planner's own bridge, Batch 8). `LoopStrategyLibrary.tsx`/
+`SaveLoopStrategyForm.tsx` mirror `ScenarioComparison.tsx`'s
+Load/Duplicate/Delete/drift-notice pattern (M6-016–M6-018) exactly.
+`exportLoopStrategy.ts` mirrors `features/simulation/utils/exportSimulation.ts`
+(M6-019) closely.
+
+**Conflicts discussed**: #8 (implementation costs itemization, export
+Assumptions), #1 (Risk Classification — a dedicated test asserts the
+component cites this conflict rather than fabricating a band). No new
+conflict raised.
+
+---
+
+### Batch 4 — Exit Planner Foundation (M7-019–M7-023)
+
+**Dependencies satisfied**: Batch 3 synchronized; M3-011 (Exit
+Planning Service) already complete from Milestone 3.
+
+**M7-019–M7-023** built the Exit Planner route, Store, Type Selection,
+Target Form, and Calculation Workflow. `stores/exitPlannerStore.ts`
+follows the same structural-independence pattern as
+`loopBuilderStore.ts`; "do not mutate the active portfolio" is
+satisfied structurally since `planExit` (M3-011) always constructs a
+brand-new `after` summary rather than writing back. `resolveExitTarget`
+maps the Store's 5-value `ExitPlannerType` onto the Engine's real
+3-variant `ExitTarget` union — "Full exit," "Partial debt repayment,"
+and "Target debt balance" all resolve to `{type:'debtBalance',
+targetDebt}`; "Target Health Factor" and "Target retained BTC" map
+1:1. **"Target cash proceeds" (a 6th type M7-021 names) has no Engine
+variant to resolve to at all — Conflict #10, "revived as an actual
+blocking UI gap" for the first time.** `ExitTypeSelector.tsx` renders
+it as an explicit, labeled, disabled "Not available" option citing the
+conflict, the same honest-gap convention `LoopSafetyAnalysis.tsx`'s own
+Conflict #1 handling already established (a dedicated test asserts
+this). `ExitTargetForm.tsx` remounts via `key={exitType}` on type
+switch (simpler than a resync effect here, since nothing external
+writes `targetInputs`), and uses the same field-level `onChange` +
+debounce pairing Loop Strategy Controls established after its own
+Batch 2 `watch()`-race fix.
+
+**Conflicts discussed**: #10 (revived as a real blocking gap — a
+dedicated test asserts the disabled option cites it), #1 and #8
+(referenced by analogy). No new conflict raised.
+
+---
+
+### Batch 5 — Exit Planner Analysis, Persistence, Export (M7-024–M7-030)
+
+**Dependencies satisfied**: Batch 4 synchronized.
+
+**M7-024–M7-030** added Full/Partial/Target-Health-Factor Exit
+Results, Feasibility Analysis, Price Sensitivity, Save/Load, and
+Export. `FullExitResult.tsx`/`PartialExitResult.tsx` are mutually
+exclusive and driven by the _result_ (`after.debtValue === 0` vs. `>
+0`), not by which of the 5 selectable exit types produced it —
+reflecting `calculateExitPosition`'s own "one function, parameterized"
+framing; `app/exit-planner/page.tsx` owns the shared empty/infeasible
+messaging once, a deliberate deviation from Loop Builder's own
+per-component-independence precedent, since Full/Partial Exit Result
+are alternative views of the same single result rather than
+simultaneous, independent sections. `TargetHealthFactorResult.tsx`
+renders alongside Full/Partial (not mutually exclusive with them)
+since a target-HF request can resolve to either outcome; its own
+"Difference from target" row is a real, non-zero, disclosed value
+citing **Conflict #13** (`services/exit/plan.ts`'s documented F-040
+fixed-collateral approximation, which routinely undershoots the
+target once a nontrivial sale occurs) — the Engine's own known
+limitation is shown plainly, not hidden. `ExitFeasibilityAnalysis.tsx`
+echoes the real inputs rather than fabricating a per-check pass/fail
+list, since `calculateTargetExit` returns only one boolean + one
+reason string (unlike Loop's own `LoopSafetyFinding[]`).
+`ExitPriceSensitivity.tsx`/Store's `runPriceSensitivity` reuses
+`planExit` directly per price point (a more direct reuse than Loop's
+own sensitivity composition, since Exit's Service already accepts a
+native price override) with a ±20% assumption. `ExitPlanLibrary.tsx`/
+`SaveExitPlanForm.tsx`/`exportExitPlan.ts` each mirror their Loop
+Builder counterparts exactly.
+
+**Conflicts discussed**: #8, #10, #1 (all referenced by analogy), and
+**Conflict #13 newly cited directly** (F-040's fixed-collateral
+approximation — already an existing, tracked conflict from Milestone
+2, applied here for the first time to a real, user-visible UI
+display). No new conflict raised.
+
+---
+
+### Batch 6 — Recommendation Center Workflows (M7-031–M7-036)
+
+**Dependencies satisfied**: Batch 5 synchronized; M3-012
+(Recommendation Service) already complete from Milestone 3.
+
+**M7-031–M7-036** built the Recommendation Center route, Store, List,
+Detail Panel, Action Links, Acknowledgement, and Recalculation.
+`stores/recommendationCenterStore.ts` is independent of
+`portfolioStore`/`loopBuilderStore`/`exitPlannerStore` except through
+public interfaces, and never mutates the portfolio. **Key design
+decision**: the Store calls `calculateTargetHealthFactorActions`
+(M5-013's own Service, already used by the Dashboard's
+`buildRecommendationSummary`), not `generateRecommendationSet`
+(M3-012) — because the latter requires a complete
+`RecommendationRuleConfig` (`userMinHealthFactor`, `targetDebtRatio`,
+`loopBorrowPercentage`, `maxAcceptableAnnualInterestCost`) with no
+portfolio-level source and no documented default anywhere
+(**Conflict #29**). `calculateTargetHealthFactorActions` needs only
+`targetHealthFactor`, sourced from
+`Portfolio.settings.safetyTargets.targetHealthFactor` (M4-001). The
+route still reviews more than the Dashboard summary three ways: it
+always shows both repayment and additional-collateral recommendations
+(including the real "no action needed" case the Dashboard silently
+drops); it surfaces all 6 documented filter categories, including the
+4 genuinely unavailable ones, each with a real, traceable reason; it
+adds a full Detail Panel, Action Links, and Acknowledgement.
+Recalculation (M7-036) is a pure `(portfolio, targetHealthFactor)`
+function triggered by `app/recommendations/page.tsx`'s own
+`useEffect`, keyed on `[activePortfolioId, portfolio.updatedAt]` — one
+dependency pair covering all 5 documented triggers, since
+`portfolioStore.ts`'s `update()` already bumps `updatedAt` on any
+qualifying edit. Acknowledgement (M7-035) is keyed per
+`(portfolioId, itemId)`, storing a snapshot of `relevantValues` at
+acknowledgement time; any subsequent recalculation whose
+`relevantValues` differ automatically drops the acknowledgement — the
+most conservative reading of "must return if its triggering condition
+materially changes," no numeric tolerance invented. Acknowledged items
+are never deleted, only moved to a separate, always-visible
+"Acknowledged" section. `RecommendationDetailPanel.tsx` implements
+M7-034's Action Links as real prefill-and-navigate actions into Exit
+Planner and Simulation Workspace — reusing the same
+`PortfolioActionSimulationInput` bridge Batch 3 established for Loop
+Builder, never writing to `usePortfolioStore`. Only 2 of M7-034's 4
+named example actions ("Reduce debt," "Add collateral") have real link
+targets; "Review leverage" and "Update stale data" have none (no
+leverage recommendation is ever computed, per Conflict #29, and no
+staleness signal exists anywhere in this codebase). **A real gap was
+found and fixed during this batch's own mandatory manual browser
+verification**: the repayment action originally only called
+`setTargetInputs`, leaving Exit Planner's own `currentResult` stale
+until the user touched a field — fixed by also calling
+`runExitCalculation` immediately, so the prefilled target already
+shows a computed result on arrival.
+
+**Conflicts discussed**: **Conflict #29 cited as the central, load-
+bearing reason** for this Store's whole Service-choice design (not
+merely referenced by analogy, as in earlier batches) — also cited in
+`UNAVAILABLE_FILTER_REASONS`'s `leverage` reason and test assertions.
+Conflict #1 (cited in the `safety` filter's unavailable reason), #8
+(cited in a shared reason string spanning Loop Builder and Exit
+Planner). No new conflict raised.
+
+---
+
+### Batch 7 — Strategy Tool Quality (M7-037–M7-040)
+
+**Dependencies satisfied**: Batch 6 synchronized. This batch was
+performed directly in the session that also wrote this housekeeping
+update, so its own record here is exact, not reconstructed.
+
+**M7-037 (Loading and Empty States)**: `LoopStrategyLibrary.tsx`/
+`ExitPlanLibrary.tsx` empty states gained a real next action ("...use
+Save Strategy/Save Plan to see it here"); `RecommendationList.tsx`'s
+`status === 'idle'` state changed from rendering nothing to a real
+"Preparing recommendations…" message. "Missing collateral"/"No debt"/
+"Missing prices"/"Missing protocol parameters" were investigated
+directly against the real Engine/Service code rather than assumed:
+Zod's own `collateralPositionSchema.quantity.nonnegative()` and a
+`.refine()` enforcing `maxLoanToValue <= liquidationThreshold` on
+every portfolio create/update make "missing prices"/"missing protocol
+parameters" structurally unreachable through the real UI — matching
+Dashboard's own already-documented identical finding.
+
+**M7-038 (Strategy Error Recovery)**: new shared
+`components/strategy/StrategyErrorBanner.tsx` (`role="alert"`, real
+error messages/codes, Return-to-Portfolio link, Download-recovery-copy
+button — deliberately **no** literal Retry button, the same
+live-recalculation reasoning `ScenarioSummary.tsx`'s own M6-026 header
+comment already established for Simulation: the next input change
+already is the retry). All three Stores stopped nulling
+`currentResult`/`actions` on a calculation failure — "restore last
+valid result" is now real, not merely displayed-as-if-real. **Root-
+cause research finding**: a genuine, UI-reachable Engine failure
+(`INSUFFICIENT_COLLATERAL`) exists only for Exit Planner (a low Target
+BTC Price on a Full Exit, since the Engine must then sell more BTC
+than the portfolio holds) — Loop Builder's and Recommendation Center's
+own safety gates both absorb a zero-collateral position into a real,
+non-error "not viable"/"no action needed" _success_ result instead,
+confirmed by direct Engine source inspection, not assumed.
+
+**M7-039 (Responsive Strategy Layouts)**: fixed a real `min-w-0`
+cascade bug on both `app/loop-builder/page.tsx` and
+`app/exit-planner/page.tsx` — `<main>`'s own `min-w-0` (Milestone 5
+Batch 12) does not cascade through nested flex containers, so each
+route's own wide table forced the whole page to overflow horizontally
+at mobile widths. Wrapped `ExitPriceSensitivity`/`LoopScenarioSensitivity`
+tables in `overflow-x-auto`, matching `LoopStepTable.tsx`'s own
+already-correct pattern.
+
+**M7-040 (Strategy Accessibility Pass)**: the new `overflow-x-auto`
+wrappers introduced a real, found (not assumed) axe-core
+`scrollable-region-focusable` violation (WCAG 2.1.1/2.1.3) — fixed with
+`tabIndex={0}`, applied defensively to `LoopStepTable.tsx`'s own
+pre-existing wrapper too.
+
+**Conflicts discussed**: none newly raised; Conflict #8 and the
+Dashboard's own zero-collateral-portfolio precedent (M4-017) were both
+directly re-applied, not re-litigated.
+
+**Validation — Batch 7** (commit `0298168`): format/lint/typecheck
+clean; `pnpm test` 1633/1633 passing (175 files); `pnpm test:coverage`
+96.99% statements / 92.23% branches / 100% functions / 99.31% lines;
+`pnpm build` clean; `pnpm test:e2e` 74/74 passing (19 net new); manual
+browser verification of the full restore-last-valid-result flow.
+
+---
+
+### Batch 8 — Strategy Tool Testing, Cross-Tool Workflows, Final Validation (M7-041–M7-045) — final Milestone 7 batch
+
+**Dependencies satisfied**: Batch 7 synchronized. Also performed
+directly in this session.
+
+**M7-041/M7-042/M7-043 (Loop Builder/Exit Planner/Recommendation
+Center Tests)**: audited existing coverage first — every tool already
+had extensive unit/component/Store tests from its own feature
+batches, but none had a dedicated end-to-end workflow spec. Added
+`tests/e2e/loopBuilderWorkflows.spec.ts` (8 tests), `exitPlannerWorkflows.spec.ts`
+(8 tests), `recommendationWorkflows.spec.ts` (6 tests) — one real-browser
+test per named `Cover` item, mirroring `tests/e2e/simulationWorkflows.spec.ts`'s
+(M6-025) own established convention. Also closed the one genuine Store-
+level unit gap found: Loop Builder's `BORROWING_CAPACITY` warning
+mapping had never been directly unit-tested (only reachable via a
+starting position already at its own borrow ceiling).
+
+**M7-044 (Cross-Tool Workflow Tests)**: added
+`tests/e2e/crossToolWorkflows.spec.ts` (5 tests, one per named flow).
+**A real gap was found while building this, not assumed**: "Copy an
+exit plan into a simulation" had no underlying feature — Exit Planner
+never got an equivalent to Loop Builder's own `ApplyLoopAsSimulation.tsx`
+(M7-016, Batch 3) anywhere in M7-019–M7-030. Built the minimal,
+justified bridge — `ApplyExitPlanAsSimulation.tsx` — reusing the exact
+same `PortfolioActionSimulationInput` mechanism Batch 3 established
+(zero new Engine/Service logic; `transaction.btcSold`/`.repayment` are
+already-computed Engine outputs, just signed and forwarded), wired
+into the Exit Planner route, with its own unit test. This is a real
+production feature added under a nominally test-only task — flagged
+explicitly to the user at the time, not built silently.
+
+**M7-045 (Validate Strategy Tools Against UI Specification)**:
+confirmed Conflicts #32 and #33 (both found at Batch 1, before any
+Milestone 7 code was written) remain correctly resolved and unchanged
+— no new "Auto Loop Engine"/"Initial Capital"/"Portfolio Score"
+control was added to Loop Builder, and no Recommendation Center
+mockup was retrofitted. Terminology, required outputs, Warnings, and
+Assumptions were spot-checked against `06_TASKS.md`'s own task text
+(the authoritative source throughout this milestone) for all three
+tools and found consistent; no new undocumented deviation found.
+Responsive behavior and Accessibility were already validated at Batch
+7 (M7-039/M7-040). Findings recorded in the three route pages' own
+header comments rather than here, per this batch's own explicit
+instruction not to modify this file.
+
+**Conflicts discussed**: #32 and #33 re-verified, still open (see
+their own numbered entries below). No new conflict raised.
+
+**Validation — Batch 8, final Milestone 7 validation** (commit
+`3d71565`): format/lint/typecheck clean; `pnpm test` 1640/1640 passing
+(176 files); `pnpm test:coverage` 96.97% statements / 92.22% branches /
+100% functions / 99.31% lines; `pnpm build` clean; `pnpm test:e2e`
+101/101 passing (27 net new); manual browser verification of the new
+`ApplyExitPlanAsSimulation` feature end-to-end. **This closes
+Milestone 7's own task list**: M7-001 through M7-045 are now all
+addressed. See `MILESTONE_7_COMPLETION.md` for the permanent snapshot.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -11114,6 +11461,71 @@ future milestone, or mark Page 5 Section 4 superseded, the same two
 options Conflict #30 offers for the Dashboard's own Page 3 gap), not an
 engineering one.
 
+### 32. `03_UI.md` Page 6 ("Loop Builder") documents an "Auto Loop Engine" that directly contradicts `06_TASKS.md`'s own M7-008 task and the already-built Engine — found before any Milestone 7 code was written (Batch 1)
+
+**Page 6's own design is a fully automatic loop-count solver.** Its
+`SECTION 2 STRATEGY SETTINGS` names only "Target Health Factor" (plus
+Target BTC Price, Holding Period, Borrow APR, Maximum LTV, and an
+"Auto Loop: Enabled/Disabled" toggle defaulting to Enabled) as inputs
+— never a loop-count field. Its own `DESIGN RULES` section states
+plainly: **"Never ask the user for loop count by default."** Its
+`AUTO LOOP ENGINE` section describes an iterative algorithm that stops
+only when "Target Health Factor reached" or "Borrow capacity
+exhausted" — loop count is a _solved output_, never a user input.
+
+**`06_TASKS.md`'s own M7-008 ("Implement Loop Strategy Controls")
+directly contradicts this**: its Include list names "Maximum Number
+of Loops" as a literal, direct, user-editable numeric input, alongside
+"Target Borrow Percentage" and "Minimum Health Factor" — three
+independent safety dials, not one target-driven auto-solver. The
+already-built Engine (`engine/loop/calculateLoopStrategy.ts`,
+Milestone 2) matches `06_TASKS.md`, not the Page 6 mockup:
+`LoopStrategyInput.maxLoops` is a mandatory parameter the caller
+supplies, never a value the algorithm solves for and returns.
+
+**Resolved in favor of `06_TASKS.md` and the already-built Engine**,
+the same precedence Conflict #30 (Batch 18, Milestone 5) and Conflict
+#31 (Batch 25, Milestone 6) already established for their own
+Page-vs-Tasks mismatches — described at the time as "the largest
+single Page-vs-Tasks gap since Conflict #30." No "Initial Capital"
+input, "Auto Loop" toggle, or "Portfolio Score" card was built; Loop
+Builder's real Strategy Controls (`LoopStrategyControls.tsx`, M7-008,
+Batch 2) exposes `targetBorrowPercentage`/`maxLoops`/`minHealthFactor`
+directly, exactly as `06_TASKS.md` specifies. Re-verified unchanged at
+the Milestone 7 final UI audit (M7-045, Batch 8) — see
+`app/loop-builder/page.tsx`'s own header comment.
+
+**No code changes were made in response to this conflict** (the real
+build already matched `06_TASKS.md`, not Page 6). Flagged for a
+product decision (rewrite Page 6 to match the manual-control design
+actually built and specified, or mark it superseded), not an
+engineering one.
+
+### 33. The Recommendation Center has no page or sidebar entry anywhere in `03_UI.md`'s 10-page index — found before any Milestone 7 code was written (Batch 1)
+
+**A full sweep of all 10 pages in `03_UI.md`'s own index** (performed
+before Milestone 7 implementation began, alongside the Page 6/7 reads
+for Loop Builder and Exit Planner) found no page, section, or sidebar
+entry describing a standalone "Recommendation Center." `06_TASKS.md`'s
+own Milestone 7 section nonetheless dedicates 6 full tasks to one
+(M7-031–M7-036: route, list, detail panel, action links,
+acknowledgement, recalculation) — the same shape as Conflict #23 (the
+Portfolio List page Milestone 4 requires but `03_UI.md`'s own "six
+primary pages" inventory has no room for).
+
+**Resolved the same way Conflict #23 was**: built exactly as
+`06_TASKS.md` specifies (`app/recommendations/page.tsx`,
+`constants/navigation.ts` gained a "Recommendations" sidebar entry),
+with no `03_UI.md` mockup to reconcile against or deviate from. Not
+retrofitted with an invented mockup-derived layout.
+
+**No code changes were made in response to this conflict.** Flagged
+for a product decision (author a `03_UI.md` page for the
+Recommendation Center to keep the specification set internally
+consistent, or note that later-added Milestone-7-scope pages are
+expected to postdate the original 10-page index), not an engineering
+one.
+
 ---
 
 ## Deviations from a literal reading of the docs (all mechanical, none touch business logic or specification content)
@@ -11164,14 +11576,15 @@ engineering one.
 
 1. **M1-009 (Deploy Initial Application)** remains deferred — no Vercel
    project created, per instruction.
-2. **This pass stops here for approval** of Milestone 7 Batch 1
-   (Shared Strategy Foundation: M7-001–M7-005) before committing, per
-   instruction. Milestone 6 (M6-001–M6-026) is complete and
-   synchronized to GitHub — no permanent `MILESTONE_6_COMPLETION.md`
-   snapshot exists yet, an outstanding follow-up, not a blocker.
-   Milestone 7 now uses coarser "logical feature batch" grouping (5–8
-   related tasks per batch) rather than Milestone 5/6's
-   one-task-per-batch density, per explicit instruction. Milestone 5
+2. **Update (Milestone 7 housekeeping pass, 2026-08-04): Milestone 7
+   (M7-001–M7-045) is now complete and synchronized to GitHub**, across
+   8 batches using the coarser "logical feature batch" grouping (5–8
+   related tasks per batch) this item originally announced — see
+   `## Milestone 7 progress` above for the full batch-by-batch record
+   and `MILESTONE_7_COMPLETION.md` for the permanent snapshot.
+   Milestone 6 (M6-001–M6-026) is complete and synchronized to
+   GitHub — `MILESTONE_6_COMPLETION.md` now exists as a historical
+   backfill, closing the gap this item originally flagged. Milestone 5
    (M5-001–M5-007, M5-009–M5-028, excluding M5-008) is complete and
    synchronized, with a permanent snapshot in
    `MILESTONE_5_COMPLETION.md`.
