@@ -2,8 +2,11 @@ import { create } from 'zustand';
 
 import {
   type ApplicationError,
+  autoSaveCoordinator,
   calculateTargetHealthFactorActions,
+  persistenceService,
   type ServiceMetadata,
+  SINGLETON_RECORD_ID,
   type TargetHealthFactorActions,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
@@ -102,7 +105,7 @@ export type RecommendationCenterStatus = 'idle' | 'noTarget' | 'ready' | 'error'
 export type RecommendationFilterCategory =
   'safety' | 'debt' | 'collateral' | 'interest' | 'leverage' | 'exitReadiness';
 
-type AcknowledgementsByPortfolio = Record<
+export type AcknowledgementsByPortfolio = Record<
   string,
   Partial<Record<RecommendationItemId, Record<string, number>>>
 >;
@@ -125,6 +128,15 @@ export interface RecommendationCenterActions {
   selectItem: (id: RecommendationItemId | null) => void;
   acknowledge: (id: RecommendationItemId) => void;
   unacknowledge: (id: RecommendationItemId) => void;
+  loadAcknowledgements: () => Promise<void>;
+}
+
+function scheduleAcknowledgementsSave(acknowledgements: AcknowledgementsByPortfolio): void {
+  autoSaveCoordinator.schedule(
+    'recommendationAcknowledgements',
+    SINGLETON_RECORD_ID,
+    acknowledgements,
+  );
 }
 
 /** Matches `stores/portfolioStore.ts`'s own `SOURCE_STATUS` — every portfolio is manually entered in this version (M4-014/M4-015). */
@@ -223,20 +235,26 @@ export const useRecommendationCenterStore = create<
       return;
     }
 
-    set((state) => ({
-      status: 'ready',
-      portfolioId: portfolio.id,
-      targetHealthFactor: target,
-      actions: result.data,
-      errors: [],
-      lastMetadata: result.metadata,
-      selectedItemId: portfolioChanged ? null : state.selectedItemId,
-      acknowledgements: reconcileAcknowledgements(
+    set((state) => {
+      const reconciled = reconcileAcknowledgements(
         state.acknowledgements,
         portfolio.id,
         result.data,
-      ),
-    }));
+      );
+      if (reconciled !== state.acknowledgements) {
+        scheduleAcknowledgementsSave(reconciled);
+      }
+      return {
+        status: 'ready',
+        portfolioId: portfolio.id,
+        targetHealthFactor: target,
+        actions: result.data,
+        errors: [],
+        lastMetadata: result.metadata,
+        selectedItemId: portfolioChanged ? null : state.selectedItemId,
+        acknowledgements: reconciled,
+      };
+    });
   },
 
   setCategoryFilter: (filter) => set({ categoryFilter: filter }),
@@ -246,15 +264,17 @@ export const useRecommendationCenterStore = create<
   acknowledge: (id) => {
     const { portfolioId, actions } = get();
     if (portfolioId === null || actions === null) return;
-    set((state) => ({
-      acknowledgements: {
+    set((state) => {
+      const acknowledgements = {
         ...state.acknowledgements,
         [portfolioId]: {
           ...state.acknowledgements[portfolioId],
           [id]: { ...actions[id].relevantValues },
         },
-      },
-    }));
+      };
+      scheduleAcknowledgementsSave(acknowledgements);
+      return { acknowledgements };
+    });
   },
 
   unacknowledge: (id) => {
@@ -265,7 +285,19 @@ export const useRecommendationCenterStore = create<
       if (existing === undefined || existing[id] === undefined) return state;
       const next = { ...existing };
       delete next[id];
-      return { acknowledgements: { ...state.acknowledgements, [portfolioId]: next } };
+      const acknowledgements = { ...state.acknowledgements, [portfolioId]: next };
+      scheduleAcknowledgementsSave(acknowledgements);
+      return { acknowledgements };
     });
+  },
+
+  loadAcknowledgements: async () => {
+    await autoSaveCoordinator.flushAll();
+    const result = await persistenceService.read<AcknowledgementsByPortfolio>(
+      'recommendationAcknowledgements',
+      SINGLETON_RECORD_ID,
+    );
+    if (!result.ok || result.data === null) return;
+    set({ acknowledgements: result.data });
   },
 }));

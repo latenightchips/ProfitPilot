@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
+  autoSaveCoordinator,
+  persistenceService,
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
   type ScenarioSummary,
@@ -271,6 +273,7 @@ export interface SimulationStoreActions {
   deleteSavedScenario: (id: string) => void;
   toggleComparisonSelection: (id: string) => void;
   setPreviewMode: (enabled: boolean) => void;
+  loadSavedScenarios: () => Promise<void>;
   reset: () => void;
 }
 
@@ -412,6 +415,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       };
 
       set((state) => ({ savedScenarios: [...state.savedScenarios, saved] }));
+      autoSaveCoordinator.schedule('simulation', saved.id, saved);
       return saved.id;
     },
 
@@ -442,10 +446,12 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       };
 
       set((state) => ({ savedScenarios: [...state.savedScenarios, duplicate] }));
+      autoSaveCoordinator.schedule('simulation', duplicate.id, duplicate);
       return duplicate.id;
     },
 
     deleteSavedScenario: (id) => {
+      autoSaveCoordinator.scheduleDelete('simulation', id);
       set((state) => ({
         savedScenarios: state.savedScenarios.filter((saved) => saved.id !== id),
         comparisonSelection: state.comparisonSelection.filter((selectedId) => selectedId !== id),
@@ -462,6 +468,13 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
 
     setPreviewMode: (enabled) => {
       set({ previewMode: enabled });
+    },
+
+    loadSavedScenarios: async () => {
+      await autoSaveCoordinator.flushAll();
+      const result = await persistenceService.list<SavedSimulation>('simulation');
+      if (!result.ok) return;
+      set({ savedScenarios: result.data });
     },
 
     reset: () => {

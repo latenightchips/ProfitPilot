@@ -4,34 +4,34 @@
  * DoD: "Store actions remain focused on state transitions and delegate
  * calculations and persistence to Services."
  *
- * **Conflict B (approved, Milestone 4 plan): no interim persistence
- * infrastructure, no Zustand `persist` middleware, before Milestone 8.**
- * This store is in-memory only — a page refresh loses every portfolio.
- * Fields this task's own "State" list requires that presuppose a working
- * persistence backend are present (so the shape this task asks for
- * exists) but are honestly degenerate rather than backed by an interim
- * mechanism:
- * - `loadStatus` — `load()` has nothing to load from (no persistence
- *   layer exists), so it is a structural stub: it transitions
- *   `'loading'` → `'idle'` synchronously without changing `portfolios`.
- *   Where a real `services/persistence` call will go once Milestone 8
- *   builds one.
- * - `saveStatus` — every mutation is a synchronous in-memory write with
- *   no external save target. **Updated in Batch 8 (M4-013)**: every
- *   mutating action now transitions `'saving'` → `'saved'`/`'error'` for
- *   real (see this file's own M4-013 note below) — `'saved'` correctly
- *   means "committed to the Store's in-memory state," not "written to
- *   disk/cloud," which stays honest under Conflict B without claiming
- *   durability that doesn't exist. `'offline'` remains permanently
- *   unreachable — see the M4-013 note for why building it would be
- *   actively misleading, not merely unbuilt.
- * - `lastSynchronizedAt` — stays `null` always; there is no
- *   synchronization target yet (that is Milestone 8's cloud layer).
+ * **Conflict B (Milestone 4 plan) — resolved for local storage in
+ * Milestone 8 Batch 2.** Every mutating action now schedules a real,
+ * debounced write through `autoSaveCoordinator`/`persistenceService`
+ * (`services/persistence`, M8-008/M8-011) — never `localStorage`
+ * directly, per the standing architectural rule that only
+ * `services/persistence/` may touch a storage adapter. `lastSynchronizedAt`
+ * still stays `null` always: this is local persistence, not cloud
+ * *synchronization* (Milestone 8's later Cloud Sync batch) — no
+ * synchronization target exists yet.
+ * - `load()` (M8-008) now really hydrates `portfolios` and
+ *   `activePortfolioId` from local storage — see its own implementation
+ *   comment below for why both reads happen even though the Store's
+ *   public shape stayed a single action.
+ * - `saveStatus` reflects `autoSaveCoordinator`'s real, asynchronous save
+ *   state for the most recently mutated portfolio (not `select`'s own
+ *   `'activePortfolio'` write — see `select`'s own comment) — `'saved'`
+ *   now honestly means "written to local storage," and `'error'` is
+ *   reachable for real (a local storage quota/availability failure), not
+ *   merely modeled. `'offline'` remains permanently unreachable: this
+ *   Store still makes zero network requests, so nothing about its
+ *   behavior depends on connectivity.
+ * - **"Retry transient failures"** is now real too, inside
+ *   `autoSaveCoordinator` itself (M8-011) — this Store does not
+ *   implement its own retry logic, it only reads the coordinator's
+ *   resulting state.
  *
- * This also means M4-010's "Retain selection after refresh" cannot be
- * genuinely satisfied by this batch — documented here and in
- * PROJECT_STATUS.md rather than papered over with an interim solution,
- * per instruction.
+ * M4-010's "Retain selection after refresh" is now genuinely satisfied —
+ * `load()` restores `activePortfolioId` from its own persisted record.
  *
  * **`calculatePortfolioSummary` (M3-005) usage — the concrete reason
  * this task depends on it**: M4-004 (Portfolio List Page, a later batch)
@@ -109,39 +109,32 @@
  * through unchanged via `...existing.portfolio`, since none of those
  * operations changes the price or protocol values themselves.
  *
- * **`saveStatus` transitions (added in M4-013, "Implement Portfolio
- * Auto-Save")** — every mutating action (`create`/`update`/`duplicate`/
- * `archive`/`unarchive`/`delete`) now sets `'saving'` before doing its
- * work, then `'saved'` on success or `'error'` on a validation/not-found
- * failure. `select`/`load` leave it untouched — neither persists
- * anything. Three of M4-013's four DoD-named states are genuinely
- * reachable this way; the fourth (`'offline'`) is not, and building it
- * anyway would misrepresent this app's actual behavior — see
- * PROJECT_STATUS.md's conflict #28 for the full reasoning:
- * - **`'saving'` is real but not paintable.** Every mutation here is a
- *   synchronous in-memory write — there is no I/O to await, so
- *   `'saving'` is set and then immediately overwritten by `'saved'`/
- *   `'error'` within the same synchronous call, before React ever gets a
- *   chance to render the intermediate value. It is still implemented as
- *   a real, distinct `set()` call (verifiable via direct
- *   `usePortfolioStore.subscribe`, not just `getState()` after the
- *   fact) rather than skipped, because the state machine itself should
- *   be complete and correct — but no `setTimeout`/artificial delay was
- *   added to make it visibly renderable, since that would fabricate
- *   latency this in-memory Store does not have.
- * - **`'offline'` is not wired to `navigator.onLine`.** Doing so would be
- *   real code with a false meaning: this Store makes zero network
- *   requests, so nothing about its behavior actually depends on
- *   connectivity — implying otherwise (e.g. "your changes aren't saved
- *   because you're offline") would be inventing a failure mode that
- *   cannot occur here, not merely leaving one unbuilt.
- * - **No "Retry transient failures" mechanism was added.** The only
- *   failure mode this Store has is Zod validation (deterministic, not
- *   transient) — resubmitting identical invalid input fails identically
- *   every time. The correct response is fixing the input, which the
- *   existing inline field-level errors (M4-002/M4-006/M4-007/M4-008)
- *   already support; a "Retry" button here would either be a no-op or
- *   silently misleading.
+ * **`saveStatus` transitions (added in M4-013; made real in Milestone 8
+ * Batch 2, M8-008/M8-011)** — every mutating action
+ * (`create`/`update`/`duplicate`/`archive`/`unarchive`/`delete`) sets
+ * `'saving'` synchronously (a real, immediately-visible `set()` call —
+ * verifiable via `usePortfolioStore.subscribe`, not just a later
+ * `getState()`), then asynchronously schedules a debounced local storage
+ * write through `autoSaveCoordinator`. A module-level subscription below
+ * this Store's own definition mirrors that coordinator's eventual
+ * `'saved'`/`'error'` state back into `saveStatus` once the write
+ * actually resolves — genuinely asynchronous now, so `'saving'` is
+ * observable for real, not just structurally present. `select`/`load`
+ * still leave `saveStatus` untouched: `load` hydrates rather than saves,
+ * and `select`'s own `'activePortfolio'` write is a separate, silently
+ * tracked record — see `select`'s own comment for why conflating the two
+ * would misrepresent what `saveStatus` has always meant (the *portfolio*
+ * record's own save state).
+ * - **`'offline'` is still not wired to `navigator.onLine`.** Local
+ *   storage access has no network dependency — a "you're offline" state
+ *   would still be inventing a failure mode that cannot occur here.
+ * - **"Retry transient failures" is now real**, inside
+ *   `autoSaveCoordinator` itself (M8-011) — a `LOCAL_STORAGE_WRITE_FAILED`/
+ *   `LOCAL_STORAGE_READ_FAILED` failure retries with backoff before
+ *   settling into `'error'`; a Zod validation failure (still
+ *   deterministic) is never even scheduled, since this Store only calls
+ *   `autoSaveCoordinator.schedule` after a mutation already committed a
+ *   valid record to memory.
  *
  * **"Prevent stale updates from overwriting newer state" — already
  * structurally guaranteed at the Store layer, verified rather than
@@ -182,11 +175,15 @@ import { create } from 'zustand';
 
 import {
   type ApplicationError,
+  autoSaveCoordinator,
   calculatePortfolioSummary,
   createApplicationError,
   type MappingResult,
+  type PersistedActivePortfolio,
+  persistenceService,
   type PortfolioSummary,
   type ServiceResult,
+  SINGLETON_RECORD_ID,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import {
@@ -216,7 +213,7 @@ export interface PortfolioStoreState {
 }
 
 export interface PortfolioStoreActions {
-  load: () => void;
+  load: () => Promise<void>;
   create: (input: unknown) => MappingResult<Portfolio>;
   update: (id: string, input: unknown) => MappingResult<Portfolio>;
   select: (id: string | null) => void;
@@ -265,6 +262,20 @@ function protocolParametersEqual(a: Portfolio['protocol'], b: Portfolio['protoco
   );
 }
 
+/**
+ * The one portfolio id `saveStatus` currently tracks — updated by every
+ * mutating action right before it schedules a save/delete, read by the
+ * module-level `autoSaveCoordinator.subscribe` below. A plain module
+ * variable, not Store state: it is an internal bookkeeping detail for
+ * this one mirroring subscription, not something any component reads.
+ */
+let lastPersistedPortfolioId: string | null = null;
+
+function schedulePortfolioSave(portfolio: Portfolio): void {
+  lastPersistedPortfolioId = portfolio.id;
+  autoSaveCoordinator.schedule('portfolio', portfolio.id, portfolio);
+}
+
 export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   portfolios: {},
   activePortfolioId: null,
@@ -273,12 +284,46 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   errors: [],
   lastSynchronizedAt: null,
 
-  load: () => {
-    // No persistence layer exists yet (Conflict B) — nothing to load.
-    // This transition exists so the action is real and callable, ready
-    // for Milestone 8 to give it something to do.
+  load: async () => {
     set({ loadStatus: 'loading' });
-    set({ loadStatus: 'idle' });
+
+    // Flushes any still-debounced write (e.g. a `create` moments ago,
+    // navigating straight into a fresh mount of a page that calls
+    // `load()`) so this read never races an in-flight write and
+    // overwrites a just-created in-memory record with stale disk
+    // contents — see `autoSaveCoordinator.flushAll`'s own comment.
+    await autoSaveCoordinator.flushAll();
+
+    const portfoliosResult = await persistenceService.list<Portfolio>('portfolio');
+    if (!portfoliosResult.ok) {
+      set({ loadStatus: 'error', errors: portfoliosResult.errors });
+      return;
+    }
+
+    // A second, independent read — 'activePortfolio' is its own record
+    // (see this file's own top comment), not a field the portfolio list
+    // read above already carries. A failure here is not fatal to loading
+    // portfolios themselves: it just means no selection is restored.
+    const activeResult = await persistenceService.read<PersistedActivePortfolio>(
+      'activePortfolio',
+      SINGLETON_RECORD_ID,
+    );
+    const activePortfolioId = activeResult.ok ? (activeResult.data?.portfolioId ?? null) : null;
+
+    const portfolios: Record<string, PortfolioRecord> = {};
+    for (const portfolio of portfoliosResult.data) {
+      portfolios[portfolio.id] = { portfolio, summary: buildSummary(portfolio) };
+    }
+
+    set({
+      portfolios,
+      activePortfolioId:
+        activePortfolioId !== null && portfolios[activePortfolioId] !== undefined
+          ? activePortfolioId
+          : null,
+      loadStatus: 'idle',
+      errors: [],
+    });
   },
 
   create: (input) => {
@@ -316,8 +361,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [portfolio.id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
-      saveStatus: 'saved',
     }));
+    schedulePortfolioSave(portfolio);
 
     return { ok: true, data: portfolio };
   },
@@ -382,8 +427,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
-      saveStatus: 'saved',
     }));
+    schedulePortfolioSave(portfolio);
 
     return { ok: true, data: portfolio };
   },
@@ -394,6 +439,13 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       return;
     }
     set({ activePortfolioId: id, errors: [] });
+    // Deliberately does not touch `saveStatus` — that field has always
+    // meant "the *portfolio* record's own save state" (M4-013); the
+    // active-selection write below is a separate, silently tracked
+    // record (`'activePortfolio'`), not a portfolio mutation.
+    autoSaveCoordinator.schedule<PersistedActivePortfolio>('activePortfolio', SINGLETON_RECORD_ID, {
+      portfolioId: id,
+    });
   },
 
   duplicate: (id) => {
@@ -422,8 +474,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         [portfolio.id]: { portfolio, summary: buildSummary(portfolio) },
       },
       errors: [],
-      saveStatus: 'saved',
     }));
+    schedulePortfolioSave(portfolio);
 
     return { ok: true, data: portfolio };
   },
@@ -445,8 +497,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       activePortfolioId: state.activePortfolioId === id ? null : state.activePortfolioId,
       errors: [],
-      saveStatus: 'saved',
     }));
+    schedulePortfolioSave(portfolio);
   },
 
   unarchive: (id) => {
@@ -465,8 +517,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     set((state) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       errors: [],
-      saveStatus: 'saved',
     }));
+    schedulePortfolioSave(portfolio);
   },
 
   delete: (id) => {
@@ -476,6 +528,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       set({ errors: [notFoundError(id)], saveStatus: 'error' });
       return;
     }
+    lastPersistedPortfolioId = id;
+    autoSaveCoordinator.scheduleDelete('portfolio', id);
     set((state) => {
       const portfolios = { ...state.portfolios };
       delete portfolios[id];
@@ -483,7 +537,6 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         portfolios,
         activePortfolioId: state.activePortfolioId === id ? null : state.activePortfolioId,
         errors: [],
-        saveStatus: 'saved',
       };
     });
   },
@@ -503,3 +556,26 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     }));
   },
 }));
+
+/**
+ * Mirrors `autoSaveCoordinator`'s real, asynchronous save state for the
+ * most recently mutated portfolio back into `saveStatus` — declared
+ * after `usePortfolioStore` itself (not inside its own initializer) to
+ * avoid referencing the Store before it exists. Runs once at module
+ * load, for the lifetime of the process, the same "one shared
+ * subscription" shape `autoSaveCoordinator` itself already uses
+ * internally for its own listeners.
+ *
+ * Filters on `recordType === 'portfolio'` and `id === lastPersistedPortfolioId`
+ * — the coordinator's `subscribe` fires for *every* record's state
+ * change across the whole application (every Store shares one
+ * coordinator instance), not just this Store's own. Without this filter,
+ * an unrelated event (e.g. `select`'s own `'activePortfolio'` write
+ * settling) would re-read and re-apply the portfolio's last known state
+ * regardless of whether anything about *it* actually changed — including
+ * `'idle'`, correctly reachable after a successful delete.
+ */
+autoSaveCoordinator.subscribe((recordType, id, state) => {
+  if (recordType !== 'portfolio' || id !== lastPersistedPortfolioId) return;
+  usePortfolioStore.setState({ saveStatus: state });
+});

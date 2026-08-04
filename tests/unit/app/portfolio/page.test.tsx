@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PortfolioPage from '@/app/portfolio/page';
+import { autoSaveCoordinator } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -20,6 +21,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -517,8 +519,9 @@ describe('PortfolioPage — Protocol Configuration Controls (M4-015)', () => {
 });
 
 describe('PortfolioPage — Auto-Save (M4-013)', () => {
-  it('displays "Saved" once a portfolio is created and selected', () => {
+  it('displays "Saved" once a portfolio is created and selected', async () => {
     createAndSelect();
+    await autoSaveCoordinator.flushAll();
     render(<PortfolioPage />);
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });

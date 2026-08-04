@@ -32,7 +32,7 @@
  */
 import type { MappingResult } from '@/services/shared';
 
-import { createMemoryAdapter } from './adapters';
+import { createLocalStorageAdapter } from './adapters';
 import { createEnvelope, updateEnvelope } from './envelope';
 import type {
   PersistedRecordType,
@@ -60,7 +60,7 @@ export interface PersistenceService {
 }
 
 export function createPersistenceService(
-  adapter: PersistenceAdapter = createMemoryAdapter(),
+  adapter: PersistenceAdapter = createLocalStorageAdapter(),
 ): PersistenceService {
   return {
     checkAvailability(): PersistenceAdapterAvailability {
@@ -131,9 +131,9 @@ export function createPersistenceService(
 }
 
 /**
- * The shared default instance — backed by the in-memory adapter until
- * M8-006 (Batch 2) implements `LocalStorageAdapter` and this default is
- * updated to use it. No Store or feature imports `createMemoryAdapter`
- * or any adapter directly; only this file and tests do.
+ * The shared default instance — backed by `LocalStorageAdapter` (M8-006)
+ * as of Milestone 8 Batch 2. No Store or feature imports
+ * `createLocalStorageAdapter`/`createMemoryAdapter` or any adapter
+ * directly; only this file and tests do.
  */
 export const persistenceService = createPersistenceService();

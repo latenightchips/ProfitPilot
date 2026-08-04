@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { autoSaveCoordinator } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -22,6 +23,7 @@ beforeEach(() => {
   // Merge, not replace — replacing would also wipe the store's action
   // functions, which live on the same state object.
   usePortfolioStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -356,15 +358,75 @@ describe('usePortfolioStore.delete (M4-003)', () => {
   });
 });
 
-describe('usePortfolioStore.load (M4-003, Conflict B)', () => {
-  it('transitions loadStatus back to idle synchronously (no persistence backend exists yet)', () => {
-    usePortfolioStore.getState().load();
+describe('usePortfolioStore.load (M4-003, Conflict B, made real in M8-008)', () => {
+  it('transitions loadStatus back to idle once hydration completes', async () => {
+    await usePortfolioStore.getState().load();
     expect(usePortfolioStore.getState().loadStatus).toBe('idle');
   });
 
-  it('never populates portfolios, since there is nothing to load from', () => {
-    usePortfolioStore.getState().load();
+  it('leaves portfolios empty when local storage has nothing stored', async () => {
+    await usePortfolioStore.getState().load();
     expect(usePortfolioStore.getState().portfolios).toEqual({});
+  });
+
+  it('restores a portfolio persisted through a genuine local storage round trip, surviving a simulated refresh', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
+
+    // Simulates a page refresh: wipe in-memory state, then hydrate purely
+    // from whatever `persistenceService`/local storage actually has.
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.name).toBe('My Portfolio');
+    expect(record.summary.ok).toBe(true);
+  });
+
+  it('restores the active portfolio selection alongside the portfolio list', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(created.data.id);
+  });
+
+  it('drops a stored active-selection id that no longer points to an existing portfolio', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().delete(created.data.id);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(usePortfolioStore.getState().activePortfolioId).toBeNull();
+  });
+
+  it('fails safely (loadStatus: error) when local storage holds corrupted data, without throwing', async () => {
+    window.localStorage.setItem('profitpilot:v1:portfolio:corrupt', '{not valid json');
+
+    await expect(usePortfolioStore.getState().load()).resolves.toBeUndefined();
+    expect(usePortfolioStore.getState().loadStatus).toBe('error');
+    expect(usePortfolioStore.getState().errors.length).toBeGreaterThan(0);
+  });
+
+  it('flushes any still-debounced write before reading, so load never clobbers an in-flight create with stale disk contents', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+
+    // No manual flushAll here — `load()` itself must flush before reading.
+    await usePortfolioStore.getState().load();
+
+    expect(usePortfolioStore.getState().portfolios[created.data.id]).toBeDefined();
   });
 });
 
@@ -375,31 +437,40 @@ describe('usePortfolioStore — lastSynchronizedAt honesty (M4-003, Conflict B)'
   });
 });
 
-describe('usePortfolioStore — saveStatus transitions (M4-013)', () => {
-  it('reports "saved" after a successful create', () => {
+describe('usePortfolioStore — saveStatus transitions (M4-013, made real in M8-011)', () => {
+  it('sets "saving" synchronously, then settles to "saved" once the debounced write lands', async () => {
     usePortfolioStore.getState().create(validInput());
+    expect(usePortfolioStore.getState().saveStatus).toBe('saving');
+
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
   });
 
-  it('reports "error" after a create that fails validation', () => {
+  it('reports "error" after a create that fails validation, without ever scheduling a write', async () => {
     usePortfolioStore.getState().create({ name: '' });
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('error');
   });
 
-  it('transitions through "saving" before settling — observable via direct subscription, not just the final getState()', () => {
+  it('transitions through "saving" before settling — observable via direct subscription, not just the final getState()', async () => {
     const seen: string[] = [];
     const unsubscribe = usePortfolioStore.subscribe((state) => seen.push(state.saveStatus));
     usePortfolioStore.getState().create(validInput());
+    await autoSaveCoordinator.flushAll();
     unsubscribe();
     expect(seen).toContain('saving');
     expect(seen[seen.length - 1]).toBe('saved');
   });
 
-  it('reports "saved" after a successful update, and "error" after one that fails validation', () => {
+  it('reports "saved" after a successful update, and "error" after one that fails validation', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
 
     usePortfolioStore.getState().update(created.data.id, { name: 'Renamed' });
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
 
     usePortfolioStore.getState().update(created.data.id, {
@@ -426,38 +497,49 @@ describe('usePortfolioStore — saveStatus transitions (M4-013)', () => {
     expect(usePortfolioStore.getState().saveStatus).toBe('error');
   });
 
-  it('reports "saved" after a successful duplicate/archive/unarchive/delete', () => {
+  it('reports "saved" after a successful duplicate/archive/unarchive/delete', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
 
     const duplicated = usePortfolioStore.getState().duplicate(created.data.id);
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
     if (!duplicated.ok) throw new Error('setup failed');
 
     usePortfolioStore.getState().archive(duplicated.data.id);
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
 
     usePortfolioStore.getState().unarchive(duplicated.data.id);
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
 
     usePortfolioStore.getState().delete(duplicated.data.id);
-    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('idle');
   });
 
-  it('never reaches "offline" — no network dependency exists to go offline from (conflict #28)', () => {
+  it('never reaches "offline" — no network dependency exists to go offline from (conflict #28)', async () => {
     usePortfolioStore.getState().create(validInput());
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).not.toBe('offline');
   });
 
-  it('select/load never change saveStatus — neither one persists anything', () => {
+  it('select never changes saveStatus — its own activePortfolio write is a separate, silently tracked record', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
     usePortfolioStore.setState({ saveStatus: 'idle' });
 
     usePortfolioStore.getState().select(created.data.id);
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().saveStatus).toBe('idle');
+  });
 
-    usePortfolioStore.getState().load();
+  it('load never changes saveStatus — hydrating is not saving', async () => {
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+    await usePortfolioStore.getState().load();
     expect(usePortfolioStore.getState().saveStatus).toBe('idle');
   });
 });

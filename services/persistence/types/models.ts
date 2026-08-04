@@ -74,3 +74,14 @@ export interface PersistedSyncMetadata {
   lastSyncedAt: string | null;
   cloudUpdatedAt: string | null;
 }
+
+/**
+ * Active portfolio selection payload — Milestone 8 Batch 2 (M8-007's
+ * "Active portfolio" key). Mirrors `stores/portfolioStore.ts`'s own
+ * `activePortfolioId: string | null` field exactly — see
+ * `./envelope.ts`'s own header comment for why this is a persisted
+ * singleton rather than a special-cased raw key.
+ */
+export interface PersistedActivePortfolio {
+  portfolioId: string | null;
+}

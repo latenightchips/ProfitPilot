@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { ApplicationPortfolio } from '@/services';
+import { type ApplicationPortfolio, autoSaveCoordinator, persistenceService } from '@/services';
+import type { SavedExitPlan } from '@/stores/exitPlannerStore';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 
 /**
@@ -25,6 +26,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   useExitPlannerStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function validPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
@@ -439,6 +441,84 @@ describe('saveExitPlan/loadExitPlan/duplicateExitPlan/deleteExitPlan (M7-029)', 
     const state = useExitPlannerStore.getState();
     expect(state.savedPlans).toEqual([]);
     expect(state.selectedPlanId).toBeNull();
+  });
+});
+
+describe('Local exit plan persistence (M8-009)', () => {
+  const PORTFOLIO_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
+  it('saveExitPlan schedules a real local storage write, readable back through persistenceService', async () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore.getState().saveExitPlan({
+      name: 'My Exit',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    await autoSaveCoordinator.flushAll();
+    const stored = await persistenceService.list<SavedExitPlan>('exitPlan');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((plan) => plan.id === id)).toBe(true);
+  });
+
+  it('duplicateExitPlan schedules a write for the new copy', async () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore.getState().saveExitPlan({
+      name: 'My Exit',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    const duplicateId = useExitPlannerStore.getState().duplicateExitPlan(id);
+    if (duplicateId === null) throw new Error('expected a duplicate id');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedExitPlan>('exitPlan');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((plan) => plan.id === duplicateId)).toBe(true);
+  });
+
+  it('deleteExitPlan schedules removal from local storage', async () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore.getState().saveExitPlan({
+      name: 'My Exit',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    useExitPlannerStore.getState().deleteExitPlan(id);
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedExitPlan>('exitPlan');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((plan) => plan.id === id)).toBe(false);
+  });
+
+  it('loadSavedPlans hydrates savedPlans from local storage, flushing first', async () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+    const id = useExitPlannerStore.getState().saveExitPlan({
+      name: 'My Exit',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    useExitPlannerStore.setState({ savedPlans: [] });
+    await useExitPlannerStore.getState().loadSavedPlans();
+
+    expect(useExitPlannerStore.getState().savedPlans.some((p) => p.id === id)).toBe(true);
   });
 });
 

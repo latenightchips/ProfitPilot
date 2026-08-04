@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import DashboardPage from '@/app/page';
+import { autoSaveCoordinator } from '@/services';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -22,8 +23,15 @@ const INITIAL_STATE = {
 };
 
 beforeEach(() => {
-  usePortfolioStore.setState(INITIAL_STATE);
+  // `load: async () => {}` prevents DashboardPage's own mount effect
+  // (a pre-existing `useEffect(() => { load(); }, [load])`) from
+  // overwriting each test's manually seeded state with whatever the
+  // real, now-async `load()` (M8-008) reads from local storage — these
+  // tests exercise the Dashboard's rendering logic directly, not
+  // hydration itself (covered by `stores/portfolioStore.test.ts`).
+  usePortfolioStore.setState({ ...INITIAL_STATE, load: async () => {} });
   useDeveloperModeStore.setState({ enabled: false });
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -71,10 +79,11 @@ describe('DashboardPage — valid portfolio (M5-003 pipeline)', () => {
     expect(screen.getByText('Health Factor')).toBeInTheDocument();
   });
 
-  it('renders the Summary Header (M5-004) with a Refresh action and an Edit Portfolio link', () => {
+  it('renders the Summary Header (M5-004) with a Refresh action and an Edit Portfolio link', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
+    await autoSaveCoordinator.flushAll();
 
     render(<DashboardPage />);
 

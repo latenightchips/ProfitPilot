@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PortfoliosPage from '@/app/portfolios/page';
+import { autoSaveCoordinator } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -25,8 +26,13 @@ const INITIAL_STATE = {
 };
 
 beforeEach(() => {
-  usePortfolioStore.setState(INITIAL_STATE);
+  // `load: async () => {}` prevents PortfoliosPage's own mount effect
+  // (a pre-existing `useEffect(() => { load(); }, [load])`) from
+  // overwriting each test's manually seeded state with whatever the
+  // real, now-async `load()` (M8-008) reads from local storage.
+  usePortfolioStore.setState({ ...INITIAL_STATE, load: async () => {} });
   push.mockClear();
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Partial<ReturnType<typeof baseInput>> = {}) {
@@ -70,8 +76,9 @@ describe('PortfoliosPage — with portfolios (M4-004)', () => {
     expect(screen.getByText(/Updated/)).toBeInTheDocument();
   });
 
-  it('displays the global storage status on every row (Conflict B; real "saved" transitions added in M4-013)', () => {
+  it('displays the global storage status on every row (Conflict B; real "saved" transitions added in M4-013)', async () => {
     usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));
+    await autoSaveCoordinator.flushAll();
     render(<PortfoliosPage />);
     expect(screen.getByText(/Storage: saved/)).toBeInTheDocument();
   });

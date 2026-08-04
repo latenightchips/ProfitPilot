@@ -2,6 +2,7 @@ export type { PersistenceAdapter, PersistenceAdapterAvailability } from './adapt
 export type { PersistedRecordType, StorageEnvelope } from './envelope';
 export { PERSISTED_RECORD_TYPES } from './envelope';
 export type {
+  PersistedActivePortfolio,
   PersistedApplicationMetadata,
   PersistedPreferences,
   PersistedSyncMetadata,

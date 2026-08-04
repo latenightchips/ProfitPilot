@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { autoSaveCoordinator, persistenceService, SINGLETON_RECORD_ID } from '@/services';
+import type { AcknowledgementsByPortfolio } from '@/stores/recommendationCenterStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -20,6 +22,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   useRecommendationCenterStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function portfolioFixture(overrides: Partial<Portfolio> = {}): Portfolio {
@@ -309,5 +312,68 @@ describe('acknowledge / unacknowledge (M7-035)', () => {
     expect(
       useRecommendationCenterStore.getState().acknowledgements['portfolio-2']?.repayment,
     ).toBeUndefined();
+  });
+});
+
+describe('local acknowledgements persistence (M8-009)', () => {
+  it('acknowledge schedules a real local storage write, readable back through persistenceService', async () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    useRecommendationCenterStore.getState().acknowledge('repayment');
+
+    await autoSaveCoordinator.flushAll();
+    const stored = await persistenceService.read<AcknowledgementsByPortfolio>(
+      'recommendationAcknowledgements',
+      SINGLETON_RECORD_ID,
+    );
+    expect(stored.ok).toBe(true);
+    if (!stored.ok || stored.data === null) return;
+    expect(stored.data['portfolio-1']?.repayment).toBeDefined();
+  });
+
+  it('unacknowledge schedules an updated write reflecting the removal', async () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    useRecommendationCenterStore.getState().acknowledge('repayment');
+    await autoSaveCoordinator.flushAll();
+
+    useRecommendationCenterStore.getState().unacknowledge('repayment');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.read<AcknowledgementsByPortfolio>(
+      'recommendationAcknowledgements',
+      SINGLETON_RECORD_ID,
+    );
+    expect(stored.ok).toBe(true);
+    if (!stored.ok || stored.data === null) return;
+    expect(stored.data['portfolio-1']?.repayment).toBeUndefined();
+  });
+
+  it('a no-op recalculate (unchanged relevantValues) does not schedule a redundant write', async () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    useRecommendationCenterStore.getState().acknowledge('repayment');
+    await autoSaveCoordinator.flushAll();
+
+    // Recomputing the identical portfolio leaves reconcileAcknowledgements'
+    // own reference unchanged — no new write should be scheduled, so the
+    // coordinator's state for this key stays whatever it already settled to.
+    const stateBefore = autoSaveCoordinator.getState(
+      'recommendationAcknowledgements',
+      SINGLETON_RECORD_ID,
+    );
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    expect(
+      autoSaveCoordinator.getState('recommendationAcknowledgements', SINGLETON_RECORD_ID),
+    ).toBe(stateBefore);
+  });
+
+  it('loadAcknowledgements hydrates acknowledgements from local storage, flushing first', async () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+    useRecommendationCenterStore.getState().acknowledge('repayment');
+
+    useRecommendationCenterStore.setState({ acknowledgements: {} });
+    await useRecommendationCenterStore.getState().loadAcknowledgements();
+
+    expect(
+      useRecommendationCenterStore.getState().acknowledgements['portfolio-1']?.repayment,
+    ).toBeDefined();
   });
 });

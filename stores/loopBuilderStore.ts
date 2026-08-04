@@ -3,10 +3,12 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
+  autoSaveCoordinator,
   buildFinalLoopPortfolio,
   type LoopSafetyCheck,
   type LoopStrategyPreview,
   type LoopStrategySettings,
+  persistenceService,
   planLoopStrategy,
   type ServiceMetadata,
   simulateScenario,
@@ -146,6 +148,7 @@ export interface LoopBuilderStoreActions {
   loadStrategy: (id: string) => void;
   duplicateStrategy: (id: string) => string | null;
   deleteStrategy: (id: string) => void;
+  loadSavedStrategies: () => Promise<void>;
   reset: () => void;
 }
 
@@ -239,6 +242,7 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
         createdAt: new Date().toISOString(),
       };
       set((state) => ({ savedStrategies: [...state.savedStrategies, saved] }));
+      autoSaveCoordinator.schedule('loopStrategy', saved.id, saved);
       return saved.id;
     },
 
@@ -270,14 +274,23 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
         createdAt: new Date().toISOString(),
       };
       set((state) => ({ savedStrategies: [...state.savedStrategies, duplicate] }));
+      autoSaveCoordinator.schedule('loopStrategy', duplicate.id, duplicate);
       return duplicate.id;
     },
 
     deleteStrategy: (id) => {
+      autoSaveCoordinator.scheduleDelete('loopStrategy', id);
       set((state) => ({
         savedStrategies: state.savedStrategies.filter((saved) => saved.id !== id),
         selectedStrategyId: state.selectedStrategyId === id ? null : state.selectedStrategyId,
       }));
+    },
+
+    loadSavedStrategies: async () => {
+      await autoSaveCoordinator.flushAll();
+      const result = await persistenceService.list<SavedLoopStrategy>('loopStrategy');
+      if (!result.ok) return;
+      set({ savedStrategies: result.data });
     },
 
     reset: () => {

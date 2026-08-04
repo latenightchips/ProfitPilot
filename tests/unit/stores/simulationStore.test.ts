@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { ApplicationPortfolio, SimulationScenario } from '@/services';
+import {
+  type ApplicationPortfolio,
+  autoSaveCoordinator,
+  persistenceService,
+  type SimulationScenario,
+} from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import type { SavedSimulation } from '@/stores/simulationStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
 /**
@@ -33,6 +39,7 @@ beforeEach(() => {
     errors: [],
     lastSynchronizedAt: null,
   });
+  window.localStorage.clear();
 });
 
 function validPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
@@ -621,5 +628,83 @@ describe('useSimulationStore — duplicateSavedScenario (M6-017, Batch 16)', () 
     // Loading the surviving copy still restores its own scenario/result correctly.
     useSimulationStore.getState().loadSavedScenario(copyId);
     expect(useSimulationStore.getState().currentResult?.scenario.equity).toBe(100000);
+  });
+});
+
+describe('useSimulationStore — local scenario persistence (M8-009)', () => {
+  const PORTFOLIO_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
+  it('saveCurrentScenario schedules a real local storage write, readable back through persistenceService', async () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    await autoSaveCoordinator.flushAll();
+    const stored = await persistenceService.list<SavedSimulation>('simulation');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((scenario) => scenario.id === id)).toBe(true);
+  });
+
+  it('duplicateSavedScenario schedules a write for the new copy', async () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    const duplicateId = useSimulationStore.getState().duplicateSavedScenario(id);
+    if (duplicateId === null) throw new Error('expected a duplicate id');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedSimulation>('simulation');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((scenario) => scenario.id === duplicateId)).toBe(true);
+  });
+
+  it('deleteSavedScenario schedules removal from local storage', async () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    useSimulationStore.getState().deleteSavedScenario(id);
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedSimulation>('simulation');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((scenario) => scenario.id === id)).toBe(false);
+  });
+
+  it('loadSavedScenarios hydrates savedScenarios from local storage, flushing first', async () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+    const id = useSimulationStore.getState().saveCurrentScenario({
+      name: 'My Scenario',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    useSimulationStore.setState({ savedScenarios: [] });
+    await useSimulationStore.getState().loadSavedScenarios();
+
+    expect(useSimulationStore.getState().savedScenarios.some((s) => s.id === id)).toBe(true);
   });
 });

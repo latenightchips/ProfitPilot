@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { ApplicationPortfolio } from '@/services';
+import { type ApplicationPortfolio, autoSaveCoordinator, persistenceService } from '@/services';
 import type { LoopStrategySettings } from '@/services/loop/strategy';
+import type { SavedLoopStrategy } from '@/stores/loopBuilderStore';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
@@ -25,6 +26,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   useLoopBuilderStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function validPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
@@ -358,6 +360,84 @@ describe('saveStrategy/loadStrategy/duplicateStrategy/deleteStrategy (M7-017)', 
     const state = useLoopBuilderStore.getState();
     expect(state.savedStrategies).toEqual([]);
     expect(state.selectedStrategyId).toBeNull();
+  });
+});
+
+describe('Local strategy persistence (M8-009)', () => {
+  const PORTFOLIO_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
+  it('saveStrategy schedules a real local storage write, readable back through persistenceService', async () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore.getState().saveStrategy({
+      name: 'My Loop',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    await autoSaveCoordinator.flushAll();
+    const stored = await persistenceService.list<SavedLoopStrategy>('loopStrategy');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((strategy) => strategy.id === id)).toBe(true);
+  });
+
+  it('duplicateStrategy schedules a write for the new copy', async () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore.getState().saveStrategy({
+      name: 'My Loop',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    const duplicateId = useLoopBuilderStore.getState().duplicateStrategy(id);
+    if (duplicateId === null) throw new Error('expected a duplicate id');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedLoopStrategy>('loopStrategy');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((strategy) => strategy.id === duplicateId)).toBe(true);
+  });
+
+  it('deleteStrategy schedules removal from local storage', async () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore.getState().saveStrategy({
+      name: 'My Loop',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+    await autoSaveCoordinator.flushAll();
+
+    useLoopBuilderStore.getState().deleteStrategy(id);
+    await autoSaveCoordinator.flushAll();
+
+    const stored = await persistenceService.list<SavedLoopStrategy>('loopStrategy');
+    expect(stored.ok).toBe(true);
+    if (!stored.ok) return;
+    expect(stored.data.some((strategy) => strategy.id === id)).toBe(false);
+  });
+
+  it('loadSavedStrategies hydrates savedStrategies from local storage, flushing first', async () => {
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
+    const id = useLoopBuilderStore.getState().saveStrategy({
+      name: 'My Loop',
+      portfolioId: 'p1',
+      portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+    });
+    if (id === null) throw new Error('expected a saved id');
+
+    useLoopBuilderStore.setState({ savedStrategies: [] });
+    await useLoopBuilderStore.getState().loadSavedStrategies();
+
+    expect(useLoopBuilderStore.getState().savedStrategies.some((s) => s.id === id)).toBe(true);
   });
 });
 

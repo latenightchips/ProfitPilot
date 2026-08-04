@@ -33,25 +33,24 @@ function zodErrorToMappingFailure(
 }
 
 /**
- * Validates a raw, untrusted value (from `localStorage`, an imported
- * file, or a Supabase row) as a `StorageEnvelope<T>` of the given record
- * type. Migrates older-but-supported schema versions first; rejects
- * unsupported/future versions and structurally invalid payloads without
- * throwing.
+ * Validates an already-current-version value against its envelope and
+ * payload schemas — no migration. Exported separately from
+ * `validatePersistedRecord` for `./migrations/localDataMigration.ts`
+ * (M8-013): that function already migrates each record itself using its
+ * *own* (possibly test-injected) `MigrationRegistry` before calling this;
+ * routing that already-migrated data back through
+ * `validatePersistedRecord` would migrate it a *second* time using the
+ * hardcoded production `REGISTERED_MIGRATIONS`, which is wrong whenever
+ * the two registries differ (always true in that function's own tests)
+ * and redundant even when they don't.
  */
-export function validatePersistedRecord<T>(
+export function validatePersistedRecordSchema<T>(
   recordType: PersistedRecordType,
-  raw: unknown,
+  data: unknown,
 ): MappingResult<StorageEnvelope<T>> {
-  const migrated = runMigrations(raw, {
-    currentVersion: STORAGE_SCHEMA_VERSION,
-    steps: REGISTERED_MIGRATIONS,
-  });
-  if (!migrated.ok) return migrated;
-
   const payloadSchema = PAYLOAD_SCHEMAS_BY_RECORD_TYPE[recordType];
   const envelopeSchema = createEnvelopeSchema(payloadSchema);
-  const parsed = envelopeSchema.safeParse(migrated.data);
+  const parsed = envelopeSchema.safeParse(data);
   if (!parsed.success) {
     return zodErrorToMappingFailure(
       recordType,
@@ -66,4 +65,24 @@ export function validatePersistedRecord<T>(
   }
 
   return { ok: true, data: parsed.data as StorageEnvelope<T> };
+}
+
+/**
+ * Validates a raw, untrusted value (from `localStorage`, an imported
+ * file, or a Supabase row) as a `StorageEnvelope<T>` of the given record
+ * type. Migrates older-but-supported schema versions first (using the
+ * production `REGISTERED_MIGRATIONS`); rejects unsupported/future
+ * versions and structurally invalid payloads without throwing.
+ */
+export function validatePersistedRecord<T>(
+  recordType: PersistedRecordType,
+  raw: unknown,
+): MappingResult<StorageEnvelope<T>> {
+  const migrated = runMigrations(raw, {
+    currentVersion: STORAGE_SCHEMA_VERSION,
+    steps: REGISTERED_MIGRATIONS,
+  });
+  if (!migrated.ok) return migrated;
+
+  return validatePersistedRecordSchema<T>(recordType, migrated.data);
 }

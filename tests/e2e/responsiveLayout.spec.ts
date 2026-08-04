@@ -106,6 +106,13 @@ test('Cover: Portfolio Composition table scrolls within its own container, not t
   await page.setViewportSize(VIEWPORTS['tablet (sidebar breakpoint)']);
   await createPortfolioViaDashboard(page, 'Table Scroll Check');
 
+  // Dashboard hydration is now genuinely asynchronous (M8-008) — wait for
+  // the Portfolio Composition table to actually be rendered before
+  // measuring it, the same waiting discipline every sibling test in this
+  // file already uses, rather than racing the mount effect's own
+  // `load()`/`persistenceService` read.
+  await expect(page.getByText('Portfolio %')).toBeVisible();
+
   const tableContainer = page.locator('table').locator('..');
   const scrollInfo = await tableContainer.evaluate((el) => ({
     scrollWidth: el.scrollWidth,
@@ -116,7 +123,6 @@ test('Cover: Portfolio Composition table scrolls within its own container, not t
   await tableContainer.evaluate((el) => {
     el.scrollLeft = el.scrollWidth;
   });
-  await expect(page.getByText('Portfolio %')).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

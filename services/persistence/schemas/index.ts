@@ -12,7 +12,10 @@ import {
   persistedSyncMetadataPayloadSchema,
 } from './metadata.schema';
 import { persistedPortfolioPayloadSchema } from './portfolio.schema';
-import { persistedPreferencesPayloadSchema } from './settings.schema';
+import {
+  persistedActivePortfolioPayloadSchema,
+  persistedPreferencesPayloadSchema,
+} from './settings.schema';
 import {
   persistedExitPlanPayloadSchema,
   persistedLoopStrategyPayloadSchema,
@@ -36,4 +39,5 @@ export const PAYLOAD_SCHEMAS_BY_RECORD_TYPE: Record<PersistedRecordType, ZodType
   preferences: persistedPreferencesPayloadSchema,
   syncMetadata: persistedSyncMetadataPayloadSchema,
   applicationMetadata: persistedApplicationMetadataPayloadSchema,
+  activePortfolio: persistedActivePortfolioPayloadSchema,
 };

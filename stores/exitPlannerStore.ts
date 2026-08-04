@@ -3,8 +3,10 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   type ApplicationPortfolio,
+  autoSaveCoordinator,
   type ExitPlanResult,
   type ExitTarget,
+  persistenceService,
   planExit,
   type ServiceMetadata,
 } from '@/services';
@@ -217,6 +219,7 @@ export interface ExitPlannerStoreActions {
   loadExitPlan: (id: string) => void;
   duplicateExitPlan: (id: string) => string | null;
   deleteExitPlan: (id: string) => void;
+  loadSavedPlans: () => Promise<void>;
   reset: () => void;
 }
 
@@ -417,6 +420,7 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
         createdAt: new Date().toISOString(),
       };
       set((state) => ({ savedPlans: [...state.savedPlans, saved] }));
+      autoSaveCoordinator.schedule('exitPlan', saved.id, saved);
       return saved.id;
     },
 
@@ -449,14 +453,23 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
         createdAt: new Date().toISOString(),
       };
       set((state) => ({ savedPlans: [...state.savedPlans, duplicate] }));
+      autoSaveCoordinator.schedule('exitPlan', duplicate.id, duplicate);
       return duplicate.id;
     },
 
     deleteExitPlan: (id) => {
+      autoSaveCoordinator.scheduleDelete('exitPlan', id);
       set((state) => ({
         savedPlans: state.savedPlans.filter((saved) => saved.id !== id),
         selectedPlanId: state.selectedPlanId === id ? null : state.selectedPlanId,
       }));
+    },
+
+    loadSavedPlans: async () => {
+      await autoSaveCoordinator.flushAll();
+      const result = await persistenceService.list<SavedExitPlan>('exitPlan');
+      if (!result.ok) return;
+      set({ savedPlans: result.data });
     },
 
     reset: () => {

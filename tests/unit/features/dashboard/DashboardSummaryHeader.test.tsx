@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildDashboardViewModel, DashboardSummaryHeader } from '@/features/dashboard';
+import { autoSaveCoordinator } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -18,6 +19,7 @@ beforeEach(() => {
     errors: [],
     lastSynchronizedAt: null,
   });
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -39,11 +41,12 @@ function validInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe('DashboardSummaryHeader — identity and freshness (M5-004)', () => {
-  it('displays the portfolio name, description, BTC price, origin, and storage status', () => {
+  it('displays the portfolio name, description, BTC price, origin, and storage status', async () => {
     const created = usePortfolioStore
       .getState()
       .create(validInput({ description: 'Core BTC-backed loan' }));
     if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
     const record = usePortfolioStore.getState().portfolios[created.data.id];
     const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
 

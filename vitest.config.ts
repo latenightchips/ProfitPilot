@@ -33,6 +33,7 @@ export default defineConfig({
         'features/recommendations/**',
         'components/layout/AppHeader.tsx',
         'components/strategy/**',
+        'providers/**',
       ],
       exclude: ['**/*.d.ts', '**/tests/**'],
     },

@@ -21,6 +21,19 @@
  * `'recommendationAcknowledgements'` reuses the exact shape
  * `stores/recommendationCenterStore.ts` already keeps in memory
  * (`AcknowledgementsByPortfolio`) rather than inventing a new one.
+ *
+ * **`'activePortfolio'` added in Milestone 8 Batch 2 (M8-007 "Define
+ * Local Storage Keys," whose own "Include" list names "Active portfolio"
+ * as its own key category, distinct from "Portfolios").**
+ * `stores/portfolioStore.ts`'s `activePortfolioId: string | null` is a
+ * single scalar selection, not a domain entity — but the standing
+ * architectural rule ("Stores must communicate only through
+ * PersistenceService interfaces," no direct storage access anywhere
+ * outside `services/persistence/`) means it still needs to go through the
+ * same envelope/adapter path as every other record, not a special-cased
+ * raw key. It persists as a one-record-per-app singleton, the same
+ * pattern `'preferences'`/`'applicationMetadata'` already use (see
+ * `../constants.ts`'s `SINGLETON_RECORD_ID`).
  */
 export const PERSISTED_RECORD_TYPES = [
   'portfolio',
@@ -31,6 +44,7 @@ export const PERSISTED_RECORD_TYPES = [
   'preferences',
   'syncMetadata',
   'applicationMetadata',
+  'activePortfolio',
 ] as const;
 
 export type PersistedRecordType = (typeof PERSISTED_RECORD_TYPES)[number];

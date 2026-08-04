@@ -18,23 +18,56 @@
  * to be self-contained, not routed through infrastructure no task
  * builds. A small, dedicated Zustand store is this project's own
  * already-established pattern for exactly this shape of need
- * (`stores/portfolioStore.ts`'s own precedent) — in-memory only, per
- * Conflict B (no persistence before Milestone 8), so the preference
- * resets on a real page reload, the same caveat every other Store
- * preference in this codebase already carries.
+ * (`stores/portfolioStore.ts`'s own precedent).
  *
  * **"Must not change calculation behavior"**: enforced structurally, not
  * just by convention — this store holds a single UI-only boolean with no
  * calculation logic, imported by nothing in `engine/` or `services/`.
+ *
+ * **Persistence (Milestone 8 Batch 2, M8-006–M8-013)**: `toggle` now also
+ * schedules a `PersistedPreferences` write via `autoSaveCoordinator`,
+ * keyed under `SINGLETON_RECORD_ID` — the same app-wide singleton pattern
+ * `stores/portfolioStore.ts`'s own `activePortfolio` record uses. `load`
+ * restores it on mount via `providers/PersistenceProvider.tsx`, the same
+ * as every other Store's own `load*` action.
  */
 import { create } from 'zustand';
+
+import {
+  autoSaveCoordinator,
+  type PersistedPreferences,
+  persistenceService,
+  SINGLETON_RECORD_ID,
+} from '@/services';
 
 export interface DeveloperModeState {
   enabled: boolean;
   toggle: () => void;
+  load: () => Promise<void>;
+}
+
+function schedulePreferencesSave(enabled: boolean): void {
+  const payload: PersistedPreferences = { developerModeEnabled: enabled };
+  autoSaveCoordinator.schedule('preferences', SINGLETON_RECORD_ID, payload);
 }
 
 export const useDeveloperModeStore = create<DeveloperModeState>((set) => ({
   enabled: false,
-  toggle: () => set((state) => ({ enabled: !state.enabled })),
+
+  toggle: () =>
+    set((state) => {
+      const enabled = !state.enabled;
+      schedulePreferencesSave(enabled);
+      return { enabled };
+    }),
+
+  load: async () => {
+    await autoSaveCoordinator.flushAll();
+    const result = await persistenceService.read<PersistedPreferences>(
+      'preferences',
+      SINGLETON_RECORD_ID,
+    );
+    if (!result.ok || result.data === null) return;
+    set({ enabled: result.data.developerModeEnabled });
+  },
 }));

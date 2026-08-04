@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { autoSaveCoordinator } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -41,6 +42,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  window.localStorage.clear();
 });
 
 function validInput(overrides: Record<string, unknown> = {}) {
@@ -246,7 +248,7 @@ describe('Cover: Delete portfolio (M4-018)', () => {
 });
 
 describe('Cover: Recover from invalid input (M4-018)', () => {
-  it('a rejected create leaves the Store empty, and a subsequent valid create still succeeds normally', () => {
+  it('a rejected create leaves the Store empty, and a subsequent valid create still succeeds normally', async () => {
     const invalid = usePortfolioStore.getState().create(validInput({ name: '' }));
     expect(invalid.ok).toBe(false);
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
@@ -255,6 +257,7 @@ describe('Cover: Recover from invalid input (M4-018)', () => {
     const valid = usePortfolioStore.getState().create(validInput({ name: 'Recovered' }));
     expect(valid.ok).toBe(true);
     if (!valid.ok) return;
+    await autoSaveCoordinator.flushAll();
     expect(usePortfolioStore.getState().portfolios[valid.data.id].portfolio.name).toBe('Recovered');
     expect(usePortfolioStore.getState().saveStatus).toBe('saved');
   });
