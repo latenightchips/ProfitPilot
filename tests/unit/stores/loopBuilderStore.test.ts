@@ -118,6 +118,27 @@ describe('runLoopStrategy', () => {
     expect(finding?.suggestedResponse.length).toBeGreaterThan(0);
   });
 
+  it('maps a real BORROWING_CAPACITY finding into a warning with category borrowingCapacity (M7-041)', () => {
+    // Debt already at the starting position's own borrow ceiling
+    // (1 BTC @ $50,000 * 0.5 max LTV = $25,000) — a real
+    // BORROWING_CAPACITY warning (severity 'warning', not 'error'),
+    // not a hand-crafted one.
+    const atCapacityPortfolio = validPortfolio({ debt: { asset: 'USDC', balance: 25000 } });
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(atCapacityPortfolio);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.status).toBe('idle');
+    const finding = state.warnings.find((warning) => warning.category === 'borrowingCapacity');
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.cause).toBe('Safety check "BORROWING_CAPACITY" raised a warning.');
+    expect(finding?.suggestedResponse).toBe(
+      'Reduce the target borrow percentage — no further borrowing capacity remains.',
+    );
+    expect(state.currentResult?.strategy?.steps).toEqual([]);
+  });
+
   it('sets status/errors on a genuine Engine failure, with no prior result to preserve', () => {
     const invalidPortfolio: ApplicationPortfolio = {
       ...validPortfolio(),

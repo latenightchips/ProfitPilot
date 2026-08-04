@@ -137,6 +137,12 @@ describe('ExitPlannerPage — active portfolio (Include items)', () => {
     expect(screen.getByText('Saved Exit Plans')).toBeInTheDocument();
     expect(screen.getByText('Export Plan')).toBeInTheDocument();
   });
+
+  it('renders the Batch 8 (M7-044) Apply as Simulation section', () => {
+    selectActivePortfolio();
+    render(<ExitPlannerPage />);
+    expect(screen.getByText('Apply as Simulation')).toBeInTheDocument();
+  });
 });
 
 describe('ExitPlannerPage — error recovery (M7-038)', () => {

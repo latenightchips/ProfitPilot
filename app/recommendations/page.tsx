@@ -46,6 +46,17 @@ import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore
  * (Batch 7, "Implement Strategy Loading and Empty States," which
  * depends on this route already existing) — not duplicated or
  * preempted here.
+ *
+ * **M7-045 ("Validate Strategy Tools Against UI Specification"), Batch
+ * 8 — nothing to audit this route against.** `03_UI.md`'s own 10-page
+ * index has no Recommendation Center page and no sidebar entry for one
+ * anywhere — already found and recorded at Milestone 7 Batch 1, the
+ * same shape as Conflict #23 (the Portfolio List page). Terminology,
+ * required outputs, Warnings, and Assumptions were instead spot-checked
+ * directly against `06_TASKS.md`'s own M7-031 through M7-036 task text
+ * (this route's real authoritative source) and found consistent.
+ * Responsive behavior and Accessibility were already validated this
+ * same batch (M7-039/M7-040).
  */
 export default function RecommendationsPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);

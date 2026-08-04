@@ -6,6 +6,7 @@ import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumpti
 import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
 import {
+  ApplyExitPlanAsSimulation,
   ExitFeasibilityAnalysis,
   ExitPlanExport,
   ExitPlanLibrary,
@@ -67,6 +68,32 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * content column (M7-039, Batch 7)** — the same fixes, and the same
  * reasoning, as `app/loop-builder/page.tsx`'s own header comment
  * documents for its identical additions.
+ *
+ * **"Apply as Simulation" (M7-044, Batch 8)** — see
+ * `ApplyExitPlanAsSimulation.tsx`'s own header comment for why a
+ * nominally test-only task ("Create Cross-Tool Workflow Tests") added
+ * this real production section: its own "Copy an exit plan into a
+ * simulation" flow had no underlying feature to test until now.
+ *
+ * **M7-045 ("Validate Strategy Tools Against UI Specification"), Batch
+ * 8 — audited, no new undocumented deviation found.** `03_UI.md` Page
+ * 7's own richer mockup (a 6-goal "Exit Goals" selector, Quick Action
+ * buttons like "Take 10% Profit"/"Debt-Free Plan," Milestone Cards, a
+ * Portfolio Score) is the same class of aspirational-mockup-vs-
+ * buildable-task-text gap Loop Builder's own M7-045 note documents for
+ * Page 6 — `06_TASKS.md`'s own M7-019 through M7-030 task range never
+ * asked for any of those, and none was added now, the same precedence
+ * this whole milestone already follows. Terminology, required outputs
+ * (Debt After Exit/Remaining BTC/New Health Factor/New Liquidation
+ * Price all present — `FullExitResult.tsx`/`PartialExitResult.tsx`),
+ * Warnings ("Target cannot be achieved" → `toInfeasibleWarning`; "Health
+ * Factor remains below target" → `TargetHealthFactorResult.tsx`'s own
+ * "Difference from Target" row, which discloses Conflict #13's
+ * fixed-collateral approximation rather than hiding it), and
+ * Assumptions (`StrategyAssumptionsPanel`) were each spot-checked
+ * against this route's real components and found consistent with
+ * `06_TASKS.md`'s own task text. Responsive behavior and Accessibility
+ * were already validated this same batch (M7-039/M7-040, above).
  */
 export default function ExitPlannerPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -151,6 +178,10 @@ export default function ExitPlannerPage() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Warnings</h2>
               <StrategyWarnings warnings={warnings} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Apply as Simulation</h2>
+              <ApplyExitPlanAsSimulation portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Save Plan</h2>

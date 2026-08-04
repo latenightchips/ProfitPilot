@@ -77,6 +77,36 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * to overflow horizontally at mobile widths even though the table
  * itself already sits in its own `overflow-x-auto` wrapper. Each nested
  * flex item needs its own `min-w-0`.
+ *
+ * **M7-045 ("Validate Strategy Tools Against UI Specification"), Batch
+ * 8 — audited, no new undocumented deviation found.** `03_UI.md` Page
+ * 6's own "Auto Loop Engine" design (an automatic loop-count solver
+ * driven only by a target Health Factor, its own literal "Never ask the
+ * user for loop count by default" rule) was already found to directly
+ * contradict `06_TASKS.md`'s own M7-008 ("Maximum number of loops" as a
+ * direct user input) and the already-built Engine
+ * (`LoopStrategyInput.maxLoops` is a mandatory parameter, not a solved
+ * output) — recorded at Milestone 7 Batch 1 as "the largest single
+ * Page-vs-Tasks gap since Conflict #30," resolved there in favor of
+ * `06_TASKS.md`'s own concrete, buildable task text over the page's own
+ * aspirational mockup (the same precedence this whole milestone already
+ * follows). Re-verified here, unchanged: no batch since has reintroduced
+ * an "Initial Capital"/"Auto Loop toggle"/"Portfolio Score" control this
+ * route does not have, and none was added now. Terminology (column/row
+ * labels), required outputs (Loop Count, BTC Purchased, Total Debt,
+ * Effective Leverage, Estimated Interest, Liquidation Price all present,
+ * each traced to a real Engine field — see `LoopStepTable.tsx`/
+ * `LoopStrategySummary.tsx`/`LoopCostAnalysis.tsx`'s own header
+ * comments), Warnings (the page's own mockup "Target HF below minimum/
+ * Borrow exceeds protocol limits/Liquidation buffer too small" map
+ * directly onto real `LoopSafetyFinding` checks; "APR unusually high"/
+ * "Estimated interest excessive" remain the already-documented F-065
+ * gap, not silently dropped — see `validateLoopStrategySafety.ts`'s own
+ * header comment), and Assumptions (`StrategyAssumptionsPanel`, shown as
+ * "Current Portfolio Baseline") were each spot-checked against this
+ * route's real components and found consistent with `06_TASKS.md`'s own
+ * task text. Responsive behavior and Accessibility were already
+ * validated this same batch (M7-039/M7-040, above).
  */
 export default function LoopBuilderPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);

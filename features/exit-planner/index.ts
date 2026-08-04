@@ -12,8 +12,11 @@
  * `FullExitResult`, `PartialExitResult`, `TargetHealthFactorResult`,
  * `ExitFeasibilityAnalysis`, `ExitPriceSensitivity`, `SaveExitPlanForm`,
  * `ExitPlanLibrary`, `ExitPlanExport`, and the first real `utils/`
- * content (`exportExitPlan.ts`).
+ * content (`exportExitPlan.ts`). Milestone 7 Batch 8 (M7-044) adds
+ * `ApplyExitPlanAsSimulation` — see that component's own header comment
+ * for why a nominally test-only task added a real production component.
  */
+export { ApplyExitPlanAsSimulation } from './components/ApplyExitPlanAsSimulation';
 export { ExitFeasibilityAnalysis } from './components/ExitFeasibilityAnalysis';
 export { ExitPlanExport } from './components/ExitPlanExport';
 export { ExitPlanLibrary } from './components/ExitPlanLibrary';
