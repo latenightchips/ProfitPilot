@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AppHeader } from '@/components/layout/AppHeader';
+import { useAuthStore } from '@/stores/authStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -22,6 +23,7 @@ const INITIAL_STATE = {
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  useAuthStore.setState({ user: null, status: 'idle', errors: [], cloudSyncEligible: false });
 });
 
 function validInput(name: string) {
@@ -100,5 +102,25 @@ describe('AppHeader — with portfolios (M4-010)', () => {
     usePortfolioStore.getState().create(validInput('Responsive Layout Verification Portfolio'));
     render(<AppHeader />);
     expect(screen.getByLabelText('Active portfolio')).toHaveClass('max-w-[45vw]');
+  });
+});
+
+describe('AppHeader — account indicator (Milestone 8 Batch 5, M8-020/M8-021)', () => {
+  it('shows a Sign In link when signed out', () => {
+    render(<AppHeader />);
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+  });
+
+  it('shows the user email and a Sign Out button when signed in', () => {
+    useAuthStore.setState({
+      user: { id: 'user-1', email: 'user@example.com' },
+      status: 'authenticated',
+      errors: [],
+      cloudSyncEligible: true,
+    });
+    render(<AppHeader />);
+    expect(screen.getByText('user@example.com')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 });

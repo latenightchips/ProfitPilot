@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 
+import { useAuthStore } from '@/stores/authStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -50,11 +51,26 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * on real mobile widths. The browser truncates the `<select>`'s own
  * displayed text within the capped width — no information is hidden,
  * the full name remains in the dropdown's own option list.
+ *
+ * **Account indicator (Milestone 8 Batch 5, M8-020/M8-021)**: a compact
+ * "Sign in" link when signed out, or the user's email plus a "Sign out"
+ * button when signed in. This header's own Sign Out always retains
+ * local data — the same "never causes unrequested data loss" default
+ * M8-020's own DoD asks for — since there is no cloud data yet to
+ * reconcile a choice against. `/settings`'s own Account section is where
+ * "Sign Out and Clear Local Data" lives as a separate, explicit,
+ * confirmed action (reusing `clearLocalData`, M8-048), giving the real
+ * choice M8-020's "Retain or remove local cached data according to user
+ * choice" asks for without making the everyday header shortcut
+ * destructive by default.
  */
 export function AppHeader() {
   const portfolios = usePortfolioStore((state) => state.portfolios);
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const select = usePortfolioStore((state) => state.select);
+
+  const authUser = useAuthStore((state) => state.user);
+  const signOut = useAuthStore((state) => state.signOut);
 
   const entries = Object.values(portfolios).filter(
     ({ portfolio }) => portfolio.archivedAt === null,
@@ -98,6 +114,20 @@ export function AppHeader() {
         <Link href="/portfolios" className="shrink-0 text-xs text-muted-foreground hover:underline">
           {activeName !== undefined ? 'Manage portfolios' : 'View portfolios'}
         </Link>
+        {authUser !== null ? (
+          <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            <span className="max-w-[30vw] truncate" title={authUser.email ?? undefined}>
+              {authUser.email}
+            </span>
+            <button type="button" onClick={() => void signOut()} className="hover:underline">
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <Link href="/sign-in" className="shrink-0 text-xs text-muted-foreground hover:underline">
+            Sign in
+          </Link>
+        )}
       </div>
     </header>
   );

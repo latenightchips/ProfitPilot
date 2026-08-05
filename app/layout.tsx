@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { AuthProvider } from '@/providers/AuthProvider';
 import { PersistenceProvider } from '@/providers/PersistenceProvider';
 
 const inter = Inter({
@@ -25,7 +26,9 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.variable} antialiased`}>
         <PersistenceProvider>
-          <AppShell>{children}</AppShell>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
         </PersistenceProvider>
       </body>
     </html>

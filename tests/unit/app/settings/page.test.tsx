@@ -3,9 +3,26 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SettingsPage from '@/app/settings/page';
+import { authService } from '@/services/auth';
 import { persistenceService } from '@/services/persistence';
+import { useAuthStore } from '@/stores/authStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
+
+vi.mock('@/services/auth', () => ({
+  authService: {
+    checkAvailability: vi.fn(),
+    getSession: vi.fn(),
+    onAuthStateChange: vi.fn(),
+    signUp: vi.fn(),
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+    requestPasswordReset: vi.fn(),
+    completePasswordReset: vi.fn(),
+  },
+}));
+
+const mockAuthService = vi.mocked(authService);
 
 /**
  * Settings — 06_TASKS.md M8-042/M8-043/M8-044. See `app/settings/page.tsx`'s
@@ -40,6 +57,8 @@ beforeEach(() => {
     errors: [],
     lastSynchronizedAt: null,
   });
+  useAuthStore.setState({ user: null, status: 'idle', errors: [], cloudSyncEligible: false });
+  vi.clearAllMocks();
 });
 
 afterEach(() => {
@@ -307,5 +326,89 @@ describe('SettingsPage — clear local data (M8-048)', () => {
 
     const list = await persistenceService.list('portfolio');
     expect(list.ok && list.data).toHaveLength(0);
+  });
+});
+
+describe('SettingsPage — Account (Milestone 8 Batch 5, M8-020/M8-021)', () => {
+  it('shows Sign In and Create Account links when signed out, and explains accounts are optional', () => {
+    render(<SettingsPage />);
+    expect(screen.getByText(/accounts are optional/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign In' })).toHaveAttribute('href', '/sign-in');
+    expect(screen.getByRole('link', { name: 'Create Account' })).toHaveAttribute(
+      'href',
+      '/sign-up',
+    );
+  });
+
+  it('shows the signed-in email; plain Sign Out preserves local data', async () => {
+    await persistenceService.write('portfolio', 'portfolio-1', samplePortfolio());
+    useAuthStore.setState({
+      user: { id: 'user-1', email: 'user@example.com' },
+      status: 'authenticated',
+      errors: [],
+      cloudSyncEligible: true,
+    });
+    mockAuthService.signOut.mockResolvedValue({ ok: true, data: undefined });
+
+    render(<SettingsPage />);
+    expect(screen.getByText(/signed in as user@example.com/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/signed out\. your local data was not changed/i)).toBeInTheDocument(),
+    );
+    const list = await persistenceService.list('portfolio');
+    expect(list.ok && list.data).toHaveLength(1);
+  });
+
+  it('Sign Out and Clear Local Data is disabled until confirmed, then clears local data', async () => {
+    await persistenceService.write('portfolio', 'portfolio-1', samplePortfolio());
+    useAuthStore.setState({
+      user: { id: 'user-1', email: 'user@example.com' },
+      status: 'authenticated',
+      errors: [],
+      cloudSyncEligible: true,
+    });
+    mockAuthService.signOut.mockResolvedValue({ ok: true, data: undefined });
+
+    render(<SettingsPage />);
+    const destructiveButton = screen.getByRole('button', { name: 'Sign Out and Clear Local Data' });
+    expect(destructiveButton).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole('checkbox', {
+        name: /also permanently delete all local profitpilot data/i,
+      }),
+    );
+    expect(destructiveButton).toBeEnabled();
+
+    await userEvent.click(destructiveButton);
+
+    await waitFor(() =>
+      expect(screen.getByText(/signed out and local data cleared/i)).toBeInTheDocument(),
+    );
+    const list = await persistenceService.list('portfolio');
+    expect(list.ok && list.data).toHaveLength(0);
+  });
+
+  it('shows an auth error when sign-out fails', async () => {
+    useAuthStore.setState({
+      user: { id: 'user-1', email: 'user@example.com' },
+      status: 'authenticated',
+      errors: [],
+      cloudSyncEligible: true,
+    });
+    mockAuthService.signOut.mockResolvedValue({
+      ok: false,
+      errors: [
+        { category: 'authentication', code: 'SIGN_OUT_FAILED', message: 'Sign-out failed.' },
+      ],
+    });
+
+    render(<SettingsPage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sign-out failed/i);
   });
 });

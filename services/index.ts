@@ -18,6 +18,7 @@
  * it. The wiring exists now so later tasks only need to add exports, not
  * restructure.
  */
+export * from './auth';
 export * from './exit';
 export * from './export';
 export * from './import';

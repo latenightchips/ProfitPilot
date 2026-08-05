@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import type { CsvExportKind } from '@/services/export';
@@ -14,6 +15,7 @@ import {
   restoreRecoverySnapshot,
   type StorageEnvelope,
 } from '@/services/persistence';
+import { useAuthStore } from '@/stores/authStore';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -50,12 +52,21 @@ import { useSimulationStore } from '@/stores/simulationStore';
  *
  * **"View sync state" (M8-047) and "Explain what cloud data will
  * remain" (M8-048) are both satisfied with honest, static copy, not a
- * real sync status widget or cloud-deletion behavior.** No cloud sync or
- * authentication exists anywhere in this application yet — both are
- * explicitly out of scope for Milestone 8 Batches 1–4 per this
- * engagement's own standing instruction. Saying so plainly ("ProfitPilot
- * does not yet sync to the cloud") is the accurate statement of the
- * current state, not a placeholder pretending a real feature exists.
+ * real sync status widget or cloud-deletion behavior.** No cloud sync
+ * exists anywhere in this application yet — Cloud Database/Cloud Sync
+ * stay out of scope through this batch per this engagement's own
+ * standing instruction. Saying so plainly ("ProfitPilot does not yet
+ * sync to the cloud") is the accurate statement of the current state,
+ * not a placeholder pretending a real feature exists.
+ *
+ * **Account section (Milestone 8 Batch 5, M8-020/M8-021)**: sign-in
+ * status plus two sign-out paths — a plain "Sign Out" that never touches
+ * local data (the header's own quick action does the same, see
+ * `AppHeader.tsx`'s own comment), and a separate, explicitly confirmed
+ * "Sign Out and Clear Local Data" that reuses M8-048's `clearLocalData`.
+ * This is the real "user choice" M8-020's "Retain or remove local cached
+ * data according to user choice" asks for, without making the common
+ * case destructive.
  */
 
 const CSV_EXPORTS: { kind: CsvExportKind; label: string }[] = [
@@ -111,6 +122,12 @@ export default function SettingsPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearStatus, setClearStatus] = useState<string | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
+
+  const authUser = useAuthStore((state) => state.user);
+  const authErrors = useAuthStore((state) => state.errors);
+  const authSignOut = useAuthStore((state) => state.signOut);
+  const [confirmSignOutClear, setConfirmSignOutClear] = useState(false);
+  const [signOutStatus, setSignOutStatus] = useState<string | null>(null);
 
   const loadPortfolios = usePortfolioStore((state) => state.load);
   const loadSavedStrategies = useLoopBuilderStore((state) => state.loadSavedStrategies);
@@ -251,6 +268,31 @@ export default function SettingsPage() {
 
     setClearStatus('Local data cleared. A recovery snapshot was saved beforehand.');
     setConfirmClear(false);
+    await reloadAllStores();
+    await reloadSnapshots();
+  }
+
+  async function handleSignOut(): Promise<void> {
+    setSignOutStatus(null);
+    const ok = await authSignOut();
+    if (ok) setSignOutStatus('Signed out. Your local data was not changed.');
+  }
+
+  async function handleSignOutAndClear(): Promise<void> {
+    setSignOutStatus(null);
+    const signedOut = await authSignOut();
+    if (!signedOut) return;
+
+    const cleared = await clearLocalData();
+    if (!cleared.ok) {
+      setSignOutStatus(cleared.errors[0]?.message ?? 'Signed out, but clearing local data failed.');
+      return;
+    }
+
+    setSignOutStatus(
+      'Signed out and local data cleared. A recovery snapshot was saved beforehand.',
+    );
+    setConfirmSignOutClear(false);
     await reloadAllStores();
     await reloadSnapshots();
   }
@@ -413,6 +455,73 @@ export default function SettingsPage() {
         {applyResult !== null && (
           <p className="text-xs text-muted-foreground" role="status">
             Imported {applyResult.written.length} record(s); skipped {applyResult.skipped.length}.
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-semibold text-foreground">Account</h2>
+        <p className="text-xs text-muted-foreground">
+          Accounts are optional. ProfitPilot works fully without one — your data stays on this
+          device either way. Signing in will let you sync your data across devices once cloud
+          synchronization is available in a future update.
+        </p>
+
+        {authUser !== null ? (
+          <>
+            <p className="text-xs text-foreground">Signed in as {authUser.email}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+              >
+                Sign Out
+              </button>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs font-medium text-destructive">
+              <input
+                type="checkbox"
+                checked={confirmSignOutClear}
+                onChange={(event) => setConfirmSignOutClear(event.target.checked)}
+              />
+              Also permanently delete all local ProfitPilot data on this device.
+            </label>
+            <button
+              type="button"
+              disabled={!confirmSignOutClear}
+              onClick={() => void handleSignOutAndClear()}
+              className="rounded-md border border-destructive px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Sign Out and Clear Local Data
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/sign-in"
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              Sign In
+            </Link>
+            <Link
+              href="/sign-up"
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              Create Account
+            </Link>
+          </div>
+        )}
+
+        {signOutStatus !== null && (
+          <p className="text-xs text-muted-foreground" role="status">
+            {signOutStatus}
+          </p>
+        )}
+        {authErrors.length > 0 && (
+          <p className="text-xs text-destructive" role="alert">
+            {authErrors[0]?.message}
           </p>
         )}
       </section>
