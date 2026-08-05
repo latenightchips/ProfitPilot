@@ -168,4 +168,41 @@ describe('validateImportFile', () => {
       true,
     );
   });
+
+  /**
+   * 06_TASKS.md M8-059's "Unsupported future version" — a record whose
+   * `storageSchemaVersion` is newer than this build's `STORAGE_SCHEMA_VERSION`
+   * is excluded with its own `UNSUPPORTED_SCHEMA_VERSION` issue code, not
+   * lumped into the generic `INVALID_RECORD` a payload-shape failure gets
+   * (`ImportValidator.ts`'s own header comment explains why this
+   * distinction matters and how it's derived).
+   *
+   * M8-059's "Old supported version" counterpart is not exercised here:
+   * `STORAGE_SCHEMA_VERSION` has never had a second version
+   * (`services/persistence/migrations/migrate.ts`'s own header comment —
+   * `REGISTERED_MIGRATIONS` is still empty in production), so there is no
+   * real older version to migrate an imported record *from* yet. The
+   * chain-walking migration mechanism this same code path would use is
+   * already proven generically by `tests/unit/services/persistence/migrate.test.ts`'s
+   * synthetic multi-step chain.
+   */
+  it('excludes a record with an unsupported future schema version, tagged UNSUPPORTED_SCHEMA_VERSION, keeping the rest of the file valid', () => {
+    const file = validFullBackupFile();
+    const fromTheFuture = {
+      ...validPortfolioEnvelope('portfolio-3'),
+      storageSchemaVersion: '99.0.0',
+    };
+    file.records.portfolio = [...file.records.portfolio, fromTheFuture as never];
+
+    const result = validateImportFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.validRecordsByType.portfolio).toHaveLength(1);
+    expect(result.data.validRecordsByType.portfolio?.[0]?.recordId).toBe('portfolio-1');
+    expect(
+      result.data.issues.some(
+        (issue) => issue.code === 'UNSUPPORTED_SCHEMA_VERSION' && issue.recordId === 'portfolio-3',
+      ),
+    ).toBe(true);
+  });
 });

@@ -20,7 +20,21 @@
  * Reuses `validatePersistedRecord` (`services/persistence/validate.ts`,
  * M8-005) for the same per-record migration + payload-schema check every
  * `localStorage` read already goes through — an imported record is not
- * held to a lesser standard than a locally stored one.
+ * held to a lesser standard than a locally stored one. This is also how
+ * "Old supported version"/"Unsupported future version" import
+ * compatibility (06_TASKS.md M8-059) is satisfied: an imported record at
+ * an older-but-still-supported `storageSchemaVersion` is migrated
+ * in-place by the same `REGISTERED_MIGRATIONS` chain every local read
+ * uses, and one at an unsupported/future version is excluded with an
+ * `UNSUPPORTED_SCHEMA_VERSION` issue (distinguished below from a generic
+ * `INVALID_RECORD` payload failure, using the underlying
+ * `ApplicationError.code` `runMigrations` itself already reports —
+ * `services/persistence/migrations/migrate.ts`'s own header comment notes
+ * `REGISTERED_MIGRATIONS` is still empty in production, since
+ * `STORAGE_SCHEMA_VERSION` has never had a second version yet; the
+ * "older supported version" half of this is proven at the migration-
+ * mechanism level by `tests/unit/services/persistence/migrate.test.ts`'s
+ * synthetic chain, not by a real version this application has shipped).
  */
 import type { MappingResult } from '@/services/shared';
 import { createApplicationError } from '@/services/shared';
@@ -91,7 +105,10 @@ function validateRecordArray(
       issues.push({
         recordType,
         recordId: raw.recordId,
-        code: 'INVALID_RECORD',
+        code:
+          validated.errors[0]?.code === 'UNSUPPORTED_SCHEMA_VERSION'
+            ? 'UNSUPPORTED_SCHEMA_VERSION'
+            : 'INVALID_RECORD',
         message: `A "${recordType}" record could not be imported: ${validated.errors[0]?.message ?? 'unknown validation error'}`,
       });
       continue;
