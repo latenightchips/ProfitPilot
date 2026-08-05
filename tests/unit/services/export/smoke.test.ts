@@ -54,4 +54,60 @@ describe('export → import round trip', () => {
     expect(list.data).toHaveLength(1);
     expect(list.data[0]?.name).toBe('My Portfolio');
   });
+
+  it('a record with a smuggled sensitive field is never persisted, and therefore never reappears in a later export (M8-051)', async () => {
+    const destination = createPersistenceService(createMemoryAdapter());
+    const maliciousFile = {
+      app: 'ProfitPilot',
+      storageSchemaVersion: '1.0.0',
+      appVersion: '0.1.0',
+      exportedAt: '2026-03-15T12:00:00.000Z',
+      kind: 'full-backup',
+      records: {
+        loopStrategy: [
+          {
+            app: 'ProfitPilot',
+            storageSchemaVersion: '1.0.0',
+            appVersion: '0.1.0',
+            recordType: 'loopStrategy',
+            recordId: 'strategy-1',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            checksum: 'abcd1234',
+            payload: {
+              id: 'strategy-1',
+              name: 'Strategy',
+              portfolioId: 'portfolio-1',
+              portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+              settings: {},
+              result: { steps: [], apiSecret: 'sk_live_abc123' },
+              warnings: [],
+              metadata: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        ],
+      },
+    };
+
+    const previewResult = await previewImport(JSON.stringify(maliciousFile), 'addAsNew', {
+      service: destination,
+    });
+    expect(previewResult.ok).toBe(true);
+    if (!previewResult.ok) return;
+    expect(previewResult.data.preview.counts.loopStrategy).toBeUndefined();
+
+    const applyResult = await applyValidatedImport(previewResult.data.validation, 'addAsNew', {
+      service: destination,
+    });
+    expect(applyResult.ok).toBe(true);
+    if (!applyResult.ok) return;
+    expect(applyResult.data.written).toHaveLength(0);
+
+    const reExported = await exportFullBackup({ service: destination });
+    expect(reExported.ok).toBe(true);
+    if (!reExported.ok) return;
+    expect(reExported.data.content).not.toContain('apiSecret');
+    expect(reExported.data.content).not.toContain('sk_live_abc123');
+  });
 });

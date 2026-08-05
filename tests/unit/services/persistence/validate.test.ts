@@ -5,6 +5,20 @@ import type { PersistedPreferences } from '@/services/persistence/types';
 import { validatePersistedRecord } from '@/services/persistence/validate';
 import type { Portfolio } from '@/types/portfolio';
 
+function validLoopStrategyPayload() {
+  return {
+    id: 'strategy-1',
+    name: 'Strategy',
+    portfolioId: 'p1',
+    portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    settings: { targetLeverage: 2 },
+    result: { steps: [] },
+    warnings: [],
+    metadata: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
 /**
  * Persistence validation — 06_TASKS.md M8-005 ("Implement Persistence
  * Validation"). DoD: "Invalid persisted data cannot enter application
@@ -98,5 +112,49 @@ describe('validatePersistedRecord — schema versioning (M8-004)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors[0].code).toBe('UNSUPPORTED_SCHEMA_VERSION');
+  });
+});
+
+describe('validatePersistedRecord — Sensitive Data Exclusion Rules (M8-051)', () => {
+  it('accepts a clean loop strategy record', () => {
+    const envelope = createEnvelope('loopStrategy', 'strategy-1', validLoopStrategyPayload());
+    const result = validatePersistedRecord('loopStrategy', envelope);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a record with a sensitive field smuggled inside a loose nested object', () => {
+    const payload = {
+      ...validLoopStrategyPayload(),
+      result: { steps: [], wallet: { privateKey: '0xabc123' } },
+    };
+    const envelope = createEnvelope('loopStrategy', 'strategy-1', payload);
+    const result = validatePersistedRecord('loopStrategy', envelope);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('SENSITIVE_FIELD_REJECTED');
+    expect(result.errors[0].message).toContain('result.wallet.privateKey');
+  });
+
+  it('rejects a record with a sensitive field in the settings object', () => {
+    const payload = {
+      ...validLoopStrategyPayload(),
+      settings: { targetLeverage: 2, accessToken: 'secret-token' },
+    };
+    const envelope = createEnvelope('loopStrategy', 'strategy-1', payload);
+    const result = validatePersistedRecord('loopStrategy', envelope);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('SENSITIVE_FIELD_REJECTED');
+  });
+
+  it('strict, fully-typed schemas (e.g. portfolio) already strip unknown top-level fields, so a sensitive field there never reaches storage', () => {
+    const envelope = createEnvelope('portfolio', 'portfolio-1', {
+      ...validPortfolioPayload(),
+      privateKey: '0xabc123',
+    } as unknown as Portfolio);
+    const result = validatePersistedRecord('portfolio', envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.payload).not.toHaveProperty('privateKey');
   });
 });

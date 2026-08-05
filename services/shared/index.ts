@@ -24,3 +24,4 @@ export {
   type ServiceSuccess,
   type ServiceWarning,
 } from './result';
+export { findSensitiveField } from './sensitiveFields';

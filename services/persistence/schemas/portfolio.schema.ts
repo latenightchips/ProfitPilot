@@ -16,9 +16,15 @@
  * `portfolioInputSchema` (`id`, `archivedAt`, `marketUpdatedAt`,
  * `protocolUpdatedAt`, `createdAt`, `updatedAt`) — field-for-field, no
  * more, no less.
+ *
+ * **`name`/`description` sanitized (Milestone 8 Batch 6, M8-052)** — see
+ * `services/shared/sanitizeText.ts`'s own header comment for what this
+ * does and doesn't defend against. This is the write/import choke point
+ * both a normal `create`/`update` and an imported portfolio pass through.
  */
 import { z } from 'zod';
 
+import { sanitizedOptionalTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
 import {
   collateralPositionSchema,
   debtPositionSchema,
@@ -29,8 +35,8 @@ import {
 
 export const persistedPortfolioPayloadSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().optional(),
+  name: sanitizedTextSchema('Portfolio name is required.'),
+  description: sanitizedOptionalTextSchema(),
   baseCurrency: z.string().min(1),
   collateral: collateralPositionSchema,
   debt: debtPositionSchema,

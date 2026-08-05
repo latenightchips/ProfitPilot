@@ -41,8 +41,19 @@
  * **`baseCurrency` default**: `'USD'`, matching
  * `utils/env.ts`'s own `NEXT_PUBLIC_DEFAULT_CURRENCY` default — reusing
  * an existing convention, not inventing a new one.
+ *
+ * **`name`/`description` sanitized (Milestone 8 Batch 6, M8-052)** — via
+ * `utils/sanitizeText.ts`'s pure `sanitizeText()` function, applied
+ * directly rather than through `services/shared/sanitizeText.ts`'s Zod
+ * wrapper schemas, since `types/` must not import from `services/` (see
+ * that file's own header comment). This makes a Store's in-memory state
+ * reflect sanitized text immediately at creation time, in addition to
+ * `services/persistence/schemas/portfolio.schema.ts`'s own sanitization
+ * at the write/import boundary.
  */
 import { z } from 'zod';
+
+import { sanitizeText } from '@/utils/sanitizeText';
 
 import { SUPPORTED_DEBT_ASSETS } from './portfolio';
 
@@ -84,8 +95,18 @@ export const portfolioSettingsSchema = z.object({
 });
 
 export const portfolioInputSchema = z.object({
-  name: z.string().min(1, 'Portfolio name is required.'),
-  description: z.string().optional(),
+  name: z
+    .string()
+    .transform((value) => sanitizeText(value))
+    .refine((value) => value.length > 0, { message: 'Portfolio name is required.' }),
+  description: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      const sanitized = sanitizeText(value);
+      return sanitized.length > 0 ? sanitized : undefined;
+    }),
   baseCurrency: z.string().min(1).default('USD'),
   collateral: collateralPositionSchema,
   debt: debtPositionSchema,

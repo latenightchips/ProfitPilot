@@ -12,11 +12,21 @@
  */
 import { z } from 'zod';
 
+import { sanitizedNullableTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
+
 import { looseRecordSchema, serviceMetadataSchema, strategyWarningSchema } from './shared.schema';
 
+/**
+ * `name` (all three record types) and `description` (simulation only)
+ * are sanitized here (Milestone 8 Batch 6, M8-052) — see
+ * `services/shared/sanitizeText.ts`'s own header comment. Identifiers
+ * (`id`, `portfolioId`) stay plain `z.string()` — these are
+ * machine-generated UUIDs, never user-typed display text, so there is
+ * nothing to sanitize.
+ */
 export const persistedLoopStrategyPayloadSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
+  name: sanitizedTextSchema('Strategy name is required.'),
   portfolioId: z.string().min(1),
   portfolioUpdatedAt: z.string().datetime(),
   settings: looseRecordSchema,
@@ -41,7 +51,7 @@ const exitPlannerTypeSchema = z.enum([
 
 export const persistedExitPlanPayloadSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
+  name: sanitizedTextSchema('Exit plan name is required.'),
   portfolioId: z.string().min(1),
   portfolioUpdatedAt: z.string().datetime(),
   exitType: exitPlannerTypeSchema,
@@ -54,8 +64,8 @@ export const persistedExitPlanPayloadSchema = z.object({
 
 export const persistedSimulationPayloadSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().nullable(),
+  name: sanitizedTextSchema('Simulation name is required.'),
+  description: sanitizedNullableTextSchema(),
   portfolioId: z.string().min(1),
   portfolioUpdatedAt: z.string().datetime(),
   scenario: looseRecordSchema,

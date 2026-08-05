@@ -36,6 +36,30 @@ function validPortfolioEnvelope(id = 'portfolio-1') {
   };
 }
 
+function loopStrategyEnvelopeWithSensitiveField() {
+  return {
+    app: APP_NAME,
+    storageSchemaVersion: STORAGE_SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    recordType: 'loopStrategy' as const,
+    recordId: 'strategy-1',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    checksum: 'abcd1234',
+    payload: {
+      id: 'strategy-1',
+      name: 'Strategy',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+      settings: {},
+      result: { steps: [], wallet: { privateKey: '0xabc123' } },
+      warnings: [],
+      metadata: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+}
+
 function validFullBackupFile() {
   return {
     app: APP_NAME,
@@ -126,5 +150,22 @@ describe('validateImportFile', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.validRecordsByType).toEqual({});
+  });
+
+  it('excludes a record smuggling a sensitive field inside a loose nested object (M8-051), keeping the rest of the file valid', () => {
+    const file = validFullBackupFile();
+    file.records = {
+      portfolio: file.records.portfolio,
+      loopStrategy: [loopStrategyEnvelopeWithSensitiveField()],
+    } as never;
+
+    const result = validateImportFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.validRecordsByType.portfolio).toHaveLength(1);
+    expect(result.data.validRecordsByType.loopStrategy).toBeUndefined();
+    expect(result.data.issues.some((issue) => issue.message.includes('prohibited field'))).toBe(
+      true,
+    );
   });
 });

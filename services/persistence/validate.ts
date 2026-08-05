@@ -7,9 +7,19 @@
  * each record type's own payload schema (`./schemas`) into the one
  * function every adapter read path and the Import Service (M8-040+) must
  * call before any stored or imported value reaches a Store.
+ *
+ * **Also enforces M8-051's "Sensitive Data Exclusion Rules"** — this is
+ * the one choke point every read, write, and import already passes
+ * through, so it is where `findSensitiveField`
+ * (`services/shared/sensitiveFields.ts`) is called too, rather than
+ * duplicating the check separately in `PersistenceService.write`/
+ * `ImportValidator.ts`. See that module's own header comment for why
+ * this check exists despite no legitimate payload ever containing one of
+ * these fields.
  */
 import { createApplicationError } from '@/services/shared/errors';
 import type { MappingResult } from '@/services/shared/mappingResult';
+import { findSensitiveField } from '@/services/shared/sensitiveFields';
 
 import { STORAGE_SCHEMA_VERSION } from './envelope';
 import { REGISTERED_MIGRATIONS, runMigrations } from './migrations/migrate';
@@ -62,6 +72,20 @@ export function validatePersistedRecordSchema<T>(
     return zodErrorToMappingFailure(recordType, [
       `expected recordType "${recordType}", found "${parsed.data.recordType}"`,
     ]);
+  }
+
+  const sensitiveField = findSensitiveField(parsed.data.payload);
+  if (sensitiveField !== null) {
+    return {
+      ok: false,
+      errors: [
+        createApplicationError(
+          'persistence',
+          'SENSITIVE_FIELD_REJECTED',
+          `This "${recordType}" record was rejected because it contains a prohibited field ("${sensitiveField}"). ProfitPilot never stores credentials, keys, or tokens.`,
+        ),
+      ],
+    };
   }
 
   return { ok: true, data: parsed.data as StorageEnvelope<T> };
