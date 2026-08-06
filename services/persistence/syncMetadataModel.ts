@@ -7,33 +7,34 @@
  * Supabase.** Every function below takes a `PersistedSyncMetadata` (and,
  * where relevant, a fact the caller already knows — "the local record
  * just changed," "the cloud reported this timestamp") and returns a new
- * `PersistedSyncMetadata`, deterministically, with no I/O. This is
- * exactly the kind of "prepare the model before the infrastructure that
- * consumes it" work `docs/CLOUD_READINESS.md` §9 flagged as safely
- * buildable without Supabase credentials — real upload/download/queue
- * logic (M8-027 onward) is what will eventually *call* these functions
- * with real data; nothing here reaches out to fetch or push anything
- * itself. `./sync.service.ts` stays an intentionally empty stub.
+ * `PersistedSyncMetadata`, deterministically, with no I/O.
+ *
+ * **Retained as a generic domain model under Milestone 8's local-only
+ * re-scope** (product decision — see `docs/MILESTONE_8_SCOPE_CHANGE.md`).
+ * Cloud Database and Cloud Synchronization are cancelled — there is no
+ * real upload/download/queue logic that will ever call these functions
+ * with real cloud data, and no Sync Service exists or will be built. The
+ * model stays because it is genuinely generic: pure change/conflict
+ * tracking over any two timestamped copies of a record, with no
+ * Supabase dependency, independently useful and independently tested.
  *
  * **Deterministic conflict detection, explained**: a conflict exists
- * exactly when both the local copy and the cloud copy have changed since
- * the last time this record was successfully synced — M8-031's own
- * definition ("Detect when the same record changed locally and remotely
- * after the last sync"). Every transition function below derives
- * `conflictStatus`/`syncStatus` from that one rule, applied consistently,
- * rather than each call site inventing its own comparison — the same
- * "one choke point, not scattered logic" discipline this codebase's
- * persistence layer already follows elsewhere (`validatePersistedRecord`
- * is the analogous choke point for schema validation).
+ * exactly when both the local copy and the "other" copy have changed
+ * since the last time this record was successfully reconciled — every
+ * transition function below derives `conflictStatus`/`syncStatus` from
+ * that one rule, applied consistently, rather than each call site
+ * inventing its own comparison — the same "one choke point, not
+ * scattered logic" discipline this codebase's persistence layer already
+ * follows elsewhere (`validatePersistedRecord` is the analogous choke
+ * point for schema validation).
  *
  * A record that has never been synced (`lastSyncedAt === null`) is never
- * reported as `'conflict'` here — M8-031's own definition requires an
+ * reported as `'conflict'` here — detecting a conflict requires an
  * "after the last sync" baseline to compare against, which doesn't exist
- * yet for a brand-new record. Reconciling a *first* sync where local and
- * cloud both already have independent data is M8-027's own "First
- * Sign-In Data Merge" concern (its "Local data only / Cloud data only /
- * Both local and cloud data / No data" states), a coarser one-time
- * decision distinct from this per-record, post-baseline conflict check.
+ * yet for a brand-new record. Reconciling a state where two independent
+ * copies already exist with no shared baseline at all is a coarser,
+ * one-time decision distinct from this per-record, post-baseline
+ * conflict check.
  */
 import type { PersistedRecordType } from './types/envelope';
 import type { PersistedSyncMetadata } from './types/models';
@@ -119,9 +120,8 @@ export function markLocalDeletion(
 }
 
 /**
- * Call once a future Sync Service learns the cloud copy's own
- * `updated_at` (a poll, a realtime event, or the response to an upload) —
- * this function does not fetch anything itself.
+ * Call once the "other" copy's own `updated_at` becomes known by
+ * whatever means — this function does not fetch anything itself.
  */
 export function markCloudChange(
   metadata: PersistedSyncMetadata,
@@ -132,12 +132,11 @@ export function markCloudChange(
 }
 
 /**
- * Call once a future Sync Service completes a successful push or pull
- * for this record. Resets the baseline (`lastSyncedAt`), assumes the
- * cloud now reflects exactly what was just synced (`cloudUpdatedAt` set
- * to the same timestamp — the server is expected to stamp its own
- * `updated_at` at write time, matching `syncedAt`), and clears any
- * conflict — a successful sync is definitionally a reconciliation.
+ * Call once a successful push or pull completes for this record. Resets
+ * the baseline (`lastSyncedAt`), assumes the "other" copy now reflects
+ * exactly what was just synced (`cloudUpdatedAt` set to the same
+ * timestamp), and clears any conflict — a successful sync is
+ * definitionally a reconciliation.
  */
 export function markSynced(
   metadata: PersistedSyncMetadata,
@@ -153,20 +152,20 @@ export function markSynced(
 }
 
 /**
- * Call when a sync attempt for this record fails (network error, a real
- * RLS denial, a validation rejection at the cloud boundary) — distinct
- * from `'pendingUpload'`/`'pendingDownload'` because "needs to sync" and
- * "just failed to sync" are different, both user-visible states
- * (M8-034's future "Failed" status). Does not touch `conflictStatus` — a
- * failure is not itself a conflict.
+ * Call when a sync attempt for this record fails (a network error, an
+ * ownership denial, a validation rejection at the reconciliation
+ * boundary) — distinct from `'pendingUpload'`/`'pendingDownload'`
+ * because "needs to sync" and "just failed to sync" are different, both
+ * user-visible states. Does not touch `conflictStatus` — a failure is
+ * not itself a conflict.
  */
 export function markSyncFailed(metadata: PersistedSyncMetadata): PersistedSyncMetadata {
   return { ...metadata, syncStatus: 'error' };
 }
 
 /**
- * Call once a user (M8-032, unbuilt) or a deterministic rule resolves a
- * detected conflict. Deliberately does not reset `syncStatus` to
+ * Call once a user or a deterministic rule resolves a detected
+ * conflict. Deliberately does not reset `syncStatus` to
  * `'synced'` — the resolution still needs to actually be synced
  * (`markSynced`) before that's true; this only records that the
  * conflict itself has been dealt with, distinct from `'none'` so a

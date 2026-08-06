@@ -3,10 +3,17 @@
 06_TASKS.md M8-053 ("Implement Secure Session Review") and M8-054
 ("Complete Persistence Threat Review"). Both are reviews of already-built
 behavior, not new features — every finding below cites the exact file and
-mechanism it verifies, and every item this application version cannot yet
-exhibit (because the batch that would build it is out of scope, per this
-engagement's standing Milestone 8 restrictions) is documented as deferred
-rather than described as if it already worked.
+mechanism it verifies.
+
+**Milestone 8 is re-scoped to local-only persistence** (product
+decision — see `docs/MILESTONE_8_SCOPE_CHANGE.md`): Cloud Database,
+Cloud Synchronization, and Row-Level Security testing are cancelled and
+will not be built. Items below that depend on that cancelled work are
+marked **not applicable**, not "deferred" — there is no future batch
+that will revisit them. Authentication (`services/auth/`) remains in the
+codebase as a dormant, fully-functional-with-zero-configuration
+capability, independent of this cancellation — see
+`docs/MILESTONE_8_SCOPE_CHANGE.md` §5.
 
 ## M8-053 — Secure Session Review
 
@@ -92,31 +99,29 @@ no writer anywhere in this codebase yet. Re-verified for this review: grep
 across `services/export/` for `accessToken`/`refreshToken`/`session` finds
 only this documentation, no field access.
 
-**Finding**: none today. **Follow-up**: once Cloud Sync (M8-031, out of
-scope) gives `'syncMetadata'` a real writer, re-run this check — nothing
-guarantees a future writer won't put session-shaped data there. `services/persistence/validate.ts`'s
-M8-051 sensitive-field check (`findSensitiveField`) would already catch a
-literal `accessToken`/`refreshToken`/`sessionToken`-named field at that
-point, but a future writer choosing a differently-named field for the same
-data would not be caught by name-matching alone — worth a manual re-check,
-not just relying on the automated scan.
+**Finding**: none today, and this is now a permanent property rather than
+a pending check — Cloud Sync (the only feature that would ever have
+given `'syncMetadata'` a real writer) is cancelled by product decision,
+so no future writer will introduce session-shaped data there.
+`services/persistence/validate.ts`'s M8-051 sensitive-field check
+(`findSensitiveField`) remains in place regardless, catching a literal
+`accessToken`/`refreshToken`/`sessionToken`-named field on any record
+type if one were ever introduced.
 
 ### No authenticated API access after sign-out
 
 No code path in this application makes an authenticated API call with a
 session token at all, signed in or not — `services/persistence/adapters/`
 contains only `local-storage.adapter.ts` and `memory.adapter.ts`; no
-Supabase-backed persistence adapter exists yet (Cloud Database, M8-023, and
-Cloud Sync, M8-031, are both out of scope for every batch completed so
-far). "No authenticated API access after sign-out" is therefore vacuously
-true today, not yet a tested guarantee.
+Supabase-backed persistence adapter exists, and none will (Cloud
+Database and Cloud Sync are cancelled by product decision — see
+`docs/MILESTONE_8_SCOPE_CHANGE.md`). "No authenticated API access after
+sign-out" is therefore permanently, structurally true, not a
+placeholder for a future check.
 
-**Finding**: none exploitable today. **Follow-up**: this becomes a real,
-testable requirement the moment M8-023/M8-031 ship a Supabase-backed
-adapter — that adapter must check `authStore`'s session state (or receive
-a token explicitly per call, never read one out of a module-level
-variable) before any request, and a post-sign-out request must fail
-closed. Flagging this now so it is not missed when that work begins.
+**Finding**: none exploitable, and none possible under the current
+scope — there is no authenticated persistence API for a post-sign-out
+request to reach.
 
 ### External-service limitation
 
@@ -125,9 +130,10 @@ batch's own tests (`tests/unit/services/auth/`, `tests/unit/stores/authStore.tes
 `tests/e2e/authWorkflows.spec.ts`) against a fake `AuthClient` — this
 sandbox has no real Supabase project, CLI, or reachable local emulator
 (`services/auth/supabaseClient.ts`'s own header comment). Real-network
-behavior (actual token expiry timing, actual email delivery, Supabase's
-own rate limiting, Row Level Security policies once real tables exist) has
-never been exercised and is not claimed to be.
+Authentication behavior (actual token expiry timing, actual email
+delivery, Supabase's own rate limiting) has never been exercised and is
+not claimed to be. Row-Level Security is a separate, cancelled item
+(§ M8-054 below) — not merely untested here.
 
 ### Security Checklist cross-reference (04_BUILD_GUIDE.md)
 
@@ -135,7 +141,7 @@ never been exercised and is not claimed to be.
 | --- | --- |
 | HTTPS only | Not this application's concern to enforce — delegated to hosting/deployment configuration; `SUPABASE_URL` itself is Supabase's own HTTPS endpoint. |
 | Environment variables secured | `utils/env.ts` reads `SUPABASE_URL`/`SUPABASE_ANON_KEY` only from `process.env`; no default/fallback value is hardcoded. |
-| Row Level Security enabled | Not applicable yet — no Supabase table exists (Cloud Database, M8-023, out of scope). |
+| Row Level Security enabled | Not applicable — Cloud Database is cancelled by product decision; no Supabase table exists or will exist. |
 | Input validation complete | Auth forms validate email format and password length client-side (`app/sign-up`, `app/sign-in`); `services/persistence/schemas/` validates everything that reaches storage. |
 | No secrets committed | Verified: no `.env` file, no hardcoded key, checked into this repository. |
 | No private keys requested | Confirmed — no field anywhere in this application's forms or schemas asks for a wallet private key or seed phrase; `services/shared/sensitiveFields.ts` (M8-051) additionally rejects one if it were ever smuggled into persisted data. |
@@ -147,14 +153,12 @@ never been exercised and is not claimed to be.
 Scope: `services/persistence/`, `services/import/`, `services/export/`.
 Dependencies per 06_TASKS.md: M8-023 (Cloud Database), M8-031 (Cloud
 Sync), M8-043 (Import Merge Options), M8-051 (Sensitive Data Exclusion
-Rules). M8-023 and M8-031 are both out of scope for every Milestone 8
-batch completed so far (no real Supabase infrastructure exists in this
-environment — the same restriction Batch 5's own instructions stated
-explicitly and Batch 4's `docs/DISASTER_RECOVERY.md` already documents for
-its own "Sync conflict"/"Unavailable Supabase" sections). Three of the
-seven threat categories below depend entirely on that unbuilt work; each
-is still reviewed and documented, honestly scoped to "cannot occur yet,"
-rather than skipped or described as handled.
+Rules). M8-023 and M8-031 are both cancelled by product decision —
+Milestone 8 is re-scoped to local-only persistence
+(`docs/MILESTONE_8_SCOPE_CHANGE.md`); no Supabase infrastructure will be
+built. Three of the seven threat categories below depend entirely on
+that cancelled work; each is still reviewed and documented, honestly
+scoped to "not applicable," rather than skipped or described as handled.
 
 ### Malicious imports
 
@@ -200,15 +204,15 @@ path, which this review re-confirms is still accurate.
 
 ### Replay or duplicate sync operations
 
-**Cannot occur yet — deferred.** This threat only exists once a
-synchronization protocol exists between local storage and a cloud store;
-no such protocol exists (Cloud Sync, M8-031, out of scope). `services/persistence/types/envelope.ts`'s
-`'syncMetadata'` record type is reserved for this but has no writer today.
-**Must be addressed when M8-031 is implemented**: any sync-apply operation
-must be idempotent against a stable operation/record identifier (`recordId`
-plus `updatedAt` are already present on every envelope and are a
-reasonable starting point) before that batch's own DoD can honestly claim
-this is handled.
+**Not applicable.** This threat only exists if a synchronization protocol
+exists between local storage and a cloud store; Cloud Sync is cancelled
+by product decision, so no such protocol exists or will exist.
+`services/persistence/types/envelope.ts`'s `'syncMetadata'` record type
+has no writer and none is planned. The Synchronization Model (M8-026,
+`services/persistence/syncMetadataModel.ts`) that would provide the
+idempotency-relevant fields (`recordId`, `lastSyncedAt`) is retained as a
+generic domain model, but nothing in this codebase performs the sync
+operation this threat describes.
 
 ### Accidental overwrite
 
@@ -225,16 +229,14 @@ re-persist exactly that one snapshot. Both are covered by existing tests
 
 ### Unauthorized cloud deletion
 
-**Cannot occur yet — deferred.** No cloud deletion exists to be
-unauthorized: no Supabase-backed persistence adapter exists (same
-"Cloud Database out of scope" reasoning as M8-053's "No authenticated API
-access after sign-out" section above). `app/settings/page.tsx`'s own
-Clear Local Data copy already states "ProfitPilot does not yet sync to
-the cloud" rather than describing a cloud-deletion safeguard nothing in
-this version can exhibit. **Must be addressed when M8-023/M8-031 are
-implemented**: cloud deletion must require the same explicit-confirmation
-pattern local clear/replace-all already establishes, scoped by Row Level
-Security to the authenticated user's own rows only.
+**Not applicable.** No cloud deletion exists to be unauthorized, and
+none will — no Supabase-backed persistence adapter exists or is planned
+(Cloud Database and Cloud Sync are cancelled by product decision).
+`app/settings/page.tsx`'s own Clear Local Data copy already states
+"ProfitPilot does not yet sync to the cloud"; that copy should be
+revisited to reflect that this is now a permanent architectural fact
+rather than a not-yet-shipped feature, but the underlying security
+property (no cloud data, nothing to delete) already holds.
 
 ### Sensitive data leakage
 
@@ -285,21 +287,20 @@ build/test-tooling-only and documented, not resolved, per the DoD's own
 Of the seven M8-054 threat categories, four were fully reviewed against
 already-built code and found mitigated (malicious imports, corrupted
 local storage, accidental overwrite, sensitive data leakage); three
-(replay/duplicate sync, unauthorized cloud deletion) — plus "cross-user
-access" below — cannot occur yet because Cloud Database/Cloud Sync
-(M8-023/M8-031) are unbuilt, and are documented with the concrete
-requirement each must satisfy once that work begins.
+(replay/duplicate sync, unauthorized cloud deletion, and "cross-user
+access" below) are not applicable and will remain so — Cloud
+Database/Cloud Sync (M8-023/M8-031) are cancelled by product decision,
+not merely unbuilt, so there is no future work these three categories
+are waiting on.
 
 ### Cross-user access
 
-**Cannot occur yet — deferred.** There is only one "user" today in the
-sense this threat means: local browser storage has no concept of another
-user's data to leak into, and Supabase Authentication (Batch 5) issues
-per-user sessions but nothing in this codebase yet reads or writes a
-Supabase-backed table scoped by user. **Must be addressed when M8-023
-ships**: Row Level Security policies (already an unchecked item in
-04_BUILD_GUIDE.md's own Security Checklist above) must scope every table
-to `auth.uid()` before any cross-user read/write is even structurally
-possible, and that policy must be covered by a test that attempts a
-cross-user read and confirms it is rejected — not merely assumed from the
-policy's existence.
+**Not applicable.** There is only one "user" in the sense this threat
+means: local browser storage has no concept of another user's data to
+leak into. Supabase Authentication (Batch 5, retained as a dormant
+capability) issues per-user sessions, but no code in this codebase reads
+or writes a Supabase-backed table scoped by user, and none will — Cloud
+Database (M8-023, the only thing that would have introduced cross-user
+data at all) is cancelled by product decision. Row-Level Security
+testing (M8-057) is correspondingly not applicable, not merely deferred:
+there is no policy to test.

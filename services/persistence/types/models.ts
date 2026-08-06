@@ -65,34 +65,32 @@ export interface PersistedApplicationMetadata {
  * Cloud updated timestamp, Last synchronized timestamp, Sync status,
  * Origin device ID, Deletion marker, Conflict status."
  *
- * **Local-only preparation work — no Sync Service exists yet.** M8-026 is
- * explicitly authorized ahead of Cloud Database (M8-022–025) and Cloud
- * Synchronization (M8-027–035), all of which remain unbuilt and require a
- * real Supabase project this codebase does not yet have credentials or
- * network access to reach (see `docs/CLOUD_READINESS.md`). This interface
- * and its companion pure functions (`../syncMetadataModel.ts`) are a
- * *model* — deterministic data and pure transitions over it — not a
- * Service. `../sync.service.ts` stays an intentionally empty stub; wiring
- * this model up to real upload/download/conflict-resolution logic is
- * M8-027 onward's job, not this one's.
+ * **Retained as a generic domain model — Milestone 8 is re-scoped to
+ * local-only persistence** (product decision — see
+ * `docs/MILESTONE_8_SCOPE_CHANGE.md`). Cloud Database (M8-022–025) and
+ * Cloud Synchronization (M8-027–035) are cancelled; the Service that
+ * would have consumed this model to talk to a real cloud backend does
+ * not exist and will not be built. This interface and its companion
+ * pure functions (`../syncMetadataModel.ts`) remain valid regardless —
+ * they are deterministic data and pure transitions with no Supabase
+ * dependency, useful for tracking change/conflict state on any record
+ * type even without a cloud counterpart to reconcile against.
  *
  * **`localUpdatedAt` deliberately mirrors, rather than derives from, the
- * underlying record's own `StorageEnvelope.updatedAt`.** A future Sync
- * Service needs to answer "does this record need to be uploaded?" by
- * scanning only the small `syncMetadata` records, not by reading every
- * application record's full (potentially large) `payload` — the same
- * "lightweight change-tracking companion, separate from bulk data"
+ * underlying record's own `StorageEnvelope.updatedAt`.** Anything
+ * consuming this model to answer "does this record need to be
+ * reconciled?" can scan only the small `syncMetadata` records, not read
+ * every application record's full (potentially large) `payload` — the
+ * same "lightweight change-tracking companion, separate from bulk data"
  * pattern real sync systems (CouchDB/PouchDB-style) use. Callers that
  * mutate a record are responsible for calling `markLocalChange`
- * afterward so this mirror stays accurate; nothing in this batch wires
- * that call up automatically, since doing so would mean touching every
- * Store's write path — a decision that belongs to whichever future batch
- * actually starts producing real sync traffic.
+ * afterward so this mirror stays accurate; nothing wires that call up
+ * automatically, since doing so would mean touching every Store's write
+ * path — a decision left to whatever future use of this model actually
+ * needs it.
  *
  * **`recordType`/`recordId` together are the composite key** to the one
- * application record (of one of the eight cloud-synced types —
- * `applicationMetadata` and `recoverySnapshot` are decided local-only,
- * see `docs/CLOUD_READINESS.md` §4.2) this sync-metadata entry describes.
+ * application record this sync-metadata entry describes.
  */
 export type SyncStatus = 'synced' | 'pendingUpload' | 'pendingDownload' | 'conflict' | 'error';
 
@@ -100,14 +98,15 @@ export type SyncStatus = 'synced' | 'pendingUpload' | 'pendingDownload' | 'confl
  * Distinct from, and narrower than, `SyncStatus`. `SyncStatus` answers
  * "what does this record need right now" (push, pull, nothing, or it's
  * broken); `ConflictStatus` separately tracks the *resolution workflow*
- * for a detected conflict — `'resolved'` exists so a conflict a user has
- * just resolved (M8-032, unbuilt) remains visibly distinct from one that
- * was never in conflict at all, until the next successful sync
- * (`markSynced`) clears it back to `'none'`. Deliberately does not
- * attempt to model M8-034's future higher-level UI sync states ("Local
- * only," "Syncing," "Offline," ...) — those are cross-record, session-
- * level concerns a later batch will compute from many of these per-record
- * entries plus live network state, not a value stored per record here.
+ * for a detected conflict — `'resolved'` exists so a conflict that has
+ * just been resolved remains visibly distinct from one that was never
+ * in conflict at all, until the next successful sync (`markSynced`)
+ * clears it back to `'none'`. Deliberately does not attempt to model a
+ * higher-level, cross-record UI sync status ("Local only," "Syncing,"
+ * "Offline," ...) — that would be a session-level concern computed from
+ * many of these per-record entries plus live network state, not a value
+ * stored per record here; not needed under the current local-only scope
+ * (`docs/MILESTONE_8_SCOPE_CHANGE.md`) in any case.
  */
 export type ConflictStatus = 'none' | 'detected' | 'resolved';
 
@@ -121,20 +120,18 @@ export interface PersistedSyncMetadata {
   /**
    * The device that produced the current `localUpdatedAt` value —
    * generated by `utils/deviceId.ts`'s pure `generateDeviceId()`.
-   * *Where* a stable per-install device ID is first created and
-   * persisted is deliberately left to whichever batch first needs one
-   * to survive across sessions (M8-027 or M8-033) — this batch models
-   * the field and provides a tested generator, not a storage/lifecycle
-   * decision that belongs to a feature that doesn't exist yet.
+   * Persisting a *stable* per-install device ID (surviving across
+   * sessions) is not wired up anywhere — this model provides the field
+   * and a tested generator, not a storage/lifecycle decision, and
+   * nothing under the current local-only scope
+   * (`docs/MILESTONE_8_SCOPE_CHANGE.md`) currently needs one to persist.
    */
   originDeviceId: string;
   /**
    * `null` while the record is live; set to the ISO timestamp the record
    * was locally marked deleted (a tombstone) once one exists, so a
-   * deletion can propagate through sync the same as any other change —
-   * M8-031's own "Record deleted remotely but edited locally" conflict
-   * example depends on this being a real, comparable timestamp, not a
-   * bare boolean.
+   * deletion is distinguishable from an ordinary edit using the same
+   * real, comparable timestamp rather than a bare boolean.
    */
   deletionMarker: string | null;
   conflictStatus: ConflictStatus;

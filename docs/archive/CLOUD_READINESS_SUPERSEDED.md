@@ -1,4 +1,15 @@
-# Cloud Readiness Report
+# Cloud Readiness Report (SUPERSEDED)
+
+> **Superseded — archived, not active guidance.** Milestone 8 was
+> re-scoped to local-only persistence by product decision: Supabase,
+> Cloud Database, Cloud Synchronization, and Row-Level Security testing
+> are all cancelled and will not be built. See
+> `docs/MILESTONE_8_SCOPE_CHANGE.md` for the scope-change decision and
+> `docs/DISASTER_RECOVERY.md`/`docs/SECURITY_REVIEW.md` for the
+> corresponding documentation updates. Everything below this notice is
+> retained only as a historical record of the planning work done before
+> that decision — none of it describes anything this codebase will
+> implement.
 
 Prepared per your instruction: re-evaluate the Milestone 8 tasks that depend
 on external (Supabase) infrastructure, determine exactly what completing

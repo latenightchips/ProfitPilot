@@ -5,14 +5,15 @@ M8-013, M8-044, M8-046. DoD: "Developers and users have a documented
 recovery path for supported failure modes."
 
 This document covers the failure modes M8-050 names, scoped honestly to
-what this application version can actually exhibit. Milestone 8 Batches
-1–4 (Persistence Foundation, Local Storage, Import/Export, Backup and
-Recovery) are implemented; Authentication and Cloud Synchronization are
-not. Two of the seven failure modes below (**Sync conflict**,
-**Unavailable Supabase**) therefore cannot occur yet — each is still
-documented, with the recovery path this document commits to writing once
-that batch ships, rather than describing behavior nothing in this version
-produces.
+what this application version can actually exhibit. Persistence
+Foundation, Local Storage, Import/Export, Backup and Recovery, and
+Authentication are all implemented. Cloud Database and Cloud
+Synchronization are not, and — per the Milestone 8 local-only re-scope
+(product decision; see `docs/MILESTONE_8_SCOPE_CHANGE.md`) — never will
+be. Two of the seven failure modes below (**Sync conflict**,
+**Unavailable Supabase**) are therefore permanently not applicable, not
+merely pending — documented below as such rather than as work still to
+come.
 
 ## Malformed local storage
 
@@ -87,23 +88,33 @@ try a narrower merge mode (e.g. `addAsNew` instead of `replaceAll`).
 double to force a failure partway through and assert the pre-import
 dataset is exactly restored, across multiple record types.
 
-## Sync conflict — *not yet reachable*
+## Sync conflict — *not applicable*
 
-Requires Cloud Synchronization (Milestone 8, a later batch — 06_TASKS.md
-"CLOUD SYNCHRONIZATION" section, M8-026 onward), not yet implemented.
-Once that batch ships, this section will document: how a conflict is
-detected, the merge/last-write-wins/user-choice strategy it resolves
-with, and how a user recovers if resolution itself fails.
+Cloud Synchronization (06_TASKS.md "CLOUD SYNCHRONIZATION" section,
+M8-027 onward) is cancelled by product decision — Milestone 8 is
+re-scoped to local-only persistence (`docs/MILESTONE_8_SCOPE_CHANGE.md`).
+There is no cloud copy of any record for a local edit to conflict with,
+and none will be built, so this failure mode cannot occur in this
+application, not merely "not yet." The Synchronization Model (M8-026,
+`services/persistence/syncMetadataModel.ts`) that would have detected
+such a conflict is retained as a generic domain model, but nothing
+currently produces the real cloud-side data it would need to compare
+against.
 
-## Unavailable Supabase — *not yet reachable*
+## Unavailable Supabase — *not applicable*
 
-Requires Cloud Database / Cloud Synchronization (Milestone 8, later
-batches), not yet implemented. `04_BUILD_GUIDE.md`'s own "DISASTER
-RECOVERY" section already states the intended behavior once cloud sync
-exists: continue using the local portfolio, display a synchronization
-warning, retry automatically, allow manual export — "External failures
-should not prevent portfolio analysis." This section will document the
-concrete implementation once that batch ships.
+Cloud Database and Cloud Synchronization (Milestone 8) are cancelled by
+product decision — this application does not use Supabase, or any
+cloud backend, for persistence, and never will under the current scope
+(`docs/MILESTONE_8_SCOPE_CHANGE.md`). There is no Supabase-backed
+persistence path whose unavailability could be a failure mode; local
+storage is not a fallback for a cloud tier, it is the only tier. (This
+does not affect Authentication, which optionally uses Supabase's own
+auth service independently of persistence — see
+`services/auth/supabaseClient.ts`'s own header comment for how that
+stays fully functional with zero configuration, and
+`docs/MILESTONE_8_SCOPE_CHANGE.md` §5 for why Authentication remains in
+the codebase as a dormant capability distinct from this decision.)
 
 ## Deleted local browser data
 

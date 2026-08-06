@@ -113,7 +113,8 @@ describe('markCloudChange', () => {
     const cloudChanged = markCloudChange(initial, '2026-01-02T00:00:00.000Z');
     expect(cloudChanged.conflictStatus).toBe('none');
     // Both sides have a value, but there is no prior sync baseline —
-    // M8-027's First Sign-In Merge territory, not a per-record conflict.
+    // reconciling two independent copies with no shared history is a
+    // coarser, one-time decision distinct from this per-record conflict check.
     expect(cloudChanged.syncStatus).not.toBe('conflict');
   });
 

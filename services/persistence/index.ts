@@ -5,14 +5,13 @@
  * ("Document Disaster Recovery Procedure") — Milestone 8 Batches 1–4.
  * Replaces the M3-001 `export {}` placeholder this file originally was.
  *
- * `./sync.service.ts` has no exports yet — see its own header comment
- * for why (Cloud Synchronization, M8-027 onward, a later dependent
- * Milestone 8 batch that requires a real Supabase project this
- * codebase does not yet have network access to — see
- * `docs/CLOUD_READINESS.md`). `./syncMetadataModel.ts` (M8-026) is
- * exported below — it is the synchronization *model* (pure data and
- * deterministic transitions), authorized ahead of that Service as
- * local-only preparation work; see its own header comment.
+ * **Milestone 8 is re-scoped to local-only persistence** (product
+ * decision — see `docs/MILESTONE_8_SCOPE_CHANGE.md`). Cloud Database and
+ * Cloud Synchronization are cancelled; `./sync.service.ts` (the empty
+ * stub reserved for that cancelled Service) has been removed.
+ * `./syncMetadataModel.ts` (M8-026, exported below) is retained as a
+ * generic domain model — pure data and deterministic transitions with no
+ * Supabase dependency — per that same decision.
  */
 export * from './adapters';
 export * from './autoSaveCoordinator';
