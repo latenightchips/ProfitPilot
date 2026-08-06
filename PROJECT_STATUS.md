@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-08-04
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-08-06
+Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10360,6 +10360,231 @@ addressed. See `MILESTONE_7_COMPLETION.md` for the permanent snapshot.
 
 ---
 
+## Milestone 8 progress
+
+Milestone 7 was confirmed synchronized to GitHub before this milestone
+began. Milestone 8 (`06_TASKS.md`'s own "Persistence, Authentication,
+Cloud Synchronization & Import/Export") has 62 tasks across seven
+sections: Persistence Foundation (M8-001–005), Local Storage
+(M8-006–013), Authentication (M8-014–021), Cloud Database (M8-022–025),
+Cloud Synchronization (M8-026–035), Import and Export (M8-036–045),
+Backup and Recovery (M8-046–050), Privacy and Security (M8-051–054), and
+Quality and Testing (M8-055–062). Implementation proceeded batch by
+batch under the same one-batch-one-atomic-commit, format/lint/typecheck/
+test/coverage/build/e2e validation discipline established in Milestones
+4–7, with an added constraint unique to this milestone: every batch that
+could not be fully implemented or tested against real infrastructure had
+to say so explicitly rather than fabricate live-service validation (this
+sandbox has never had a reachable Docker daemon, a real Supabase
+project, or — later confirmed directly — outbound network access to
+Supabase's own API even when a real project was reported available).
+Batches were implemented out of strict task-number order at points
+(Import/Export and Backup/Recovery were built before Authentication),
+reflecting the order actually approved batch-by-batch rather than
+06_TASKS.md's own section sequence; task numbers below are the
+authoritative record regardless of build order.
+
+### Batch 1 — Persistence Foundation and Validation (M8-001–M8-005)
+
+Established `services/persistence/`: the `PersistenceAdapter` interface,
+the `StorageEnvelope<T>` model and the 10 `PersistedRecordType` values,
+storage schema versioning (`STORAGE_SCHEMA_VERSION`, currently `'1.0.0'`
+— no second version has ever shipped), and `validatePersistedRecord`/
+`validatePersistedRecordSchema` as the one choke point every read,
+write, and (later) import passes through. `MemoryAdapter` built as the
+first real, fully-testable adapter. Commit `f93974c`.
+
+### Batch 2 — Local Storage, Hydration and Migration (M8-006–M8-013)
+
+`local-storage.adapter.ts` (the production default adapter — malformed
+data, unavailable storage, and quota-exceeded all handled as safe
+`MappingResult` failures, never a raw exception), local storage key
+namespacing, `autoSaveCoordinator` (debounced, retrying, quota-aware
+auto-save), and `runLocalDataMigration` (the migration runner and its
+restore-on-failure guarantee). Every Store wired to load from and
+auto-save to real `localStorage` for the first time. Commit `b63f637`.
+
+### Batch 3 — Import and Export Services (M8-036–M8-045)
+
+Centralized `services/export/` (`JsonExporter`, `CsvExporter`, full and
+single-record export) and `services/import/` (`ImportValidator`,
+preview, `apply.ts` with `addAsNew`/`mergeNonConflicting`/
+`replaceSelected`/`replaceAll` merge modes, server-enforced confirmation
+for destructive replacement). Commit `f014b79`.
+
+### Batch 4 — Backup and Recovery (M8-046–M8-048, M8-050)
+
+Automatic local recovery snapshots (`recoverySnapshot.ts`, capped
+retention), the Backup and Restore settings UI, the Clear Local Data
+workflow (snapshot-then-clear, never zero-then-clear), and
+`docs/DISASTER_RECOVERY.md`. **M8-049 ("Implement Cloud Data Deletion
+Workflow") was correctly excluded from this batch** — its own
+Dependencies name M8-025 (the Supabase adapter), which did not exist
+then and, per the later re-scope decision below, will not exist; this
+was a correct scope boundary at the time, not an oversight later
+discovered. Commit `096976f`.
+
+### Batch 5 — Authentication (M8-014–M8-021)
+
+`services/auth/` (`authService.ts`, `supabaseClient.ts` — the only file
+in this codebase that imports `@supabase/supabase-js` directly),
+`stores/authStore.ts` (kept fully independent from `portfolioStore`/
+every feature Store, proven independent later in Batch 7), sign-up/
+sign-in/password-reset pages, and `providers/AuthProvider.tsx`.
+Anonymous/manual mode confirmed to remain the default and fully
+functional throughout. This sandbox had no real Supabase project, CLI,
+or reachable Docker daemon at the time — every test in this batch runs
+against a fake `AuthClient`, never a live backend; this was disclosed
+explicitly rather than claimed as live-verified. Commit `f6fd285`.
+
+### Batch 6 — Privacy and Security (M8-051–M8-054)
+
+`services/shared/sensitiveFields.ts` (`findSensitiveField`, rejecting 22
+canonical credential/key/token field names recursively, closing a real
+gap in the deliberately-shallow `looseRecordSchema` that could otherwise
+let a smuggled secret through an import), `services/shared/sanitizeText.ts`
+/`utils/sanitizeText.ts` (control-character/whitespace/length
+sanitization applied at the true point of storage), and the first
+`docs/SECURITY_REVIEW.md` (M8-053 Secure Session Review, M8-054
+Persistence Threat Review — four of seven threat categories reviewed
+and mitigated against already-built code; three deferred at the time
+pending Cloud Database/Sync, later resolved as not applicable — see
+below). Commit `6829303`.
+
+### Batch 7 — Quality and Testing, local-only subset (M8-055, M8-056, M8-059)
+
+Audited existing coverage first per this batch's own instruction to
+reuse rather than duplicate — found Create/Read/Update/Delete/Auto-save/
+Malformed/Quota/Unavailable/Migration (M8-055) and Sign up/in/Invalid
+credentials/Session restoration/Password reset/Sign out (M8-056) already
+comprehensively covered by prior batches' own tests, and added exactly
+the two genuine gaps found: a canonical no-network/no-auth full local
+persistence lifecycle test, and a direct behavioral proof that
+authentication actions never affect `portfolioStore` state
+(`authLocalDataPreservation.test.ts` — M8-056's own "Local-data
+preservation" item, previously only implied by architecture, not
+tested). Also fixed a real bug surfaced while writing M8-059's version-
+compatibility tests: `ImportValidator.ts` declared an
+`UNSUPPORTED_SCHEMA_VERSION` issue code that was never actually assigned
+(every rejection collapsed into the generic `INVALID_RECORD`) — fixed to
+discriminate correctly. M8-057 (Row-Level Security Tests) and M8-058
+(Synchronization Tests) were confirmed blocked on unbuilt Cloud
+Database/Sync and correctly not attempted. Commit `212a520`.
+
+### Cloud Database attempt (M8-022–M8-025) — stopped at verification, no code written
+
+A real Supabase development project was later reported available.
+Before any implementation, the standing pre-flight checklist was run:
+confirm `SUPABASE_URL`/`SUPABASE_ANON_KEY` availability, confirm CLI or
+hosted-project migration access, and stop immediately if real schema/RLS
+verification could not be performed honestly. All four checks failed —
+no credentials in this session's environment, no Supabase CLI installed,
+no reachable Docker daemon, and (the decisive finding) this sandbox's
+own outbound proxy explicitly denies the connection to `api.supabase.com`
+(`403`, policy denial) — meaning real verification was impossible in
+this session regardless of whether a project existed elsewhere. Per
+instruction, the batch stopped at verification rather than fabricate or
+substitute fake validation for what was explicitly asked to be
+real. `docs/CLOUD_READINESS.md` (a full implementation blueprint —
+schema design, RLS policies, generated types, adapter design, testing
+and deployment strategy, all illustrative) was produced instead, to be
+used once real access existed. No code was written for M8-022–025 at
+any point.
+
+### Cloud Preparation batch — Synchronization Model (M8-026)
+
+Authorized explicitly as local-only preparation work ahead of Cloud
+Database/Sync, since M8-026's own scope (typed sync metadata: record
+ID, local/cloud/last-synced timestamps, sync status, origin device ID,
+deletion marker, conflict status) is a pure data-and-transitions
+exercise with no runtime Supabase dependency. Delivered
+`services/persistence/syncMetadataModel.ts` (`createSyncMetadata`,
+`markLocalChange`, `markLocalDeletion`, `markCloudChange`, `markSynced`,
+`markSyncFailed`, `resolveConflict` — all pure, deterministically
+deriving `conflictStatus`/`syncStatus` from one rule: "both sides
+changed since the last successful sync"), the extended
+`PersistedSyncMetadata` type and its Zod schema, `utils/deviceId.ts`
+(a pure device-ID generator), and `tests/fixtures/fakeSupabaseDatabase.ts`
+(a narrow fake of Supabase's row-level table operations for the future
+adapter's own tests — explicitly documented as not a substitute for real
+Row-Level Security verification). Commit `74e6ed0`.
+
+### Milestone 8 re-scoped to local-only persistence — product decision
+
+Following the Cloud Database attempt, the product decision was made:
+**Supabase, Cloud Database, Cloud Synchronization, and Row-Level
+Security testing are out of scope — permanently, not pending
+infrastructure.** Anonymous/manual mode is the permanent default. A
+Milestone 8 Completion and Scope-Change Report
+(`docs/MILESTONE_8_SCOPE_CHANGE.md`) was produced first, reclassifying
+every remaining task, assessing completion honestly against both the
+original `06_TASKS.md` text (not fully satisfiable — it literally
+requires "Synchronize across devices," which will not be built) and a
+re-scoped local-only definition (fully satisfiable — see the final tally
+below), and recommending exactly what to remove versus retain. Approved
+with three explicit decisions: the Synchronization Model (M8-026) stays
+as generic domain infrastructure; Authentication (M8-014–021) stays
+fully implemented as an optional, dormant capability — not removed,
+despite being the only remaining Supabase-touching code — because
+nothing about keeping it is broken or actively harmful, only no longer
+building toward a cloud feature; and cleanup is scoped to artifacts that
+existed _exclusively_ for the cancelled work, not to Authentication
+itself.
+
+**Cleanup executed** (commit `b89f31e`): deleted `services/persistence/
+sync.service.ts` (the empty stub reserved for the now-cancelled Sync
+Service) and `tests/fixtures/fakeSupabaseDatabase.ts` plus its test
+(built exclusively for the now-cancelled M8-025/M8-027+ adapter/sync
+tests); archived `docs/CLOUD_READINESS.md` to
+`docs/archive/CLOUD_READINESS_SUPERSEDED.md` with a superseded notice
+rather than deleting it outright, preserving the planning record;
+reworded every "deferred until M8-023/M8-031 ship" note in
+`docs/SECURITY_REVIEW.md` and `docs/DISASTER_RECOVERY.md`'s "Sync
+conflict"/"Unavailable Supabase" sections to "not applicable — cancelled
+by product decision," since there is no longer a future batch that will
+revisit them; updated the retained Synchronization Model's own header
+comments to describe itself as generic domain infrastructure rather
+than "preparation ahead of a Service that will exist." Authentication
+code (`services/auth/`, `stores/authStore.ts`,
+`providers/AuthProvider.tsx`, the three auth routes) and
+`PROJECT_STATUS.md` were both explicitly untouched in that batch, per
+instruction — this section is `PROJECT_STATUS.md`'s own first update for
+Milestone 8, performed only now, after the re-scope was fully decided
+and executed in code.
+
+### Final tally — verified against 06_TASKS.md's own 62 Milestone 8 tasks
+
+| Disposition                             | Count | Tasks                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ✅ Implemented                          | 43    | M8-001–021 (Persistence Foundation, Local Storage, Authentication), M8-026 (Synchronization Model), M8-036–048 and M8-050 (Import/Export, Backup and Recovery — M8-049 excluded), M8-051–054 (Privacy and Security), M8-055/056/059 (Quality and Testing subset)                                                 |
+| ❌ Cancelled — product decision         | 16    | M8-022–025 (Cloud Database), M8-027–035 (Cloud Synchronization), M8-049 (Cloud Data Deletion Workflow), M8-057/058 (Row-Level Security Tests, Synchronization Tests)                                                                                                                                             |
+| ✅ Satisfied without dedicated new work | 3     | M8-060–062 (Offline/Persistence End-to-End Tests, final Build Guide audit) — each task's local-only requirements are already proven by other Milestone 8 tests (principally M8-055/056/059's own), and each task's cloud-only requirements are no longer applicable; no separate implementation batch was needed |
+
+**43 + 16 + 3 = 62.** (This corrects an arithmetic gap in an earlier
+draft of `docs/MILESTONE_8_SCOPE_CHANGE.md`, which stated "46 complete"
+without ever accounting for M8-049 specifically — the report's own
+qualitative classification of every task was and remains correct; only
+this summary total needed the correction, made here for the first time
+against the full, literal 62-task list.)
+
+**Milestone 8 is complete under the re-scoped, local-only definition.**
+Against the original `06_TASKS.md` text it cannot be called 100% done —
+that text's own Acceptance Criteria include "Cloud data is protected by
+Row-Level Security" and "Synchronize across devices," which this product
+decision permanently removes, not merely defers. Against the re-scoped
+definition, every applicable criterion holds: the application works
+fully without authentication, local storage is the sole persistence
+tier, stored data is validated/versioned/migration-safe, authentication
+is optional and does not affect local data, import/export/CSV/recovery
+are all complete, credentials are never stored, and persistence tests
+pass — see `docs/MILESTONE_8_SCOPE_CHANGE.md` §3 for the full
+criterion-by-criterion mapping. No `MILESTONE_8_COMPLETION.md` snapshot
+file was created (unlike Milestones 4–7) — this section is the
+permanent record instead, per the scope of the documentation-only pass
+that produced it.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -11525,6 +11750,42 @@ Recommendation Center to keep the specification set internally
 consistent, or note that later-added Milestone-7-scope pages are
 expected to postdate the original 10-page index), not an engineering
 one.
+
+---
+
+### 34. `06_TASKS.md`'s own Milestone 8 Acceptance Criteria and Definition of Done require Cloud Synchronization, which the product has decided not to build — ✅ RESOLVED by explicit product decision, Milestone 8 completion
+
+`06_TASKS.md`'s Milestone 8 "MILESTONE ACCEPTANCE CRITERIA" and
+"MILESTONE DEFINITION OF DONE" both literally require cloud-sync
+capability no amount of local-only work can satisfy: "Cloud data is
+protected by Row-Level Security," "Synchronization supports offline
+work," and, most directly, "Synchronize across devices" as one of the
+ten things "a user must be able to" do. Cloud Database (M8-022–025) and
+Cloud Synchronization (M8-026–035) were attempted (see `## Milestone 8
+progress` above — a real Supabase project was reported available, but
+this sandbox's own environment could not reach it: no credentials
+present, no CLI, no Docker daemon, and an explicit proxy-level network
+denial to `api.supabase.com`), then the product decision was made:
+Supabase, Cloud Database, and Cloud Synchronization are out of scope —
+permanently, not pending infrastructure access.
+
+**Resolved by explicit product decision, not by engineering
+substitution.** No local-only mechanism stands in for "synchronize
+across devices" — that capability is intentionally absent, not
+approximated. `docs/MILESTONE_8_SCOPE_CHANGE.md` documents the full
+task-by-task reclassification (43 implemented, 16 cancelled, 3
+satisfied without new work — see `## Milestone 8 progress` above's
+"Final tally") and the criterion-by-criterion mapping showing every
+applicable Acceptance Criterion is met under the re-scoped definition.
+The Synchronization Model (M8-026) remains implemented as generic
+domain infrastructure; Authentication (M8-014–021) remains implemented
+as an optional, dormant capability — neither removed by this decision.
+
+Unlike every other conflict in this section, **this one is not handed
+off for a future decision** — the decision has already been made and
+executed. Recorded here because it is exactly the shape this section
+exists to track: a specification document's own literal text no longer
+matching what was actually built, by deliberate choice.
 
 ---
 
@@ -12925,3 +13186,22 @@ portfolioWorkflows.test.ts`, M4-018) rather than inventing a new
     which raised none. All 27 are handed off for a future
     product/engineering decision; none blocked Milestone 4's own
     completion.**
+62. **Update (Milestone 8 documentation pass, 2026-08-06): Milestone 8
+    (M8-001–M8-062) is now complete under a re-scoped, local-only
+    product decision, and synchronized to GitHub** — see `## Milestone 8
+progress` (above, in milestone order) for the full batch-by-batch
+    record, Conflict #34 for the specification-vs-decision resolution,
+    and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the complete
+    task-by-task reclassification and completion analysis this section
+    summarizes. 43 of 62 tasks implemented, 16 cancelled by explicit
+    product decision (Supabase, Cloud Database, and Cloud Synchronization
+    are out of scope — permanently), 3 satisfied without dedicated new
+    work. The Synchronization Model (M8-026) and Authentication
+    (M8-014–021) both remain implemented — the former as generic domain
+    infrastructure, the latter as an optional, dormant capability;
+    neither was removed by the re-scope decision. No
+    `MILESTONE_8_COMPLETION.md` snapshot file exists, unlike Milestones
+    4–7 — this file's own new section is the permanent record instead.
+    **Next**: Milestone 9 — Quality, Accessibility, Security,
+    Performance & Release Hardening (`06_TASKS.md` Page 9), not yet
+    started.

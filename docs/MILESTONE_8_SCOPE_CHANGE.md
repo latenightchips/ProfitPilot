@@ -4,9 +4,11 @@ Prepared per your instruction to re-scope Milestone 8 to a local-only
 persistence architecture following the decision that Supabase, Cloud
 Database, Cloud Sync, Row-Level Security testing, and real
 authentication-backed cloud storage are all out of scope, with
-anonymous/manual mode as the permanent default. This is analysis and
-recommendation only — **no code has been changed and `PROJECT_STATUS.md`
-has not been touched**, per your explicit instructions.
+anonymous/manual mode as the permanent default. This was analysis and
+recommendation only at the time of writing — **no code had been changed
+and `PROJECT_STATUS.md` had not been touched**, per your explicit
+instructions then. See the Resolution note immediately below for what
+was subsequently approved and executed.
 
 > **Resolution (approved)**: this report was approved with Authentication
 > explicitly retained as a dormant capability (not removed) and cleanup
@@ -36,15 +38,21 @@ tasks are classified below: they are not blocked, they are cancelled.
 
 ## 2. Full remaining task review
 
-46 of Milestone 8's 62 tasks are complete and unaffected by this change
+43 of Milestone 8's 62 tasks are complete and unaffected by this change
 (Persistence Foundation, Local Storage, Authentication's own service/store
-layer, Import/Export, Backup and Recovery, Privacy and Security, and the
-three infrastructure-independent Quality/Testing tasks). M8-026
-(Synchronization Model) is also complete, and — per your explicit
+layer, Import/Export, Backup and Recovery excluding M8-049, Privacy and
+Security, and 3 of the 8 Quality/Testing tasks). M8-026
+(Synchronization Model) is included in that count, and — per your explicit
 decision — **stays valid**: "the synchronization metadata model" is
 named as one of the things that "remain valid" alongside local
-persistence, import/export, recovery, and security. The remaining 15
-tasks are reclassified below.
+persistence, import/export, recovery, and security. The remaining 19
+tasks (including M8-049, "Implement Cloud Data Deletion Workflow" — its
+own Dependencies name M8-025, so it is cloud-dependent even though its
+task number falls inside the Backup and Recovery range that otherwise
+completed in full) are reclassified below: 16 cancelled outright, 3
+satisfied without dedicated new work. **43 + 16 + 3 = 62** — see the
+Final tally table in `PROJECT_STATUS.md`'s own `## Milestone 8 progress`
+section for the same breakdown, cross-checked against this one.
 
 | Task | Title | Old status | New classification | Why |
 |---|---|---|---|---|
@@ -62,6 +70,7 @@ tasks are reclassified below.
 | M8-033 | Implement Offline Synchronization Queue | Blocked | **Cancelled — product decision** | "Offline" only means something relative to a sync target that no longer exists — the app is already fully usable with no network dependency at all. |
 | M8-034 | Implement Synchronization Status | Blocked | **Cancelled — product decision** | No sync state to display. |
 | M8-035 | Implement Manual Synchronization | Blocked | **Cancelled — product decision** | Depends on M8-034. |
+| M8-049 | Implement Cloud Data Deletion Workflow | Blocked | **Cancelled — product decision** | Own Dependencies name M8-025 (Supabase adapter, cancelled); correctly excluded from the completed Batch 4 (Backup and Recovery, M8-046–048/050) at the time, for the same reason as every other row in this table. Listed here out of numeric order — its task number falls inside the otherwise-complete Backup and Recovery range, but its actual dependency is on Cloud Database. |
 | M8-057 | Create Row-Level Security Tests | Blocked | **Not applicable — nothing to test** | There is no RLS policy in this architecture, tested or otherwise. Distinct from "cancelled": this task was never about building something, only verifying something M8-023 would have built. |
 | M8-058 | Create Synchronization Tests | Blocked | **Not applicable — nothing to test** | Same reasoning; M8-027–035 are all cancelled. |
 | M8-060 | Create Offline End-to-End Tests | Blocked | **Partially retained** | Its three purely-local flows ("Open/edit portfolio offline," "Save simulation offline") are already true and already covered by M8-055's own tests — the app has no network dependency, full stop. Its three cloud-flows ("Queue cloud changes," "Reconnect," "Synchronize successfully") are **cancelled**. No new task needed — already satisfied by existing local persistence tests. |
@@ -259,10 +268,20 @@ non-Supabase account feature) that I don't have visibility into, "keep
 dormant" is a reasonable, low-risk alternative, and nothing about the
 architecture forces the removal.
 
-## 6. What I have not done
+## 6. What I have not done (as originally written — see the Resolution note at the top for what happened afterward)
 
-Per your explicit instructions: no code has been changed, no file has
-been deleted, and `PROJECT_STATUS.md` has not been modified. This report
-is a new file only. Everything in §4 and §5 is a recommendation awaiting
-your approval — including, notably, the Authentication removal-vs-keep
-decision, which changes the exact scope of any future cleanup batch.
+Per your explicit instructions at the time: no code has been changed, no
+file has been deleted, and `PROJECT_STATUS.md` has not been modified.
+This report was a new file only. Everything in §4 and §5 was a
+recommendation awaiting your approval — including, notably, the
+Authentication removal-vs-keep decision, which changed the exact scope
+of the cleanup batch that followed.
+
+**This is no longer current.** §4's cleanup recommendations were
+approved and executed (artifacts exclusive to cancelled Supabase work
+removed or archived; Authentication retained); `PROJECT_STATUS.md` was
+subsequently updated in a dedicated documentation-only pass recording
+Milestone 8 as complete under the re-scoped definition. See the
+Resolution note at the very top of this document, and
+`PROJECT_STATUS.md`'s own `## Milestone 8 progress` section, for the
+current, authoritative state.
