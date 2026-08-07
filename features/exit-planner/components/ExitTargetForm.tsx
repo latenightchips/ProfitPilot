@@ -235,8 +235,25 @@ function ExitTargetFormForType({
   );
 }
 
-export function ExitTargetForm({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function ExitTargetForm({
+  portfolio,
+  portfolioId,
+}: {
+  portfolio: ApplicationPortfolio;
+  portfolioId: string;
+}) {
   const exitType = useExitPlannerStore((state) => state.exitType);
+  const syncActivePortfolio = useExitPlannerStore((state) => state.syncActivePortfolio);
+
+  // 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+  // contamination." Runs whenever `portfolioId` changes (including this
+  // component's own mount, so a portfolio switched *while this route
+  // wasn't mounted* is still caught) — see `syncActivePortfolio`'s own
+  // doc comment in `stores/exitPlannerStore.ts` for why this only clears
+  // on an actual portfolio change, never on a same-portfolio remount.
+  useEffect(() => {
+    syncActivePortfolio(portfolioId);
+  }, [portfolioId, syncActivePortfolio]);
 
   if (exitType === null) {
     return (

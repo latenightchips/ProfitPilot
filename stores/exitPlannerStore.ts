@@ -208,6 +208,12 @@ export interface ExitPlannerStoreState {
   priceSensitivityErrors: ApplicationError[];
   savedPlans: SavedExitPlan[];
   selectedPlanId: string | null;
+  /**
+   * 06_TASKS.md M9-012 — which portfolio `exitType`/`targetInputs`/
+   * `currentResult` (if any) were computed against. `null` means "no
+   * portfolio observed yet," not "no result" — see `syncActivePortfolio`.
+   */
+  workingPortfolioId: string | null;
 }
 
 export interface ExitPlannerStoreActions {
@@ -221,6 +227,25 @@ export interface ExitPlannerStoreActions {
   deleteExitPlan: (id: string) => void;
   loadSavedPlans: () => Promise<void>;
   reset: () => void;
+  /**
+   * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+   * contamination." Called by `ExitTargetForm` whenever the active
+   * portfolio it renders for changes (including on its own mount, so a
+   * portfolio switched *while this route wasn't mounted* is still
+   * caught). Compares `portfolioId` against `workingPortfolioId`:
+   *   - No prior portfolio observed — just records `portfolioId`.
+   *     Nothing to clear; this is the normal first-mount case.
+   *   - Same portfolio as before — no-op, so navigating away and back to
+   *     the same portfolio preserves in-progress work.
+   *   - A genuinely different portfolio — clears the *unsaved* working
+   *     state (`exitType`/`targetInputs`/`currentResult`/`status`/
+   *     `errors`/`warnings`/`lastMetadata`/`priceSensitivity`/
+   *     `priceSensitivityErrors`/`selectedPlanId`), deliberately leaving
+   *     `savedPlans` untouched (cross-portfolio by design — the same
+   *     precedent `stores/simulationStore.ts`'s `savedScenarios` already
+   *     established), then records the new `portfolioId`.
+   */
+  syncActivePortfolio: (portfolioId: string) => void;
 }
 
 const SOURCE_STATUS = 'manual';
@@ -238,6 +263,7 @@ const INITIAL_STATE: ExitPlannerStoreState = {
   priceSensitivityErrors: [],
   savedPlans: [],
   selectedPlanId: null,
+  workingPortfolioId: null,
 };
 
 function resolveExitTarget(
@@ -474,6 +500,30 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
 
     reset: () => {
       set(INITIAL_STATE);
+    },
+
+    syncActivePortfolio: (portfolioId) => {
+      const { workingPortfolioId } = get();
+      if (workingPortfolioId === portfolioId) return;
+
+      if (workingPortfolioId === null) {
+        set({ workingPortfolioId: portfolioId });
+        return;
+      }
+
+      set({
+        exitType: null,
+        targetInputs: null,
+        currentResult: null,
+        status: 'idle',
+        errors: [],
+        warnings: [],
+        lastMetadata: null,
+        priceSensitivity: null,
+        priceSensitivityErrors: [],
+        selectedPlanId: null,
+        workingPortfolioId: portfolioId,
+      });
     },
   }),
 );

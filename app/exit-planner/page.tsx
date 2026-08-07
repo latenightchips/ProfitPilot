@@ -94,6 +94,16 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * against this route's real components and found consistent with
  * `06_TASKS.md`'s own task text. Responsive behavior and Accessibility
  * were already validated this same batch (M7-039/M7-040, above).
+ *
+ * **`key={activePortfolioId}` on the results wrapper, plus `portfolioId`
+ * passed to `ExitTargetForm` (M9-012, "Audit State Management" — "No
+ * cross-portfolio contamination")** — the same remount-on-switch
+ * mechanism `PortfolioDetailsForm` (M4-010) already established. The
+ * key alone only resets local React state; `useExitPlannerStore`'s own
+ * `exitType`/`currentResult` are external Zustand state that survives a
+ * remount, so `ExitTargetForm` also calls `syncActivePortfolio` on
+ * mount/`portfolioId` change, which clears that working state only on a
+ * genuine portfolio change, never on a same-portfolio remount.
  */
 export default function ExitPlannerPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -122,14 +132,14 @@ export default function ExitPlannerPage() {
           to plan an exit.
         </p>
       ) : (
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex flex-col gap-6 lg:flex-row" key={activePortfolioId}>
           <aside
             aria-label="Exit Target Controls"
             className="flex flex-col gap-4 rounded-md border border-border p-4 lg:w-80 lg:shrink-0"
           >
             <ExitTypeSelector />
             <div className="border-t border-border pt-4">
-              <ExitTargetForm portfolio={record.portfolio} />
+              <ExitTargetForm portfolio={record.portfolio} portfolioId={record.portfolio.id} />
             </div>
           </aside>
 

@@ -84,6 +84,17 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * the same "page composes across Stores, feature components receive
  * plain props" convention `portfolio`/`portfolioUpdatedAt` already
  * established.
+ *
+ * **`key={activePortfolioId}` on the results wrapper, plus `portfolioId`
+ * passed to `ScenarioBuilder` (M9-012, "Audit State Management" — "No
+ * cross-portfolio contamination")** — the same remount-on-switch
+ * mechanism `PortfolioDetailsForm` (M4-010) already established for
+ * this exact class of problem. The key alone only resets local React
+ * state; `useSimulationStore`'s own `currentScenario`/`currentResult`
+ * are external Zustand state that survives a remount, so
+ * `ScenarioBuilder` also calls `syncActivePortfolio` on mount/
+ * `portfolioId` change, which clears that working state only on a
+ * genuine portfolio change, never on a same-portfolio remount.
  */
 export default function SimulationPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -118,13 +129,13 @@ export default function SimulationPage() {
           to build a scenario.
         </p>
       ) : (
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex flex-col gap-6 lg:flex-row" key={activePortfolioId}>
           <aside
             aria-label="Scenario Controls"
             className="flex flex-col gap-2 rounded-md border border-border p-4 lg:w-80 lg:shrink-0"
           >
             <h2 className="text-sm font-medium text-foreground">Scenario Controls</h2>
-            <ScenarioBuilder portfolio={record.portfolio} />
+            <ScenarioBuilder portfolio={record.portfolio} portfolioId={record.portfolio.id} />
           </aside>
 
           <div className="flex flex-1 flex-col gap-6">

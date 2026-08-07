@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-07
-Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batches 3–11 (M9-011 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batches 4–11 (M9-015 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10773,6 +10773,106 @@ specification conflict found this batch — every audited item either
 already had coverage (cited by file) or was closed with new, narrowly
 scoped code.
 
+### Batch 3 — Service and State Verification (M9-011–014)
+
+Audited each Store's existing state-management coverage first, per
+instruction to reuse rather than duplicate, and found one genuine defect
+plus several genuinely missing test cases:
+
+- **M9-011 (Service Layer Audit)**: audit, no defect found. Every
+  Service (`services/`) already returns `ServiceResult<T>` consistently,
+  never mutates its input arguments, and carries no hidden module-level
+  state that would leak across calls — confirmed by direct inspection of
+  every file under `services/`, not sampled.
+- **M9-012 (Audit State Management)**: found and fixed a real
+  cross-portfolio contamination bug, not assumed present. Simulation,
+  Loop Builder, and Exit Planner Stores never cleared their own unsaved
+  working state (`currentScenario`/`currentResult`, `settings`/
+  `currentResult`, `exitType`/`targetInputs`/`currentResult`
+  respectively) when the active portfolio changed — switching portfolios
+  left a stale, misleadingly-attributed result on screen. Fixed with a
+  new `workingPortfolioId: string | null` field plus a
+  `syncActivePortfolio(portfolioId)` action on each of the three Stores
+  (`stores/simulationStore.ts`, `stores/loopBuilderStore.ts`,
+  `stores/exitPlannerStore.ts`): a no-op when the portfolio is unchanged
+  (preserving in-progress work across a same-portfolio remount, e.g.
+  navigating away and back), a first-observation record when no prior
+  portfolio was seen (avoiding wiping state a caller populated before
+  first mount), and a clear of only the _unsaved_ working-state fields —
+  never the cross-portfolio `savedScenarios`/`savedStrategies`/
+  `savedPlans` collections — on a genuine portfolio change. `ScenarioBuilder.tsx`,
+  `LoopStrategyControls.tsx`, and `ExitTargetForm.tsx` each call their
+  Store's `syncActivePortfolio` on mount/`portfolioId` change, and
+  `app/simulation/page.tsx`/`app/loop-builder/page.tsx`/
+  `app/exit-planner/page.tsx` each key their results wrapper on
+  `activePortfolioId` (the same remount mechanism `PortfolioDetailsForm`,
+  M4-010, already established) so local React state resets too. This is
+  architecturally distinct from, and safer than, reusing each Store's
+  existing full `reset()` action, which is reserved for each tool's own
+  manual "Reset" button and deliberately wipes saved data as well. New
+  regression coverage in `tests/unit/app/simulation/page.test.tsx`,
+  `tests/unit/app/loop-builder/page.test.tsx`, and
+  `tests/unit/app/exit-planner/page.test.tsx` (one new describe block
+  each) proves a stale result from Portfolio A is gone after switching to
+  Portfolio B.
+- **M9-013 (Test Concurrent State Updates)**: new
+  `tests/unit/stores/concurrentStateUpdates.test.ts`. Of the task's 6
+  named cases, "Auto-save during portfolio switch" was already covered
+  (`tests/unit/stores/portfolioStore.test.ts`'s own debounced-flush-
+  before-read test) and is cited, not duplicated; "Sync during local
+  edit" and the cloud half of "Sign-out during pending cloud write" are
+  **N/A — removed by product decision** (Milestone 8 local-only re-scope,
+  Conflict #34 — no synchronization mechanism or pending cloud write
+  exists to race against); "Import during stale background refresh" is
+  structurally safe by inspection (this application has no background/
+  polling refresh mechanism anywhere, and `autoSaveCoordinator` keys
+  every debounced write by `(recordType, id)`, so an import cannot
+  collide with an unrelated pending auto-save regardless of timing) and
+  is documented as such rather than exercised with an invented process
+  this application does not have. The remaining 3 real cases — "Price
+  refresh during portfolio edit," "Simulation recalculation during input
+  changes," and the local-only remainder of "Sign-out during pending
+  cloud write" — are covered by 5 new tests, all passing.
+- **M9-014 (Test Application Restart Recovery)**: new
+  `tests/unit/providers/PersistenceProvider.restartRecovery.test.tsx`.
+  Of the task's 7 named Cover items, "Pending sync queue" is **N/A —
+  removed by product decision** (same Conflict #34 basis — no cloud sync
+  queue exists); the other 6 already have dedicated, real
+  local-storage-round-trip coverage at the individual Store level (cited
+  by file, not duplicated). What was genuinely missing was a test of the
+  _real_, full, multi-Store hydration path together — the actual
+  production sequence `PersistenceProvider` runs on a genuine browser
+  refresh — rather than only per-Store mocked coverage. 2 new tests
+  verify the active portfolio, an unrelated preference, and (separately)
+  a valid authentication session all restore coherently through that one
+  real mount path.
+
+**Files changed**: `stores/simulationStore.ts`, `stores/loopBuilderStore.ts`,
+`stores/exitPlannerStore.ts` (`workingPortfolioId` field +
+`syncActivePortfolio` action each); `features/simulation/components/ScenarioBuilder.tsx`,
+`features/loop-builder/components/LoopStrategyControls.tsx`,
+`features/exit-planner/components/ExitTargetForm.tsx` (`portfolioId` prop
+
+- sync-on-mount effect each); `app/simulation/page.tsx`,
+  `app/loop-builder/page.tsx`, `app/exit-planner/page.tsx` (`key`
+- `portfolioId` prop each); `tests/unit/features/simulation/ScenarioBuilder.test.tsx`,
+  `tests/unit/features/loop-builder/LoopStrategyControls.test.tsx`,
+  `tests/unit/features/exit-planner/ExitTargetForm.test.tsx` (new
+  `portfolioId` prop on every render call); `tests/unit/app/simulation/page.test.tsx`,
+  `tests/unit/app/loop-builder/page.test.tsx`,
+  `tests/unit/app/exit-planner/page.test.tsx` (new describe block each,
+  plus `workingPortfolioId` added to existing `beforeEach` resets); 2 new
+  files (`tests/unit/stores/concurrentStateUpdates.test.ts`,
+  `tests/unit/providers/PersistenceProvider.restartRecovery.test.tsx`). No
+  Supabase, Cloud Database, or Cloud Sync code introduced; no dependency or
+  lockfile change.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 221/221 files, 2040/2040 tests (10 new, all passing, zero regressions);
+`pnpm test:coverage` — 96.25% statements / 90.49% branches / 99.46%
+functions / 98.62% lines; `pnpm build` clean, 12 routes; 28/28 Playwright
+e2e specs passing. No new specification conflict found this batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -13522,3 +13622,24 @@ progress` (above, in milestone order) for the full batch-by-batch
     typecheck/lint/format/build, coverage unchanged in aggregate
     (96.22%/90.44%/99.45%/98.62%). **Next**: Milestone 9 Batch 3 —
     Service and State Verification (M9-011–014), not yet started.
+65. **Update (2026-08-07): Milestone 9 Batch 3 — Service and State
+    Verification (M9-011–014) is complete.** No defect found in the
+    Service layer audit (M9-011). Found and fixed a genuine
+    cross-portfolio state-contamination bug (M9-012): Simulation, Loop
+    Builder, and Exit Planner Stores never cleared their own unsaved
+    working state when the active portfolio changed — fixed with a new
+    `workingPortfolioId`/`syncActivePortfolio` pattern on each Store (see
+    `## Milestone 9 progress` above for the full three-branch design and
+    why it is distinct from each Store's own `reset()`), plus a
+    `portfolioId`-keyed remount on each of the three routes. Concurrent
+    state-update races (M9-013) and full multi-Store application-restart
+    recovery through the real `PersistenceProvider` mount path (M9-014)
+    are now covered by 2 new test files; of the 13 named cases across
+    both tasks, 4 are **N/A — removed by product decision** (Milestone 8
+    local-only re-scope, Conflict #34) and 2 more were already covered
+    elsewhere and cited rather than duplicated. No new specification
+    conflict found. No Supabase, Cloud Database, or Cloud Sync code
+    introduced. Fresh validation: 221/221 test files, 2040/2040 tests (10
+    new, zero regressions), clean typecheck/lint/format/build, coverage
+    96.25%/90.49%/99.46%/98.62%, 28/28 e2e specs passing. **Next**:
+    Milestone 9 Batch 4 (M9-015 onward), not yet started.

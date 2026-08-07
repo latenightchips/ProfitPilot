@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import LoopBuilderPage from '@/app/loop-builder/page';
@@ -35,6 +35,7 @@ beforeEach(() => {
     selectedStrategyId: null,
     sensitivityResult: null,
     sensitivityErrors: [],
+    workingPortfolioId: null,
   });
   useSimulationStore.setState({
     currentScenario: null,
@@ -48,6 +49,7 @@ beforeEach(() => {
     errors: [],
     warnings: [],
     previewMode: false,
+    workingPortfolioId: null,
   });
 });
 
@@ -163,5 +165,44 @@ describe('LoopBuilderPage — error recovery (M7-038)', () => {
       alerts.some((alert) => alert.textContent?.includes('Invalid collateral quantity.')),
     ).toBe(true);
     expect(screen.getByRole('table', { name: 'Loop strategy steps' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+ * contamination." Same fix and reasoning as `SimulationPage`'s own
+ * equivalent describe block: keys the results wrapper on
+ * `activePortfolioId`, plus `LoopStrategyControls` calling
+ * `useLoopBuilderStore`'s `syncActivePortfolio` on mount/`portfolioId`
+ * change, which clears the Store's working state only on a genuine
+ * portfolio change.
+ */
+describe('LoopBuilderPage — cross-portfolio contamination (M9-012)', () => {
+  it('clears a stale loop strategy result computed against a previously-active portfolio when the active portfolio changes', () => {
+    const portfolioA = selectActivePortfolio();
+    render(<LoopBuilderPage />);
+
+    act(() => {
+      useLoopBuilderStore.getState().setSettings({
+        targetBorrowPercentage: 0.5,
+        maxLoops: 3,
+        minHealthFactor: 1.1,
+      });
+      useLoopBuilderStore.getState().runLoopStrategy(portfolioA);
+    });
+    expect(useLoopBuilderStore.getState().currentResult).not.toBeNull();
+    expect(
+      screen.queryByText('Configure a viable strategy to see its individual steps.'),
+    ).not.toBeInTheDocument();
+
+    act(() => {
+      const createdB = usePortfolioStore.getState().create(validInput({ name: 'Portfolio B' }));
+      if (!createdB.ok) throw new Error('setup failed');
+      usePortfolioStore.getState().select(createdB.data.id);
+    });
+
+    expect(
+      screen.getByText('Configure a viable strategy to see its individual steps.'),
+    ).toBeInTheDocument();
   });
 });

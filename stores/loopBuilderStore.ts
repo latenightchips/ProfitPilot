@@ -138,6 +138,12 @@ export interface LoopBuilderStoreState {
   selectedStrategyId: string | null;
   sensitivityResult: SimulationResult | null;
   sensitivityErrors: ApplicationError[];
+  /**
+   * 06_TASKS.md M9-012 — which portfolio `settings`/`currentResult` (if
+   * any) were computed against. `null` means "no portfolio observed
+   * yet," not "no result" — see `syncActivePortfolio`.
+   */
+  workingPortfolioId: string | null;
 }
 
 export interface LoopBuilderStoreActions {
@@ -150,6 +156,30 @@ export interface LoopBuilderStoreActions {
   deleteStrategy: (id: string) => void;
   loadSavedStrategies: () => Promise<void>;
   reset: () => void;
+  /**
+   * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+   * contamination." Called by `LoopStrategyControls` whenever the active
+   * portfolio it renders for changes (including on its own mount, so a
+   * portfolio switched *while this route wasn't mounted* is still
+   * caught). Compares `portfolioId` against `workingPortfolioId`:
+   *   - No prior portfolio observed — just records `portfolioId`.
+   *     Nothing to clear; this is the normal first-mount case, and
+   *     clearing here would wipe legitimate state a caller populated
+   *     before this component ever mounted.
+   *   - Same portfolio as before — no-op, so navigating away and back to
+   *     the same portfolio preserves in-progress work.
+   *   - A genuinely different portfolio — clears the *unsaved* working
+   *     state (`settings`/`currentResult`/`status`/`errors`/`warnings`/
+   *     `lastMetadata`/`sensitivityResult`/`sensitivityErrors`/
+   *     `selectedStrategyId`), deliberately leaving `savedStrategies`
+   *     untouched (cross-portfolio by design — the same precedent
+   *     `stores/simulationStore.ts`'s `savedScenarios` already
+   *     established), then records the new `portfolioId`. Unlike
+   *     `reset()` (reserved for the explicit manual Reset button,
+   *     `LoopStrategyControls`'s own reset handler), this never touches
+   *     saved data.
+   */
+  syncActivePortfolio: (portfolioId: string) => void;
 }
 
 const SOURCE_STATUS = 'manual';
@@ -165,6 +195,7 @@ const INITIAL_STATE: LoopBuilderStoreState = {
   selectedStrategyId: null,
   sensitivityResult: null,
   sensitivityErrors: [],
+  workingPortfolioId: null,
 };
 
 export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderStoreActions>(
@@ -295,6 +326,29 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
 
     reset: () => {
       set(INITIAL_STATE);
+    },
+
+    syncActivePortfolio: (portfolioId) => {
+      const { workingPortfolioId } = get();
+      if (workingPortfolioId === portfolioId) return;
+
+      if (workingPortfolioId === null) {
+        set({ workingPortfolioId: portfolioId });
+        return;
+      }
+
+      set({
+        settings: null,
+        currentResult: null,
+        status: 'idle',
+        errors: [],
+        warnings: [],
+        lastMetadata: null,
+        sensitivityResult: null,
+        sensitivityErrors: [],
+        selectedStrategyId: null,
+        workingPortfolioId: portfolioId,
+      });
     },
   }),
 );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { ApplicationPortfolio } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -158,7 +158,13 @@ const HOLDING_PERIOD_OPTIONS: { value: HoldingPeriod; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function ScenarioBuilder({
+  portfolio,
+  portfolioId,
+}: {
+  portfolio: ApplicationPortfolio;
+  portfolioId: string;
+}) {
   const [values, setValues] = useState<ScenarioBuilderFormValues>(() =>
     defaultFormValues(portfolio),
   );
@@ -170,6 +176,18 @@ export function ScenarioBuilder({ portfolio }: { portfolio: ApplicationPortfolio
   );
   const runTimelineProjection = useSimulationStore((state) => state.runTimelineProjection);
   const resetSimulation = useSimulationStore((state) => state.reset);
+  const syncActivePortfolio = useSimulationStore((state) => state.syncActivePortfolio);
+
+  // 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+  // contamination." Runs whenever `portfolioId` changes (including this
+  // component's own mount, so a portfolio switched *while this route
+  // wasn't mounted* is still caught) — see `syncActivePortfolio`'s own
+  // doc comment in `stores/simulationStore.ts` for why this only clears
+  // on an actual portfolio change, never on a same-portfolio remount
+  // (e.g. navigating away and back), which must keep in-progress work.
+  useEffect(() => {
+    syncActivePortfolio(portfolioId);
+  }, [portfolioId, syncActivePortfolio]);
 
   const errors = validateScenarioBuilderInput(values, portfolio);
 

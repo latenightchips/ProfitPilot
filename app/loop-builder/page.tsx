@@ -107,6 +107,16 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * route's real components and found consistent with `06_TASKS.md`'s own
  * task text. Responsive behavior and Accessibility were already
  * validated this same batch (M7-039/M7-040, above).
+ *
+ * **`key={activePortfolioId}` on the results wrapper, plus `portfolioId`
+ * passed to `LoopStrategyControls` (M9-012, "Audit State Management" —
+ * "No cross-portfolio contamination")** — the same remount-on-switch
+ * mechanism `PortfolioDetailsForm` (M4-010) already established. The
+ * key alone only resets local React state; `useLoopBuilderStore`'s own
+ * `settings`/`currentResult` are external Zustand state that survives a
+ * remount, so `LoopStrategyControls` also calls `syncActivePortfolio` on
+ * mount/`portfolioId` change, which clears that working state only on a
+ * genuine portfolio change, never on a same-portfolio remount.
  */
 export default function LoopBuilderPage() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -137,14 +147,17 @@ export default function LoopBuilderPage() {
           to build a loop strategy.
         </p>
       ) : (
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex flex-col gap-6 lg:flex-row" key={activePortfolioId}>
           <aside
             aria-label="Strategy Controls"
             className="flex flex-col gap-4 rounded-md border border-border p-4 lg:w-80 lg:shrink-0"
           >
             <div className="flex flex-col gap-2">
               <h2 className="text-sm font-medium text-foreground">Strategy Controls</h2>
-              <LoopStrategyControls portfolio={record.portfolio} />
+              <LoopStrategyControls
+                portfolio={record.portfolio}
+                portfolioId={record.portfolio.id}
+              />
             </div>
             <div className="flex flex-col gap-2 border-t border-border pt-4">
               <LoopPresets

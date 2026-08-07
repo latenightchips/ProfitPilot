@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe('ScenarioBuilder — Include list (M6-004)', () => {
   it('renders all six named inputs, pre-filled from the portfolio’s own current values', () => {
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('BTC Price')).toHaveValue(50000);
     expect(screen.getByLabelText('Borrow Rate (0–1)')).toHaveValue(0.05);
     expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(0);
@@ -48,7 +48,7 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
 
   it('accepts typed input in Target Health Factor without triggering any calculation (no later task wires it — see the component’s own header comment)', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const input = screen.getByLabelText('Target Health Factor');
     await user.type(input, '2');
@@ -59,7 +59,7 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
 
   it('shows an inline error for an invalid Target Health Factor', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const input = screen.getByLabelText('Target Health Factor');
     await user.type(input, '-1');
@@ -69,7 +69,7 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
 
   it('reveals the custom holding period input only when "Custom" is selected', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     expect(screen.queryByLabelText('Custom Holding Period (days)')).not.toBeInTheDocument();
 
@@ -81,7 +81,7 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
 describe('ScenarioBuilder — validation (M6-004 DoD)', () => {
   it('shows an inline error for an invalid BTC price and does not update the Store', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const priceInput = screen.getByLabelText('BTC Price');
     await user.clear(priceInput);
@@ -95,7 +95,7 @@ describe('ScenarioBuilder — validation (M6-004 DoD)', () => {
 describe('ScenarioBuilder — live BTC Price wiring (M6-004 Dependencies: M3-009)', () => {
   it('updates the Simulation Store and runs a real simulation on a valid BTC Price change', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const priceInput = screen.getByLabelText('BTC Price');
     await user.clear(priceInput);
@@ -115,7 +115,7 @@ describe('ScenarioBuilder — live BTC Price wiring (M6-004 Dependencies: M3-009
 describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', () => {
   it('updates the Simulation Store and runs a real simulation on a valid percentage change', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const percentInput = screen.getByLabelText('Percentage Change (0–1)');
     await user.type(percentInput, '0.2');
@@ -131,7 +131,7 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
 
   it('does nothing when Percentage Change is cleared back to empty', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const percentInput = screen.getByLabelText('Percentage Change (0–1)');
     await user.type(percentInput, '0.2');
@@ -146,7 +146,7 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
 
   it('shows an inline error for a percentage change that would drop the price to zero or below', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const percentInput = screen.getByLabelText('Percentage Change (0–1)');
     await user.type(percentInput, '-1');
@@ -160,7 +160,7 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
 
 describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
   it('renders all 8 presets from the PRD’s own "Required Presets" list', () => {
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
     for (const label of ['+10%', '+25%', '+50%', '+100%', '-10%', '-20%', '-30%', '-50%']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
@@ -168,7 +168,7 @@ describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
 
   it('clicking a preset runs a real simulation using that fixed percentage change', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.click(screen.getByRole('button', { name: '+10%' }));
 
@@ -186,7 +186,7 @@ describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
 describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => {
   it('runs a real interest scenario using the current price and holding period', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
     await user.clear(borrowRateInput);
@@ -210,7 +210,7 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
 
   it('resolves the price side from a valid Percentage Change instead of the absolute price when both are set', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const percentInput = screen.getByLabelText('Percentage Change (0–1)');
     await user.type(percentInput, '0.2');
@@ -229,7 +229,7 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
 
   it('shows an inline error and does not update the Store for a negative Borrow Rate', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
     await user.clear(borrowRateInput);
@@ -243,7 +243,7 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
 describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () => {
   it('does nothing when no interest scenario is active yet', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
 
@@ -252,7 +252,7 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
 
   it('does not disturb an active price scenario', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const priceInput = screen.getByLabelText('BTC Price');
     await user.clear(priceInput);
@@ -268,7 +268,7 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
 
   it('re-runs the active interest scenario with the newly selected Holding Period', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
     await user.clear(borrowRateInput);
@@ -286,7 +286,7 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
 
   it('re-runs the active interest scenario when a valid Custom Holding Period is entered', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
     await user.clear(borrowRateInput);
@@ -302,7 +302,7 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
 
   it('does not update the Store while the Custom Holding Period is invalid', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
     await user.clear(borrowRateInput);
@@ -320,7 +320,7 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
 describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 5)', () => {
   it('updates portfolioActionPreview on a valid Collateral Change', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
     await user.clear(collateralInput);
@@ -335,7 +335,7 @@ describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 
 
   it('updates portfolioActionPreview on a valid Debt Change', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const debtInput = screen.getByLabelText('Debt Change (USD)');
     await user.clear(debtInput);
@@ -347,7 +347,7 @@ describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 
 
   it('applies both deltas together for a combined action', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
     await user.clear(collateralInput);
@@ -365,7 +365,7 @@ describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 
 
   it('shows an inline error and does not update portfolioActionPreview on an over-withdrawal', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
     await user.clear(collateralInput);
@@ -378,7 +378,7 @@ describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 
 describe('ScenarioBuilder — Reset Scenario', () => {
   it('restores every field to the portfolio’s own current values and resets the Store', async () => {
     const user = userEvent.setup();
-    render(<ScenarioBuilder portfolio={PORTFOLIO} />);
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     const priceInput = screen.getByLabelText('BTC Price');
     await user.clear(priceInput);

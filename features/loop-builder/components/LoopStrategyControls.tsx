@@ -146,11 +146,18 @@ function settingsEqual(a: LoopStrategySettings, b: LoopStrategySettings): boolea
   );
 }
 
-export function LoopStrategyControls({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function LoopStrategyControls({
+  portfolio,
+  portfolioId,
+}: {
+  portfolio: ApplicationPortfolio;
+  portfolioId: string;
+}) {
   const settings = useLoopBuilderStore((state) => state.settings);
   const setSettings = useLoopBuilderStore((state) => state.setSettings);
   const runLoopStrategy = useLoopBuilderStore((state) => state.runLoopStrategy);
   const resetLoopBuilder = useLoopBuilderStore((state) => state.reset);
+  const syncActivePortfolio = useLoopBuilderStore((state) => state.syncActivePortfolio);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPushedSettingsRef = useRef<LoopStrategySettings | null>(null);
 
@@ -171,6 +178,18 @@ export function LoopStrategyControls({ portfolio }: { portfolio: ApplicationPort
       debounceRef.current = null;
     }
   }
+
+  // 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+  // contamination." Runs whenever `portfolioId` changes (including this
+  // component's own mount, so a portfolio switched *while this route
+  // wasn't mounted* is still caught). Placed as the first effect, before
+  // the `settings`-reactive effect below, so a genuine portfolio change
+  // clears the Store's `settings` before that effect's own
+  // `if (settings === null) return;` guard evaluates against fresh
+  // state.
+  useEffect(() => {
+    syncActivePortfolio(portfolioId);
+  }, [portfolioId, syncActivePortfolio]);
 
   useEffect(() => {
     if (settings === null) return;

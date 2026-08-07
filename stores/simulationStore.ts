@@ -257,6 +257,12 @@ export interface SimulationStoreState {
   errors: ApplicationError[];
   warnings: ServiceWarning[];
   previewMode: boolean;
+  /**
+   * 06_TASKS.md M9-012 — which portfolio `currentScenario`/`currentResult`/
+   * `portfolioActionPreview` (if any) were computed against. `null` means
+   * "no portfolio observed yet," not "no result" — see `syncActivePortfolio`.
+   */
+  workingPortfolioId: string | null;
 }
 
 export interface SimulationStoreActions {
@@ -275,6 +281,32 @@ export interface SimulationStoreActions {
   setPreviewMode: (enabled: boolean) => void;
   loadSavedScenarios: () => Promise<void>;
   reset: () => void;
+  /**
+   * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+   * contamination." Called by `ScenarioBuilder` whenever the active
+   * portfolio it renders for changes (including on its own mount, so a
+   * portfolio switched *while this route wasn't mounted* is still
+   * caught). Compares `portfolioId` against `workingPortfolioId`:
+   *   - No prior portfolio observed (`workingPortfolioId === null`) —
+   *     just records `portfolioId`. Nothing to clear; this is the normal
+   *     first-mount case, and clearing here would wipe legitimate state
+   *     a caller populated before this component ever mounted (a real
+   *     regression this task's own audit found and avoided — see
+   *     `tests/unit/app/simulation/page.test.tsx`).
+   *   - Same portfolio as before — no-op. This is what makes navigating
+   *     away and back to the same portfolio preserve in-progress work,
+   *     unlike a blind "clear on every mount" would.
+   *   - A genuinely different portfolio — clears the *unsaved* working
+   *     state (`currentScenario`/`currentResult`/`portfolioActionPreview`/
+   *     `timelineProjection`/`lastMetadata`/`status`/`errors`/`warnings`),
+   *     deliberately leaving `savedScenarios`/`comparisonSelection`/
+   *     `previewMode` untouched (cross-portfolio by design — see this
+   *     file's own header comment), then records the new `portfolioId`.
+   *     Unlike `reset()` (reserved for the explicit manual Reset button,
+   *     `ScenarioBuilder`'s `handleReset` — full-Store reset including
+   *     `savedScenarios`), this never touches saved data.
+   */
+  syncActivePortfolio: (portfolioId: string) => void;
 }
 
 const SOURCE_STATUS = 'manual';
@@ -292,6 +324,7 @@ const INITIAL_STATE: SimulationStoreState = {
   errors: [],
   warnings: [],
   previewMode: false,
+  workingPortfolioId: null,
 };
 
 export const useSimulationStore = create<SimulationStoreState & SimulationStoreActions>(
@@ -479,6 +512,28 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
 
     reset: () => {
       set(INITIAL_STATE);
+    },
+
+    syncActivePortfolio: (portfolioId) => {
+      const { workingPortfolioId } = get();
+      if (workingPortfolioId === portfolioId) return;
+
+      if (workingPortfolioId === null) {
+        set({ workingPortfolioId: portfolioId });
+        return;
+      }
+
+      set({
+        currentScenario: null,
+        currentResult: null,
+        portfolioActionPreview: null,
+        timelineProjection: null,
+        lastMetadata: null,
+        status: 'idle',
+        errors: [],
+        warnings: [],
+        workingPortfolioId: portfolioId,
+      });
     },
   }),
 );

@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import SimulationPage from '@/app/simulation/page';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import { useSimulationStore } from '@/stores/simulationStore';
 
 /**
  * Simulation Workspace Route — 06_TASKS.md M6-001 ("Create Simulation
@@ -139,5 +140,58 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
     selectActivePortfolio();
     render(<SimulationPage />);
     expect(screen.getByText('Run a price or interest scenario to save it.')).toBeInTheDocument();
+  });
+});
+
+/**
+ * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+ * contamination." Found during this audit, not assumed: `useSimulationStore`'s
+ * `currentResult`/`currentScenario` are never cleared when the active
+ * portfolio changes, and `ScenarioSummary` renders `currentResult`
+ * directly with no portfolio cross-check of its own — so a result
+ * computed against a previously-active portfolio remained visible after
+ * switching to a different one. Fixed by keying the Scenario workspace's
+ * portfolio-scoped subtree on `activePortfolioId`, the same mechanism
+ * `PortfolioDetailsForm` (M4-010) already established for this exact
+ * class of problem ("Remounted on portfolio switch" — see
+ * `PROJECT_STATUS.md`), plus `ScenarioBuilder` calling
+ * `useSimulationStore`'s `syncActivePortfolio` on mount/`portfolioId`
+ * change — which clears the Store's working state only on a genuine
+ * portfolio change, never on a same-portfolio remount, since a key
+ * remount alone only clears local React state, not the external
+ * Zustand store.
+ */
+describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
+  beforeEach(() => {
+    useSimulationStore.getState().reset();
+  });
+
+  it('clears a stale simulation result computed against a previously-active portfolio when the active portfolio changes', () => {
+    const createdA = usePortfolioStore.getState().create(validInput({ name: 'Portfolio A' }));
+    if (!createdA.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(createdA.data.id);
+
+    render(<SimulationPage />);
+
+    const portfolioA = usePortfolioStore.getState().portfolios[createdA.data.id]?.portfolio;
+    if (!portfolioA) throw new Error('setup failed');
+    act(() => {
+      useSimulationStore.getState().setCurrentScenario({
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+      });
+      useSimulationStore.getState().runSimulation(portfolioA);
+    });
+
+    expect(screen.getByText('Price / Interest Scenario')).toBeInTheDocument();
+
+    act(() => {
+      const createdB = usePortfolioStore.getState().create(validInput({ name: 'Portfolio B' }));
+      if (!createdB.ok) throw new Error('setup failed');
+      usePortfolioStore.getState().select(createdB.data.id);
+    });
+
+    expect(screen.queryByText('Price / Interest Scenario')).not.toBeInTheDocument();
+    expect(screen.getByText('Change a scenario input to see results here.')).toBeInTheDocument();
   });
 });

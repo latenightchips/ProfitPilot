@@ -60,7 +60,7 @@ afterEach(() => {
 
 describe('LoopStrategyControls — pre-filled defaults', () => {
   it('pre-fills Maximum LTV and Borrow-Rate Assumption from the real portfolio protocol values', () => {
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Maximum LTV (0–1)')).toHaveValue(0.5);
     expect(screen.getByLabelText('Borrow-Rate Assumption (0–1)')).toHaveValue(0.05);
   });
@@ -69,7 +69,7 @@ describe('LoopStrategyControls — pre-filled defaults', () => {
 describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Requirement)', () => {
   it('does not call the Service before the debounce window elapses', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
     await user.clear(maxLoopsInput);
@@ -80,7 +80,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
   it('reaches the real Loop Strategy Service with valid inputs after the debounce window', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
     await user.clear(maxLoopsInput);
@@ -94,7 +94,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
   it('never reaches the Service while a field is invalid (DoD: only valid inputs reach the Service)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const ltvInput = screen.getByLabelText('Maximum LTV (0–1)');
     await user.clear(ltvInput);
@@ -107,7 +107,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
   it('shows a validation error for an out-of-range Borrow Percentage Per Step', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const input = screen.getByLabelText('Borrow Percentage Per Step (0–1)');
     await user.clear(input);
@@ -121,7 +121,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
   it('shows a validation error for a non-positive Minimum Health Factor', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const input = screen.getByLabelText('Minimum Health Factor');
     await user.clear(input);
@@ -135,7 +135,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
   it('shows a validation error for a negative Borrow-Rate Assumption', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const input = screen.getByLabelText('Borrow-Rate Assumption (0–1)');
     await user.clear(input);
@@ -150,7 +150,7 @@ describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Re
 
 describe('LoopStrategyControls — resyncs when settings change externally (real bug found during manual browser verification)', () => {
   it('updates its own displayed field values when another component (e.g. LoopPresets) calls setSettings directly', () => {
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Maximum Number of Loops')).toHaveValue(3);
 
     // Simulates exactly what LoopPresets.tsx does — calls setSettings
@@ -171,7 +171,7 @@ describe('LoopStrategyControls — resyncs when settings change externally (real
 
   it('does not fight its own debounced update — typing still works normally right after an external change', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     act(() => {
       useLoopBuilderStore.getState().setSettings({
@@ -195,7 +195,7 @@ describe('LoopStrategyControls — resyncs when settings change externally (real
 
   it('a pending debounced edit is cancelled by an external settings change and cannot overwrite it later (regression)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     // Start typing a real edit but do NOT let its debounce fire yet —
     // this leaves a pending setTimeout scheduled to push maxLoops: 2.
@@ -231,7 +231,7 @@ describe('LoopStrategyControls — resyncs when settings change externally (real
 describe('LoopStrategyControls — reset', () => {
   it('resets both the form and the Store back to their initial state', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
     await user.clear(maxLoopsInput);
@@ -248,7 +248,7 @@ describe('LoopStrategyControls — reset', () => {
 
   it('a pending debounced edit is cancelled by Reset Strategy and cannot resurrect settings afterward (regression)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LoopStrategyControls portfolio={validPortfolio()} />);
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
     await user.clear(maxLoopsInput);

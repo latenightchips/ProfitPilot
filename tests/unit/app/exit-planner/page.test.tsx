@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -37,6 +37,7 @@ beforeEach(() => {
     priceSensitivityErrors: [],
     savedPlans: [],
     selectedPlanId: null,
+    workingPortfolioId: null,
   });
 });
 
@@ -174,5 +175,37 @@ describe('ExitPlannerPage — error recovery (M7-038)', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
     expect(screen.getByText('Full Exit Result')).toBeInTheDocument();
+  });
+});
+
+/**
+ * 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
+ * contamination." Same fix and reasoning as `SimulationPage`'s own
+ * equivalent describe block: keys the results wrapper on
+ * `activePortfolioId`, plus `ExitTargetForm` calling
+ * `useExitPlannerStore`'s `syncActivePortfolio` on mount/`portfolioId`
+ * change, which clears the Store's working state only on a genuine
+ * portfolio change.
+ */
+describe('ExitPlannerPage — cross-portfolio contamination (M9-012)', () => {
+  it('clears a stale exit plan result computed against a previously-active portfolio when the active portfolio changes', () => {
+    const portfolioA = selectActivePortfolio();
+    render(<ExitPlannerPage />);
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(portfolioA);
+    });
+    expect(useExitPlannerStore.getState().currentResult).not.toBeNull();
+    expect(screen.getByText('Full Exit Result')).toBeInTheDocument();
+
+    act(() => {
+      const createdB = usePortfolioStore.getState().create(validInput({ name: 'Portfolio B' }));
+      if (!createdB.ok) throw new Error('setup failed');
+      usePortfolioStore.getState().select(createdB.data.id);
+    });
+
+    expect(screen.queryByText('Full Exit Result')).not.toBeInTheDocument();
+    expect(screen.getByText('Select an exit approach above to continue.')).toBeInTheDocument();
   });
 });

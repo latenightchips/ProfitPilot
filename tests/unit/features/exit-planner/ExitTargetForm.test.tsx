@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe('ExitTargetForm — empty state', () => {
   it('prompts to select an exit approach before any type has been chosen', () => {
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByText(/Select an exit approach/i)).toBeInTheDocument();
   });
 });
@@ -57,7 +57,7 @@ describe('ExitTargetForm — empty state', () => {
 describe('ExitTargetForm — Full Exit (no field to type into)', () => {
   it('triggers a real calculation on its own, with no numeric input required', () => {
     useExitPlannerStore.setState({ exitType: 'fullExit' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     expect(useExitPlannerStore.getState().currentResult).not.toBeNull();
     expect(useExitPlannerStore.getState().currentResult?.feasible).toBe(true);
@@ -65,7 +65,7 @@ describe('ExitTargetForm — Full Exit (no field to type into)', () => {
 
   it('still renders the shared Target BTC Price field', () => {
     useExitPlannerStore.setState({ exitType: 'fullExit' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText(/Target BTC Price/i)).toBeInTheDocument();
   });
 });
@@ -73,7 +73,7 @@ describe('ExitTargetForm — Full Exit (no field to type into)', () => {
 describe('ExitTargetForm — per-type field visibility (M7-021 Requirement)', () => {
   it('shows only the Debt Repayment Amount field for Partial Debt Repayment', () => {
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toBeInTheDocument();
     expect(screen.queryByLabelText('Target Health Factor')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('BTC Quantity to Retain')).not.toBeInTheDocument();
@@ -82,20 +82,20 @@ describe('ExitTargetForm — per-type field visibility (M7-021 Requirement)', ()
 
   it('shows only the Target Health Factor field for that type', () => {
     useExitPlannerStore.setState({ exitType: 'targetHealthFactor' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Target Health Factor')).toBeInTheDocument();
     expect(screen.queryByLabelText('Debt Repayment Amount (USD)')).not.toBeInTheDocument();
   });
 
   it('shows only the BTC Quantity to Retain field for Target Retained BTC', () => {
     useExitPlannerStore.setState({ exitType: 'targetRetainedBtc' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('BTC Quantity to Retain')).toBeInTheDocument();
   });
 
   it('shows only the Target Debt Balance field for that type', () => {
     useExitPlannerStore.setState({ exitType: 'targetDebtBalance' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Target Debt Balance (USD)')).toBeInTheDocument();
   });
 });
@@ -104,7 +104,7 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   it('does not call the Service before the debounce window elapses', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText('Debt Repayment Amount (USD)'), '5000');
     expect(useExitPlannerStore.getState().currentResult).toBeNull();
@@ -113,7 +113,7 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   it('reaches the real Exit Planning Service with valid inputs after the debounce window', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText('Debt Repayment Amount (USD)'), '5000');
     await vi.advanceTimersByTimeAsync(500);
@@ -127,7 +127,7 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   it('never reaches the Service while the type-specific field is invalid (DoD: rejected with useful messages)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'targetHealthFactor' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText('Target Health Factor'), '-1');
     await vi.advanceTimersByTimeAsync(500);
@@ -139,7 +139,7 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   it('shows a validation error for a non-positive Target BTC Price, the shared field itself', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'fullExit' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText(/Target BTC Price/i), '-1');
     await vi.advanceTimersByTimeAsync(500);
@@ -150,7 +150,7 @@ describe('ExitTargetForm — deterministic, debounced, validated updates', () =>
   it('applies a Target BTC Price override on top of the type-specific field', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'fullExit' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText(/Target BTC Price/i), '25000');
     await vi.advanceTimersByTimeAsync(500);
@@ -167,14 +167,14 @@ describe('ExitTargetForm — prefilled from outside the form (M7-034 Recommendat
       exitType: 'partialDebtRepayment',
       targetInputs: { repaymentAmount: 10000 },
     });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(10000);
   });
 
   it('resyncs the displayed field when the Store’s targetInputs changes externally while the same type stays selected', () => {
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment', targetInputs: {} });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('Debt Repayment Amount (USD)')).toHaveValue(null);
 
     act(() => {
@@ -187,7 +187,7 @@ describe('ExitTargetForm — prefilled from outside the form (M7-034 Recommendat
   it('does not fight with an in-progress edit — a real regression class, the same "Loop Builder race fix" this batch was instructed to respect', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment', targetInputs: {} });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText('Debt Repayment Amount (USD)'), '5000');
     await vi.advanceTimersByTimeAsync(500);
@@ -204,7 +204,7 @@ describe('ExitTargetForm — switching type remounts with a clean form', () => {
   it('does not carry a value typed for one type over to a different type', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     useExitPlannerStore.setState({ exitType: 'partialDebtRepayment' });
-    render(<ExitTargetForm portfolio={validPortfolio()} />);
+    render(<ExitTargetForm portfolio={validPortfolio()} portfolioId="portfolio-1" />);
 
     await user.type(screen.getByLabelText('Debt Repayment Amount (USD)'), '5000');
 
