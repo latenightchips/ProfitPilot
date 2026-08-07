@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-07
-Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batches 2–11 (M9-005 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batches 3–11 (M9-011 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10660,6 +10660,119 @@ genuine gap found (§2/§4 above) is documented for its correct later
 Milestone 9 batch, per this batch's own explicit scope rule, not acted
 on early.
 
+### Batch 2 — Formula Engine Verification (M9-005–010)
+
+Audited existing Engine test infrastructure first, per instruction to
+reuse rather than duplicate, and closed only the genuine gaps that audit
+found:
+
+- **M9-005 (Formula Coverage Audit)**: `tests/fixtures/formulaCoverage.ts`
+  / `tests/unit/engine/formulaCoverage.test.ts` (M2-029) already verify,
+  for all 36 `implemented` Formula IDs, that canonical documentation
+  exists, one implementation exists, a normal-case test exists, and
+  public output carries the Formula ID at runtime. Direct inspection
+  confirmed invalid-input tests already exist for effectively every
+  Formula-ID-tagged file (the one file with no such pattern,
+  `rankScenarios.test.ts`, is not itself Formula-ID-tagged). The two
+  remaining criteria this task names — boundary-test presence and
+  Golden Reference coverage for critical formulas — are what M9-008 and
+  M9-006 below close. No new Formula ID was implemented or reclassified;
+  the registry's 36/33 split is unchanged.
+- **M9-006 (Independent Golden Reference Review)**: `tests/fixtures/goldenReferencePortfolios.ts`
+  (M2-028) already independently covers 6 of this task's 9 named Review
+  items (Portfolio value, Net equity, LTV, Health Factor, Liquidation
+  price, Interest cost). The 3 genuinely missing — Loop outputs,
+  Simulation outputs, Exit outputs — are now covered by new fixtures in
+  `tests/fixtures/goldenReferenceExtended.ts` and
+  `tests/unit/engine/goldenReferenceExtended.test.ts` (3 tests, all
+  passing). Every expected value was derived independently using
+  Python's `decimal` module (50-digit precision) — a different language
+  and library than the Engine's own TypeScript + `decimal.js`
+  implementation — with the derivation script reproduced in the
+  fixture file's own comments for auditability. Tolerances reuse
+  `ACCEPTABLE_ERROR` from the existing fixture file (02_Formulas.md's own
+  table), not a new standard.
+- **M9-007 (Numeric Precision and Rounding Audit)**: audit, no code
+  changed. `engine/shared/decimal.ts` already enforces "decimal
+  arithmetic remains internal" (34-digit `decimal.js` precision
+  throughout the Engine, converted to a plain number only at
+  `toOutputNumber`'s public boundary) and "rounding occurs only at
+  display boundaries" (`roundForDisplay` is a separate, explicitly-named
+  function never called on a value that feeds another calculation).
+  Percentage scale consistency was verified per-formula, not assumed:
+  LTV/thresholds are a 0–1 fraction, Liquidation Buffer (F-025) is
+  already scaled ×100 by its own equation — `features/dashboard/utils/buildDashboardViewModel.ts`'s
+  own header comment shows this was already found and handled correctly
+  (a dedicated `formatPercentagePoints` divides by 100 once before
+  `Intl`'s percent formatter, rather than double-scaling), not a new
+  finding this batch made but a real, verified positive. `JSON.stringify`/
+  `JSON.parse` round-tripping through `localStorage`
+  (`services/persistence/adapters/local-storage.adapter.ts`) introduces
+  no material error — figures are already plain IEEE-754 doubles by the
+  time they reach persistence, the same type `JSON` itself uses. Currency/
+  token units are explicit by naming convention throughout (`btcPriceUsd`,
+  `collateral.quantity` paired with `asset: 'BTC'`), not a dedicated
+  unit-type system — no gap found requiring one.
+- **M9-008 (Formula Boundary Conditions)**: audited all 12 of this task's
+  named boundary conditions against the existing suite individually. 9
+  were already covered (zero debt/collateral, Health Factor near/exactly
+  one, liquidation threshold boundary, maximum LTV boundary, zero
+  interest, infeasible exit target, loop stop conditions — cited by exact
+  file in this new file's own header comment). 3 were genuinely untested
+  anywhere: very small balances, very large balances, extreme interest
+  rate — closed in new `tests/unit/engine/formulaBoundaryConditions.test.ts`
+  (6 tests, all passing), each with an independently-derived expected
+  value.
+- **M9-009 (Cross-Formula Invariants)**: `engine/validation/invariants.ts`
+  (M2-027) already implements and tests 4 of this task's own 6 named
+  invariant examples under its own (differently-worded) M2-027 example
+  list. The 2 genuinely new ones — "Debt repayment reduces debt by the
+  expected amount" (distinct from the existing full-repayment-only
+  check) and "Collateral addition increases adjusted collateral
+  consistently" — are new `checkDebtRepaymentInvariant`/
+  `checkCollateralAdditionInvariant` functions plus
+  `tests/unit/engine/invariants/debtRepaymentInvariant.test.ts` (4 tests)
+  and `collateralAdditionInvariant.test.ts` (3 tests). Also extended
+  `fullRepaymentInvariant.test.ts` with a 3rd invariant case composing
+  the existing Net Worth invariant on the post-exit state, for this
+  task's own "Full exit produces the documented remaining state" example
+  (previously only zero-remaining-debt was checked, not the full
+  reconciled state).
+- **M9-010 (Property-Based Formula Tests)**: `fast-check` added as a new
+  devDependency (not previously installed — confirmed before adding).
+  New `tests/unit/engine/formulaPropertyTests.test.ts` implements 4 of
+  this task's 5 named properties as generated tests (hundreds of runs
+  each): increasing debt must not improve Health Factor, adding
+  collateral must not reduce Health Factor, repaying debt must not
+  increase LTV, zero-duration interest must preserve starting debt. The
+  5th — "Removing fees must not worsen net proceeds" — is **not
+  applicable**: this Engine computes no transaction fees at all (no
+  Formula ID or equation for swap fees, slippage, or gas estimation
+  exists anywhere in `02_Formulas.md` — `calculateExitPosition`'s own
+  `unavailableCosts` field documents this; see Conflict #8). Documented
+  as not applicable in the test file's own header rather than fabricating
+  a fee model this Engine does not have.
+
+**Files changed**: `engine/validation/invariants.ts` (2 new invariant
+functions), `tests/unit/engine/invariants/fullRepaymentInvariant.test.ts`
+(extended), 6 new files (`tests/fixtures/goldenReferenceExtended.ts`,
+`tests/unit/engine/goldenReferenceExtended.test.ts`,
+`tests/unit/engine/formulaBoundaryConditions.test.ts`,
+`tests/unit/engine/formulaPropertyTests.test.ts`,
+`tests/unit/engine/invariants/debtRepaymentInvariant.test.ts`,
+`tests/unit/engine/invariants/collateralAdditionInvariant.test.ts`),
+`package.json`/`pnpm-lock.yaml` (`fast-check` devDependency). No Service,
+Store, UI, or non-Engine production code touched.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 219/219 files, 2030/2030 tests (23 new, all passing, zero failures or
+regressions); `pnpm test:coverage` — 96.22% statements / 90.44% branches
+/ 99.45% functions / 98.62% lines, unchanged in aggregate; `pnpm build`
+clean, 12 routes, unchanged bundle size (test-only changes). No new
+specification conflict found this batch — every audited item either
+already had coverage (cited by file) or was closed with new, narrowly
+scoped code.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -13390,3 +13503,22 @@ progress` (above, in milestone order) for the full batch-by-batch
     build, coverage unchanged from baseline. No production code,
     dependency, or architecture changed. **Next**: Milestone 9 Batch 2 —
     Formula Engine Verification (M9-005–010), not yet started.
+64. **Update (2026-08-07): Milestone 9 Batch 2 — Formula Engine
+    Verification (M9-005–010) is complete.** Audited
+    `tests/fixtures/formulaCoverage.ts`, `goldenReferencePortfolios.ts`,
+    and `engine/validation/invariants.ts` first and extended rather than
+    duplicated them — see `## Milestone 9 progress` (above, in milestone
+    order) for the full per-task write-up. New: Golden Reference coverage
+    for Loop/Simulation/Exit outputs (`tests/fixtures/goldenReferenceExtended.ts`,
+    independently derived via Python `decimal`); 3 closed boundary-test
+    gaps (very small/large balances, extreme interest rate); 2 new
+    cross-formula invariants (debt repayment, collateral addition) plus
+    an extended full-exit invariant check; `fast-check` added as a new
+    devDependency for 4 of M9-010's 5 named property tests (the 5th, fee
+    removal, is not applicable — no fee model exists in this Engine, see
+    Conflict #8). No new specification conflict found. No Service,
+    Store, UI, or non-Engine production code changed. Fresh validation:
+    219/219 test files, 2030/2030 tests (23 new, zero regressions), clean
+    typecheck/lint/format/build, coverage unchanged in aggregate
+    (96.22%/90.44%/99.45%/98.62%). **Next**: Milestone 9 Batch 3 —
+    Service and State Verification (M9-011–014), not yet started.

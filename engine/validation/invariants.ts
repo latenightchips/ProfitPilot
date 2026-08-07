@@ -106,3 +106,40 @@ export function checkLoopReconciliationInvariant(
 export function checkFullRepaymentInvariant(remainingDebt: number): boolean {
   return remainingDebt === 0;
 }
+
+/**
+ * Invariant: "Debt repayment reduces debt by the expected amount" —
+ * 06_TASKS.md M9-009. F-041's own equation (Repayment = Current Debt −
+ * Target Debt), checked as a before/after invariant on the resulting
+ * balance rather than only on the repayment amount itself, so a defect
+ * that computed a correct repayment figure but applied it to the wrong
+ * starting balance would still be caught.
+ */
+export function checkDebtRepaymentInvariant(
+  debtBefore: number,
+  debtAfter: number,
+  repaymentAmount: number,
+  tolerance: string = DEFAULT_TOLERANCE,
+): boolean {
+  return within(debtAfter, toDecimal(debtBefore).minus(repaymentAmount).toNumber(), tolerance);
+}
+
+/**
+ * Invariant: "Collateral addition increases adjusted collateral
+ * consistently" — 06_TASKS.md M9-009. F-002's own equation (Collateral
+ * Value = Quantity × Price), checked as a before/after invariant: adding
+ * `addedValue` of collateral value must increase the resulting
+ * collateral value by exactly that amount, no more and no less.
+ */
+export function checkCollateralAdditionInvariant(
+  collateralValueBefore: number,
+  collateralValueAfter: number,
+  addedValue: number,
+  tolerance: string = DEFAULT_TOLERANCE,
+): boolean {
+  return within(
+    collateralValueAfter,
+    toDecimal(collateralValueBefore).plus(addedValue).toNumber(),
+    tolerance,
+  );
+}

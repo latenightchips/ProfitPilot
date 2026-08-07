@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { calculateExitPosition } from '@/engine/exit/calculateExitPosition';
 import type { PortfolioInput } from '@/engine/shared/types';
-import { checkFullRepaymentInvariant } from '@/engine/validation/invariants';
+import {
+  checkFullRepaymentInvariant,
+  checkNetWorthInvariant,
+} from '@/engine/validation/invariants';
 
 const protocol = {
   maxLoanToValue: 0.7,
@@ -44,5 +47,28 @@ describe('Engine invariant: Full debt repayment produces zero debt (M2-027)', ()
     if (!result.ok) return;
 
     expect(checkFullRepaymentInvariant(result.value.remainingDebt)).toBe(true);
+  });
+
+  /**
+   * 06_TASKS.md M9-009 invariant: "Full exit produces the documented
+   * remaining state." Zero remaining debt alone does not confirm the
+   * rest of `calculateExitPosition`'s (M2-023) returned state is
+   * internally consistent — this composes the already-implemented
+   * Net Worth invariant (M2-027) on the post-exit position, checking
+   * `remainingEquity` reconciles with `remainingCollateralValue` and
+   * the now-zero `remainingDebt`, not just that `remainingDebt` is zero.
+   */
+  it.each(scenarios)('the full post-exit state reconciles for %o', (portfolio) => {
+    const result = calculateExitPosition({ portfolio, targetDebt: 0 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(
+      checkNetWorthInvariant(
+        result.value.remainingCollateralValue,
+        result.value.remainingDebt,
+        result.value.remainingEquity,
+      ),
+    ).toBe(true);
   });
 });
