@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-08-06
-Current milestone: **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-08-07
+Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batches 2–11 (M9-005 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10585,6 +10585,83 @@ that produced it.
 
 ---
 
+## Milestone 9 progress
+
+Milestone 9 — Quality, Accessibility, Security, Performance & Release
+Hardening (`06_TASKS.md` Page 9, M9-001–M9-064, 64 tasks across 11
+sections). This milestone is explicitly verification-and-hardening of
+what Milestones 1–8 already built, not new product features — its own
+"MILESTONE OBJECTIVE" states this directly. A full implementation plan
+was produced before any code was written (sent to the project owner, not
+committed to the repository — see the "Next task" log below); Batch 1
+below is the first of that plan's 11 proposed batches.
+
+### Batch 1 — Quality Foundation (M9-001–004)
+
+Four new documentation-only files, no production code touched:
+`docs/QUALITY_PLAN.md` (M9-001 — critical workflows, critical
+calculations, supported browsers/viewports/persistence modes,
+release-blocking defect categories, test ownership, review
+responsibilities, sign-off requirements, and every specification
+conflict this batch found while assembling it), `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`
+(M9-002 — all 17 `01_PRD.md` REQ-0XX areas, all 10 `03_UI.md` pages, and
+a Formula-ID summary pointing to the canonical `tests/fixtures/formulaCoverage.ts`
+registry rather than duplicating its 69 rows, each mapped to real,
+verified implementation and test paths), `docs/DOD_COMPLIANCE_AUDIT.md`
+(M9-003 — a fresh audit against the current repository, not a copy of
+the Milestone 9 planning pass's own findings; every one of that plan's
+named gaps was independently re-checked this batch and found unchanged),
+and `docs/DEFECT_CLASSIFICATION.md` (M9-004 — `06_TASKS.md`'s own
+verbatim P0–P3 severity definitions, plus release-blocking rules,
+ownership, evidence requirements, and how it feeds M9-063/M9-064's own
+final sign-off).
+
+**Milestone 8 cloud cancellation applied from the start**, per instruction:
+every cloud-database/cloud-synchronization/Row-Level-Security requirement
+in the RTM is marked "Rejected — documented approval," citing
+`docs/MILESTONE_8_SCOPE_CHANGE.md` and Conflict #34 — never "blocked,"
+"deferred," or "missing." Conflict #34 was updated with three more
+locations where this same tension recurs in Milestone 9's and the Build
+Guide's own text (see Conflict #34's own "Update" note above).
+
+**Three new specification conflicts found and recorded** (Conflicts
+#35–37 above), all found while assembling `docs/QUALITY_PLAN.md`, none
+resolved by this batch: a financial-tolerance disagreement (`01_PRD.md`
+flat 0.01% vs. `04_BUILD_GUIDE.md` per-type absolute tolerances), a
+coverage-target disagreement (`01_PRD.md` flat ≥95% vs.
+`04_BUILD_GUIDE.md`'s tiered Engine/Services/UI targets), and a
+Simulation-Update performance-target disagreement (`04_BUILD_GUIDE.md`
+Deployment chapter's own "<50ms" vs. `01_PRD.md`/`03_UI.md`'s "<100ms").
+
+**Fresh validation performed this batch** (not reused from the last
+Milestone 8 run, per instruction to re-check current truth): `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check` all clean; `pnpm test` —
+214/214 files, 2007/2007 tests passing; `pnpm test:coverage` — 96.22%
+statements / 90.44% branches / 99.45% functions / 98.61% lines, blended,
+unchanged from the last recorded baseline; `pnpm build` — clean, 12
+application routes (a correction — prior notes had cited 16); `pnpm
+audit` — 17 vulnerabilities (10 high, 7 moderate), a real, expected drift
+from `docs/SECURITY_REVIEW.md`'s recorded 16 (9 high, 7 moderate),
+recorded as evidence for M9-029 (Batch 6) rather than fixed now. Every
+finding from the Milestone 9 planning pass's own gap list (no error
+boundary, `@sentry/nextjs` unused, no security headers, no
+`CHANGELOG.md`, no formal performance baseline, no
+`prefers-reduced-motion` handling, CI does not run `pnpm test:e2e`,
+6 routes uncovered by `tests/e2e/accessibility.spec.ts`) was
+independently re-confirmed still true against the live repository, not
+copied on trust — see `docs/DOD_COMPLIANCE_AUDIT.md` §2 for the
+item-by-item re-check.
+
+**No task outside M9-001–004 was started.** No production code,
+dependency, Engine/Service/Store architecture, performance optimization,
+security header, error boundary, Sentry wiring, accessibility-test
+extension, formula test, or Playwright workflow was added — every
+genuine gap found (§2/§4 above) is documented for its correct later
+Milestone 9 batch, per this batch's own explicit scope rule, not acted
+on early.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
@@ -11786,6 +11863,100 @@ off for a future decision** — the decision has already been made and
 executed. Recorded here because it is exactly the shape this section
 exists to track: a specification document's own literal text no longer
 matching what was actually built, by deliberate choice.
+
+**Update (Milestone 9 Batch 1, M9-001–004)**: the identical tension
+recurs in three more places, found while producing
+`docs/QUALITY_PLAN.md` and `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`:
+`06_TASKS.md`'s own Milestone 9 "MILESTONE ACCEPTANCE CRITERIA" ("Row-
+Level Security is verified") and "MILESTONE DEFINITION OF DONE" ("Safe
+optional cloud synchronization"); `04_BUILD_GUIDE.md`'s "VERSION 1
+DEFINITION OF DONE" ("Cloud synchronization functions correctly"); and
+`04_BUILD_GUIDE.md`'s "SECURITY CHECKLIST" ("Row Level Security
+enabled"). All four are resolved identically to the rest of this
+conflict: **N/A — removed by product decision**, not "blocked" or
+"incomplete." Not treated as three new conflict numbers, since it is the
+same already-decided tension appearing in more source locations, not a
+new disagreement — see `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md` §4 for
+the complete, itemized list of every cloud-dependent requirement across
+both Milestones 8 and 9 and its individual disposition.
+
+---
+
+### 35. `01_PRD.md` REQ-011-B's flat "0.01%" financial-accuracy tolerance disagrees with `04_BUILD_GUIDE.md`'s per-type absolute tolerances — found while producing `docs/QUALITY_PLAN.md` (Milestone 9 Batch 1, M9-001)
+
+`01_PRD.md` REQ-011-B states financial verification must stay within a
+flat "0.01%" maximum error. `04_BUILD_GUIDE.md`'s own Engine section
+states per-type absolute tolerances instead: 0.01 USD for displayed
+values, 0.00000001 BTC, 0.000001 for Health Factor/percentage figures —
+and adds "each formula may define stricter tolerances." The two are not
+trivially the same rule restated two ways: a flat percentage tolerance
+and a set of fixed absolute tolerances diverge sharply at small
+magnitudes (e.g. a Health Factor near zero, or a very small BTC
+quantity), where 0.01% of a small number is far tighter than the
+Build Guide's fixed 0.000001 floor, and diverge the other way at large
+magnitudes.
+
+**Not resolved by this batch.** `docs/QUALITY_PLAN.md` §7 records the
+working precedent this engagement follows until a product decision is
+made: the Build Guide's per-type tolerances, consistent with how
+Conflict #16 (a related Build-Guide-vs-Formulas.md performance-target
+disagreement) was already resolved — the Build Guide treated as the
+more implementation-precise document. Existing Engine tests already use
+the Build Guide's per-type tolerances (`tests/unit/engine/**`); no test
+was found using the PRD's flat 0.01% figure, so this is a
+documentation-vs-documentation conflict, not a documentation-vs-code
+one.
+
+---
+
+### 36. `01_PRD.md`'s flat "≥95% unit test coverage" disagrees with `04_BUILD_GUIDE.md`'s tiered per-layer coverage targets — found while producing `docs/QUALITY_PLAN.md` (Milestone 9 Batch 1, M9-001)
+
+`01_PRD.md`'s "NON-FUNCTIONAL REQUIREMENTS" section states a flat "Unit
+Test Coverage ≥95%" for "the platform," with no tiering by layer. Its own
+REQ-011 Acceptance Criteria states a narrower, different claim —
+"Financial calculations achieve at least 95% unit test coverage,"
+Engine-scoped — so `01_PRD.md` is not even fully self-consistent on this
+point. `04_BUILD_GUIDE.md`'s "COVERAGE TARGETS" section gives four tiered
+figures instead: Engine Statements ≥95%, Engine Branches ≥90%, Services
+≥85%, UI Components ≥70% — with no fifth tier for `stores/**`, itself a
+real, separately-tested layer (also newly noted — see
+`docs/DOD_COMPLIANCE_AUDIT.md` §4).
+
+**Not resolved by this batch.** `docs/QUALITY_PLAN.md` §7 records the
+working precedent: the Build Guide's tiered targets, per this
+engagement's established practice of preferring the Build Guide's more
+specific standard. As of this batch's fresh `pnpm test:coverage` run,
+every named tier already clears its target in aggregate (Engine 98.79%
+lines / 90.53% branches; Services 98.17% lines / 87.92% branches; UI
+98.70% lines / 90.83% branches — see `docs/DOD_COMPLIANCE_AUDIT.md` §1) —
+a genuinely positive finding, though a fully rigorous statement-level
+(not line-level-proxy) per-layer breakdown remains M9-005/M9-011's own
+work.
+
+---
+
+### 37. `04_BUILD_GUIDE.md`'s own Deployment-chapter "Simulation Update: <50ms" disagrees with `01_PRD.md`/`03_UI.md`'s "Simulation Update: <100ms" — found while producing `docs/QUALITY_PLAN.md` (Milestone 9 Batch 1, M9-001)
+
+`04_BUILD_GUIDE.md` names this figure twice, in two different sections,
+with two different meanings: its "PERFORMANCE TESTS" section (Engine
+chapter) sets "standard simulation: less than 50 milliseconds" as a raw
+Engine-calculation benchmark, already the exact target
+`tests/performance/engineBenchmarks.test.ts` measures against. Its
+separate "PERFORMANCE TARGETS" section (Deployment chapter) states
+"Simulation Update: less than 50 milliseconds" again, but this time as a
+production/UI-level target, alongside "Dashboard Refresh: <100ms" and
+"Loop Strategy: <20ms." `01_PRD.md` and `03_UI.md` both separately state
+"Simulation Update: <100ms" in what reads as the same UI-perceived
+metric as the Deployment-chapter figure — not the Engine-only one.
+
+Both `01_PRD.md`/`03_UI.md`'s "<100ms" and `04_BUILD_GUIDE.md`
+Deployment's "<50ms" are stated at the same UI/production level, so this
+is not resolvable as "one document means the Engine, the other means the
+full UI update" — both apparently mean the latter. **Not resolved by
+this batch** — needs an explicit product decision or interpretation
+before M9-037/M9-042 (Batch 7, Performance Hardening) can honestly claim
+a pass/fail against either figure. Recorded per instruction rather than
+silently picking one.
 
 ---
 
@@ -13205,3 +13376,17 @@ progress` (above, in milestone order) for the full batch-by-batch
     **Next**: Milestone 9 — Quality, Accessibility, Security,
     Performance & Release Hardening (`06_TASKS.md` Page 9), not yet
     started.
+63. **Update (2026-08-07): Milestone 9 Batch 1 — Quality Foundation
+    (M9-001–004) is complete.** Four new documents:
+    `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`,
+    `docs/DOD_COMPLIANCE_AUDIT.md`, `docs/DEFECT_CLASSIFICATION.md` — see
+    `## Milestone 9 progress` (above, in milestone order) for the full
+    write-up. Cloud cancellation (Conflict #34) applied throughout the
+    RTM from the start, not retrofitted. Three new specification
+    conflicts found and recorded (#35 financial-tolerance, #36
+    coverage-target, #37 Simulation-Update performance-target
+    disagreement), none resolved by this batch. Fresh validation:
+    214/214 test files, 2007/2007 tests, clean typecheck/lint/format/
+    build, coverage unchanged from baseline. No production code,
+    dependency, or architecture changed. **Next**: Milestone 9 Batch 2 —
+    Formula Engine Verification (M9-005–010), not yet started.
