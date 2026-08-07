@@ -168,7 +168,7 @@ test('Cover: every interactive Dashboard control is reachable and operable by ke
   const reached = [...reachableRoles].join(' | ');
   expect(reached).toContain('Refresh');
   expect(reached).toContain('Edit portfolio');
-  expect(reached).toContain('Run simulation'); // the aria-disabled button (M5-024 fix)
+  expect(reached).toContain('Run simulation'); // a real link since the M9-017 fix (buildQuickActions.ts)
 });
 
 test('Cover: focus is always visibly indicated (no outline: none anywhere reachable)', async ({
@@ -191,24 +191,46 @@ test('Cover: focus is always visibly indicated (no outline: none anywhere reacha
   }
 });
 
+/**
+ * Repointed to "Export portfolio" (Milestone 9 Batch 4, M9-017) —
+ * "Run simulation" is no longer disabled (a real, fixed defect; see
+ * `buildQuickActions.ts`'s own header comment), so it can no longer
+ * exercise this specific M5-024 accessibility fix. "Export portfolio"
+ * remains genuinely `aria-disabled` under the same real condition it
+ * always has (`calculationSucceeded === false`, e.g. a zero-quantity
+ * portfolio whose Dashboard metrics could not be computed) — the fix
+ * itself (`aria-disabled` over the native `disabled` attribute, keeping
+ * the reason reachable by keyboard focus) is unrelated to which specific
+ * button demonstrates it.
+ */
 test('Cover: the unavailable Quick Actions reason is reachable by keyboard focus (M5-024 fix)', async ({
   page,
 }) => {
-  await createPortfolio(page, { name: 'A11y Tooltip Portfolio' });
+  await createPortfolio(page, { name: 'A11y Tooltip Portfolio', quantity: '0' });
 
-  const runSimulation = page.getByRole('button', { name: 'Run simulation' });
-  await expect(runSimulation).toHaveAttribute('aria-disabled', 'true');
-  await runSimulation.focus();
-  await expect(runSimulation).toBeFocused();
-  await expect(runSimulation).toHaveAttribute(
+  const exportPortfolio = page.getByRole('button', { name: 'Export portfolio' });
+  await expect(exportPortfolio).toHaveAttribute('aria-disabled', 'true');
+  await exportPortfolio.focus();
+  await expect(exportPortfolio).toBeFocused();
+  await expect(exportPortfolio).toHaveAttribute(
     'title',
-    /This feature is not yet available in this version of ProfitPilot\./,
+    /No calculated summary is available to export/,
   );
 });
 
 async function createPortfolioAndOpenSimulation(page: Page, name: string) {
   await createPortfolio(page, { name });
-  await page.locator('a', { hasText: 'Simulation' }).click();
+  // Scoped to the sidebar's own "Primary" nav landmark — a plain,
+  // unscoped `hasText: 'Simulation'` locator became ambiguous once the
+  // M9-017 fix (`buildQuickActions.ts`'s own header comment) turned
+  // Quick Actions' "Run simulation" into a real `<a>` link too, which
+  // also matches "Simulation" as a substring. Same fix
+  // `tests/e2e/navigation.spec.ts` already applies for the identical
+  // "Portfolio" ambiguity against `AppHeader`'s switcher links.
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Simulation' })
+    .click();
   await page.waitForURL('**/simulation');
 }
 

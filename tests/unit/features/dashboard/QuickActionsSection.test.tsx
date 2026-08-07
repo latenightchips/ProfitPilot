@@ -26,7 +26,7 @@ const METRICS: DashboardMetrics = {
 };
 
 describe('QuickActionsSection — calculation succeeded', () => {
-  it('renders Edit portfolio as a real link and unavailable actions as disabled buttons with a reason', () => {
+  it('renders every navigation link as a real, working link (M9-017 fix — see buildQuickActions.ts)', () => {
     render(
       <QuickActionsSection
         actions={buildQuickActions(true)}
@@ -41,13 +41,22 @@ describe('QuickActionsSection — calculation succeeded', () => {
       'href',
       '/portfolio',
     );
-
-    const runSimulation = screen.getByRole('button', { name: 'Run simulation' });
-    // `aria-disabled`, not the native `disabled` attribute (M5-024, Batch 13) —
-    // keeps the button keyboard-focusable so its `title` reason is reachable
-    // without a mouse; see QuickActionsSection.tsx's own header comment.
-    expect(runSimulation).toHaveAttribute('aria-disabled', 'true');
-    expect(runSimulation).toHaveAttribute('title', expect.stringContaining('not yet available'));
+    expect(screen.getByRole('link', { name: 'Run simulation' })).toHaveAttribute(
+      'href',
+      '/simulation',
+    );
+    expect(screen.getByRole('link', { name: 'Build loop strategy' })).toHaveAttribute(
+      'href',
+      '/loop-builder',
+    );
+    expect(screen.getByRole('link', { name: 'Create exit plan' })).toHaveAttribute(
+      'href',
+      '/exit-planner',
+    );
+    expect(screen.getByRole('link', { name: 'Update prices' })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
 
     expect(screen.getByRole('button', { name: 'Export portfolio (JSON)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export portfolio (CSV)' })).toBeInTheDocument();

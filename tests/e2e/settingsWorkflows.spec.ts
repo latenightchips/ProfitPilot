@@ -152,6 +152,145 @@ test('Cover: addAsNew merge mode adds a duplicate without touching the original'
 });
 
 /**
+ * 06_TASKS.md M9-020 ("Test Destructive Action Protection") — Include:
+ * "Conflict resolution." A real, already-built, previously-untested
+ * feature: `MergeMode` has 4 values, not the 2 (`addAsNew`/`replaceAll`)
+ * covered above — `mergeNonConflicting` (the UI's own default,
+ * `app/settings/page.tsx`) and `replaceSelected` (a per-record
+ * conflict checklist, `services/import/preview.ts`'s own
+ * `planRecordAction`) were fully implemented since Milestone 8 but never
+ * exercised end-to-end. **Not the same "conflict" as M9-015's "Resolve
+ * data conflict" workflow item or M9-013's "Sync during local edit"** —
+ * both of those are N/A (Milestone 8 local-only re-scope, Conflict #34;
+ * no cloud sync mechanism exists to race against or reconcile with).
+ * This is a distinct, real, purely-local feature:
+ * `determineRecoverySnapshotReason` (`services/import/apply.ts`) itself
+ * names `replaceSelected`'s own snapshot reason `'conflict-resolution'`
+ * — the codebase's own vocabulary, not a label invented for this test.
+ *
+ * Both tests construct a synthetic import file by taking a real exported
+ * envelope and cloning/mutating it (rather than authoring one from
+ * scratch), the same "real, valid envelope shape, deliberately mutated
+ * to exercise one specific path" technique
+ * `tests/unit/services/import/ImportValidator.test.ts`'s own tests
+ * already use. `checksum` is deleted from every mutated clone —
+ * `createEnvelope`'s own checksum is computed over the *original*
+ * payload, so keeping it on a *changed* payload would make
+ * `verifyChecksum` fail; `envelope.ts`'s own header comment already
+ * documents that an omitted checksum is treated as valid (the same
+ * graceful path a hand-authored or older file takes), not a shortcut
+ * invented for this test.
+ */
+test('Cover: mergeNonConflicting merge mode adds a non-conflicting record but skips a conflicting one (M9-020)', async ({
+  page,
+}) => {
+  await createPortfolio(page, 'Existing Portfolio');
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Full Backup (JSON)' }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  const content = JSON.parse(await readFile(path as string, 'utf-8'));
+
+  const existingEnvelope = content.records.portfolio[0];
+  const newEnvelope = {
+    ...existingEnvelope,
+    recordId: 'synthetic-non-conflicting-portfolio',
+    payload: {
+      ...existingEnvelope.payload,
+      id: 'synthetic-non-conflicting-portfolio',
+      name: 'Imported New Portfolio',
+    },
+  };
+  delete newEnvelope.checksum;
+  content.records.portfolio = [existingEnvelope, newEnvelope];
+
+  await page.setInputFiles('input[type="file"]', {
+    name: 'merge-non-conflicting.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(content)),
+  });
+
+  // `mergeNonConflicting` is already the UI's own default selection —
+  // checked explicitly regardless, so this test does not silently depend
+  // on that default never changing.
+  await page.getByRole('radio', { name: 'Merge non-conflicting' }).check();
+  await page.getByRole('button', { name: 'Confirm Import' }).click();
+  await expect(page.getByText(/imported \d+ record/i)).toBeVisible();
+
+  const portfolioKeyCount = await page.evaluate(
+    () =>
+      Object.keys(window.localStorage).filter((key) => key.startsWith('profitpilot:v1:portfolio:'))
+        .length,
+  );
+  // The conflicting record (matching the existing portfolio's own id) was
+  // skipped, not duplicated; the non-conflicting one was added — 2 total,
+  // not 1 (nothing added) or 3 (conflict wrongly duplicated).
+  expect(portfolioKeyCount).toBe(2);
+
+  await page.goto('/portfolios', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('list').locator('li', { hasText: 'Existing Portfolio' })).toHaveCount(
+    1,
+  );
+  await expect(
+    page.getByRole('list').locator('li', { hasText: 'Imported New Portfolio' }),
+  ).toHaveCount(1);
+});
+
+test('Cover: replaceSelected merge mode replaces only the checked conflicting record and creates a recovery snapshot (M9-020)', async ({
+  page,
+}) => {
+  await createPortfolio(page, 'Conflict Portfolio');
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Full Backup (JSON)' }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  const content = JSON.parse(await readFile(path as string, 'utf-8'));
+
+  const existingEnvelope = content.records.portfolio[0];
+  const conflictingRecordId: string = existingEnvelope.recordId;
+  const replacedEnvelope = {
+    ...existingEnvelope,
+    payload: { ...existingEnvelope.payload, name: 'Replaced Portfolio Name' },
+  };
+  delete replacedEnvelope.checksum;
+  content.records.portfolio = [replacedEnvelope];
+
+  await page.setInputFiles('input[type="file"]', {
+    name: 'replace-selected.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(content)),
+  });
+
+  await page.getByRole('radio', { name: 'Replace selected' }).check();
+  // `app/settings/page.tsx`'s own conflict checklist labels each entry
+  // `${conflict.recordType}: ${conflict.recordId}` — reusing the real id
+  // read back from the exported file, not a guessed literal.
+  await page.getByRole('checkbox', { name: `portfolio: ${conflictingRecordId}` }).check();
+  await page.getByRole('button', { name: 'Confirm Import' }).click();
+  await expect(page.getByText(/imported \d+ record/i)).toBeVisible();
+
+  await page.goto('/portfolios', { waitUntil: 'networkidle' });
+  await expect(
+    page.getByRole('list').locator('li', { hasText: 'Replaced Portfolio Name' }),
+  ).toHaveCount(1);
+  await expect(page.getByRole('list').locator('li', { hasText: 'Conflict Portfolio' })).toHaveCount(
+    0,
+  );
+
+  // `determineRecoverySnapshotReason` (`services/import/apply.ts`) always
+  // creates a `'conflict-resolution'` snapshot for `replaceSelected` —
+  // unconditionally, unlike `replaceAll`'s own UI-level confirmation
+  // checkbox — verified here as the real safety net this merge mode
+  // actually relies on.
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('radio', { name: /conflict-resolution/i })).toBeVisible();
+});
+
+/**
  * M8-043's own "Create a recovery backup first" / M8-044's "Create
  * transactional backup... Rollback on any critical failure" are
  * satisfied by `apply.ts`'s in-memory snapshot-then-restore (the same

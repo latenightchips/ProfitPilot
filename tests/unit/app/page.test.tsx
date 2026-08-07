@@ -298,7 +298,7 @@ describe('DashboardPage — Data Freshness Section (M5-017, Batch 8)', () => {
 });
 
 describe('DashboardPage — Quick Actions Section (M5-016, Batch 11)', () => {
-  it('renders available and unavailable actions, and export links, for a healthy portfolio', () => {
+  it('renders every navigation action as a real link, and export links, for a healthy portfolio (M9-017 fix — see buildQuickActions.ts)', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
@@ -310,9 +310,9 @@ describe('DashboardPage — Quick Actions Section (M5-016, Batch 11)', () => {
       'href',
       '/portfolio',
     );
-    expect(screen.getByRole('button', { name: 'Run simulation' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    expect(screen.getByRole('link', { name: 'Run simulation' })).toHaveAttribute(
+      'href',
+      '/simulation',
     );
     expect(screen.getByRole('button', { name: 'Export portfolio (JSON)' })).toBeInTheDocument();
   });

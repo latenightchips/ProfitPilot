@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-07
-Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batches 4–11 (M9-015 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batches 5–11 (M9-022 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -10873,6 +10873,187 @@ plus several genuinely missing test cases:
 functions / 98.62% lines; `pnpm build` clean, 12 routes; 28/28 Playwright
 e2e specs passing. No new specification conflict found this batch.
 
+### Batch 4 — Application Workflow Testing (M9-015–021)
+
+Audited all 12 existing e2e spec files first, per instruction to reuse
+rather than duplicate — 11 of the 14 workflows M9-015 names already had
+real Playwright coverage; every other task's own gaps were closed only
+where genuine:
+
+- **M9-015 (Define Critical End-to-End Workflows)**: new
+  `docs/CRITICAL_WORKFLOWS.md` maps all 14 named workflows to their real
+  test evidence. 11 already covered (cited by file/test title, not
+  duplicated). "Use application offline" was a genuine gap — closed with
+  new `tests/e2e/offlineWorkflows.spec.ts` (`context.setOffline`, proving
+  portfolio creation, persistence, and simulation all work with no
+  network once each route has been visited once). "Sign in and
+  synchronize" splits: "Sign in" is covered by the real, honest
+  graceful-degradation path this sandbox actually takes (no Supabase
+  project configured anywhere here); "...and synchronize" is **N/A —
+  removed by product decision** (Conflict #34, same basis as every prior
+  Milestone 9 batch). "Resolve data conflict" is likewise **N/A** — its
+  own cloud-sync premise does not exist in this application, and is
+  explicitly distinguished in the new doc from Import's own real,
+  separate `replaceSelected` "conflict resolution" (see M9-020 below).
+- **M9-016 (Complete Desktop End-to-End Suite)**: `playwright.config.ts`
+  gained `screenshot: 'only-on-failure'`/`video: 'retain-on-failure'` —
+  before this batch, a local (non-CI, `retries: 0`) failure produced no
+  trace, screenshot, or video at all, only bare assertion text, closing
+  this task's own "Capture useful failure artifacts" requirement.
+  "Deterministic test fixtures"/"avoid external provider dependencies"
+  were already true (audited, not assumed — no random data, no real
+  network dependency anywhere in `tests/e2e/`). "Reset test state
+  safely" is already structural (Playwright's own fresh-context-per-test
+  default; confirmed no cross-test `localStorage` pollution). The full
+  133-test desktop Chromium suite was run twice in full to check for
+  flakiness per this task's own DoD — 133/133 passing both times, zero
+  flaky tests.
+- **M9-017 (Complete Mobile End-to-End Suite)**: new
+  `tests/e2e/mobileWorkflows.spec.ts` (6 tests) — unlike
+  `tests/e2e/responsiveLayout.spec.ts` (M5-023/M6-021), which populates
+  data at desktop width and only resizes at the end to check for
+  overflow, every test here sets the 375×812 viewport _first_ and drives
+  a real multi-step workflow entirely at that width, covering all 8 named
+  Focus items (Navigation, Forms, KPI readability, Tables and cards,
+  Scenario controls, Strategy workflows, Import and export entry points,
+  Error recovery). **Found and fixed a genuine, live defect while writing
+  this task**: `features/dashboard/utils/buildQuickActions.ts` still
+  hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as
+  `available: false` — correct when M5-016 first built this file
+  (Milestones 6/7's routes did not exist yet), but never revisited once
+  those milestones shipped fully working routes, silently telling users
+  those tools were "not yet available" for three milestones. This
+  mattered enough to fix now (not just document) because `AppSidebar` has
+  no mobile equivalent (`hidden md:block`, Milestone 5's own accepted,
+  documented scope decision) — Quick Actions was the _only_ way a mobile
+  user could ever reach these three tools, and this task's own
+  "Navigation" Focus item could not otherwise be tested honestly. Fixed
+  by making all 5 Quick Actions links unconditionally available (matching
+  "Edit portfolio"/"Update prices"'s own existing pattern); cascaded to
+  every test that had encoded the old, now-incorrect disabled behavior as
+  expected (`tests/unit/features/dashboard/buildQuickActions.test.ts`,
+  `QuickActionsSection.test.tsx`, `tests/unit/app/page.test.tsx`,
+  `tests/e2e/dashboardWorkflows.spec.ts`'s own "Navigate to Simulation
+  Workspace"/"Navigate to Exit Planner" tests now exercise the real
+  Quick Actions path instead of the sidebar, and
+  `tests/e2e/accessibility.spec.ts`'s own keyboard-focus-reachability test
+  was repointed from "Run simulation" — no longer disabled — to "Export
+  portfolio," which remains genuinely disabled under its own real,
+  unrelated condition).
+- **M9-018 (Complete Tablet Workflow Review)**: new
+  `tests/e2e/tabletWorkflows.spec.ts` (3 tests), deliberately lighter
+  scope than M9-017 (this task is P1/Effort M with only M9-015 as a
+  dependency, vs. M9-017's P0/Effort XL) — 768px has the full sidebar
+  (`hidden md:block` triggers exactly at this width), so the real
+  "Review" question is narrower: does sidebar-driven cross-tool
+  navigation and interaction genuinely work right at this breakpoint
+  boundary, and does the Dashboard's own already-documented section order
+  hold unchanged at this width (verified via heading bounding-box Y
+  positions, not merely asserted).
+- **M9-019 (Test Browser Navigation Behavior)**: `tests/e2e/navigation.spec.ts`
+  expanded from 2 trivial tests to 7 — confirmed by direct search this was
+  a real, total gap before this batch (zero `page.goBack()`/
+  `page.reload()`/deep-link-direct-entry tests anywhere in `tests/e2e/`).
+  New coverage: direct route entry with no active portfolio (graceful
+  gate, not a crash) across 4 gated routes; deep-linking straight to a
+  tool route with an existing active portfolio; a true `page.reload()`
+  restoring the active portfolio without duplicating it (the real-browser
+  counterpart to M9-014's own unit-level `PersistenceProvider` restart
+  test); Back/Forward through 3 visited routes without state corruption
+  or duplicate records; navigating away from a partially filled
+  new-portfolio form without creating a partial/duplicate record. All 7
+  passed on first implementation.
+- **M9-020 (Test Destructive Action Protection)**: audited all 7 named
+  Include items against existing coverage. Portfolio deletion, bulk
+  local-data clearing, and import replacement were already covered
+  (cited). Cloud-data deletion is **N/A** (Conflict #34). Archive
+  behavior needs no confirmation step by design (M4-012's own
+  data-retention/reversibility distinction from Delete — already
+  correctly built, re-verified, not changed). Sign-out cache removal is
+  e2e-untestable in this sandbox for the same reason "Sign in" is (no
+  Supabase project configured, so the entire "Sign Out"/"Sign Out and
+  Clear Local Data" UI section — confirmed by direct inspection — never
+  renders); its local-data-preservation guarantee is already covered at
+  the unit level (`authLocalDataPreservation.test.ts`, M8-056) and its
+  confirmation gate verified by direct code inspection. **"Conflict
+  resolution" was a genuine, real gap** — the Import feature has 4 merge
+  modes, not the 2 (`addAsNew`/`replaceAll`) already tested;
+  `mergeNonConflicting` (the UI's own default) and `replaceSelected` (a
+  per-record conflict checklist, `services/import/apply.ts`'s own
+  `determineRecoverySnapshotReason` literally names its snapshot reason
+  `'conflict-resolution'`) were fully built since Milestone 8 but never
+  exercised end-to-end. Closed with 2 new tests in
+  `tests/e2e/settingsWorkflows.spec.ts`, each constructing a synthetic
+  import file by cloning and mutating a real exported envelope (the same
+  technique `tests/unit/services/import/ImportValidator.test.ts` already
+  uses) rather than authoring one from scratch.
+- **M9-021 (Perform Cross-Browser Testing)**: new
+  `docs/CROSS_BROWSER_REVIEW.md`. This sandbox has only Chromium
+  installed (`/opt/pw-browsers/`, confirmed directly — no Firefox/WebKit
+  binary anywhere) and this project's own standing environment rules
+  prohibit fetching one (`playwright install` is disallowed) — an
+  environment constraint, not a scope decision, already flagged by
+  `docs/QUALITY_PLAN.md` §3 at Batch 1 as "a real, named gap for M9-021
+  (Batch 4) to close." Closed the way M9-015's own DoD explicitly allows
+  ("an automated test or an approved manual test procedure"): Chromium
+  (a genuine proxy for both Chrome and Edge, both Chromium-engine
+  browsers) is fully automated and passing (§2 of the new doc); a fresh
+  code-level audit for Firefox/Safari-specific risk found no
+  vendor-prefixed CSS, no non-standard/experimental JS API, and no
+  browser-conditional code branch anywhere in the codebase (§3, a 7-row
+  Layout/Storage/Downloads/Forms/Charts/Authentication/Offline-behavior
+  table, `recharts`' own third-party SVG rendering flagged as the one
+  item most worth a human's actual eyes); a concrete, numbered manual
+  verification procedure for Firefox/Safari is recorded for whoever runs
+  it next (§4).
+
+**Files changed**: `features/dashboard/utils/buildQuickActions.ts` (defect
+fix — 3 links now `available: true`); `playwright.config.ts` (failure
+artifacts); `tests/e2e/navigation.spec.ts` (expanded, 2 → 7 tests);
+`tests/e2e/settingsWorkflows.spec.ts` (2 new tests); `tests/e2e/dashboardWorkflows.spec.ts`,
+`tests/e2e/accessibility.spec.ts` (updated for the Quick Actions fix);
+`tests/unit/features/dashboard/buildQuickActions.test.ts`,
+`tests/unit/features/dashboard/QuickActionsSection.test.tsx`,
+`tests/unit/app/page.test.tsx` (updated for the same fix); 5 new files
+(`docs/CRITICAL_WORKFLOWS.md`, `docs/CROSS_BROWSER_REVIEW.md`,
+`tests/e2e/mobileWorkflows.spec.ts`, `tests/e2e/tabletWorkflows.spec.ts`,
+`tests/e2e/offlineWorkflows.spec.ts`). No Supabase, Cloud Database, or
+Cloud Sync code introduced; no dependency or lockfile change.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 221/221 files, 2040/2040 tests, zero regressions; `pnpm test:coverage`
+— 96.25% statements / 90.41% branches / 99.46% functions / 98.62% lines
+(the small branch-percentage change reflects `buildQuickActions.ts`
+itself having fewer conditional branches after the fix, not reduced
+coverage); `rm -rf .next && pnpm build` clean, 12 routes; full Playwright
+suite (133 tests across 15 spec files) run twice in full — 133/133
+passing both times, zero flaky tests. No new specification conflict found
+this batch.
+
+**Environment/recovery events**: the stale-checkout/reversion issue
+recurred once during this batch, immediately after implementation and
+validation were complete and the batch summary had been reported —
+`git status` unexpectedly showed a completely different, unrelated file
+set (Batch-6-era Privacy/Security leftovers: `sanitizeText.ts`,
+`sensitiveFields.ts`, `docs/SECURITY_REVIEW.md`, and related test files —
+the same recurring pattern documented in Batches 1–3), and `git log`
+confirmed local HEAD had reverted to `f6fd285` (M8-014–M8-021), 4 commits
+behind `origin/main`. Diagnosed per the standing recovery protocol before
+touching anything: `git merge-base --is-ancestor` confirmed `f6fd285` is
+an ancestor of `origin/main` (no unique commits at risk), and every one
+of the 15 leftover files was diffed against `origin/main` individually —
+13 were byte-identical, and the remaining 2
+(`tests/unit/services/import/ImportValidator.test.ts`,
+`docs/SECURITY_REVIEW.md`) were confirmed to be the same, already-
+verified-safe strict subsets/older-phrasing versions of what
+`origin/main` already has (an M8-059 test block; newer
+"not applicable"/"permanent" cancellation phrasing vs. older
+"deferred"/"follow-up" phrasing) — the identical pattern documented in
+every prior Batch 1–3 recurrence. Recovered by resetting to
+`origin/main` and recreating every Batch 4 file from this conversation's
+own retained content; re-validated in full after recreation (see above)
+before proceeding to commit.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -13643,3 +13824,49 @@ progress` (above, in milestone order) for the full batch-by-batch
     new, zero regressions), clean typecheck/lint/format/build, coverage
     96.25%/90.49%/99.46%/98.62%, 28/28 e2e specs passing. **Next**:
     Milestone 9 Batch 4 (M9-015 onward), not yet started.
+66. **Update (2026-08-07): Milestone 9 Batch 4 — Application Workflow
+    Testing (M9-015–021) is complete.** New `docs/CRITICAL_WORKFLOWS.md`
+    maps all 14 named critical workflows to real evidence — 11 already
+    covered, "Use application offline" closed as a genuine gap, "Resolve
+    data conflict" and the "synchronize" half of "Sign in and
+    synchronize" are N/A (Conflict #34). **Found and fixed a genuine,
+    live defect** while implementing M9-017: the Dashboard's own Quick
+    Actions had silently hardcoded "Run simulation"/"Build loop
+    strategy"/"Create exit plan" as permanently unavailable since
+    Milestone 5, never revisited once Milestones 6/7 shipped those routes
+    for real — the _only_ mobile-reachable path to them, since
+    `AppSidebar` has no mobile equivalent. Fixed in
+    `buildQuickActions.ts`; cascaded through every test that had encoded
+    the old disabled behavior as expected (see `## Milestone 9 progress`
+    above for the full list). New e2e coverage: `mobileWorkflows.spec.ts`
+    (6 tests, real interaction at 375px, not just overflow checks),
+    `tabletWorkflows.spec.ts` (3 tests, 768px sidebar-nav stability),
+    `offlineWorkflows.spec.ts` (1 test, `context.setOffline`), expanded
+    `navigation.spec.ts` (2 → 7 tests: Back/Forward, real
+    `page.reload()`, deep links, unsaved-change handling), 2 new
+    `settingsWorkflows.spec.ts` tests for the Import feature's own
+    previously-untested `mergeNonConflicting`/`replaceSelected` conflict-
+    resolution merge modes (M9-020 — a real, distinct, purely-local
+    feature, not the same "conflict" as the N/A cloud-sync one).
+    `playwright.config.ts` gained failure-artifact capture
+    (screenshot/video on failure). New `docs/CROSS_BROWSER_REVIEW.md`
+    documents this sandbox's Chromium-only constraint (no Firefox/WebKit
+    binary, `playwright install` disallowed), a code-level cross-browser
+    risk audit (no vendor prefixes, no non-standard APIs found), and an
+    approved manual verification procedure for Firefox/Safari. No new
+    specification conflict found. No Supabase, Cloud Database, or Cloud
+    Sync code introduced; no dependency or lockfile change. **The
+    recurring stale-checkout/reversion issue struck once this batch**,
+    immediately after implementation/validation completed and the batch
+    summary had been reported — diagnosed per the standing protocol
+    (confirmed `f6fd285` is an ancestor of `origin/main`, no unique
+    commits at risk; all 15 leftover files verified byte-identical or a
+    known-safe strict subset of `origin/main` before discarding anything)
+    and recovered by resetting to `origin/main` and recreating every
+    Batch 4 file from this conversation's own retained content, then
+    re-validating in full — see `## Milestone 9 progress` above for the
+    complete recovery record. Fresh validation: 221/221 test files,
+    2040/2040 tests, clean typecheck/lint/format/build, coverage
+    96.25%/90.41%/99.46%/98.62%, full 133-test Playwright suite run twice
+    with zero flakiness. **Next**: Milestone 9 Batch 5 (M9-022 onward,
+    Accessibility Hardening), not yet started.

@@ -1,5 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
+/**
+ * 06_TASKS.md M9-016 ("Complete Desktop End-to-End Suite") —
+ * "Capture useful failure artifacts." Before this batch, `use` only set
+ * `trace: 'on-first-retry'`; a failure with no retry configured (the
+ * local, non-CI default — `retries: 0` above) produced no trace,
+ * screenshot, or video at all, only the bare assertion error text. Adding
+ * `screenshot: 'only-on-failure'` and `video: 'retain-on-failure'` closes
+ * that gap without adding overhead to passing runs (both settings are
+ * failure-conditional, the same "only-on-failure" idiom `trace` already
+ * used).
+ */
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -9,6 +20,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   projects: [
     {

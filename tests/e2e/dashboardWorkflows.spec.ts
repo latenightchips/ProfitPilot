@@ -29,14 +29,20 @@ import { expect, test } from '@playwright/test';
  * completes correctly at each size.
  *
  * **"Navigate to Simulation Workspace" / "Navigate to Exit Planner" —
- * via the sidebar, not Quick Actions.** `QuickActionsSection`'s own "Run
- * simulation" / "Create exit plan" buttons are deliberately
- * `aria-disabled` (M5-016, Batch 11) since Milestones 6/7 are not built
- * yet — clicking them does nothing. `AppSidebar` (M1-006) already links
- * to both placeholder routes for real; that is the one honestly
- * testable navigation path today, and these two tests confirm both
- * facts (the sidebar link works; the Quick Actions button does not
- * silently pretend to).
+ * via Quick Actions, not the sidebar (updated, Milestone 9 Batch 4,
+ * M9-017).** Through Batch 8 these two tests deliberately used the
+ * sidebar instead, because `QuickActionsSection`'s own "Run simulation" /
+ * "Create exit plan" buttons were still `aria-disabled` — a Milestone 5
+ * leftover from before Milestones 6/7 built these routes, never
+ * revisited once they shipped. M9-017's own mobile-navigation audit
+ * found this (`AppSidebar` has no mobile equivalent, so Quick Actions was
+ * the *only* path a mobile user had to reach these tools, and it was
+ * unconditionally disabled) and fixed it —
+ * `features/dashboard/utils/buildQuickActions.ts`'s own header comment
+ * has the full defect writeup. These two tests now exercise the real
+ * Quick Actions path, M5-016's own dedicated "reach the next relevant
+ * workflow directly from the Dashboard" mechanism; the sidebar path is
+ * already covered generically by `tests/e2e/navigation.spec.ts`.
  */
 async function fillByLabel(page: Page, labelText: string, value: string) {
   const label = page.locator('label', { hasText: labelText });
@@ -187,26 +193,18 @@ test('Cover: Open risk details (M5-027)', async ({ page }) => {
 test('Cover: Navigate to Simulation Workspace (M5-027)', async ({ page }) => {
   await createPortfolioFromDashboard(page, { name: 'Simulation Nav Portfolio' });
 
-  const runSimulation = page.getByRole('button', { name: 'Run simulation' });
-  await expect(runSimulation).toHaveAttribute('aria-disabled', 'true');
-
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('link', { name: 'Simulation' })
-    .click();
+  // Via the Dashboard's own dedicated "reach the next relevant workflow"
+  // mechanism (M5-016's own DoD) — a real link since the M9-017 fix
+  // (`buildQuickActions.ts`'s own header comment), not the sidebar. The
+  // sidebar path is already covered generically by `tests/e2e/navigation.spec.ts`.
+  await page.getByRole('link', { name: 'Run simulation' }).click();
   await expect(page.getByRole('heading', { name: 'Simulation', exact: true })).toBeVisible();
 });
 
 test('Cover: Navigate to Exit Planner (M5-027)', async ({ page }) => {
   await createPortfolioFromDashboard(page, { name: 'Exit Planner Nav Portfolio' });
 
-  const createExitPlan = page.getByRole('button', { name: 'Create exit plan' });
-  await expect(createExitPlan).toHaveAttribute('aria-disabled', 'true');
-
-  await page
-    .getByRole('navigation', { name: 'Primary' })
-    .getByRole('link', { name: 'Exit Planner' })
-    .click();
+  await page.getByRole('link', { name: 'Create exit plan' }).click();
   await expect(page.getByRole('heading', { name: 'Exit Planner' })).toBeVisible();
 });
 
