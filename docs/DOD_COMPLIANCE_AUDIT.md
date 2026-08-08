@@ -178,3 +178,57 @@ No task anywhere in the repository's history was found to be marked
 complete without satisfying its own documented completion criteria —
 this audit's central finding, and the direct answer to M9-003's own
 Definition of Done.
+
+## 7. Batch 11 fresh re-check (Release Candidate, M9-057–M9-064)
+
+Every item this document's §6 listed as "Not yet satisfied" for
+Milestone 9 was independently re-checked against the repository as it
+stands after Batches 2–10, not assumed closed because a later batch's
+own write-up claimed it. Method matches §1–2 above: each finding is a
+direct check against the live repository, not copied from
+`PROJECT_STATUS.md`'s own batch narratives.
+
+| Original Batch-1 finding | Re-checked this batch | Result |
+|---|---|---|
+| No error boundary (`app/error.tsx`/`app/global-error.tsx`) | `find app -iname "error*.tsx" -o -iname "global-error*.tsx"` | **Closed** (Batch 8) — both files exist. |
+| `@sentry/nextjs` declared but unused | Read `services/observability/errorMonitoring.ts` | **Closed** (Batch 9) — dynamic-imported, `SentryModule.init(...)` called when `NEXT_PUBLIC_SENTRY_DSN` is configured; dormant, not unused. |
+| No security headers configured | Fresh production server started (`pnpm build && next start`), headers read via `curl -sI` | **Closed** (Batch 6) — `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` all present on a real response, not just read from `next.config.ts` source. |
+| No `CHANGELOG.md` | `ls docs/CHANGELOG.md` | **Closed** (Batch 10). |
+| No formal performance baseline | `ls docs/PERFORMANCE_BASELINE.md` | **Closed** (Batch 7) — includes a real production-build Core Web Vitals measurement (M9-042). |
+| No `prefers-reduced-motion` handling | `grep -rl "prefers-reduced-motion"` | **Closed** (Batch 7) — `app/globals.css`, `ScenarioTimeline.tsx`, `ScenarioCharts.tsx`. |
+| CI does not run `pnpm test:e2e` | Read `.github/workflows/ci.yml` in full | **Still open.** Pipeline remains install → lint → typecheck → format check → `test:coverage` → build; no Playwright step exists. This is the one Batch-1 finding not closed by any later batch. |
+| Accessibility suite has 6 uncovered routes | Grepped `tests/e2e/accessibility.spec.ts` for `/settings`, `/sign-in`, `/sign-up`, `/reset-password`, `/portfolios`, `/portfolio` | **Closed** (Batch 5) — all 6 present, 43 accessibility tests total, re-run passing in Batch 11. |
+| Dependency-audit document stale by one advisory | Fresh `pnpm audit` this batch vs. `docs/SECURITY_REVIEW.md`'s own recorded figure | **Current, not stale** — both report 18 vulnerability instances (11 high, 7 moderate), 0 critical, all build/lint/test-tooling-only (re-verified by dependency path this batch, not assumed). |
+
+**One genuine, still-open item found**: CI does not run the Playwright
+suite. This is a process/tooling gap, not an application defect — the
+151 e2e tests (including all 43 accessibility tests) exist, are current,
+and pass; they are simply not re-run automatically on every push. See
+`docs/DEFECT_CLASSIFICATION.md`'s Release Candidate defect review for
+this item's formal P0–P3 classification and disposition. It was not
+fixed in this batch (Batch 11 is an audit/validation batch; modifying
+CI infrastructure this document's own author cannot trigger a real run
+of falls outside what can be locally verified here) — recorded as
+follow-up work instead of silently left unmentioned or blindly patched.
+
+## 8. Fresh validation run (Batch 11, Release Candidate)
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | Pass, zero errors |
+| `pnpm lint` | Pass, zero errors |
+| `pnpm format:check` | Pass |
+| `pnpm test` | 228/228 test files, 2123/2123 tests passing |
+| `pnpm test:coverage` | Statements 96.33%, Branches 90.54%, Functions 99.47%, Lines 98.63% — stable, every `04_BUILD_GUIDE.md` tier cleared |
+| `rm -rf .next && pnpm build` | Pass — 12 page routes + `/_not-found`, shared bundle ~303 kB |
+| Real production server (`next start`), manual route/header verification | Pass — all routes 200, unknown route 404, every documented security header present |
+| `pnpm exec playwright test` (full suite) | 151/151 passing, including 43/43 accessibility tests, against the real production build |
+| `pnpm audit` | 18 vulnerabilities (11 high, 7 moderate, 0 critical), all build/lint/test-tooling-only — matches `docs/SECURITY_REVIEW.md`'s own Batch 6 figure exactly, no drift |
+| `git diff --check` | Clean |
+
+No task completion claim anywhere in `PROJECT_STATUS.md` was found to
+overstate its DoD compliance as of this fresh Batch 11 check, consistent
+with this document's §6 conclusion. The Milestone 9 "Not yet satisfied"
+classification from §6 is superseded by this section: every item is now
+either closed or explicitly carried forward as a documented, non-blocking
+open item — see `docs/DEFECT_CLASSIFICATION.md`.

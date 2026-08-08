@@ -124,22 +124,26 @@ specific hosting target. Deploying it is ordinary Next.js deployment:
 behind HTTPS (the app enforces HSTS at the header level but does not
 itself redirect HTTP → HTTPS — see `docs/SECURITY_REVIEW.md`). Set
 environment variables (see `.env.example`) only for the optional
-capabilities you intend to enable; Manual Mode (Version 0.1) requires none
-of them.
+capabilities you intend to enable; Manual Mode (the default, and only
+supported mode in Version 1.0) requires none of them.
 
 ## Release process
 
 Milestone 9's own task breakdown (`docs/06_TASKS.md`, "Release Candidate,"
-M9-057–M9-064) is this project's defined release process — building a
-Release Candidate, running the full regression/smoke/exploratory suites,
-validating the migration and rollback paths, and a final quality sign-off.
-As of this document's most recent update, that milestone batch has not yet
-run; there is no tagged release and no release history to describe. Do not
-invent one. Once it has run, this section should describe the actual,
-followed procedure rather than a hypothetical one. See `docs/CHANGELOG.md`
-for the current version metadata (application/engine/formula/storage-schema
-versions, each an independent axis — they are not expected to match) and
-known limitations.
+M9-057–M9-064) is this project's defined release process: build a Release
+Candidate, run the full regression/smoke/exploratory suites, validate the
+migration and rollback paths, review open defects, and complete a
+Version 1 Quality Sign-Off. That process ran in Milestone 9 Batch 11 and
+passed with zero release-blocking defects — see
+`docs/DEFECT_CLASSIFICATION.md` §6 for the full open-item review and
+`docs/CHANGELOG.md` for the resulting `1.0.0` version record. Passing
+sign-off means the Release Candidate is ready to deploy, not that a
+deployment has happened — `M1-009` ("Deploy Initial Application") remains
+explicitly deferred; this is a self-hostable product with no single owned
+production domain by design. See `docs/CHANGELOG.md` for the current
+version metadata (application/engine/formula/storage-schema versions,
+each an independent axis — they are not expected to match) and known
+limitations.
 
 ## Incident response
 

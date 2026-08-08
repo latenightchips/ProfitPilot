@@ -26,10 +26,13 @@ inside the app only updates the numbers you are tracking locally. It is
 not financial advice, and every suggested action is a calculation you
 should verify yourself before acting on it in the real world.
 
-This is **Version 0.1 — Manual Mode**: there is no live price feed and
+This is **Version 1.0 — Manual Mode**: there is no live price feed and
 no live Aave connection. You enter your own BTC price and Aave
 parameters (LTV, liquidation threshold, borrow/supply APR) by hand, and
-update them yourself when they change.
+update them yourself when they change. "Manual Mode" is a permanent
+functional description, not a placeholder — `01_PRD.md`'s own REQ-010
+names it, and a live price feed remains Version 2 scope, not something
+this version is missing by accident.
 
 ## Getting started
 

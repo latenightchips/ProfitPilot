@@ -16,6 +16,7 @@ vi.mock('@sentry/nextjs', () => ({
 describe('buildDiagnosticEvent (M9-050)', () => {
   it('includes the required fields with the real application version', async () => {
     const { buildDiagnosticEvent } = await import('@/services/observability/diagnosticEvent');
+    const { APP_VERSION } = await import('@/services/persistence/envelope');
     const event = buildDiagnosticEvent({
       category: 'import',
       code: 'INVALID_IMPORT_FILE',
@@ -25,7 +26,7 @@ describe('buildDiagnosticEvent (M9-050)', () => {
     });
     expect(event.category).toBe('import');
     expect(event.code).toBe('INVALID_IMPORT_FILE');
-    expect(event.appVersion).toBe('0.1.0');
+    expect(event.appVersion).toBe(APP_VERSION);
     expect(event.feature).toBe('settings');
     expect(event.operation).toBe('importFile');
     expect(event.outcome).toBe('failure');

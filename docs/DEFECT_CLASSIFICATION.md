@@ -123,10 +123,50 @@ classification at release time:
   release/no-release toggle, per M9-064's own DoD ("Each required area
   has a named reviewer and an approved status").
 
-This document does not itself perform that review — no defect backlog
-exists yet to review, since Milestone 9 has only just begun. It exists so
-Batches 2–11 have one shared, already-approved severity standard to
-classify whatever they find against, satisfying this task's own
+This document did not itself perform that review while Milestone 9 was
+still in progress — no defect backlog existed yet to review. It existed
+so Batches 2–11 had one shared, already-approved severity standard to
+classify whatever they found against, satisfying this task's own
 dependency relationship (M9-004 depends on M9-001; M9-063/064 depend,
 transitively through the whole milestone, on this document existing
-first).
+first). §6 below is that review, now that Batch 11 has run it.
+
+## 6. Batch 11 — Release Candidate Open Defect Review (M9-063)
+
+Every item below was found by direct inspection during Batch 11 (fresh
+`pnpm audit`, `TODO`/`FIXME`/`HACK`/`.skip(`/`.only(` greps across
+`tests/` and every source directory, a full re-read of
+`PROJECT_STATUS.md`'s 37-entry "Unresolved documentation conflicts"
+list, `docs/QUALITY_PLAN.md`, and every M9-0XX supporting document named
+in this batch's own reading list) — not copied from an earlier batch's
+claim without re-checking it.
+
+**Open P0 defects: none found.**
+
+**Open P1 defects: none found.**
+
+**P2 (non-blocking, documented workaround) and other classified items:**
+
+| Item | Severity | Workaround / disposition |
+|---|---|---|
+| CI (`.github/workflows/ci.yml`) does not run `pnpm test:e2e` | P2 | Documented, unchanged since the original M1-008 build and every Milestone 9 audit since. Workaround: the full Playwright suite (151 tests, including all 43 accessibility tests) is run manually against a real production build before every release — exactly what Batch 11 itself did. Recommended follow-up (not this batch's scope): add a `pnpm exec playwright install --with-deps chromium && pnpm test:e2e` step to CI. Not fixed here — modifying CI infrastructure cannot be verified from inside this environment (no way to trigger and observe a real GitHub Actions run), so it is recorded rather than blindly changed. |
+| 18 `pnpm audit` advisories (11 high, 7 moderate, 0 critical) | P2 → treated as non-blocking | Every advisory is build-time/lint-time/test-time tooling only (`sharp`, `postcss`, `brace-expansion`, `undici`, `fast-uri`, `js-yaml`, `nanoid` — all transitive dependencies of `next`, `eslint-config-next`, `@sentry/nextjs`, `@tailwindcss/postcss`, or `vitest`'s own `jsdom`), none reachable from client-shipped runtime code (verified by dependency path, `docs/SECURITY_REVIEW.md` M9-029). Workaround: re-run `pnpm audit` whenever those five direct dependencies are next upgraded (the same standing follow-up `docs/SECURITY_REVIEW.md` already records). |
+| Firefox/Safari have no automated test coverage | P2 → treated as non-blocking | `docs/CROSS_BROWSER_REVIEW.md`'s own code-level risk audit substitutes for automated coverage this sandbox cannot produce (no Firefox/WebKit binary available); Chromium (a valid Chrome/Edge proxy) is fully automated. Documented, unchanged limitation, not a regression. |
+| No live assistive-technology (screen reader) session recorded | P2 → treated as non-blocking | `docs/ACCESSIBILITY_CONFORMANCE.md` §9's own documented limitation — structural ARIA/role/name verification via axe-core and direct DOM inspection substitutes; no AT software available in this environment. |
+| Health Factor risk-band classification (F-026/F-060) not implemented | P3 (documented scope exclusion, not a defect) | Conflict #1 (`PROJECT_STATUS.md`) — no canonical banding scheme is defined across the 4 disagreeing source documents. The UI honestly labels this "Not available" (`LiquidationRiskPanel.tsx`) rather than fabricating a scheme; no incorrect output exists. Remains open pending a product decision on which banding scheme governs — not resolved by this or any batch, per this engagement's standing "flag, don't silently resolve" rule for specification conflicts. |
+| 33 of 69 Formula IDs out of scope (multi-asset collateral/debt, compound interest, swap fees/slippage/gas, several Recommendation Engine formulas) | N/A — documented Version 1 scope decision | Not a defect: each has a recorded reason (Conflicts #5, #7, #8, #9, #10, #11, #12, #15) and is Version 2 scope per `01_PRD.md`'s own repeated "belongs to Version 2" framing. `tests/fixtures/formulaCoverage.ts` is the canonical registry. |
+| Cloud Database, Cloud Synchronization, Row-Level Security | N/A — cancelled by product decision | `docs/MILESTONE_8_SCOPE_CHANGE.md`; `PROJECT_STATUS.md` Conflict #34. Permanent, not deferred. |
+| Performance measured against `localhost` only, not a real deployed origin | P3 (documented caveat) | `docs/PERFORMANCE_BASELINE.md` §5 — every route loads in well under 200ms, a 10x+ margin under the 2s target, making real-world network overhead an unlikely source of a target miss; no deployment target exists to measure against (self-hostable, no owned domain). |
+| No license-audit tooling configured | P3 (documented gap) | `docs/SECURITY_REVIEW.md` M9-029 — a manual one-time scan found no GPL/AGPL-family license among direct dependencies; not automated/repeatable. |
+| Per-layer (Engine/Services/UI/Stores) coverage breakdown uses a line-coverage proxy, not an exact statement-count breakdown | P3 (documentation precision) | `docs/DOD_COMPLIANCE_AUDIT.md` §1 — the blended, exact statement figure (96.33%) already clears every `04_BUILD_GUIDE.md` tier; only the *per-layer* statement breakdown is a proxy. |
+| `01_PRD.md`/`04_BUILD_GUIDE.md` disagree on financial-accuracy tolerance, coverage-target framing, and one Simulation performance figure (Conflicts #35, #36, #37) | N/A (documentation conflict, not a code defect) | `docs/QUALITY_PLAN.md` §7 already records the working precedent followed (Build Guide's more implementation-precise figures); no incorrect behavior results from either reading. |
+
+**Known limitations for release notes** (`06_TASKS.md` M9-063's own
+"Known limitations are included in release notes where relevant"): see
+`docs/CHANGELOG.md`'s "Known limitations" section — every P2/P3/N/A item
+above with real user-facing relevance is named there in plain language.
+
+**Conclusion**: zero open P0 defects, zero open (or unapproved) P1
+defects. Every P2 has a documented workaround; every P3 and N/A item has
+a documented decision. Per §2's release-blocking rules, **nothing found
+in this review blocks a Version 1 release.**

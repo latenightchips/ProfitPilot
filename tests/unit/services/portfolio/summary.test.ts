@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import packageJson from '@/package.json';
 import type { ApplicationPortfolio } from '@/services/portfolio/models';
 import { calculatePortfolioSummary } from '@/services/portfolio/summary';
 
@@ -54,7 +55,7 @@ describe('calculatePortfolioSummary (M3-005)', () => {
     const result = calculatePortfolioSummary(basePortfolio(), 'live');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.metadata.engineVersion).toBe('0.1.0');
+    expect(result.metadata.engineVersion).toBe(packageJson.version);
     expect(result.metadata.formulaVersion).toBe('1.0');
   });
 
