@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -48,8 +49,11 @@ import { formatCurrency, formatHealthFactor } from '../utils/format';
  */
 const LINE_COLOR = 'var(--color-foreground, currentColor)';
 
+/** Module-scoped `Intl` formatter singleton — see `features/dashboard/utils/format.ts`'s own header comment for why (M9-039, "Expensive formatting"). */
+const dayFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
 function dayLabel(day: number): string {
-  return `Day ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(day)}`;
+  return `Day ${dayFormatter.format(day)}`;
 }
 
 function summarize(title: string, points: { name: string; value: string }[]): string {
@@ -59,6 +63,39 @@ function summarize(title: string, points: { name: string; value: string }[]): st
 export function ScenarioTimeline() {
   const timelineProjection = useSimulationStore((state) => state.timelineProjection);
 
+  /**
+   * Memoized (M9-039, "Optimize Rendering Behavior" — "Chart rerenders")
+   * — same rationale as `ScenarioCharts.tsx`'s own header comment.
+   * `useMemo` must run before the `timelineProjection === null` early
+   * return below (React hooks cannot be conditional), so each callback
+   * handles the null case itself and returns an empty array rather than
+   * skipping the hook call.
+   */
+  const equityData = useMemo(
+    () =>
+      (timelineProjection ?? []).map((point) => ({
+        name: dayLabel(point.day),
+        value: point.summary.equity,
+      })),
+    [timelineProjection],
+  );
+  const healthFactorData = useMemo(
+    () =>
+      (timelineProjection ?? []).map((point) => ({
+        name: dayLabel(point.day),
+        value: point.summary.healthFactor,
+      })),
+    [timelineProjection],
+  );
+  const interestData = useMemo(
+    () =>
+      (timelineProjection ?? []).map((point) => ({
+        name: dayLabel(point.day),
+        value: point.summary.debtCost,
+      })),
+    [timelineProjection],
+  );
+
   if (timelineProjection === null) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -66,19 +103,6 @@ export function ScenarioTimeline() {
       </p>
     );
   }
-
-  const equityData = timelineProjection.map((point) => ({
-    name: dayLabel(point.day),
-    value: point.summary.equity,
-  }));
-  const healthFactorData = timelineProjection.map((point) => ({
-    name: dayLabel(point.day),
-    value: point.summary.healthFactor,
-  }));
-  const interestData = timelineProjection.map((point) => ({
-    name: dayLabel(point.day),
-    value: point.summary.debtCost,
-  }));
 
   return (
     <div className="flex flex-col gap-6">

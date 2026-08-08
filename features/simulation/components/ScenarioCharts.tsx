@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -73,7 +74,42 @@ export function ScenarioCharts() {
   const savedScenarios = useSimulationStore((state) => state.savedScenarios);
   const comparisonSelection = useSimulationStore((state) => state.comparisonSelection);
 
-  const selected = savedScenarios.filter((saved) => comparisonSelection.includes(saved.id));
+  /**
+   * Memoized (M9-039, "Optimize Rendering Behavior" — "Chart rerenders")
+   * — `selected` and the 3 chart-data arrays below are derived purely
+   * from `savedScenarios`/`comparisonSelection`; `useMemo` avoids
+   * rebuilding them (and the recharts `<BarChart>` props that reference
+   * them) on every render this component receives for an unrelated
+   * reason.
+   */
+  const selected = useMemo(
+    () => savedScenarios.filter((saved) => comparisonSelection.includes(saved.id)),
+    [savedScenarios, comparisonSelection],
+  );
+  const equityData = useMemo(
+    () =>
+      selected.map((saved, index) => ({
+        name: chartLabel(saved.scenario, index),
+        value: saved.result.scenario.equity,
+      })),
+    [selected],
+  );
+  const healthFactorData = useMemo(
+    () =>
+      selected.map((saved, index) => ({
+        name: chartLabel(saved.scenario, index),
+        value: saved.result.scenario.healthFactor,
+      })),
+    [selected],
+  );
+  const interestData = useMemo(
+    () =>
+      selected.map((saved, index) => ({
+        name: chartLabel(saved.scenario, index),
+        value: saved.result.scenario.debtCost,
+      })),
+    [selected],
+  );
 
   if (selected.length === 0) {
     return (
@@ -82,19 +118,6 @@ export function ScenarioCharts() {
       </p>
     );
   }
-
-  const equityData = selected.map((saved, index) => ({
-    name: chartLabel(saved.scenario, index),
-    value: saved.result.scenario.equity,
-  }));
-  const healthFactorData = selected.map((saved, index) => ({
-    name: chartLabel(saved.scenario, index),
-    value: saved.result.scenario.healthFactor,
-  }));
-  const interestData = selected.map((saved, index) => ({
-    name: chartLabel(saved.scenario, index),
-    value: saved.result.scenario.debtCost,
-  }));
 
   return (
     <div className="flex flex-col gap-6">

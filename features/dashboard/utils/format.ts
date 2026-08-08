@@ -14,53 +14,69 @@
  */
 import type { PortfolioSaveStatus } from '@/stores/portfolioStore';
 
+/**
+ * Module-scoped `Intl` formatter singletons (M9-039, "Optimize Rendering
+ * Behavior" — "Expensive formatting") — `Intl.NumberFormat`/
+ * `Intl.DateTimeFormat` construction is measurably non-trivial (locale/
+ * option resolution), and these formatters are called per-cell inside
+ * list renders (e.g. KPI grids, scenario tables); constructing one per
+ * call inside a loop repeats that cost N times for no behavioral benefit
+ * over one shared instance, since none of the calls below vary their
+ * options.
+ */
+const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const twoDecimalFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const percentFormatter = new Intl.NumberFormat('en-US', {
+  style: 'percent',
+  maximumFractionDigits: 2,
+});
+const quantityFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 });
+const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
 export function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  return currencyFormatter.format(value);
 }
 
 /** `Intl.NumberFormat` renders `Infinity` as "∞" natively — the correct display for a zero-debt portfolio's Health Factor (M2-009) and its F-023 Distance to Liquidation (`healthFactor - 1.0`, also `Infinity` at zero debt). */
 export function formatHealthFactor(value: number): string {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+  return twoDecimalFormatter.format(value);
 }
 
 /** Plain 2-decimal number — used for F-023 Distance to Liquidation, a raw `healthFactor - 1.0` ratio per `docs/02_Formulas.md`, not a 0–1 fraction. */
 export function formatNumber(value: number): string {
   if (!Number.isFinite(value)) return formatHealthFactor(value);
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+  return twoDecimalFormatter.format(value);
 }
 
 /** For a genuine 0–1 fraction (e.g. F-020 LTV). */
 export function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(
-    value,
-  );
+  return percentFormatter.format(value);
 }
 
 /** For a value `docs/02_Formulas.md` already scales to 0–100 (F-025 Liquidation Buffer's own "× 100" step) — dividing by 100 first, unlike `formatPercent`, which expects an unscaled 0–1 fraction. */
 export function formatPercentagePoints(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(
-    value / 100,
-  );
+  return percentFormatter.format(value / 100);
 }
 
 export function formatLeverage(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}x`;
+  return `${twoDecimalFormatter.format(value)}x`;
 }
 
 /** Asset quantity (e.g. BTC holdings) — up to 8 fraction digits, matching BTC's own on-chain precision; trailing zeros are not forced. */
 export function formatQuantity(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value);
+  return quantityFormatter.format(value);
 }
 
 export function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  );
+  return dateTimeFormatter.format(new Date(value));
 }
 
 /**

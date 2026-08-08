@@ -10,18 +10,27 @@
  * simple enough that duplicating it stays cheaper than adding a new
  * cross-cutting dependency for it.
  */
+
+/** Module-scoped `Intl` formatter singletons — see `features/dashboard/utils/format.ts`'s own header comment for why (M9-039, "Expensive formatting"). */
+const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const twoDecimalFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
 export function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  return currencyFormatter.format(value);
 }
 
 export function formatHealthFactor(value: number): string {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
+  return twoDecimalFormatter.format(value);
 }
 
 export function formatLeverage(value: number): string {
   if (!Number.isFinite(value)) return '—';
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}x`;
+  return `${twoDecimalFormatter.format(value)}x`;
 }
 
 export function formatPercent(value: number): string {
@@ -29,7 +38,5 @@ export function formatPercent(value: number): string {
 }
 
 export function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  );
+  return dateTimeFormatter.format(new Date(value));
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { type SavedSimulation, useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -232,12 +232,26 @@ export function ScenarioComparison({
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('date');
 
+  /**
+   * Memoized (M9-039, "Optimize Rendering Behavior" — "Scenario
+   * comparison rendering"): `sortSavedScenarios` re-sorts a fresh copy of
+   * the array on every render; `useMemo` re-runs it only when the saved
+   * scenarios, active sort key, or portfolio-name map actually change,
+   * not on every unrelated re-render this component receives (e.g. a
+   * `confirmingDeleteId` toggle).
+   */
+  const selected = useMemo(
+    () => savedScenarios.filter((saved) => comparisonSelection.includes(saved.id)),
+    [savedScenarios, comparisonSelection],
+  );
+  const sortedScenarios = useMemo(
+    () => sortSavedScenarios(savedScenarios, sortKey, portfolioNames),
+    [savedScenarios, sortKey, portfolioNames],
+  );
+
   if (savedScenarios.length === 0) {
     return <p className="text-sm text-muted-foreground">No scenarios saved yet.</p>;
   }
-
-  const selected = savedScenarios.filter((saved) => comparisonSelection.includes(saved.id));
-  const sortedScenarios = sortSavedScenarios(savedScenarios, sortKey, portfolioNames);
 
   function confirmDelete(id: string) {
     deleteSavedScenario(id);

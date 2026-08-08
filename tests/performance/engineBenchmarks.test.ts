@@ -13,6 +13,10 @@ import { calculateExposure } from '@/engine/portfolio/calculateExposure';
 import { calculateLoanToValue } from '@/engine/portfolio/calculateLoanToValue';
 import { calculateNetWorth } from '@/engine/portfolio/calculateNetWorth';
 import { calculatePortfolioValue } from '@/engine/portfolio/calculatePortfolioValue';
+import {
+  generateRecommendations,
+  type RecommendationRuleConfig,
+} from '@/engine/recommendation/generateRecommendations';
 import type { ScenarioSummary } from '@/engine/simulation/compareScenarios';
 import { compareScenarios } from '@/engine/simulation/compareScenarios';
 import { simulatePositionChange } from '@/engine/simulation/simulatePositionChange';
@@ -33,8 +37,16 @@ import { GOLDEN_REFERENCE_PORTFOLIOS } from '../fixtures/goldenReferencePortfoli
  *   - Single portfolio calculation: < 10ms
  *   - Optimal loop calculation:     < 20ms
  *   - Standard simulation:          < 50ms
- *   - Recommendation evaluation:    < 20ms (not benchmarked — M2-030's own
- *     "Benchmark" list does not name a recommendation category)
+ *   - Recommendation evaluation:    < 20ms
+ *
+ * **"Recommendation evaluation" added in Milestone 9 Batch 7 (M9-040
+ * "Optimize Formula and Service Execution")** — M2-030's own "Benchmark"
+ * list never named a recommendation category, so this 4th Build Guide
+ * target went unbenchmarked from M2-030 through Milestone 9 Batch 6.
+ * M9-040's own Focus list names "Recommendation recalculation"
+ * explicitly; closing the gap is a genuine, narrow audit finding (a
+ * missing benchmark for an already-documented target), not a
+ * newly-invented threshold.
  *
  * M2-030 names 6 benchmark targets (Portfolio summary, Health Factor,
  * Liquidation calculations, Loop strategy, Single scenario, Scenario
@@ -205,5 +217,24 @@ describe('Engine Performance Benchmarks (M2-030)', () => {
     });
 
     expect(duration).toBeLessThan(50);
+  });
+
+  it('Recommendation evaluation < 20ms (Build Guide "Recommendation evaluation", M9-040)', () => {
+    const rules: RecommendationRuleConfig = {
+      borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+      repayment: { targetHealthFactor: 2.0 },
+      additionalCollateral: { targetHealthFactor: 4.0 },
+      loop: {
+        targetHealthFactor: 1.5,
+        loopBorrowPercentage: 0.5,
+        maxAcceptableAnnualInterestCost: 5000,
+      },
+    };
+
+    const duration = medianDurationMs(() => {
+      generateRecommendations({ portfolio, rules });
+    });
+
+    expect(duration).toBeLessThan(20);
   });
 });

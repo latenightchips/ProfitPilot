@@ -11227,6 +11227,206 @@ re-validated in full after recreation (see above) before proceeding to
 commit. These are the 4th and 5th distinct occurrences of this same
 environment-level issue across Milestone 9 Batches 1–5 combined.
 
+### Batch 6 — Security Hardening (M9-029–M9-036)
+
+Committed as `58d419775b07f3963fc686a5a889ecfb4cb8b1ea`, synchronized to
+`origin/main` as `afa2c27`. (This section backfills a gap: the batch was
+implemented, reviewed, committed, and synced correctly, but its own
+`### Batch 6` record under this heading was never written at the time —
+caught and corrected while assembling the Batch 7 record below, since
+leaving a real, shipped batch without a factual entry here would make
+this log itself inaccurate.)
+
+- **M9-029 (Audit Dependency Vulnerabilities)**: `pnpm audit` re-run
+  fresh — 18 vulnerability instances (11 high, 7 moderate), across
+  `sharp`, `postcss`, `brace-expansion`, `undici`, `fast-uri`, `js-yaml`,
+  `nanoid`. All confirmed build/lint/test-time-only (dev/build tooling
+  transitive dependencies), documented in `docs/SECURITY_REVIEW.md`
+  rather than characterized as vulnerability-free — an explicit item in
+  the user's own pre-commit review checklist for this batch.
+- **M9-030 (Audit Environment Variable Handling)** — **genuine defect
+  found and fixed**: `SUPABASE_URL`/`SUPABASE_ANON_KEY` were not
+  `NEXT_PUBLIC_`-prefixed, so Next.js never inlined them into the client
+  bundle — `services/auth/supabaseClient.ts` (reached from a Client
+  Component) would always read `undefined` in the browser regardless of
+  deployer configuration, permanently defeating the dormant Auth
+  capability. Renamed to `NEXT_PUBLIC_SUPABASE_URL`/
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `utils/env.ts`, `.env.example`, and
+  every reference; recorded as a documented deviation from
+  `04_BUILD_GUIDE.md`'s literal (non-prefixed) names (see "Deviations"
+  below).
+- **M9-031 (Review Authentication and Authorization Boundaries)**:
+  audit, addendum recorded in `docs/SECURITY_REVIEW.md`.
+- **M9-032 (Harden Import Validation)** — **three genuine defects found
+  and fixed**: no import file-size limit (added a documented 25 MB
+  ceiling in `services/import/ImportValidator.ts`, checked before
+  `JSON.parse`); unbounded-recursion risk in payload validation (added
+  `services/shared/payloadLimits.ts`'s self-bounding
+  `exceedsMaxNestingDepth`, `MAX_PAYLOAD_NESTING_DEPTH = 50`);
+  `verifyChecksum` (built at M8-003) had zero production callers —
+  confirmed by a repository-wide grep — now wired into
+  `validatePersistedRecordSchema` via a new `verifyRawChecksum` helper.
+  **Second-order bug caught during implementation**: the first wiring
+  verified the checksum against the Zod-_parsed_ (field-stripped)
+  payload rather than the raw pre-parse input the checksum was actually
+  computed over at write time, which broke an existing regression test;
+  fixed by verifying against the raw input instead.
+- **M9-033 (Review Export Data Privacy)**: audit plus a regression test
+  strengthening a pre-existing but checksum-fragile export-privacy
+  fixture (`tests/unit/services/export/smoke.test.ts`).
+- **M9-034 (Sanitize User-Controlled Text)** — **genuine defect found and
+  fixed**: CSV formula-injection (CWE-1236) — `services/export/CsvExporter.ts`
+  did not guard string fields beginning with `=`, `+`, `-`, or `@`. Added
+  `guardFormulaInjection`, applied only to string-typed fields (numeric
+  fields, including legitimate negative numbers, are untouched).
+- **M9-035 (Review Security Headers and Deployment Controls)** —
+  **genuine defect found and fixed**: `next.config.ts` was an empty `{}`
+  — zero security headers anywhere. Added a full `headers()` function:
+  CSP (`default-src 'self'`, dynamically-built `connect-src` from the two
+  optional `NEXT_PUBLIC_*` origins, `object-src 'none'`,
+  `frame-ancestors 'none'`), `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, and HSTS.
+  **User-directed pre-commit review caught one further genuine issue**:
+  the initial HSTS value included `preload`, a largely irreversible
+  browser-vendor commitment inappropriate as a default for a
+  self-hostable app with no confirmed production domain — removed before
+  commit, final value `max-age=63072000; includeSubDomains`.
+- **M9-036 (Complete Security Threat Model)**: new
+  `docs/SECURITY_THREAT_MODEL.md` — 9 named threats, each citing its real
+  implemented/tested mitigation and residual risk.
+
+**Files changed**: `utils/env.ts`, `services/auth/supabaseClient.ts`,
+`.env.example` (env var rename); `services/persistence/validate.ts`,
+`services/shared/payloadLimits.ts` + `services/shared/index.ts` (new),
+`services/import/ImportValidator.ts` (import hardening);
+`services/export/CsvExporter.ts` (formula-injection guard);
+`next.config.ts` (security headers, new); `docs/SECURITY_REVIEW.md`
+(extended), `docs/SECURITY_THREAT_MODEL.md` (new); corresponding test
+files for every code change above (`tests/unit/env.test.ts`,
+`tests/unit/services/auth/supabaseClient*.test.ts`,
+`tests/unit/services/import/ImportValidator.test.ts`,
+`tests/unit/services/persistence/validate.test.ts`,
+`tests/unit/services/export/CsvExporter.test.ts`,
+`tests/unit/services/export/smoke.test.ts`,
+`tests/unit/next.config.test.ts`, new). No package.json/pnpm-lock.yaml
+change. No Supabase, Cloud Database, or Cloud Sync functionality
+introduced.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; full unit
+suite passing with zero regressions; `rm -rf .next && pnpm build` clean;
+live-server verification of the new security headers via `curl` and a
+real headless-Chromium page load (zero console/page errors) both before
+and after the HSTS `preload` fix; full Playwright suite passing. No
+environment/recovery events this batch.
+
+### Batch 7 — Performance Hardening (M9-037–M9-042)
+
+- **M9-038 (Optimize Application Bundle)**:
+  - Removed two confirmed-unused dependencies (zero source references
+    anywhere in `app/`, `features/`, `components/`, `services/`,
+    `stores/`, verified by repository-wide grep before removal):
+    `@tanstack/react-table` and `lucide-react`. Both are bundle-neutral
+    (already excluded by tree-shaking); the value is dependency-audit
+    surface and install-footprint hygiene.
+  - **Attempted and rejected, with measured evidence**: wrapped
+    `ScenarioCharts`/`ScenarioTimeline` in `next/dynamic({ ssr: false })`
+    per this task's own "Lazy-load heavy charts" action. A real
+    `pnpm build`, run twice consecutively with identical results,
+    showed it _increased_ bundle size (`/simulation` 109→111 kB own,
+    399→402 kB First Load JS; shared baseline 298→299 kB) rather than
+    decreasing it — `recharts` was already isolated to the
+    `/simulation` route by Next's automatic per-route code splitting,
+    so the wrapper added a second chunk boundary with nothing to show
+    for it (both components render unconditionally, not gated behind
+    further interaction). Reverted;
+    `app/simulation/SimulationPageClient.tsx` carries zero diff from
+    its pre-Batch-7 state. Recorded in full, including the rejected
+    numbers, in `docs/PERFORMANCE_BASELINE.md` rather than silently
+    dropped, since this task's own DoD requires bundle changes to be
+    measured.
+  - "Route-level code splitting" and "avoid importing server-only
+    modules into client code" audited and confirmed already satisfied
+    structurally (Next.js App Router's own per-route splitting; no API
+    routes or Node-only modules exist anywhere in this codebase for a
+    client component to reach into) — no code change needed.
+- **M9-039 (Optimize Rendering Behavior)** — **two genuine, low-risk
+  findings fixed**: `features/dashboard/utils/format.ts`,
+  `features/simulation/utils/format.ts`, and `components/strategy/format.ts`
+  each constructed a new `Intl.NumberFormat`/`Intl.DateTimeFormat`
+  instance on every call, called per-cell inside table/chart render
+  loops — hoisted to module-scope singletons in all three files.
+  `ScenarioComparison.tsx`, `ScenarioCharts.tsx`, and
+  `ScenarioTimeline.tsx` recomputed their filtered/sorted/mapped derived
+  data on every render, including renders triggered by unrelated local
+  state — wrapped in `useMemo`, keyed on the Zustand state each
+  computation actually derives from. Every other sampled store-consuming
+  component already used per-field Zustand selectors (confirmed via a
+  repository-wide grep for a bare, selector-less store call — zero
+  matches); no `React.memo` was added, since no component's own render
+  cost is a measured concern at this application's realistic data scale.
+- **M9-040 (Optimize Formula and Service Execution)**: added the one
+  missing Build Guide performance-test benchmark —
+  "Recommendation evaluation < 20ms" — to
+  `tests/performance/engineBenchmarks.test.ts` (real Golden Reference
+  Portfolio input, 20-iteration warmup, median of 200 measured calls;
+  passing). All 8 Build Guide/M2-030 benchmark targets now covered and
+  passing. Audit confirmed zero caching constructs anywhere under
+  `engine/` (repository-wide grep), satisfying the Requirement "avoid
+  caching stale financial results" by simple absence.
+- **M9-041 (Optimize Persistence and Synchronization)**: audit-only, no
+  code change. Confirmed `services/persistence/autoSaveCoordinator.ts`'s
+  400 ms debounce is real, working infrastructure with a monotonic
+  per-key sequence number and a Playwright-confirmed `flushAll()` race
+  guard. "Incremental sync" is N/A (Cloud Sync cancelled). Flagged, but
+  deliberately left unchanged per the standing instruction against
+  speculative optimization: `services/export/JsonExporter.ts`'s
+  `buildFullBackupFile` awaits `listEnvelopes` sequentially rather than
+  via `Promise.all` — a real but unmeasured opportunity, since each
+  iteration is a `localStorage` read with no real I/O latency to save.
+- **M9-042 (Run Production Performance Audit)**: no Core Web
+  Vitals/Lighthouse tooling existed anywhere in this repository before
+  this batch. Built a headless-Chromium measurement script
+  (`@playwright/test`'s own `chromium` launcher, the same live-
+  verification technique Batch 6 established for the security-headers
+  work) against a real `pnpm build && next start`, with a
+  `PerformanceObserver` registered before navigation to reliably capture
+  LCP/CLS. Every measured route (7 desktop routes plus one mobile-
+  viewport pass) loaded in well under 200ms wall-clock, LCP equal to FCP
+  everywhere (no late-loading content), 0 CLS, 0 console/page errors —
+  more than 10x inside the Build Guide's <2s page-load target. Approved
+  deviation: measured against `localhost`, not a real deployed origin
+  (this application has no confirmed production domain of its own,
+  consistent with Batch 6's own HSTS-`preload` reasoning), so this is a
+  repeatable lower bound rather than a real-network guarantee.
+- **M9-037 (Establish Performance Baseline)**: new
+  `docs/PERFORMANCE_BASELINE.md`, assembled last (after the measured
+  work above rather than before it) — real bundle-size table, the
+  rejected `next/dynamic` experiment's numbers as evidence, the 8 Engine
+  benchmark results, and the full M9-042 production audit table, plus
+  every audit-only finding from M9-040/M9-041 with its reasoning.
+
+**Files changed**: `package.json`, `pnpm-lock.yaml` (2 unused
+dependencies removed — intentional, task-required M9-038 action, unlike
+prior batches where such a change would be a red flag);
+`tests/performance/engineBenchmarks.test.ts` (new benchmark);
+`features/dashboard/utils/format.ts`, `features/simulation/utils/format.ts`,
+`components/strategy/format.ts` (formatter hoisting);
+`features/simulation/components/ScenarioComparison.tsx`,
+`features/simulation/components/ScenarioCharts.tsx`,
+`features/simulation/components/ScenarioTimeline.tsx` (memoization); 1
+new doc (`docs/PERFORMANCE_BASELINE.md`).
+`app/simulation/SimulationPageClient.tsx` has zero net diff (lazy-load
+attempted and reverted). No Supabase, Cloud Database, or Cloud Sync code
+introduced.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 223/223 files, 2069/2069 tests passing, zero regressions; `rm -rf
+.next && pnpm build` clean, 12 routes, bundle table in
+`docs/PERFORMANCE_BASELINE.md` §1; live production-server measurement
+via headless Chromium (§5 of that document). No new specification
+conflict found this batch. No environment/recovery events this batch.
+
 ---
 
 ## Unresolved documentation conflicts
