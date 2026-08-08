@@ -26,7 +26,7 @@ inside the app only updates the numbers you are tracking locally. It is
 not financial advice, and every suggested action is a calculation you
 should verify yourself before acting on it in the real world.
 
-This is **Version 1.0 — Manual Mode**: there is no live price feed and
+This is **Version 1.0.0 — Manual Mode**: there is no live price feed and
 no live Aave connection. You enter your own BTC price and Aave
 parameters (LTV, liquidation threshold, borrow/supply APR) by hand, and
 update them yourself when they change. "Manual Mode" is a permanent

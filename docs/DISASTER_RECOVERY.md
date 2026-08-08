@@ -136,15 +136,19 @@ reports `{ available: false }` if `localStorage` itself is unreachable;
 if it's reachable but empty, every `list`/`listEnvelopes` call simply
 returns zero records — this application cannot distinguish "never had
 data" from "had data, now gone," since nothing survives outside the
-browser's own storage in this version (no cloud sync yet).
+browser's own storage in this version (Cloud Sync is cancelled by
+product decision, not merely absent — see "Sync conflict"/"Unavailable
+Supabase" above).
 
 **User-facing recovery**: There is no recovery from *within* the browser
 once its storage is gone — recovery snapshots and prior local data are
 both stored in that same, now-cleared `localStorage`. The only recovery
 path is a previously exported backup file (`/settings` → **Import** →
 **Full Backup**), which is why `/settings` → **Clear Local Data**'s own
-copy recommends exporting before clearing, and why this is the strongest
-reason to export a backup periodically until Cloud Sync ships.
+copy recommends exporting before clearing, and why exporting a backup
+periodically is the only mitigation this version has — no cloud copy
+exists, or ever will under the current scope (see "Sync conflict"/
+"Unavailable Supabase" above).
 
 **Developer recovery**: `services/persistence/adapters/local-storage.adapter.ts`'s
 own `checkAvailability` check and `tests/unit/services/persistence/adapters/

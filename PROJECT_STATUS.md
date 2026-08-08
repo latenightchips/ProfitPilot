@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-08
-**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations is in progress**: Batch 1 (Release Preparation & Version Finalization, M10-001–004, M10-019, repository-level M10-005) is complete and synchronized to GitHub. Batch 2 (Operational Documentation, M10-012–M10-015) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. Per an explicit product/release decision, no publicly hosted production deployment is part of Version 1's completion requirement; the deployment-dependent tasks (parts of M10-005, plus M10-006–M10-011) are classified "Deferred by explicit product/release decision," reserved for a later batch, not "N/A." Milestone 10 as a whole remains **not complete** — Batch 3 (M10-016 onward) has not been started.
+**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations is in progress**: Batch 1 (Release Preparation & Version Finalization, M10-001–004, M10-019, repository-level M10-005) and Batch 2 (Operational Documentation, M10-012–M10-015) are complete and synchronized to GitHub. Batch 3 (Review Documentation Set, Publish Developer Documentation, Publish User Documentation, M10-016–M10-018) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. Per an explicit product/release decision, no publicly hosted production deployment is part of Version 1's completion requirement; the deployment-dependent tasks (parts of M10-005, plus M10-006–M10-011) are classified "Deferred by explicit product/release decision," reserved for a later batch, not "N/A." Milestone 10 as a whole remains **not complete** — Batch 4 has not been started.
 
 The remainder of this summary paragraph is historical: Milestone 9 Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate and Version 1 Quality Sign-Off, M9-057–064) is also complete: a real production build/server was verified directly (security headers confirmed on a live response, not just source), the full regression suite passed (2123/2123 unit tests, 151/151 Playwright including 43/43 accessibility), 8 AI-agent-driven exploratory scenarios found zero defects, the local storage migration/rollback mechanism was confirmed genuinely wired into the real app boot path (not just unit-tested), and the open-defect review found zero P0/P1 defects — one non-blocking P2 (CI does not yet run the Playwright suite automatically) was found, classified, and documented rather than silently left unmentioned. Version 1 Quality Sign-Off passed; `package.json`/`APP_VERSION`/`ENGINE_VERSION` bumped from `0.1.0` to `1.0.0` per `01_PRD.md` REQ-017's own definition of what "Version 1.0" means, `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` left unchanged. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
@@ -12343,6 +12343,147 @@ file touched, no external infrastructure created, no deployment, no git
 tag, no build artifacts. Milestone 10 remains in progress — Batch 3
 (M10-016–018, Documentation Completion) has not begun.
 
+### Batch 3 — Review Documentation Set, Publish Developer Documentation, Publish User Documentation (M10-016, M10-017, M10-018)
+
+**Task-identity correction before implementation**: this batch's own
+initial instruction described M10-016 as a documentation-consistency
+audit, M10-017 as a licensing audit, and M10-018 as a legal/disclosure
+audit. Re-reading `docs/06_TASKS.md` directly (per this batch's own
+step 7) found those three IDs actually name **Review Documentation
+Set** (M10-016), **Publish Developer Documentation** (M10-017), and
+**Publish User Documentation** (M10-018) — unrelated task titles/DoDs;
+no licensing- or legal-disclosure-audit task exists anywhere in
+`docs/06_TASKS.md` under any ID (the only "License" mention near this
+area is a sub-bullet inside M9-029, "Audit Application Dependencies,"
+already completed in Milestone 9 Batch 6). Reported to the requester
+before any file was touched; resolved by explicit instruction to use
+the real M10-016/017/018 task identities, with the originally-described
+audits folded in as supplemental acceptance checks.
+
+- **M10-016 (Review Documentation Set)**: re-verified the frozen
+  7-document set's version identifiers directly against source —
+  confirmed `README.md`/`01_PRD.md` header both literally read `Version`
+  `0.1.0`, `01_PRD.md`'s own footer literally reads `Version 1.0
+Complete`, and `02_Formulas.md`/`03_UI.md`/`04_BUILD_GUIDE.md`/
+  `05_AI_PROMPTS.md`/`06_TASKS.md` each literally declare `Version` `1.0`
+  — Conflict #38 is accurate as recorded, not re-litigated. Terminology/
+  cross-reference consistency across the frozen set relies on this
+  engagement's own prior exhaustive work (Milestone 2 Batch 16's Formula
+  Traceability Audit, Conflicts #1–#37) — no new terminology/cross-
+  reference issue found this batch. **Supplemental living-documentation
+  audit** (this batch's own originally-requested scope) covered the
+  21 named living documents against 19 factual topics; two genuine
+  inconsistencies found and fixed: `docs/USER_GUIDE.md` said "Version
+  1.0 — Manual Mode" (two-part, mismatching this application's real
+  three-part `APP_VERSION`/every other living document's own "Version
+  1.0.0" phrasing) — corrected to `1.0.0`. `docs/DISASTER_RECOVERY.md`
+  said "no cloud sync **yet**" and "until Cloud Sync **ships**" (future-
+  tense, directly contradicting that same document's own "Sync
+  conflict"/"Unavailable Supabase" sections two pages earlier, which
+  correctly state Cloud Sync is cancelled, not pending) — corrected to
+  cite the cancellation directly. **New specification conflict found and
+  recorded, not silently resolved**: `03_UI.md`'s Settings-page "ABOUT"
+  section (Section 7) — which names Application/Formula/Engine Version,
+  Data Provider, Last Synchronization, and **License** as required
+  content — was never implemented in `SettingsPageClient.tsx` and never
+  previously recorded anywhere in this file, despite the same drift
+  shape as Conflicts #30–33 (see new Conflict #39, above). Not built
+  this batch — new UI feature work is outside Documentation Completion
+  scope, and two of its six fields depend on product decisions this
+  same batch's other findings surface (License, Data Provider).
+- **M10-017 (Publish Developer Documentation)**: audited `CONTRIBUTING.md`
+  against the task's own Include list (Setup, Architecture, Testing,
+  Deployment, Contribution guide) — already complete: Setup (pnpm/Node
+  versions), Architecture (Project structure, one-way dependency
+  direction, persistence architecture, pointer to `04_BUILD_GUIDE.md`),
+  Testing (unit/coverage/e2e commands, cross-browser scope), Deployment,
+  and a Contribution workflow section all present; DoD ("new developers
+  can onboard using documentation only") verified satisfied, no gap
+  found, no new content required. "Publication" is repository-shipped
+  Markdown, not a hosted docs site — nothing in the specification
+  requires an external site, and this project has never had one; that
+  determination is stated explicitly rather than assumed. **Supplemental
+  licensing audit**: no `LICENSE`/`NOTICE` file exists at the repository
+  root; `package.json` has no `license` field (`"private": true` only);
+  no authoritative source (`README.md`, `01_PRD.md`, `03_UI.md`,
+  `06_TASKS.md`) names a governing license for ProfitPilot itself —
+  **per explicit instruction, no license is selected here; this is
+  reported as an unresolved owner decision.** All 14 direct runtime
+  dependencies were re-verified directly against their own installed
+  `package.json` `license` fields this batch (MIT ×12, Apache-2.0 ×1 —
+  `class-variance-authority` — see full per-package list in this batch's
+  report) — no GPL/AGPL-family license among them, consistent with
+  `docs/SECURITY_REVIEW.md` M9-029's prior manual scan. One refinement
+  to that prior finding: a broader sweep of the full installed
+  dependency tree (not just direct dependencies) found one transitive,
+  Linux-x64-only prebuilt binary, `@img/sharp-libvips-linux-x64`
+  (pulled in via `next` → `sharp`, Next.js's own built-in image-
+  optimization path; server-side only, not shipped to the browser
+  bundle), declaring itself `LGPL-3.0-or-later` in its own
+  `package.json`. **Recorded as a dependency/redistribution
+  consideration only** — this is repository licensing evidence, not a
+  legal compatibility determination; whether an LGPL-3.0-or-later
+  component is compatible with however ProfitPilot is eventually
+  licensed and distributed is a legal question this audit does not
+  answer. Font/icon/image assets present (`next/font/google`'s
+  self-hosted Inter; `public/*.svg`, the stock Next.js starter-template
+  assets) are recorded as evidence the same way — their own upstream
+  license terms apply; no determination of compliance is made here. No
+  `NOTICE`/`THIRD_PARTY_NOTICES` file exists in the repository today.
+  This is a repository licensing audit; nothing in it is legal advice
+  or a compliance certification.
+- **M10-018 (Publish User Documentation)**: audited `docs/USER_GUIDE.md`
+  against the task's own Include list (Portfolio creation, Dashboard,
+  Simulation, Loop Builder, Exit Planner, Import/export, Cloud
+  synchronization) — already complete, including an honest "Cloud
+  synchronization" subsection stating the capability is cancelled, not
+  a workflow this version has; DoD ("users can understand Version 1
+  without external assistance") verified satisfied, no gap found.
+  **Supplemental legal/disclosure audit** checked actual rendered
+  application locations, not documentation alone: "Estimated
+  Liquidation Price" (real KPI card title, `buildDashboardViewModel.ts`);
+  `DataFreshnessSection.tsx` (real, staleness is visible); a real,
+  tested Loop Presets disclaimer ("Presets are starting points, not
+  guaranteed-safe strategies," `LoopPresets.tsx`, satisfying M9-055's
+  own "No guarantee language is used" verify item); real backup-before-
+  clearing guidance in the Clear Local Data section
+  (`SettingsPageClient.tsx`). **Finding, reported rather than silently
+  fixed**: no general "this is not financial advice" (or equivalent)
+  statement exists anywhere in the _rendered application_ — it exists
+  only in `docs/USER_GUIDE.md`'s own "What ProfitPilot is" section, a
+  separate document a user may never open. Checked this against
+  `docs/06_TASKS.md` M9-055 ("Audit In-Application Financial
+  Disclosures," P0, already completed in Milestone 9 Batch 10) — its
+  own Definition of Done is a _negative_ requirement ("the interface
+  does not misrepresent ProfitPilot as financial advice or an execution
+  system"), which the application satisfies by never claiming to be
+  financial advice, not an _affirmative_ requirement to display a
+  disclaimer. No governing specification explicitly requires an
+  affirmative in-app disclaimer, so none was added this batch, per
+  instruction not to expand scope silently — recorded here only as a
+  **possible future owner/product/legal decision**, not implemented and
+  not required by any governing specification found. No Terms of
+  Service, Privacy Policy, legal entity, jurisdiction, regulatory
+  status, or support contact was invented, and none was found missing-
+  and-required by any governing specification.
+
+**Unresolved owner decisions surfaced this batch**: (1) ProfitPilot has
+no governing license — an explicit owner decision, not resolved here.
+(2) `03_UI.md`'s About-section "License"/"Data Provider" fields (new
+Conflict #39) depend on that same decision plus a product decision on
+how to describe the manual price-entry model. (3) Whether an
+affirmative in-app "not financial advice" statement is wanted beyond
+what M9-055's negative DoD already requires — a product decision, not
+a specification violation.
+
+**Files changed**: `docs/USER_GUIDE.md` (1 version-phrasing fix),
+`docs/DISASTER_RECOVERY.md` (2 future-tense Cloud Sync phrasing fixes),
+`PROJECT_STATUS.md` (new Conflict #39, this section). No application
+code changed, no package/lockfile changed, no `engine/` file touched,
+no external infrastructure created, no deployment, no git tag, no
+license file added, no build artifacts. Milestone 10 remains in
+progress — Batch 4 has not begun.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -13672,6 +13813,59 @@ per this engagement's standing rule for specification conflicts — see
 `docs/CHANGELOG.md`'s "Documentation version" table row and
 `docs/VERSIONING_STRATEGY.md`'s own "Documentation version" section for
 the living-document treatment of this finding.
+
+---
+
+### 39. `03_UI.md`'s Settings-page "ABOUT" section (Section 7) was never implemented and never previously recorded — found during the M10-016 documentation review (Milestone 10 Batch 3)
+
+`docs/03_UI.md`'s Settings page mockup (Page 10) lists **About** as one
+of five Settings sub-sections (alongside Calculations, Appearance, Data
+Sources) and its own "SECTION 7 — ABOUT" block specifies the content:
+Application Version, Formula Version, Calculation Engine Version, Data
+Provider, Last Synchronization, License, and "GitHub Repository
+(Future)" (the only item of the seven explicitly marked as a future
+item within the mockup itself — the rest read as intended for Version
+1). `app/settings/SettingsPageClient.tsx` (verified directly, this
+batch) has no About section and displays none of these six non-Future
+fields anywhere; no other route does either. `docs/06_TASKS.md`
+contains no task anywhere that assigns building this section to any
+milestone — the same shape as Conflicts #30–#33 (a `03_UI.md` mockup
+element `06_TASKS.md` never turned into a buildable task), but unlike
+those, this one was never previously recorded as a conflict at all.
+
+Following this engagement's own established precedent for this exact
+conflict shape (Conflicts #30–#33, resolved in favor of `06_TASKS.md`'s
+own buildable task text), this is **not a defect and not classified as
+a release blocker** — nothing was ever tasked, so nothing regressed;
+this is a documentation/specification-drift finding, not a P0/P1 defect
+under `docs/DEFECT_CLASSIFICATION.md`'s own severity definitions.
+**Not resolved by this batch**: building an About section is new UI
+feature work outside Milestone 10's Documentation Completion scope
+(M10-016–M10-018). Three of its six named fields are each complicated by
+an unresolved or intentional product decision, not merely unbuilt:
+
+- **License** — depends on M10-017's own licensing-audit finding that
+  ProfitPilot has no established governing license yet (see Batch 3
+  below); nothing to display until that owner decision is made.
+- **Data Provider** — would need product input on how to honestly
+  describe a manually-entered price source (Manual Mode has no live
+  data provider to name).
+- **Last Synchronization** — this field's own presence in the mockup
+  presumes a synchronized (cloud) product; Cloud Synchronization is
+  cancelled by explicit product decision (Milestone 8,
+  `docs/MILESTONE_8_SCOPE_CHANGE.md`), so displaying it as specified
+  may itself be incompatible with the approved product direction, not
+  merely pending implementation — the same "N/A by cancellation, not
+  by omission" distinction `docs/DISASTER_RECOVERY.md`'s own "Sync
+  conflict"/"Unavailable Supabase" sections already establish elsewhere.
+
+The remaining three fields (Application Version, Formula Version,
+Calculation Engine Version) have no such blocker — they are simply
+unbuilt. Recorded here rather than silently built or silently dropped;
+recommended as a scoped future task once the License and Data Provider
+product decisions are made, and once a decision is made on whether
+"Last Synchronization" is dropped, reworded, or reinterpreted for a
+cancelled-sync product.
 
 ---
 
