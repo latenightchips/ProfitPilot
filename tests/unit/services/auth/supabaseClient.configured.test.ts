@@ -14,8 +14,8 @@ vi.mock('@/utils/env', () => ({
   env: {
     NEXT_PUBLIC_APP_NAME: 'ProfitPilot',
     NEXT_PUBLIC_DEFAULT_CURRENCY: 'USD',
-    SUPABASE_URL: 'https://example.supabase.co',
-    SUPABASE_ANON_KEY: 'test-anon-key',
+    NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
   },
 }));
 

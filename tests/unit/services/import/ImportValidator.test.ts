@@ -1,9 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateImportFile } from '@/services/import/ImportValidator';
-import { APP_NAME, APP_VERSION, STORAGE_SCHEMA_VERSION } from '@/services/persistence';
+import { MAX_IMPORT_FILE_SIZE_BYTES, validateImportFile } from '@/services/import/ImportValidator';
+import {
+  APP_NAME,
+  APP_VERSION,
+  computeChecksum,
+  STORAGE_SCHEMA_VERSION,
+} from '@/services/persistence';
 
+/**
+ * Every fixture below carries a real `checksum`, computed the same way
+ * `createEnvelope` does — not the placeholder literal this file used
+ * before M9-032 wired checksum verification into
+ * `validatePersistedRecordSchema`. A fixture named "valid" must
+ * actually pass every real check a genuinely valid envelope would,
+ * checksum included, or these tests would only be proving what they
+ * claim to by accident.
+ */
 function validPortfolioEnvelope(id = 'portfolio-1') {
+  const payload = {
+    id,
+    name: 'My Portfolio',
+    baseCurrency: 'USD',
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 20000 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+    },
+    settings: {},
+    archivedAt: null,
+    marketUpdatedAt: '2026-01-01T00:00:00.000Z',
+    protocolUpdatedAt: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
   return {
     app: APP_NAME,
     storageSchemaVersion: STORAGE_SCHEMA_VERSION,
@@ -12,31 +46,23 @@ function validPortfolioEnvelope(id = 'portfolio-1') {
     recordId: id,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    checksum: 'abcd1234',
-    payload: {
-      id,
-      name: 'My Portfolio',
-      baseCurrency: 'USD',
-      collateral: { asset: 'BTC', quantity: 2 },
-      debt: { asset: 'USDC', balance: 20000 },
-      market: { btcPriceUsd: 50000 },
-      protocol: {
-        maxLoanToValue: 0.75,
-        liquidationThreshold: 0.8,
-        borrowApr: 0.05,
-        supplyApr: 0.02,
-      },
-      settings: {},
-      archivedAt: null,
-      marketUpdatedAt: '2026-01-01T00:00:00.000Z',
-      protocolUpdatedAt: '2026-01-01T00:00:00.000Z',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    },
+    checksum: computeChecksum(payload),
+    payload,
   };
 }
 
 function loopStrategyEnvelopeWithSensitiveField() {
+  const payload = {
+    id: 'strategy-1',
+    name: 'Strategy',
+    portfolioId: 'portfolio-1',
+    portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+    settings: {},
+    result: { steps: [], wallet: { privateKey: '0xabc123' } },
+    warnings: [],
+    metadata: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
   return {
     app: APP_NAME,
     storageSchemaVersion: STORAGE_SCHEMA_VERSION,
@@ -45,18 +71,8 @@ function loopStrategyEnvelopeWithSensitiveField() {
     recordId: 'strategy-1',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    checksum: 'abcd1234',
-    payload: {
-      id: 'strategy-1',
-      name: 'Strategy',
-      portfolioId: 'portfolio-1',
-      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
-      settings: {},
-      result: { steps: [], wallet: { privateKey: '0xabc123' } },
-      warnings: [],
-      metadata: null,
-      createdAt: '2026-01-01T00:00:00.000Z',
-    },
+    checksum: computeChecksum(payload),
+    payload,
   };
 }
 
@@ -75,6 +91,20 @@ describe('validateImportFile', () => {
   it('rejects unparsable JSON', () => {
     const result = validateImportFile('{not json');
     expect(result.ok).toBe(false);
+  });
+
+  /**
+   * 06_TASKS.md M9-032 ("Audit Import Security"), "Oversized files" — a
+   * genuine gap found and fixed this batch: no size limit existed
+   * anywhere on the import path before `ImportValidator.ts`'s own
+   * `MAX_IMPORT_FILE_SIZE_BYTES` check.
+   */
+  it('rejects an oversized file before attempting to parse it', () => {
+    const oversized = 'x'.repeat(MAX_IMPORT_FILE_SIZE_BYTES + 1);
+    const result = validateImportFile(oversized);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].message).toMatch(/too large/i);
   });
 
   it('rejects a file with the wrong outer shape', () => {
@@ -114,6 +144,86 @@ describe('validateImportFile', () => {
     if (!result.ok) return;
     expect(result.data.validRecordsByType.portfolio).toHaveLength(1);
     expect(result.data.issues.some((issue) => issue.code === 'INVALID_RECORD')).toBe(true);
+  });
+
+  /**
+   * 06_TASKS.md M9-032 ("Audit Import Security"), "Corrupted checksums" —
+   * a genuine gap found and fixed this batch: `verifyChecksum`
+   * (`services/persistence/envelope.ts`) existed and was unit-tested in
+   * isolation since M8-003, but was never wired into
+   * `validatePersistedRecordSchema` — an import (or a tampered
+   * `localStorage` entry) with a stale checksum passed through
+   * unnoticed. This test exercises that path end-to-end through the
+   * public `validateImportFile` entry point, not just the isolated
+   * `verifyChecksum` unit.
+   */
+  it('excludes a record whose checksum does not match its payload, tagged CHECKSUM_MISMATCH, keeping the rest of the file valid', () => {
+    const file = validFullBackupFile();
+    const tampered = {
+      ...validPortfolioEnvelope('portfolio-4'),
+      checksum: 'deadbeef',
+    };
+    file.records.portfolio = [...file.records.portfolio, tampered as never];
+
+    const result = validateImportFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.validRecordsByType.portfolio).toHaveLength(1);
+    expect(result.data.validRecordsByType.portfolio?.[0]?.recordId).toBe('portfolio-1');
+    expect(
+      result.data.issues.some(
+        (issue) => issue.code === 'CHECKSUM_MISMATCH' && issue.recordId === 'portfolio-4',
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * 06_TASKS.md M9-032 ("Audit Import Security"), "Deeply nested data" —
+   * see `services/shared/payloadLimits.ts`'s own header comment for the
+   * unbounded-recursion crash this guards against. Exercised here
+   * end-to-end through `validateImportFile`, not just the isolated
+   * `exceedsMaxNestingDepth`/`validatePersistedRecord` units.
+   */
+  it('excludes a record whose payload is nested far beyond any realistic shape, safely rather than crashing', () => {
+    let deeplyNested: unknown = 'leaf';
+    for (let i = 0; i < 200; i += 1) {
+      deeplyNested = { nested: deeplyNested };
+    }
+    const payload = {
+      id: 'strategy-2',
+      name: 'Deeply Nested Strategy',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+      settings: {},
+      result: deeplyNested,
+      warnings: [],
+      metadata: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const envelope = {
+      app: APP_NAME,
+      storageSchemaVersion: STORAGE_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      recordType: 'loopStrategy' as const,
+      recordId: 'strategy-2',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      checksum: computeChecksum(payload),
+      payload,
+    };
+    const file = validFullBackupFile();
+    file.records = { ...file.records, loopStrategy: [envelope] } as never;
+
+    expect(() => validateImportFile(JSON.stringify(file))).not.toThrow();
+    const result = validateImportFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.validRecordsByType.loopStrategy).toBeUndefined();
+    expect(
+      result.data.issues.some(
+        (issue) => issue.recordId === 'strategy-2' && issue.code === 'INVALID_RECORD',
+      ),
+    ).toBe(true);
   });
 
   it('detects duplicate record ids within the file', () => {

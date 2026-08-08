@@ -45,6 +45,44 @@ describe('buildPortfolioPositionsCsv', () => {
   });
 });
 
+/**
+ * 06_TASKS.md M9-034 ("Perform Input and Output Sanitization Review") —
+ * a genuine CSV-injection gap found and fixed this batch:
+ * `CsvExporter.ts`'s own header comment explains the guard;
+ * `buildPortfolioPositionsCsv` is used here since `Name` is the one
+ * genuinely free-text field it exports, but the guard lives in the
+ * shared `csvLine` helper every `build*Csv` function routes through.
+ */
+describe('CSV formula-injection guard (M9-034)', () => {
+  it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);
+    expect(csv).toContain("'=cmd");
+    expect(csv).not.toContain('\n=cmd');
+  });
+
+  it('prefixes names beginning with "+", "@", or a tab the same way', () => {
+    for (const dangerous of ['+1+1', '@SUM(A1:A9)', '\tmalicious']) {
+      const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: dangerous }]);
+      expect(csv).toContain(`'${dangerous}`);
+    }
+  });
+
+  it('does not guard a legitimate negative number field (debt balance), which is typed as a number, not a string', () => {
+    const csv = buildPortfolioPositionsCsv([
+      { ...samplePortfolio(), debt: { asset: 'USDC', balance: -500 } },
+    ]);
+    const lines = csv.split('\n');
+    // The raw, un-prefixed negative number must still be present verbatim.
+    expect(lines[1]).toContain(',-500,');
+    expect(lines[1]).not.toContain("'-500");
+  });
+
+  it('leaves an ordinary name beginning with a hyphen (a legitimate, if unusual, portfolio name) prefixed for safety, consistent with every other trigger character', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '-my portfolio' }]);
+    expect(csv).toContain("'-my portfolio");
+  });
+});
+
 describe('buildScenarioComparisonsCsv', () => {
   it('reads well-formed simulation records structurally', () => {
     const csv = buildScenarioComparisonsCsv([
@@ -119,6 +157,47 @@ describe('buildLoopStepsCsv', () => {
     const lines = csv.split('\n');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('Not available');
+  });
+
+  /**
+   * 06_TASKS.md M9-033 ("Audit Export Privacy") — defense-in-depth
+   * beyond `services/shared/sensitiveFields.ts`'s own write/import-time
+   * rejection (M8-051), which already stops a sensitive field from ever
+   * being persisted in the first place. This test proves the CSV
+   * exporter itself is structurally incapable of leaking one even if it
+   * somehow existed in a record's loose `result` object — `csvLine`
+   * only ever reads the specific named fields each `build*Csv` function
+   * lists (`stepNumber`/`borrowedAmount`/`btcPurchased`/
+   * `collateralAfter.quantity` here), never a raw dump of `result`
+   * itself, so a field like `result.wallet.privateKey` has no path into
+   * the output regardless of whether it's present in the source data.
+   */
+  it('never includes an arbitrary field from the loose result object, even one shaped like a credential', () => {
+    const csv = buildLoopStepsCsv([
+      {
+        id: 'strategy-1',
+        name: 'Strategy',
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        result: {
+          wallet: { privateKey: '0xabc123', seedPhrase: 'wagon current bunker...' },
+          strategy: {
+            steps: [
+              {
+                stepNumber: 1,
+                borrowedAmount: 1000,
+                btcPurchased: 0.02,
+                collateralAfter: { quantity: 2.02 },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    expect(csv).not.toContain('privateKey');
+    expect(csv).not.toContain('0xabc123');
+    expect(csv).not.toContain('seedPhrase');
+    expect(csv).not.toContain('wagon current bunker');
   });
 });
 

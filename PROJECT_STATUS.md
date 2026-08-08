@@ -12553,6 +12553,18 @@ silently picking one.
   (security default, not an error). Left unapproved — lint/build/test all
   pass without them, and running `@sentry/cli`'s installer isn't needed
   without a configured Sentry project.
+- **`SUPABASE_URL`/`SUPABASE_ANON_KEY` renamed to
+  `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`** (Milestone
+  9 Batch 6, M9-030 "Audit Environment Variable Handling") — `04_BUILD_GUIDE.md`
+  itself uses the plain, non-prefixed names, but Next.js only inlines
+  `NEXT_PUBLIC_*`-prefixed variables into the client bundle. Under the
+  literal spec names, `services/auth/supabaseClient.ts` (reached from a
+  Client Component) would always read `undefined` in the browser
+  regardless of what a deployer actually configured, permanently
+  defeating the dormant Auth capability even once "configured" — a real
+  defect the literal env var names would have caused, not a stylistic
+  preference. See `docs/SECURITY_REVIEW.md`'s own M9-030 section for the
+  full reasoning.
 
 ## Explicitly not done (per instruction)
 

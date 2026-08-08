@@ -3,8 +3,9 @@ import { expect, test } from '@playwright/test';
 /**
  * Authentication End-to-End Tests — 06_TASKS.md M8-014–M8-021
  * ("Authentication"). This sandbox has no real Supabase project
- * configured (no `SUPABASE_URL`/`SUPABASE_ANON_KEY`, no `supabase` CLI,
- * no reachable local emulator — verified before this batch began; see
+ * configured (no `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+ * no `supabase` CLI, no reachable local emulator — verified before this
+ * batch began; see
  * `services/auth/supabaseClient.ts`'s own header comment). Every test
  * below therefore exercises the REAL, honest "Supabase not configured"
  * graceful-degradation path this build actually takes in this

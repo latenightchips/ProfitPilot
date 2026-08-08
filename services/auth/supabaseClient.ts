@@ -7,11 +7,16 @@
  * configured."
  *
  * **No service-role key anywhere in this codebase.** `utils/env.ts`'s
- * own schema declares only `SUPABASE_URL`/`SUPABASE_ANON_KEY` — there is
- * no `SUPABASE_SERVICE_ROLE_KEY` field to read, so a service-role key
+ * own schema declares only `NEXT_PUBLIC_SUPABASE_URL`/
+ * `NEXT_PUBLIC_SUPABASE_ANON_KEY` — there is no
+ * `SUPABASE_SERVICE_ROLE_KEY` field to read, so a service-role key
  * cannot reach the browser through this module even by mistake. This is
  * the anon (publishable) key only, the same key Supabase's own docs
- * document as safe to ship to a browser bundle.
+ * document as safe to ship to a browser bundle — and, since M9-030
+ * (this batch), actually shipped there: see `utils/env.ts`'s own header
+ * comment for why the `NEXT_PUBLIC_` prefix is required, not optional,
+ * for this module (reached from a Client Component) to ever read a
+ * real value in the browser.
  *
  * **"Secure session handling"** is delegated entirely to `@supabase/supabase-js`'s
  * own `GoTrueClient` (`persistSession: true`, `autoRefreshToken: true`,
@@ -20,7 +25,8 @@
  * than re-implementing token storage and rotation in this codebase.
  *
  * **Graceful absence, not a thrown error.** `getSupabaseClient()` returns
- * `null` when `SUPABASE_URL`/`SUPABASE_ANON_KEY` are unset or invalid —
+ * `null` when `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`
+ * are unset or invalid —
  * mirroring `PersistenceAdapterAvailability`'s own "available: false, not
  * an exception" pattern (`services/persistence/types/adapter.ts`) for
  * the exact same reason: an unconfigured optional external service is an
@@ -31,8 +37,9 @@
  * standing architecture requirement).
  *
  * **This sandbox has no real Supabase project, CLI, or local emulator**
- * (verified before writing this file — no `SUPABASE_URL`/`SUPABASE_ANON_KEY`
- * in the environment, no `supabase` CLI installed, no reachable Docker
+ * (verified before writing this file — no `NEXT_PUBLIC_SUPABASE_URL`/
+ * `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the environment, no `supabase` CLI
+ * installed, no reachable Docker
  * daemon for a local stack, and `supabase/` in this repo is an empty
  * placeholder directory). `getSupabaseClient()` therefore always returns
  * `null` in this environment today — a real, honestly-observed fact
@@ -49,10 +56,10 @@ export interface SupabaseConfigStatus {
 }
 
 export function checkSupabaseConfig(): SupabaseConfigStatus {
-  if (env.SUPABASE_URL === undefined || env.SUPABASE_URL === '') {
+  if (env.NEXT_PUBLIC_SUPABASE_URL === undefined || env.NEXT_PUBLIC_SUPABASE_URL === '') {
     return { configured: false, reason: 'Supabase URL is not configured.' };
   }
-  if (env.SUPABASE_ANON_KEY === undefined || env.SUPABASE_ANON_KEY === '') {
+  if (env.NEXT_PUBLIC_SUPABASE_ANON_KEY === undefined || env.NEXT_PUBLIC_SUPABASE_ANON_KEY === '') {
     return { configured: false, reason: 'Supabase anon key is not configured.' };
   }
   return { configured: true };
@@ -70,8 +77,8 @@ let cachedClient: SupabaseClient | null | undefined;
 export function getSupabaseClient(): SupabaseClient | null {
   if (cachedClient !== undefined) return cachedClient;
 
-  const url = env.SUPABASE_URL;
-  const anonKey = env.SUPABASE_ANON_KEY;
+  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   cachedClient =
     url !== undefined && url !== '' && anonKey !== undefined && anonKey !== ''
       ? createClient(url, anonKey)

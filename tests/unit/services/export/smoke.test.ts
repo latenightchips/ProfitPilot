@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { exportFullBackup } from '@/services/export/ExportService';
 import { applyValidatedImport, previewImport } from '@/services/import/ImportService';
 import { createMemoryAdapter } from '@/services/persistence/adapters';
+import { computeChecksum } from '@/services/persistence/envelope';
 import { createPersistenceService } from '@/services/persistence/persistence.service';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -57,6 +58,17 @@ describe('export → import round trip', () => {
 
   it('a record with a smuggled sensitive field is never persisted, and therefore never reappears in a later export (M8-051)', async () => {
     const destination = createPersistenceService(createMemoryAdapter());
+    const maliciousPayload = {
+      id: 'strategy-1',
+      name: 'Strategy',
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+      settings: {},
+      result: { steps: [], apiSecret: 'sk_live_abc123' },
+      warnings: [],
+      metadata: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
     const maliciousFile = {
       app: 'ProfitPilot',
       storageSchemaVersion: '1.0.0',
@@ -73,18 +85,12 @@ describe('export → import round trip', () => {
             recordId: 'strategy-1',
             createdAt: '2026-01-01T00:00:00.000Z',
             updatedAt: '2026-01-01T00:00:00.000Z',
-            checksum: 'abcd1234',
-            payload: {
-              id: 'strategy-1',
-              name: 'Strategy',
-              portfolioId: 'portfolio-1',
-              portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
-              settings: {},
-              result: { steps: [], apiSecret: 'sk_live_abc123' },
-              warnings: [],
-              metadata: null,
-              createdAt: '2026-01-01T00:00:00.000Z',
-            },
+            // A real checksum (M9-032) — this record must be rejected
+            // for its smuggled sensitive field specifically, not
+            // incidentally also fail a checksum check, so this test
+            // keeps proving what its own name claims.
+            checksum: computeChecksum(maliciousPayload),
+            payload: maliciousPayload,
           },
         ],
       },

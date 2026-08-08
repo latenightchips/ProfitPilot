@@ -158,3 +158,78 @@ describe('validatePersistedRecord — Sensitive Data Exclusion Rules (M8-051)', 
     expect(result.data.payload).not.toHaveProperty('privateKey');
   });
 });
+
+/**
+ * 06_TASKS.md M9-032 ("Audit Import Security"), "Corrupted checksums" —
+ * `verifyChecksum` (`services/persistence/envelope.ts`) existed and was
+ * unit-tested in isolation since M8-003, but was never called from any
+ * production code path before this batch — a repo-wide search found
+ * zero callers. Wired into `validatePersistedRecordSchema`, the same
+ * chokepoint the M8-051 sensitive-field check already uses, so every
+ * read, write, and import is covered.
+ */
+describe('validatePersistedRecord — Checksum verification (M9-032)', () => {
+  it('accepts a record whose checksum matches its payload', () => {
+    const envelope = createEnvelope('portfolio', 'portfolio-1', validPortfolioPayload());
+    expect(envelope.checksum).toBeDefined();
+    const result = validatePersistedRecord('portfolio', envelope);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a record whose payload was tampered with after its checksum was computed', () => {
+    const envelope = createEnvelope('portfolio', 'portfolio-1', validPortfolioPayload());
+    const tampered = { ...envelope, payload: { ...envelope.payload, name: 'Tampered Name' } };
+    const result = validatePersistedRecord('portfolio', tampered);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('CHECKSUM_MISMATCH');
+  });
+
+  it('rejects a record whose checksum was directly replaced with an incorrect value', () => {
+    const envelope = createEnvelope('portfolio', 'portfolio-1', validPortfolioPayload());
+    const corrupted = { ...envelope, checksum: 'deadbeef' };
+    const result = validatePersistedRecord('portfolio', corrupted);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('CHECKSUM_MISMATCH');
+  });
+
+  it('accepts a record with no checksum at all — the documented backward-compatible path for hand-authored or pre-M8-003 data', () => {
+    const envelope = createEnvelope('portfolio', 'portfolio-1', validPortfolioPayload());
+    const withoutChecksum: Record<string, unknown> = { ...envelope };
+    delete withoutChecksum.checksum;
+    const result = validatePersistedRecord('portfolio', withoutChecksum);
+    expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * 06_TASKS.md M9-032 ("Audit Import Security"), "Deeply nested data" —
+ * see `services/shared/payloadLimits.ts`'s own header comment for the
+ * unbounded-recursion crash this guards against.
+ */
+describe('validatePersistedRecord — Maximum payload nesting depth (M9-032)', () => {
+  it('accepts a payload with realistic, shallow nesting', () => {
+    const payload = {
+      ...validLoopStrategyPayload(),
+      result: { steps: [{ collateralAfter: { quantity: 2.02 } }] },
+    };
+    const envelope = createEnvelope('loopStrategy', 'strategy-1', payload);
+    const result = validatePersistedRecord('loopStrategy', envelope);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a payload nested far beyond any realistic shape, safely rather than crashing', () => {
+    let deeplyNested: unknown = 'leaf';
+    for (let i = 0; i < 200; i += 1) {
+      deeplyNested = { nested: deeplyNested };
+    }
+    const payload = { ...validLoopStrategyPayload(), result: deeplyNested };
+    const envelope = createEnvelope('loopStrategy', 'strategy-1', payload);
+    expect(() => validatePersistedRecord('loopStrategy', envelope)).not.toThrow();
+    const result = validatePersistedRecord('loopStrategy', envelope);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0].code).toBe('PAYLOAD_TOO_DEEPLY_NESTED');
+  });
+});

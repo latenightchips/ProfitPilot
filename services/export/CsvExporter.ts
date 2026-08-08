@@ -22,6 +22,22 @@
  * shapes. A malformed or missing field renders as `'Not available'`
  * rather than throwing — a collection CSV must not fail outright because
  * one saved record is old or partially unsupported.
+ *
+ * **CSV formula-injection guard (06_TASKS.md M9-034 "Perform Input and
+ * Output Sanitization Review") — found and fixed this batch.** A
+ * user-controlled `Name` field (portfolio/strategy/scenario/exit-plan
+ * name) beginning with `=`, `+`, `-`, `@`, tab, or carriage return can be
+ * interpreted as a formula by Excel/Sheets when the CSV is opened —
+ * `csvLine` below prefixes such a value with a leading `'` before it
+ * ever reaches `csvEscape`, the standard CSV-injection mitigation.
+ * Applied only to genuinely string-typed fields, checked *before*
+ * `String(field)` stringification — a numeric field (e.g. a negative
+ * debt balance, `-500`) is never routed through the guard, so a real
+ * negative number's own leading `-` is never touched. Scoped narrowly:
+ * this file's own IDs/asset-codes/ISO-timestamp strings are unaffected
+ * in the overwhelming common case (none legitimately starts with one of
+ * these characters), and the one field that could (`Name`) is exactly
+ * the field this guard exists for.
  */
 import type { Portfolio } from '@/types/portfolio';
 
@@ -37,13 +53,23 @@ function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+const FORMULA_TRIGGER_PATTERN = /^[=+\-@\t\r]/;
+
+function guardFormulaInjection(value: string): string {
+  return FORMULA_TRIGGER_PATTERN.test(value) ? `'${value}` : value;
+}
+
 function csvEscape(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 function csvLine(fields: (string | number | boolean | null)[]): string {
   return fields
-    .map((field) => (field === null ? 'Not available' : csvEscape(String(field))))
+    .map((field) => {
+      if (field === null) return 'Not available';
+      const stringValue = typeof field === 'string' ? guardFormulaInjection(field) : String(field);
+      return csvEscape(stringValue);
+    })
     .join(',');
 }
 

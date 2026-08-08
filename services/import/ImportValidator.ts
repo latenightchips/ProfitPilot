@@ -49,7 +49,7 @@ import {
 import { importFileSchema } from './schemas';
 
 export type ImportValidationIssueCode =
-  'UNSUPPORTED_SCHEMA_VERSION' | 'INVALID_RECORD' | 'DUPLICATE_RECORD_ID';
+  'UNSUPPORTED_SCHEMA_VERSION' | 'CHECKSUM_MISMATCH' | 'INVALID_RECORD' | 'DUPLICATE_RECORD_ID';
 
 export interface ImportValidationIssue {
   recordType: PersistedRecordType;
@@ -64,6 +64,22 @@ export interface ImportFileValidationResult {
   issues: ImportValidationIssue[];
 }
 
+/**
+ * `UNSUPPORTED_SCHEMA_VERSION` and `CHECKSUM_MISMATCH` (06_TASKS.md
+ * M9-032 "Audit Import Security," "Corrupted checksums") are each
+ * distinguished from the generic `INVALID_RECORD` a payload-shape
+ * failure gets, using `validatePersistedRecord`'s own underlying
+ * `ApplicationError.code` — the same distinction this file's own header
+ * comment already documents for schema versioning, extended here to
+ * checksum verification (`services/persistence/validate.ts`, wired in
+ * this same batch).
+ */
+function importIssueCode(errorCode: string | undefined): ImportValidationIssueCode {
+  if (errorCode === 'UNSUPPORTED_SCHEMA_VERSION') return 'UNSUPPORTED_SCHEMA_VERSION';
+  if (errorCode === 'CHECKSUM_MISMATCH') return 'CHECKSUM_MISMATCH';
+  return 'INVALID_RECORD';
+}
+
 function fileLevelFailure(message: string): MappingResult<never> {
   return {
     ok: false,
@@ -71,7 +87,27 @@ function fileLevelFailure(message: string): MappingResult<never> {
   };
 }
 
+/**
+ * 06_TASKS.md M9-032 ("Audit Import Security"), "Oversized files" — a
+ * genuine gap found and fixed this batch: no size limit existed
+ * anywhere on the import path (confirmed by direct inspection of both
+ * this file and the Settings UI's own file input handler before this
+ * fix). 25 MB is generous relative to any real ProfitPilot export —
+ * this application's own data model (portfolios, strategies, scenarios,
+ * exit plans) has no attachment/blob fields, so even a full backup of
+ * hundreds of records stays in the low hundreds of KB in practice — but
+ * bounds the amount of work `JSON.parse` and every validation step
+ * after it can ever be asked to do on a single import, independent of
+ * the separate nesting-depth guard below.
+ */
+export const MAX_IMPORT_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
 function parseJson(rawText: string): MappingResult<unknown> {
+  if (rawText.length > MAX_IMPORT_FILE_SIZE_BYTES) {
+    return fileLevelFailure(
+      `This file is too large to import (over ${Math.floor(MAX_IMPORT_FILE_SIZE_BYTES / (1024 * 1024))} MB) and was rejected before being read.`,
+    );
+  }
   try {
     return { ok: true, data: JSON.parse(rawText) };
   } catch {
@@ -105,10 +141,7 @@ function validateRecordArray(
       issues.push({
         recordType,
         recordId: raw.recordId,
-        code:
-          validated.errors[0]?.code === 'UNSUPPORTED_SCHEMA_VERSION'
-            ? 'UNSUPPORTED_SCHEMA_VERSION'
-            : 'INVALID_RECORD',
+        code: importIssueCode(validated.errors[0]?.code),
         message: `A "${recordType}" record could not be imported: ${validated.errors[0]?.message ?? 'unknown validation error'}`,
       });
       continue;

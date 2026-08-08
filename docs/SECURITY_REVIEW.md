@@ -139,8 +139,8 @@ not claimed to be. Row-Level Security is a separate, cancelled item
 
 | Item | Status |
 | --- | --- |
-| HTTPS only | Not this application's concern to enforce — delegated to hosting/deployment configuration; `SUPABASE_URL` itself is Supabase's own HTTPS endpoint. |
-| Environment variables secured | `utils/env.ts` reads `SUPABASE_URL`/`SUPABASE_ANON_KEY` only from `process.env`; no default/fallback value is hardcoded. |
+| HTTPS only | Not this application's concern to enforce at the server level — delegated to hosting/deployment configuration; `NEXT_PUBLIC_SUPABASE_URL` itself is Supabase's own HTTPS endpoint. `next.config.ts`'s own `Strict-Transport-Security` header (M9-035, Batch 6) adds the client-reinforcement half. |
+| Environment variables secured | `utils/env.ts` reads `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` only from `process.env`; no default/fallback value is hardcoded. See §M9-030 below — both were renamed this batch from their original, non-`NEXT_PUBLIC_`-prefixed names, a genuine defect fix, not a stylistic change. |
 | Row Level Security enabled | Not applicable — Cloud Database is cancelled by product decision; no Supabase table exists or will exist. |
 | Input validation complete | Auth forms validate email format and password length client-side (`app/sign-up`, `app/sign-in`); `services/persistence/schemas/` validates everything that reaches storage. |
 | No secrets committed | Verified: no `.env` file, no hardcoded key, checked into this repository. |
@@ -280,7 +280,12 @@ property (no cloud data, nothing to delete) already holds.
 
 **Finding**: no critical findings; the moderate/high findings above are
 build/test-tooling-only and documented, not resolved, per the DoD's own
-"resolved or explicitly documented" standard.
+"resolved or explicitly documented" standard. **This count is now
+historical** — advisory counts drift as upstream packages publish new
+ones; see §M9-029 below for the current, freshly re-run figure and the
+full per-package table, produced this batch specifically because
+`06_TASKS.md` M9-029 ("Perform Dependency Security Audit") names a full
+dependency re-audit as its own later, dedicated task.
 
 ## Summary
 
@@ -304,3 +309,330 @@ Database (M8-023, the only thing that would have introduced cross-user
 data at all) is cancelled by product decision. Row-Level Security
 testing (M8-057) is correspondingly not applicable, not merely deferred:
 there is no policy to test.
+
+---
+
+# Milestone 9 Batch 6 — Security Hardening (M9-029–M9-035)
+
+Everything above this line is Milestone 8's own M8-053/M8-054 review,
+unchanged except two corrected environment-variable-name references and
+one forward-reference note (both marked inline above). Everything below
+is new: `06_TASKS.md`'s dedicated Security Hardening batch, auditing (and,
+where a genuine gap was found, fixing) the eight areas M9-029–M9-036 name.
+M9-036 ("Complete Security Threat Model") is its own document,
+`docs/SECURITY_THREAT_MODEL.md`, since its own DoD asks for a threat-model
+document distinct from this review.
+
+## M9-029 — Dependency Security Audit
+
+Review: known vulnerabilities, unmaintained packages, unnecessary
+packages, transitive risk, license concerns, upgrade requirements. DoD:
+"Critical and high-severity dependency vulnerabilities are resolved or
+formally mitigated."
+
+**Known vulnerabilities — freshly re-run this batch, not copied from
+M8-054 or `docs/DOD_COMPLIANCE_AUDIT.md`.** `pnpm audit` now reports
+**18 vulnerability instances (11 high, 7 moderate, 0 critical) across 7
+distinct packages** — drift from both prior recorded counts (M8-054's 16;
+`docs/DOD_COMPLIANCE_AUDIT.md`'s own Batch 1 re-check, 17), the same
+"advisory counts drift as upstream publishes new ones" pattern already
+established, not evidence of anything this codebase did. Two packages
+appear that neither prior count named:
+
+| Package | Instances | Path | Runtime reachability |
+|---|---|---|---|
+| `sharp` | 1 high | `.>next>sharp` | Build-time (Next.js image optimization); never shipped |
+| `postcss` | 2 high + 2 moderate | `.>next>postcss`, `.>@tailwindcss/postcss>postcss` | Build-time (CSS pipeline); never shipped |
+| `brace-expansion` | 4 high | `.>@eslint/eslintrc>minimatch>brace-expansion`, `.>eslint-config-next>@typescript-eslint/eslint-plugin>...` | Lint-time only |
+| `undici` | 1 high + 4 moderate | `.>jsdom>undici` | Vitest test environment only; never shipped |
+| `fast-uri` | 1 high | `.>@sentry/nextjs>@sentry/webpack-plugin` | Build-time (Sentry's webpack plugin); never shipped |
+| `js-yaml` | 1 high (new this batch) | `.>@eslint/eslintrc>js-yaml` | Lint-time only |
+| `nanoid` | 1 high (new this batch) | `.>@tailwindcss/postcss>postcss>nanoid` | Build-time (Tailwind's PostCSS pipeline); never shipped |
+
+Every one of the 18 instances is build-time, lint-time, or test-time
+tooling — the identical conclusion M8-054 and `docs/DOD_COMPLIANCE_AUDIT.md`
+both already reached, re-verified rather than assumed to still hold. None
+is reachable from application runtime code shipped to the browser, and
+none is "critical" severity. All 7 packages are transitive dependencies
+of `next`, `eslint-config-next`, `@sentry/nextjs`, `@tailwindcss/postcss`,
+or `vitest`'s own `jsdom` — not a version this codebase chose directly, so
+there is no independent version bump available short of upgrading one of
+those five direct dependencies. DoD ("resolved or formally mitigated")
+satisfied by "formally mitigated": every advisory is real, documented
+here with its exact path, and consciously not treated as
+production-relevant, per the same reasoning M8-054 already established.
+**Follow-up, unchanged from M8-054**: re-run `pnpm audit` whenever
+`next`/`eslint-config-next`/`@sentry/nextjs`/`@tailwindcss/postcss`/
+`vitest` are next upgraded.
+
+**Unmaintained packages**: no direct dependency in `package.json` shows
+signs of abandonment (no multi-year-stale major version, no
+deprecation warning surfaced by `pnpm install`/`pnpm audit`) — a direct
+scan of `dependencies`/`devDependencies`, not an exhaustive
+per-package maintenance-history audit.
+
+**Unnecessary packages**: `@sentry/nextjs` is installed but unwired — no
+`Sentry.init()` call exists anywhere in this codebase
+(`docs/DOD_COMPLIANCE_AUDIT.md`'s own re-check, re-confirmed here). Not
+removed: `SENTRY_DSN` is already a declared, documented optional
+environment variable (`utils/env.ts`, `.env.example`), and wiring
+`Sentry.init()` behind that variable is named error-monitoring
+infrastructure this application intends to use, not dead weight —
+removing the package now would mean re-adding it later for no benefit.
+Recorded as a known, intentional "not yet wired" state, not an
+oversight this audit is silently accepting.
+
+**License concerns**: no license-audit tool (`license-checker`,
+`pnpm licenses`, or similar) is configured in this repository — a
+genuine, real gap, not previously documented. A manual scan of
+`package.json`'s `dependencies`/`devDependencies` found no GPL/AGPL-family
+license among them (Next.js, React, Zustand, Zod, Tailwind, Radix-derived
+utilities, and the testing toolchain are all MIT/Apache-2.0/BSD-licensed,
+per their own published `LICENSE` files) — a real but manual, one-time
+check, not an automated, repeatable one. **Deferred**: adding a license-
+audit tool to the standing `pnpm lint`/`pnpm audit` pipeline is a genuine
+improvement outside this batch's own scope (no task in M9-029's Review
+list asks for tooling, only "License concerns" as a review item, which
+this manual pass satisfies for today).
+
+**Upgrade requirements**: none rise to "required" — every named
+vulnerability is transitive, build/lint/test-time-only tooling (above),
+so there is no vulnerable package this application's own runtime needs
+patched today.
+
+## M9-030 — Audit Environment Variable Handling
+
+Check: no secrets committed, no service-role keys exposed, public
+variables are intentionally public, missing optional configuration fails
+gracefully, production and preview values are separated. DoD: "Client
+bundles contain no prohibited secret material."
+
+**No secrets committed**: confirmed — no `.env`/`.env.local` file exists
+in this repository (`.gitignore` excludes them; `git status`/`git ls-files`
+confirmed neither is tracked); `.env.example` ships only empty values.
+
+**No service-role keys exposed**: `utils/env.ts`'s schema declares no
+`SUPABASE_SERVICE_ROLE_KEY` field at all — a service-role key cannot
+reach this codebase, let alone the browser, through any path this
+application reads environment variables from.
+
+**Public variables are intentionally public**: `NEXT_PUBLIC_APP_NAME`
+(display name), `NEXT_PUBLIC_DEFAULT_CURRENCY` (a currency code label),
+and `NEXT_PUBLIC_PRICE_API_URL` (a price-provider endpoint URL, not a
+credential) are all genuinely non-sensitive. `COINGECKO_API_KEY` and
+`SENTRY_DSN` are deliberately *not* `NEXT_PUBLIC_`-prefixed, keeping them
+server-only.
+
+**Missing optional configuration fails gracefully**: every field in
+`utils/env.ts`'s schema is optional or defaulted (REQ-010 "Manual Mode
+functions without backend services") — `loadEnv()` only throws on a
+*provided*, malformed value, never on absence.
+
+**Genuine defect found and fixed — `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+were not `NEXT_PUBLIC_`-prefixed.** Next.js only inlines
+`NEXT_PUBLIC_*`-prefixed variables into the client bundle; every other
+`process.env.*` reference reads as `undefined` in the browser.
+`services/auth/supabaseClient.ts` is reached from `providers/AuthProvider.tsx`
+(a Client Component) and must construct a `SupabaseClient` in the
+browser — under the old names, `checkSupabaseConfig()` would report
+`configured: false` in every browser context regardless of what a
+deployer actually set in production, silently and permanently defeating
+the dormant Auth capability even once "configured." This directly
+contradicted this same module's own header comment, which already
+asserted the anon key is "safe to ship to a browser bundle" (Supabase's
+own documented design for that key) — a true claim about the *key*, but
+not, until this fix, a true claim about what this codebase actually did
+with it. **Fixed**: renamed to `NEXT_PUBLIC_SUPABASE_URL`/
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` throughout (`utils/env.ts`,
+`services/auth/supabaseClient.ts`, `.env.example`, and every test
+referencing the old names) — a mechanical deviation from
+`04_BUILD_GUIDE.md`'s own literal (non-prefixed) variable names, recorded
+in `PROJECT_STATUS.md`'s "Deviations from a literal reading of the docs"
+section. This sandbox has neither variable set either way, so the rename
+has zero observable behavior change here — it corrects behavior for a
+future real deployment, the only place this defect was ever reachable.
+
+**Client bundles contain no prohibited secret material (DoD)**: true
+both before and after this fix, for different reasons — before, because
+nothing Supabase-related ever reached the client bundle at all (the bug
+this section fixes); after, because only the anon/publishable key
+(explicitly designed to be public) does. `COINGECKO_API_KEY` and
+`SENTRY_DSN` remain server-only and were never at risk.
+
+**Production and preview values are separated**: a hosting-platform
+concern (e.g. Vercel's per-environment variable scoping), not something
+this codebase's own `utils/env.ts` can enforce or observe — recorded as
+a deployment-configuration expectation.
+
+## M9-031 — Audit Authentication and Authorization
+
+Verify: session expiration, password reset, sign-out, Row-Level Security,
+ownership enforcement, unauthenticated denial, cross-user isolation,
+revoked session behavior. DoD: "No user can access or modify another
+user's records through tested paths."
+
+**Already exhaustively covered by this document's own M8-053 section
+above**: secure token handling, session expiration, sign-out cleanup,
+password reset flow, no session data in exports, no authenticated API
+access after sign-out. Row-Level Security and cross-user isolation are
+correctly **not applicable** (§"Cross-user access" above) — Cloud
+Database is cancelled by product decision, so there is no second user's
+data anywhere in this local-only application for any of these threats to
+apply to. Re-verified this batch, not assumed still accurate:
+`tests/unit/stores/authStore.test.ts` still passes in full (part of this
+batch's own full validation run), and `services/auth/supabaseClient.ts`'s
+own architecture (no direct `@supabase/supabase-js` import outside
+`services/auth/`) is unchanged.
+
+**"Unauthenticated denial" and "revoked session behavior" — the two
+M9-031 Verify items M8-053 did not separately name.** Both are delegated
+entirely to `@supabase/supabase-js`'s own `GoTrueClient`, the same
+"reuse an already-audited implementation rather than hand-roll token
+rotation" choice `services/auth/supabaseClient.ts`'s own header comment
+already documents for session storage generally:
+
+- **Unauthenticated denial**: this application has no protected API
+  route or server action of its own to deny access to — every Store
+  (`stores/portfolioStore.ts` and siblings) reads/writes only
+  `localStorage` via `PersistenceService`, gated by nothing but the
+  browser's own same-origin storage isolation. There is no
+  authentication-gated resource in this codebase for an unauthenticated
+  request to reach, structurally, not by omission.
+- **Revoked session behavior**: `stores/authStore.ts`'s `initialize()`
+  subscribes once to `authService.onAuthStateChange`, and reacts to
+  whatever event `GoTrueClient` reports — a `SIGNED_OUT` event (which
+  `GoTrueClient` fires on a revoked/expired session it detects, the same
+  event it fires for an explicit sign-out) drives `authStore` to
+  `{ user: null, status: 'unauthenticated' }` through the identical
+  code path `describe('signOut', ...)` in `authStore.test.ts` already
+  exercises — there is no separate "revoked" code path to independently
+  test, by construction, since this application never distinguishes the
+  two.
+
+**No user can access or modify another user's records through tested
+paths (DoD)**: satisfied vacuously but honestly — there is exactly one
+"user" any code path in this application can ever act on (local browser
+storage), so there is no second user's records to access or modify.
+
+## M9-032 — Audit Import Security
+
+Test: oversized files, deeply nested data, unexpected fields, script-like
+text, unsupported versions, duplicate identifiers, invalid numeric
+values, corrupted checksums. DoD: "Unsafe imports are rejected without
+changing application data."
+
+| Test item | Status before this batch | Status after |
+|---|---|---|
+| Unexpected fields | Already covered — `validatePersistedRecord`'s schema layer (`services/persistence/schemas/`) | Unchanged |
+| Unsupported versions | Already covered, tested (`ImportValidator.test.ts`'s own `UNSUPPORTED_SCHEMA_VERSION` test, M8-059) | Unchanged |
+| Duplicate identifiers | Already covered, tested (`DUPLICATE_RECORD_ID`) | Unchanged |
+| Invalid numeric values | Already covered — Zod schema `.finite()`/type checks reject them | Unchanged |
+| Script-like text | Already safe structurally — React's default JSX escaping means no `dangerouslySetInnerHTML` exists anywhere in this codebase (confirmed by repo-wide search) for a script-shaped name/description to ever execute | Unchanged |
+| **Oversized files** | **Genuine gap — no size limit existed anywhere on the import path** | **Fixed**: `ImportValidator.ts`'s own `MAX_IMPORT_FILE_SIZE_BYTES` (25 MB) rejects an oversized file before `JSON.parse` ever runs |
+| **Deeply nested data** | **Genuine gap — `findSensitiveField` recursed with no depth bound, an uncaught-`RangeError` risk, not a graceful rejection** | **Fixed**: `services/shared/payloadLimits.ts`'s `exceedsMaxNestingDepth` (self-bounding recursion, 50-level ceiling) checked before `findSensitiveField` runs |
+| **Corrupted checksums** | **Genuine gap — `verifyChecksum` (`envelope.ts`, M8-003) existed and was unit-tested in isolation, but had zero production callers** | **Fixed**: wired into `validatePersistedRecordSchema`, the same chokepoint the M8-051 sensitive-field check already uses; verified against the raw, pre-schema-parse payload specifically (a second bug found while wiring this in — see `validate.ts`'s own header comment for why verifying against the post-Zod-strip payload would have spuriously rejected legitimate records) |
+
+All three genuine gaps found this batch — oversized files, deeply nested
+data, corrupted checksums — are exercised end-to-end through
+`validateImportFile` (not just their own isolated units) in
+`tests/unit/services/import/ImportValidator.test.ts`, plus dedicated unit
+tests for each new function
+(`tests/unit/services/shared/payloadLimits.test.ts`,
+`tests/unit/services/persistence/validate.test.ts`'s new describe blocks).
+
+## M9-033 — Audit Export Privacy
+
+Verify exported files exclude: authentication tokens, session metadata,
+provider secrets, private keys, seed phrases, internal authorization
+fields, unnecessary personal data. DoD: "Exported data contains only
+documented user-owned application records and metadata."
+
+**Already covered, re-verified**: `services/export/JsonExporter.ts`'s
+own structural exclusion (no session-shaped record type exists in
+`PersistedRecordType`) and `tests/unit/services/export/smoke.test.ts`'s
+end-to-end "never persisted, never reappears in export" test (M8-051) —
+both re-confirmed passing this batch, unchanged.
+
+**Genuine gap found and closed — CSV export had zero dedicated privacy
+test, unlike JSON.** `services/export/CsvExporter.ts`'s own `build*Csv`
+functions only ever read a fixed, named set of fields from each record
+(never a raw dump of a record's loose `result`/`settings` object), so a
+smuggled sensitive field structurally cannot reach CSV output even in
+the hypothetical case one existed in source data — but nothing proved
+this before this batch. **Fixed** (test-only, no production code
+change was needed — the existing design was already correct):
+`tests/unit/services/export/CsvExporter.test.ts`'s new "never includes
+an arbitrary field from the loose result object, even one shaped like a
+credential" test constructs a loop strategy record with a
+`result.wallet.privateKey`/`seedPhrase` and proves neither the field
+name nor its value ever appears in the generated CSV.
+
+## M9-034 — Perform Input and Output Sanitization Review
+
+Check: portfolio names, descriptions, strategy names, scenario names,
+error messages, export filenames, rendered imported content. DoD:
+"User-controlled content cannot produce executable or unsafe rendered
+output."
+
+| Surface | Sanitization |
+|---|---|
+| Portfolio names/descriptions | `utils/sanitizeText.ts` via `types/portfolio.schema.ts` |
+| Strategy/exit-plan/simulation ("scenario") names+descriptions | `utils/sanitizeText.ts` via `services/persistence/schemas/strategy.schema.ts` |
+| Error messages | `ApplicationError.message` is always an authored, static string (`services/shared/errors.ts`'s own DoD) — never a raw exception/stack trace interpolated verbatim |
+| Export filenames | `services/export/filenames.ts`'s own independent `sanitizeNameSegment` (strips non-alphanumeric characters) |
+| Rendered imported content | React's default JSX escaping — no `dangerouslySetInnerHTML` exists anywhere in this codebase (repo-wide search, re-confirmed this batch) |
+
+**Genuine gap found and fixed — CSV formula/injection (CWE-1236).** A
+user-controlled `Name` field (portfolio/strategy/scenario/exit-plan)
+beginning with `=`, `+`, `-`, `@`, tab, or carriage return could be
+interpreted as a formula by Excel/Sheets when the exported CSV is later
+opened — not "executable" in the sense of running inside this
+application, but exactly the "unsafe rendered output" this task's own
+DoD names, produced by a different renderer (the spreadsheet
+application) than the one this review's other rows already cover.
+**Fixed**: `services/export/CsvExporter.ts`'s `csvLine` now prefixes any
+genuinely string-typed field beginning with one of those characters with
+a leading `'`, the standard CSV-injection mitigation — applied only to
+string-typed fields, checked before `String(field)` stringification, so
+a legitimate negative number (e.g. a debt balance of `-500`) is never
+touched. Regression tests in `tests/unit/services/export/CsvExporter.test.ts`
+cover the injection case, the safe-negative-number case, and every
+trigger character.
+
+## M9-035 — Review Security Headers and Deployment Controls
+
+Review: Content Security Policy where practical, frame restrictions,
+content type protections, referrer policy, HTTPS enforcement, secure
+cookies, preview deployment access where appropriate. DoD: "Production
+responses include approved security protections without breaking
+required functionality."
+
+**Genuine, full gap — confirmed empty before this batch.** No
+`headers()` function in `next.config.ts` (which was an empty `{}`), no
+`middleware.ts` anywhere in this repository —
+`docs/DOD_COMPLIANCE_AUDIT.md`'s own finding, re-confirmed true at the
+start of this batch before writing anything.
+
+**Fixed** — see `next.config.ts`'s own extensive header comment for the
+full reasoning behind every choice below:
+
+| Control | Implementation |
+|---|---|
+| Content Security Policy | `default-src 'self'`; `script-src`/`style-src` allow `'unsafe-inline'` (Next.js's own inline hydration scripts and Tailwind's runtime styles require it short of a larger nonce-based `middleware.ts` change); `connect-src` built dynamically from this app's own two optional external origins (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_PRICE_API_URL`) rather than a hardcoded guess; `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'` |
+| Frame restrictions | `X-Frame-Options: DENY` (and `frame-ancestors 'none'` in the CSP itself, belt-and-suspenders) |
+| Content type protections | `X-Content-Type-Options: nosniff` |
+| Referrer policy | `Referrer-Policy: strict-origin-when-cross-origin` |
+| HTTPS enforcement | `Strict-Transport-Security: max-age=63072000; includeSubDomains` — the client-reinforcement half; the actual HTTP→HTTPS redirect is delegated to hosting configuration (this application has no server runtime of its own to add a redirect to). Deliberately no `preload` directive — see `next.config.ts`'s own header comment for why defaulting a self-hostable application onto the largely-irreversible browser HSTS preload list is a per-deployment decision, not something this codebase should presume on every future deployer's behalf. |
+| Secure cookies | **Not applicable** — no header here sets a cookie, because this application's own code never sets one; `GoTrueClient` persists to `localStorage`, not a cookie |
+| Preview deployment access | A hosting-platform concern (e.g. a password-protected preview URL) — recorded as a deployment recommendation, not expressible in `next.config.ts` |
+
+**Verified working, not just configured**: `pnpm build` succeeds with
+the new `headers()` function (confirmed present in the build's own
+`routes-manifest.json`); a real `next start` server was launched in this
+environment and `curl`'d directly, returning all five headers exactly as
+configured; a real headless-Chromium page load against that running
+server rendered the Dashboard successfully with zero console/page
+errors — the CSP does not break this application's own runtime. New
+`tests/unit/next.config.test.ts` (7 tests) locks in the header set and
+the dynamic `connect-src` behavior for both the unconfigured (this
+environment's real state) and a hypothetically-configured-Supabase case.

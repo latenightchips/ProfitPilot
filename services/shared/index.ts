@@ -14,6 +14,7 @@ export {
   createApplicationError,
 } from './errors';
 export { type MappingFailure, type MappingResult, type MappingSuccess } from './mappingResult';
+export { exceedsMaxNestingDepth, MAX_PAYLOAD_NESTING_DEPTH } from './payloadLimits';
 export {
   createServiceFailure,
   type CreateServiceResultOptions,
