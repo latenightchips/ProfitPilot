@@ -39,6 +39,12 @@ import { formatCurrency, formatHealthFactor } from '../utils/format';
  * summarizing its own values, and `ScenarioSummary.tsx`'s existing
  * numeric display (rendered above this component on the page) remains
  * the primary, non-chart source for the endpoint values.
+ *
+ * **`isAnimationActive={false}` on every `<Line>` (M9-027 "Audit Motion
+ * and Visual Stability")** — see `ScenarioCharts.tsx`'s own header
+ * comment for why recharts' animation system needs disabling directly
+ * rather than through `app/globals.css`'s `prefers-reduced-motion`
+ * media query.
  */
 const LINE_COLOR = 'var(--color-foreground, currentColor)';
 
@@ -90,7 +96,13 @@ export function ScenarioTimeline() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="value" stroke={LINE_COLOR} dot />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={LINE_COLOR}
+              dot
+              isAnimationActive={false}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -109,7 +121,13 @@ export function ScenarioTimeline() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="value" stroke={LINE_COLOR} dot />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={LINE_COLOR}
+              dot
+              isAnimationActive={false}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -128,7 +146,13 @@ export function ScenarioTimeline() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="value" stroke={LINE_COLOR} dot />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={LINE_COLOR}
+              dot
+              isAnimationActive={false}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>

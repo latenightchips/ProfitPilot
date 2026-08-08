@@ -87,3 +87,27 @@ body {
     -apple-system,
     sans-serif;
 }
+
+/*
+ * 06_TASKS.md M9-027 ("Audit Motion and Visual Stability") — "Respect
+ * reduced-motion preferences." Global, not per-component: every
+ * Tailwind `transition-*`/`animate-*` utility used across this codebase
+ * (`animate-pulse` skeletons, `transition-colors` hover states) resolves
+ * to a plain CSS `transition`/`animation` property, so overriding both to
+ * an effectively-instant duration here, scoped to
+ * `prefers-reduced-motion: reduce`, covers every current and future
+ * usage without hunting down each utility class individually. Recharts'
+ * own SVG animations are a separate, non-CSS animation system — disabled
+ * directly on each chart component instead (`ScenarioCharts.tsx`,
+ * `ScenarioTimeline.tsx`), see their own header comments.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -9,6 +9,13 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
 /**
  * Portfolio Details Form — 06_TASKS.md M4-006. DoD: "Changes persist and
  * do not alter position balances unexpectedly."
+ *
+ * **Every `getByLabelText` call below passes `{ exact: false }` (M9-026
+ * "Audit Form Accessibility")** — see
+ * `tests/unit/app/portfolios/new/page.test.tsx`'s identical header note
+ * for why: required fields now render a trailing `<RequiredMark />`
+ * inside their `<label>`, which becomes part of the label's computed
+ * text content.
  */
 const INITIAL_STATE = {
   portfolios: {},
@@ -64,20 +71,20 @@ describe('PortfolioPage — Details Form fields (M4-006)', () => {
   it('renders exactly this task\'s own editable "Fields" list', () => {
     createAndSelect();
     render(<PortfolioPage />);
-    expect(screen.getByLabelText('Portfolio name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Description')).toBeInTheDocument();
-    expect(screen.getByLabelText('Base currency')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target Health Factor')).toBeInTheDocument();
-    expect(screen.getByLabelText('Holding period (days)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target BTC price (USD)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Safety buffer (%)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Description', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Base currency', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Target Health Factor', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Holding period (days)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Target BTC price (USD)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Safety buffer (%)', { exact: false })).toBeInTheDocument();
   });
 
   it("prefills fields with the active portfolio's current values", () => {
     createAndSelect();
     render(<PortfolioPage />);
-    expect(screen.getByLabelText('Portfolio name')).toHaveValue('My Portfolio');
-    expect(screen.getByLabelText('Base currency')).toHaveValue('USD');
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toHaveValue('My Portfolio');
+    expect(screen.getByLabelText('Base currency', { exact: false })).toHaveValue('USD');
   });
 
   it('does not render "Default display settings" fields (conflict #22 — no shape defined anywhere)', () => {
@@ -108,7 +115,7 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PortfolioPage />);
 
-    const nameInput = screen.getByLabelText('Portfolio name');
+    const nameInput = screen.getByLabelText('Portfolio name', { exact: false });
     await user.clear(nameInput);
     await user.type(nameInput, 'Renamed Portfolio');
 
@@ -127,7 +134,7 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PortfolioPage />);
 
-    const nameInput = screen.getByLabelText('Portfolio name');
+    const nameInput = screen.getByLabelText('Portfolio name', { exact: false });
     await user.clear(nameInput);
     await user.type(nameInput, 'Renamed Portfolio');
     await vi.advanceTimersByTimeAsync(700);
@@ -144,7 +151,7 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PortfolioPage />);
 
-    const currencyInput = screen.getByLabelText('Base currency');
+    const currencyInput = screen.getByLabelText('Base currency', { exact: false });
     await user.clear(currencyInput);
     await vi.advanceTimersByTimeAsync(700);
 
@@ -158,7 +165,7 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PortfolioPage />);
 
-    const nameInput = screen.getByLabelText('Portfolio name');
+    const nameInput = screen.getByLabelText('Portfolio name', { exact: false });
     await user.clear(nameInput);
     await user.type(nameInput, 'Renamed Portfolio');
     await vi.advanceTimersByTimeAsync(700);
@@ -181,11 +188,11 @@ describe('PortfolioPage — remounts on portfolio switch (M4-010 state-isolation
 
     usePortfolioStore.getState().select(first.data.id);
     const { rerender } = render(<PortfolioPage />);
-    expect(screen.getByLabelText('Portfolio name')).toHaveValue('Alpha');
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toHaveValue('Alpha');
 
     usePortfolioStore.getState().select(second.data.id);
     rerender(<PortfolioPage />);
-    expect(screen.getByLabelText('Portfolio name')).toHaveValue('Beta');
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toHaveValue('Beta');
   });
 });
 
@@ -195,11 +202,13 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Collateral' }));
     expect(section.getByText('Asset: BTC')).toBeInTheDocument();
-    expect(section.getByLabelText('Quantity')).toHaveValue(2);
+    expect(section.getByLabelText('Quantity', { exact: false })).toHaveValue(2);
     expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
-    expect(section.getByLabelText('Manual price (USD)')).toHaveValue(50000);
-    expect(section.getByLabelText('Maximum LTV (0–1)')).toHaveValue(0.75);
-    expect(section.getByLabelText('Liquidation threshold (0–1)')).toHaveValue(0.8);
+    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(50000);
+    expect(section.getByLabelText('Maximum LTV (0–1)', { exact: false })).toHaveValue(0.75);
+    expect(section.getByLabelText('Liquidation threshold (0–1)', { exact: false })).toHaveValue(
+      0.8,
+    );
   });
 
   it('does not apply a change without first previewing it (hard gate)', () => {
@@ -216,8 +225,8 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     // Before: 2 BTC @ $50,000 = $100,000 collateral, $20,000 debt -> $80,000 equity.
@@ -240,12 +249,12 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
     expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
 
-    await user.type(section.getByLabelText('Quantity'), '5');
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
 
@@ -256,8 +265,8 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Maximum LTV (0–1)'));
-    await user.type(section.getByLabelText('Maximum LTV (0–1)'), '0.95');
+    await user.clear(section.getByLabelText('Maximum LTV (0–1)', { exact: false }));
+    await user.type(section.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.95');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
@@ -269,10 +278,10 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     createAndSelect();
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
-    expect(section.getByLabelText('Asset')).toHaveValue('USDC');
-    expect(section.getByLabelText('Debt amount')).toHaveValue(20000);
+    expect(section.getByLabelText('Asset', { exact: false })).toHaveValue('USDC');
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
     expect(section.getByText(/Price: \$1\.00/)).toBeInTheDocument();
-    expect(section.getByLabelText('Borrow rate (0–1)')).toHaveValue(0.05);
+    expect(section.getByLabelText('Borrow rate (0–1)', { exact: false })).toHaveValue(0.05);
     expect(section.queryByText(/rate type/i)).not.toBeInTheDocument();
   });
 
@@ -283,8 +292,8 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Debt amount'));
-    await user.type(section.getByLabelText('Debt amount'), '0');
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '0');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     // Zero debt -> Health Factor Infinity, formatted by Intl.NumberFormat as "∞".
@@ -303,8 +312,8 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Debt amount'));
-    await user.type(section.getByLabelText('Debt amount'), '-500');
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '-500');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
@@ -326,8 +335,8 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.getByText('Liquidation Price', { selector: 'dt' })).toBeInTheDocument();
@@ -342,8 +351,8 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Debt amount'));
-    await user.type(section.getByLabelText('Debt amount'), '0');
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '0');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.getByText(/\$12,500\.00 → N\/A \(no debt\)/)).toBeInTheDocument();
@@ -356,8 +365,8 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Debt amount'));
-    await user.type(section.getByLabelText('Debt amount'), '0');
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '0');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     // The real NO_DEBT warning calculateHealthFactor (F-022) already
@@ -375,8 +384,8 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const section = within(form);
 
     // Withdrawing collateral lowers Health Factor: 4 -> 2.
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '1');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '1');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     const checkbox = section.getByRole('checkbox');
@@ -400,8 +409,8 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const section = within(form);
 
     // Adding collateral raises Health Factor: 4 -> 6.
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '3');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -415,14 +424,14 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Quantity'));
-    await user.type(section.getByLabelText('Quantity'), '1');
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '1');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
     await user.click(section.getByRole('checkbox'));
     expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
 
     // Editing again clears both the preview and the acknowledgment.
-    await user.type(section.getByLabelText('Quantity'), '5');
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
 });
@@ -469,12 +478,12 @@ describe('PortfolioPage — Manual Price Controls (M4-014)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Manual price (USD)'));
-    await user.type(section.getByLabelText('Manual price (USD)'), '99999');
-    expect(section.getByLabelText('Manual price (USD)')).toHaveValue(99999);
+    await user.clear(section.getByLabelText('Manual price (USD)', { exact: false }));
+    await user.type(section.getByLabelText('Manual price (USD)', { exact: false }), '99999');
+    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(99999);
 
     await user.click(section.getByRole('button', { name: 'Reset price' }));
-    expect(section.getByLabelText('Manual price (USD)')).toHaveValue(50000);
+    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(50000);
   });
 
   it('clears an existing preview when the price is reset (still under the preview hard gate)', async () => {
@@ -484,8 +493,8 @@ describe('PortfolioPage — Manual Price Controls (M4-014)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Manual price (USD)'));
-    await user.type(section.getByLabelText('Manual price (USD)'), '60000');
+    await user.clear(section.getByLabelText('Manual price (USD)', { exact: false }));
+    await user.type(section.getByLabelText('Manual price (USD)', { exact: false }), '60000');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
     expect(section.getByText('Health Factor', { selector: 'dt' })).toBeInTheDocument();
 
@@ -547,15 +556,15 @@ describe('PortfolioPage — Auto-Save (M4-013)', () => {
 
     const collateralForm = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const collateralSection = within(collateralForm);
-    await user.clear(collateralSection.getByLabelText('Quantity'));
-    await user.type(collateralSection.getByLabelText('Quantity'), '3');
+    await user.clear(collateralSection.getByLabelText('Quantity', { exact: false }));
+    await user.type(collateralSection.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(collateralSection.getByRole('button', { name: 'Preview Changes' }));
     expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
 
     const debtForm = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
     const debtSection = within(debtForm);
-    await user.clear(debtSection.getByLabelText('Debt amount'));
-    await user.type(debtSection.getByLabelText('Debt amount'), '15000');
+    await user.clear(debtSection.getByLabelText('Debt amount', { exact: false }));
+    await user.type(debtSection.getByLabelText('Debt amount', { exact: false }), '15000');
     await user.click(debtSection.getByRole('button', { name: 'Preview Changes' }));
     await user.click(debtSection.getByRole('button', { name: 'Apply Changes' }));
 
@@ -574,8 +583,8 @@ describe('PortfolioPage — Auto-Save (M4-013)', () => {
 
     const collateralForm = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const collateralSection = within(collateralForm);
-    await user.clear(collateralSection.getByLabelText('Quantity'));
-    await user.type(collateralSection.getByLabelText('Quantity'), '3');
+    await user.clear(collateralSection.getByLabelText('Quantity', { exact: false }));
+    await user.type(collateralSection.getByLabelText('Quantity', { exact: false }), '3');
     await user.click(collateralSection.getByRole('button', { name: 'Preview Changes' }));
     expect(collateralSection.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
 
@@ -614,7 +623,7 @@ describe('PortfolioPage — Calculation Error Recovery (M4-017)', () => {
     render(<PortfolioPage />);
 
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Portfolio name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Collateral' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Debt' })).toBeInTheDocument();
   });

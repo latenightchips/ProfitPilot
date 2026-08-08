@@ -59,6 +59,41 @@ import { expect, test } from '@playwright/test';
  * Simulation-specific fix, but the correct level to fix a shared design
  * token at, the same reasoning Batch 12 (M5-023) applied to its own
  * shared `AppHeader`/`AppShell` fixes.
+ *
+ * **Milestone 9 Batch 5 (M9-022 "Perform Automated Accessibility Audit" /
+ * M9-023 "Perform Keyboard Navigation Audit") closes a real, previously
+ * documented coverage gap — 6 routes with zero axe/keyboard coverage**
+ * (`/portfolios`, `/portfolios/new`, `/portfolio`, `/settings`,
+ * `/sign-in`, `/sign-up`, `/reset-password` — confirmed absent by
+ * `docs/DOD_COMPLIANCE_AUDIT.md`'s own re-check at Milestone 9 Batch 1,
+ * re-confirmed again at the start of this batch before writing anything
+ * new). Each gets both an axe scan and a keyboard-reachability test,
+ * following this file's own established two-layer convention.
+ *
+ * **"Dialog focus trapping" and "Menu operation" (M9-023's own Verify
+ * list) have no test here — confirmed, not assumed, that no dialog or
+ * menu widget exists anywhere in this codebase** (`grep` for
+ * `role="dialog"`, `<dialog`, `role="menu"` across `app/`/`components/`/
+ * `features/` returns zero hits). Every "confirm" UI in this application
+ * (portfolio delete, import replace-all, clear local data) is an inline,
+ * non-modal expand-to-confirm panel — `app/portfolios/page.tsx`'s own
+ * header comment already documents this as a deliberate M4-012 design
+ * choice, not an oversight. Recorded as **N/A** in
+ * `docs/ACCESSIBILITY_CONFORMANCE.md` (M9-028) rather than silently
+ * skipped or force-tested against a widget that does not exist.
+ *
+ * **"Table interaction"** — every table in this codebase (per direct
+ * inspection) is either pure static data display (already covered by the
+ * `scope="col"` test below) or `LoopStepTable.tsx`'s own per-row
+ * `<details>/<summary>` disclosure, the one genuinely interactive table
+ * element — covered below as "Expandable content."
+ *
+ * **"Route changes"** — Next.js App Router's own built-in
+ * `#__next-route-announcer__` announces `document.title` to screen
+ * readers on every client-side navigation, but had nothing meaningful to
+ * announce before this batch (every route shared one static title,
+ * "ProfitPilot" — see `app/page.tsx`'s own header comment, the M9-024 fix
+ * this exact test below now verifies end-to-end).
  */
 async function fillByLabel(page: Page, labelText: string, value: string) {
   const label = page.locator('label', { hasText: labelText });
@@ -97,6 +132,20 @@ async function createPortfolio(
 async function expectNoWcagAaViolations(page: Page) {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+}
+
+async function keyboardReach(page: Page, presses: number): Promise<string> {
+  const reachableRoles = new Set<string>();
+  for (let i = 0; i < presses; i++) {
+    await page.keyboard.press('Tab');
+    const info = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el === null || el === document.body) return null;
+      return { tag: el.tagName, text: el.textContent?.trim() };
+    });
+    if (info !== null) reachableRoles.add(`${info.tag}:${info.text?.slice(0, 30)}`);
+  }
+  return [...reachableRoles].join(' | ');
 }
 
 test('Cover: no WCAG AA violations — no portfolio selected', async ({ page }) => {
@@ -541,4 +590,274 @@ test('Cover: every interactive Recommendation Center control is reachable and op
 
   const reached = [...reachableRoles].join(' | ');
   expect(reached).toContain('Acknowledge');
+});
+
+function portfolioRow(page: Page, name: string) {
+  return page.locator('li').filter({ has: page.getByText(name, { exact: true }) });
+}
+
+async function createPortfolioAndOpenEditPage(page: Page, name: string) {
+  await createPortfolio(page, { name });
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Portfolio', exact: true })
+    .click();
+  await page.waitForURL('**/portfolio');
+}
+
+test('Cover: no WCAG AA violations — Portfolios list, with an archived portfolio and delete-confirm panel open', async ({
+  page,
+}) => {
+  // `settingsWorkflows.spec.ts`'s own header comment documents the same
+  // race this test hit initially: Milestone 8's autosave is debounced
+  // (~400ms), and a hard `page.goto` fired before it lands kills the
+  // pending write. `createPortfolio` below already ends on a client-side
+  // nav (safe), but its own *next* call starts with a hard
+  // `page.goto('/portfolios/new')` — the 500ms wait here lets the first
+  // portfolio's write settle before that reload fires.
+  await createPortfolio(page, { name: 'A11y Portfolios List Archived Portfolio' });
+  await page.waitForTimeout(500);
+  await createPortfolio(page, { name: 'A11y Portfolios List Delete Portfolio' });
+  await page.waitForTimeout(500);
+  await page.getByRole('link', { name: /Manage portfolios|View portfolios/ }).click();
+  await page.waitForURL('**/portfolios');
+
+  await portfolioRow(page, 'A11y Portfolios List Archived Portfolio')
+    .getByRole('button', { name: 'Archive', exact: true })
+    .click();
+  await page.getByRole('button', { name: /Show archived/ }).click();
+
+  await portfolioRow(page, 'A11y Portfolios List Delete Portfolio')
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click();
+  await expect(page.getByText(/permanently removes the portfolio/)).toBeVisible();
+
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every interactive Portfolios list control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await createPortfolio(page, { name: 'A11y Portfolios List Keyboard Portfolio' });
+  await page.waitForTimeout(500);
+  await page.getByRole('link', { name: /Manage portfolios|View portfolios/ }).click();
+  await page.waitForURL('**/portfolios');
+
+  const reached = await keyboardReach(page, 30);
+  expect(reached).toContain('Duplicate');
+  expect(reached).toContain('Archive');
+  expect(reached).toContain('Delete');
+});
+
+test('Cover: no WCAG AA violations — Create Portfolio form', async ({ page }) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('button', { name: 'Create Portfolio' })).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every Create Portfolio form field is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  const reached = await keyboardReach(page, 30);
+  expect(reached).toContain('Create Portfolio');
+});
+
+test('Cover: no WCAG AA violations — Portfolio edit form, healthy state', async ({ page }) => {
+  await createPortfolioAndOpenEditPage(page, 'A11y Portfolio Edit Healthy Portfolio');
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Portfolio edit form, validation error state', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenEditPage(page, 'A11y Portfolio Edit Error Portfolio');
+
+  const baseCurrencyInput = page.locator('label', { hasText: 'Base currency' }).locator('input');
+  await baseCurrencyInput.fill('');
+  await baseCurrencyInput.blur();
+  await page.waitForTimeout(800);
+
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every interactive Portfolio edit form control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenEditPage(page, 'A11y Portfolio Edit Keyboard Portfolio');
+  const reached = await keyboardReach(page, 60);
+  expect(reached).toContain('Preview Changes');
+});
+
+test('Cover: no WCAG AA violations — Settings, base state', async ({ page }) => {
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+  await expect(page.getByRole('button', { name: 'Full Backup (JSON)' })).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: no WCAG AA violations — Settings, import preview open with a conflict checklist', async ({
+  page,
+}) => {
+  const { readFile } = await import('node:fs/promises');
+
+  // Same debounced-autosave race documented at the top of the "Portfolios
+  // list, with an archived portfolio" test above — a hard `page.goto`
+  // fired immediately after `createPortfolio` can outrun the pending
+  // write, exporting an empty backup. Settled by waiting, then navigating
+  // via the Primary nav's own client-side "Settings" link instead of a
+  // hard reload.
+  await createPortfolio(page, { name: 'A11y Settings Conflict Portfolio' });
+  await page.waitForTimeout(500);
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Settings' })
+    .click();
+  await page.waitForURL('**/settings');
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Full Backup (JSON)' }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  const content = JSON.parse(await readFile(path as string, 'utf-8'));
+
+  const existingEnvelope = content.records.portfolio[0];
+  const replacedEnvelope = {
+    ...existingEnvelope,
+    payload: { ...existingEnvelope.payload, name: 'A11y Settings Conflict Portfolio (Replaced)' },
+  };
+  delete replacedEnvelope.checksum;
+  content.records.portfolio = [replacedEnvelope];
+
+  await page.setInputFiles('input[type="file"]', {
+    name: 'a11y-replace-selected.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(content)),
+  });
+
+  await page.getByRole('radio', { name: 'Replace selected' }).check();
+  await expect(page.getByText(/Conflicting records/)).toBeVisible();
+
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every interactive Settings control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await page.goto('/settings', { waitUntil: 'networkidle' });
+  const reached = await keyboardReach(page, 30);
+  expect(reached).toContain('Full Backup (JSON)');
+});
+
+test('Cover: no WCAG AA violations — Sign In, with a reported error', async ({ page }) => {
+  await page.goto('/sign-in', { waitUntil: 'networkidle' });
+  await page.getByLabel('Email').fill('test@example.com');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.locator('p[role="alert"]')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every Sign In control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await page.goto('/sign-in', { waitUntil: 'networkidle' });
+  const reached = await keyboardReach(page, 20);
+  expect(reached).toContain('Sign in');
+});
+
+test('Cover: no WCAG AA violations — Sign Up, with a reported error', async ({ page }) => {
+  await page.goto('/sign-up', { waitUntil: 'networkidle' });
+  await page.getByLabel('Email').fill('test@example.com');
+  await page.getByLabel('Password', { exact: true }).fill('password123');
+  await page.getByLabel('Confirm password').fill('different456');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.locator('p[role="alert"]')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every Sign Up control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await page.goto('/sign-up', { waitUntil: 'networkidle' });
+  const reached = await keyboardReach(page, 20);
+  expect(reached).toContain('Create account');
+});
+
+test('Cover: no WCAG AA violations — Reset Password, with a reported error', async ({ page }) => {
+  await page.goto('/reset-password', { waitUntil: 'networkidle' });
+  await page.getByLabel('Email').fill('test@example.com');
+  await page.getByRole('button', { name: 'Send reset link' }).click();
+  await expect(page.locator('p[role="alert"]')).toBeVisible();
+  await expectNoWcagAaViolations(page);
+});
+
+test('Cover: every Reset Password control is reachable and operable by keyboard alone', async ({
+  page,
+}) => {
+  await page.goto('/reset-password', { waitUntil: 'networkidle' });
+  const reached = await keyboardReach(page, 20);
+  expect(reached).toContain('Send reset link');
+});
+
+/**
+ * M9-023's own "Expandable content" Verify item —
+ * `LoopStepTable.tsx`'s own per-row `<details>/<summary>` disclosure is
+ * the one genuinely interactive table element in this codebase (see this
+ * file's own header comment). Native `<details>` is keyboard-operable by
+ * design (Space/Enter toggles a focused `<summary>`), verified here
+ * directly rather than assumed from "it's a native element."
+ */
+test('Cover: Loop Step Table row details are keyboard-operable (Expandable content)', async ({
+  page,
+}) => {
+  await createPortfolioAndOpenLoopBuilder(page, 'A11y Expandable Details Portfolio');
+  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await page.waitForTimeout(300);
+
+  // Scoped to the first row specifically — with more than one loop step,
+  // an unscoped `getByText('Available Borrow:')` matches one `<dt>` per
+  // row (each inside its own closed, off-screen-but-still-DOM-present
+  // `<details>`), which is ambiguous for Playwright's strict mode even
+  // though only one is ever actually visible at a time.
+  const stepsTable = page.getByRole('table', { name: 'Loop strategy steps' });
+  const firstRow = stepsTable.locator('tbody tr').first();
+  const firstSummary = firstRow.locator('summary');
+  const firstRowDetail = firstRow.getByText('Available Borrow:');
+
+  await firstSummary.focus();
+  await expect(firstRowDetail).not.toBeVisible();
+
+  await page.keyboard.press('Enter');
+  await expect(firstRowDetail).toBeVisible();
+
+  await page.keyboard.press('Enter');
+  await expect(firstRowDetail).not.toBeVisible();
+});
+
+/**
+ * M9-023's own "Route changes" Verify item, and the real-browser proof
+ * that the M9-024 page-title fix (`app/page.tsx`'s Server/Client split,
+ * see its own header comment) actually reaches assistive technology —
+ * Next.js's own `#__next-route-announcer__` announces `document.title`
+ * on every client-side navigation, but had nothing distinguishing to
+ * announce before this batch (every route shared the one static
+ * "ProfitPilot" title).
+ */
+test('Cover: client-side route changes update document.title, so the route announcer has something meaningful to say (M9-023/M9-024)', async ({
+  page,
+}) => {
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await expect.poll(() => page.title()).toBe('Dashboard — ProfitPilot');
+
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Simulation' })
+    .click();
+  await expect.poll(() => page.title()).toBe('Simulation — ProfitPilot');
+
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Settings' })
+    .click();
+  await expect.poll(() => page.title()).toBe('Settings — ProfitPilot');
 });

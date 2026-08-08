@@ -82,6 +82,11 @@ import { exitTargetFormSchemas } from '../types/exitTargetForm';
  * already-tested `infeasibleReason` via `stores/exitPlannerStore.ts`'s
  * own `warnings` mapping, not a second, UI-layer feasibility check that
  * could disagree with it.**
+ *
+ * **`aria-describedby`/`aria-invalid` added on both fields (06_TASKS.md
+ * M9-026 "Audit Form Accessibility")** — see `LoopStrategyControls.tsx`'s
+ * own header comment for the M6-022-deferred gap this closes across
+ * every RHF form this batch touches.
  */
 const FIELD_BY_TYPE: Record<
   ExitPlannerType,
@@ -204,14 +209,19 @@ function ExitTargetFormForType({
           <label className="flex flex-col gap-1 text-sm">
             <span>{field.label}</span>
             <input
+              id={field.name}
               type="number"
               step="any"
               {...register(field.name, { valueAsNumber: true, onChange: handleFieldChange })}
+              aria-invalid={errors[field.name] ? 'true' : undefined}
+              aria-describedby={errors[field.name] ? `${field.name}-error` : undefined}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
           </label>
           {errors[field.name] && (
-            <span className="text-xs text-destructive">{errors[field.name]?.message}</span>
+            <span id={`${field.name}-error`} className="text-xs text-destructive">
+              {errors[field.name]?.message}
+            </span>
           )}
         </>
       )}
@@ -219,17 +229,22 @@ function ExitTargetFormForType({
       <label className="flex flex-col gap-1 text-sm">
         <span>Target BTC Price (USD) — optional, defaults to the current price</span>
         <input
+          id="scenarioBtcPriceUsd"
           type="number"
           step="any"
           {...register('scenarioBtcPriceUsd', {
             valueAsNumber: true,
             onChange: handleFieldChange,
           })}
+          aria-invalid={errors.scenarioBtcPriceUsd ? 'true' : undefined}
+          aria-describedby={errors.scenarioBtcPriceUsd ? 'scenarioBtcPriceUsd-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.scenarioBtcPriceUsd && (
-        <span className="text-xs text-destructive">{errors.scenarioBtcPriceUsd.message}</span>
+        <span id="scenarioBtcPriceUsd-error" className="text-xs text-destructive">
+          {errors.scenarioBtcPriceUsd.message}
+        </span>
       )}
     </form>
   );

@@ -52,6 +52,12 @@ import { formatCurrency, formatHealthFactor } from '../utils/format';
  * **"Responsive" (Requirement) uses recharts' own `ResponsiveContainer`**
  * — the same technique this library provides for exactly this
  * requirement, no custom breakpoint logic needed.
+ *
+ * **`isAnimationActive={false}` on every `<Bar>` (M9-027 "Audit Motion
+ * and Visual Stability")** — recharts' default mount/update animation is
+ * a separate, non-CSS SVG animation system that `app/globals.css`'s own
+ * `prefers-reduced-motion` media query cannot reach, so it is disabled
+ * directly here instead.
  */
 const BAR_COLOR = 'var(--color-foreground, currentColor)';
 
@@ -106,7 +112,7 @@ export function ScenarioCharts() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Bar dataKey="value" fill={BAR_COLOR} />
+            <Bar dataKey="value" fill={BAR_COLOR} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -125,7 +131,7 @@ export function ScenarioCharts() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Bar dataKey="value" fill={BAR_COLOR} />
+            <Bar dataKey="value" fill={BAR_COLOR} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -144,7 +150,7 @@ export function ScenarioCharts() {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
-            <Bar dataKey="value" fill={BAR_COLOR} />
+            <Bar dataKey="value" fill={BAR_COLOR} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>

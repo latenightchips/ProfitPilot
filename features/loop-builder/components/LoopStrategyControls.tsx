@@ -61,11 +61,12 @@ import {
  * (`maxLoanToValueOverride`/`borrowAprOverride`, both optional there;
  * always concretely supplied from this form).
  *
- * **Per-field validation errors are visually-adjacent text, not given
- * `aria-describedby`/`aria-invalid`** — the same investigated-and-
- * declined decision `ScenarioBuilder.tsx`'s own header comment
- * documents for M6-022 ("Accessibility Review"), applied consistently
- * here rather than introducing a new pattern only for this form.
+ * **Per-field validation errors now carry `aria-describedby`/
+ * `aria-invalid` (06_TASKS.md M9-026 "Audit Form Accessibility")** —
+ * this closes the gap M6-022 ("Accessibility Review") investigated and
+ * explicitly deferred; see `ScenarioBuilder.tsx`'s own header comment
+ * for that original decision, now revisited here and in every other RHF
+ * form this batch touches for the same reason.
  *
  * **Resyncs its own displayed values whenever the Store's `settings`
  * change from a source other than this form itself — a real bug found
@@ -237,72 +238,99 @@ export function LoopStrategyControls({
       <label className="flex flex-col gap-1 text-sm">
         <span>Borrow Percentage Per Step (0–1)</span>
         <input
+          id="borrowPercentagePerStep"
           type="number"
           step="any"
           {...register('borrowPercentagePerStep', {
             valueAsNumber: true,
             onChange: handleFieldChange,
           })}
+          aria-invalid={errors.borrowPercentagePerStep ? 'true' : undefined}
+          aria-describedby={
+            errors.borrowPercentagePerStep ? 'borrowPercentagePerStep-error' : undefined
+          }
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.borrowPercentagePerStep && (
-        <span className="text-xs text-destructive">{errors.borrowPercentagePerStep.message}</span>
+        <span id="borrowPercentagePerStep-error" className="text-xs text-destructive">
+          {errors.borrowPercentagePerStep.message}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Maximum Number of Loops</span>
         <input
+          id="maxLoops"
           type="number"
           step="1"
           {...register('maxLoops', { valueAsNumber: true, onChange: handleFieldChange })}
+          aria-invalid={errors.maxLoops ? 'true' : undefined}
+          aria-describedby={errors.maxLoops ? 'maxLoops-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.maxLoops && (
-        <span className="text-xs text-destructive">{errors.maxLoops.message}</span>
+        <span id="maxLoops-error" className="text-xs text-destructive">
+          {errors.maxLoops.message}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Minimum Health Factor</span>
         <input
+          id="minHealthFactor"
           type="number"
           step="any"
           {...register('minHealthFactor', { valueAsNumber: true, onChange: handleFieldChange })}
+          aria-invalid={errors.minHealthFactor ? 'true' : undefined}
+          aria-describedby={errors.minHealthFactor ? 'minHealthFactor-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.minHealthFactor && (
-        <span className="text-xs text-destructive">{errors.minHealthFactor.message}</span>
+        <span id="minHealthFactor-error" className="text-xs text-destructive">
+          {errors.minHealthFactor.message}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Maximum LTV (0–1)</span>
         <input
+          id="maxLoanToValue"
           type="number"
           step="any"
           {...register('maxLoanToValue', { valueAsNumber: true, onChange: handleFieldChange })}
+          aria-invalid={errors.maxLoanToValue ? 'true' : undefined}
+          aria-describedby={errors.maxLoanToValue ? 'maxLoanToValue-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.maxLoanToValue && (
-        <span className="text-xs text-destructive">{errors.maxLoanToValue.message}</span>
+        <span id="maxLoanToValue-error" className="text-xs text-destructive">
+          {errors.maxLoanToValue.message}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Borrow-Rate Assumption (0–1)</span>
         <input
+          id="borrowRateAssumption"
           type="number"
           step="any"
           {...register('borrowRateAssumption', {
             valueAsNumber: true,
             onChange: handleFieldChange,
           })}
+          aria-invalid={errors.borrowRateAssumption ? 'true' : undefined}
+          aria-describedby={errors.borrowRateAssumption ? 'borrowRateAssumption-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.borrowRateAssumption && (
-        <span className="text-xs text-destructive">{errors.borrowRateAssumption.message}</span>
+        <span id="borrowRateAssumption-error" className="text-xs text-destructive">
+          {errors.borrowRateAssumption.message}
+        </span>
       )}
 
       <button

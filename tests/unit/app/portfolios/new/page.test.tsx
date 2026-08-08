@@ -8,6 +8,15 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
 /**
  * Portfolio Creation Flow — 06_TASKS.md M4-005. DoD: "A valid portfolio
  * is created, selected, calculated, and saved."
+ *
+ * **Every `getByLabelText` call below passes `{ exact: false }` (M9-026
+ * "Audit Form Accessibility")** — required fields now render a trailing
+ * `<RequiredMark />` (`app/portfolios/new/NewPortfolioPageClient.tsx`'s
+ * own header comment) inside each `<label>`, which becomes part of the
+ * label's computed text content (e.g. "Portfolio name *"). An exact
+ * match against the old, marker-less string would fail for every
+ * required field; `{ exact: false }` matches the original text as a
+ * substring instead, unaffected by whether a given field is required.
  */
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -29,41 +38,43 @@ beforeEach(() => {
 });
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Portfolio name'), 'My Portfolio');
-  await user.clear(screen.getByLabelText('BTC quantity'));
-  await user.type(screen.getByLabelText('BTC quantity'), '2');
-  await user.selectOptions(screen.getByLabelText('Debt asset'), 'USDC');
-  await user.clear(screen.getByLabelText('Debt balance'));
-  await user.type(screen.getByLabelText('Debt balance'), '20000');
-  await user.clear(screen.getByLabelText('Current BTC price (USD)'));
-  await user.type(screen.getByLabelText('Current BTC price (USD)'), '50000');
-  await user.clear(screen.getByLabelText('Maximum LTV (0–1)'));
-  await user.type(screen.getByLabelText('Maximum LTV (0–1)'), '0.75');
-  await user.clear(screen.getByLabelText('Liquidation threshold (0–1)'));
-  await user.type(screen.getByLabelText('Liquidation threshold (0–1)'), '0.8');
-  await user.clear(screen.getByLabelText('Borrow APR (0–1)'));
-  await user.type(screen.getByLabelText('Borrow APR (0–1)'), '0.05');
-  await user.clear(screen.getByLabelText('Supply APR (0–1)'));
-  await user.type(screen.getByLabelText('Supply APR (0–1)'), '0.02');
+  await user.type(screen.getByLabelText('Portfolio name', { exact: false }), 'My Portfolio');
+  await user.clear(screen.getByLabelText('BTC quantity', { exact: false }));
+  await user.type(screen.getByLabelText('BTC quantity', { exact: false }), '2');
+  await user.selectOptions(screen.getByLabelText('Debt asset', { exact: false }), 'USDC');
+  await user.clear(screen.getByLabelText('Debt balance', { exact: false }));
+  await user.type(screen.getByLabelText('Debt balance', { exact: false }), '20000');
+  await user.clear(screen.getByLabelText('Current BTC price (USD)', { exact: false }));
+  await user.type(screen.getByLabelText('Current BTC price (USD)', { exact: false }), '50000');
+  await user.clear(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }));
+  await user.type(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.75');
+  await user.clear(screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }));
+  await user.type(screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }), '0.8');
+  await user.clear(screen.getByLabelText('Borrow APR (0–1)', { exact: false }));
+  await user.type(screen.getByLabelText('Borrow APR (0–1)', { exact: false }), '0.05');
+  await user.clear(screen.getByLabelText('Supply APR (0–1)', { exact: false }));
+  await user.type(screen.getByLabelText('Supply APR (0–1)', { exact: false }), '0.02');
 }
 
 describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
   it('collects exactly this task\'s own "Collect" list', () => {
     render(<NewPortfolioPage />);
-    expect(screen.getByLabelText('Portfolio name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Base currency')).toBeInTheDocument();
-    expect(screen.getByLabelText('BTC quantity')).toBeInTheDocument();
-    expect(screen.getByLabelText('Debt asset')).toBeInTheDocument();
-    expect(screen.getByLabelText('Debt balance')).toBeInTheDocument();
-    expect(screen.getByLabelText('Current BTC price (USD)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Maximum LTV (0–1)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Liquidation threshold (0–1)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Borrow APR (0–1)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Supply APR (0–1)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target Health Factor')).toBeInTheDocument();
-    expect(screen.getByLabelText('Holding period (days)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target BTC price (USD)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Safety buffer (%)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Portfolio name', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Base currency', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('BTC quantity', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Debt asset', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Debt balance', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current BTC price (USD)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Maximum LTV (0–1)', { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Borrow APR (0–1)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Supply APR (0–1)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Target Health Factor', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Holding period (days)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Target BTC price (USD)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Safety buffer (%)', { exact: false })).toBeInTheDocument();
   });
 
   it('does not offer a protocol preset option (documented gap, conflict — no values exist anywhere)', () => {
@@ -92,7 +103,7 @@ describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
     const user = userEvent.setup();
     render(<NewPortfolioPage />);
     await fillValidForm(user);
-    await user.clear(screen.getByLabelText('Portfolio name'));
+    await user.clear(screen.getByLabelText('Portfolio name', { exact: false }));
     await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
 
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
@@ -103,8 +114,8 @@ describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
     const user = userEvent.setup();
     render(<NewPortfolioPage />);
     await fillValidForm(user);
-    await user.clear(screen.getByLabelText('Maximum LTV (0–1)'));
-    await user.type(screen.getByLabelText('Maximum LTV (0–1)'), '0.9');
+    await user.clear(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }));
+    await user.type(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.9');
     await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
 
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);

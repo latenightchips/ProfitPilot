@@ -119,18 +119,18 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * **Per-field validation errors were investigated for M6-022's own
  * "Forms" Review item (Batch 21, "Accessibility Review") and
  * deliberately left as visually-adjacent text, not given
- * `aria-describedby`/`aria-invalid`.** A real, targeted `axe-core` scan
- * against a triggered validation error found zero WCAG violations — the
- * visible error text alone already satisfies the automated bar. Adding
- * programmatic field/error association would be a genuine, real
- * improvement, but it is the exact same pattern every other form in
- * this codebase already uses (`app/portfolios/new/page.tsx`,
- * `app/portfolio/page.tsx`, both Milestone 4), unchanged since before
- * this milestone began — fixing it only here would be inconsistent,
- * and fixing it everywhere would be scope beyond M6-022's own
- * "Simulation Workspace" DoD. Flagged here, not silently ignored; not
- * fixed, to avoid inventing a codebase-wide pattern this task's own
- * scope does not ask for.
+ * `aria-describedby`/`aria-invalid`, at the time.** A real, targeted
+ * `axe-core` scan against a triggered validation error found zero WCAG
+ * violations — the visible error text alone already satisfied the
+ * automated bar. Fixing it only here would have been inconsistent with
+ * every other form in the codebase, and fixing it everywhere was flagged
+ * as scope beyond M6-022's own "Simulation Workspace" DoD, deferred
+ * rather than silently ignored. **06_TASKS.md M9-026 ("Audit Form
+ * Accessibility") is exactly that later, codebase-wide batch** — every
+ * field below now carries `id`/`aria-invalid`/`aria-describedby`,
+ * applied consistently across every RHF and non-RHF form this batch
+ * touches (see `LoopStrategyControls.tsx`'s own header comment for the
+ * same fix applied there).
  */
 function defaultFormValues(portfolio: ApplicationPortfolio): ScenarioBuilderFormValues {
   return {
@@ -263,28 +263,40 @@ export function ScenarioBuilder({
       <label className="flex flex-col gap-1 text-sm">
         <span>BTC Price</span>
         <input
+          id="btcPriceUsd"
           type="number"
           step="any"
           value={values.btcPriceUsd}
           onChange={(event) => updateField('btcPriceUsd', event.target.value)}
+          aria-invalid={errors.btcPriceUsd ? 'true' : undefined}
+          aria-describedby={errors.btcPriceUsd ? 'btcPriceUsd-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
-      {errors.btcPriceUsd && <span className="text-xs text-destructive">{errors.btcPriceUsd}</span>}
+      {errors.btcPriceUsd && (
+        <span id="btcPriceUsd-error" className="text-xs text-destructive">
+          {errors.btcPriceUsd}
+        </span>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Percentage Change (0–1)</span>
         <input
+          id="percentageChange"
           type="number"
           step="any"
           placeholder="e.g. 0.10 for +10%"
           value={values.percentageChange}
           onChange={(event) => updateField('percentageChange', event.target.value)}
+          aria-invalid={errors.percentageChange ? 'true' : undefined}
+          aria-describedby={errors.percentageChange ? 'percentageChange-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.percentageChange && (
-        <span className="text-xs text-destructive">{errors.percentageChange}</span>
+        <span id="percentageChange-error" className="text-xs text-destructive">
+          {errors.percentageChange}
+        </span>
       )}
 
       <div className="flex flex-col gap-2">
@@ -306,53 +318,77 @@ export function ScenarioBuilder({
       <label className="flex flex-col gap-1 text-sm">
         <span>Borrow Rate (0–1)</span>
         <input
+          id="borrowApr"
           type="number"
           step="any"
           value={values.borrowApr}
           onChange={(event) => updateField('borrowApr', event.target.value)}
+          aria-invalid={errors.borrowApr ? 'true' : undefined}
+          aria-describedby={errors.borrowApr ? 'borrowApr-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
-      {errors.borrowApr && <span className="text-xs text-destructive">{errors.borrowApr}</span>}
+      {errors.borrowApr && (
+        <span id="borrowApr-error" className="text-xs text-destructive">
+          {errors.borrowApr}
+        </span>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Collateral Change (BTC)</span>
         <input
+          id="collateralDelta"
           type="number"
           step="any"
           value={values.collateralDelta}
           onChange={(event) => updateField('collateralDelta', event.target.value)}
+          aria-invalid={errors.collateralDelta ? 'true' : undefined}
+          aria-describedby={errors.collateralDelta ? 'collateralDelta-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.collateralDelta && (
-        <span className="text-xs text-destructive">{errors.collateralDelta}</span>
+        <span id="collateralDelta-error" className="text-xs text-destructive">
+          {errors.collateralDelta}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Debt Change (USD)</span>
         <input
+          id="debtDelta"
           type="number"
           step="any"
           value={values.debtDelta}
           onChange={(event) => updateField('debtDelta', event.target.value)}
+          aria-invalid={errors.debtDelta ? 'true' : undefined}
+          aria-describedby={errors.debtDelta ? 'debtDelta-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
-      {errors.debtDelta && <span className="text-xs text-destructive">{errors.debtDelta}</span>}
+      {errors.debtDelta && (
+        <span id="debtDelta-error" className="text-xs text-destructive">
+          {errors.debtDelta}
+        </span>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Target Health Factor</span>
         <input
+          id="targetHealthFactor"
           type="number"
           step="any"
           value={values.targetHealthFactor}
           onChange={(event) => updateField('targetHealthFactor', event.target.value)}
+          aria-invalid={errors.targetHealthFactor ? 'true' : undefined}
+          aria-describedby={errors.targetHealthFactor ? 'targetHealthFactor-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
       </label>
       {errors.targetHealthFactor && (
-        <span className="text-xs text-destructive">{errors.targetHealthFactor}</span>
+        <span id="targetHealthFactor-error" className="text-xs text-destructive">
+          {errors.targetHealthFactor}
+        </span>
       )}
 
       <label className="flex flex-col gap-1 text-sm">
@@ -375,15 +411,22 @@ export function ScenarioBuilder({
           <label className="flex flex-col gap-1 text-sm">
             <span>Custom Holding Period (days)</span>
             <input
+              id="customHoldingPeriodDays"
               type="number"
               step="1"
               value={values.customHoldingPeriodDays}
               onChange={(event) => updateField('customHoldingPeriodDays', event.target.value)}
+              aria-invalid={errors.customHoldingPeriodDays ? 'true' : undefined}
+              aria-describedby={
+                errors.customHoldingPeriodDays ? 'customHoldingPeriodDays-error' : undefined
+              }
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
           </label>
           {errors.customHoldingPeriodDays && (
-            <span className="text-xs text-destructive">{errors.customHoldingPeriodDays}</span>
+            <span id="customHoldingPeriodDays-error" className="text-xs text-destructive">
+              {errors.customHoldingPeriodDays}
+            </span>
           )}
         </>
       )}

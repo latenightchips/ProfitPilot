@@ -11054,6 +11054,179 @@ every prior Batch 1–3 recurrence. Recovered by resetting to
 own retained content; re-validated in full after recreation (see above)
 before proceeding to commit.
 
+### Batch 5 — Accessibility Hardening (M9-022–028) — final Milestone 9 Batch 5 task
+
+- **M9-022 (Perform Automated Accessibility Audit)**: audited existing
+  `tests/e2e/accessibility.spec.ts` coverage first (25 axe scans across
+  Dashboard/Simulation/Loop Builder/Exit Planner/Recommendation Center)
+  and closed the real, already-documented gap `docs/DOD_COMPLIANCE_AUDIT.md`
+  named — 6 routes (7 counting `/portfolios/new` and `/portfolio`
+  separately) with zero axe coverage: `/portfolios`, `/portfolios/new`,
+  `/portfolio`, `/settings`, `/sign-in`, `/sign-up`, `/reset-password`.
+  8 new scans added, each against a non-trivial state (a validation
+  error, an open delete-confirm panel, an open import-conflict
+  checklist). **Genuine defect found and fixed**: a WCAG AA
+  "link-in-text-block" violation on Sign In/Sign Up — an inline "Sign
+  in"/"Sign up" link relied on color alone (1.06:1 contrast, hover-only
+  underline) to be distinguished from its surrounding body text. Fixed
+  by making the underline permanent across all 6 occurrences on the 3
+  auth pages; `AppHeader.tsx`'s own, differently-colored `hover:underline`
+  links were inspected and deliberately left unchanged (never trigger
+  this rule). Zero unresolved violations across all 33 scans afterward.
+- **M9-023 (Perform Keyboard Navigation Audit)**: 5 new
+  keyboard-reachability tests for the same previously-uncovered routes,
+  plus 2 more targeted checks — `LoopStepTable.tsx`'s native
+  `<details>/<summary>` row disclosure verified directly as
+  keyboard-operable (`Enter` toggles a focused `<summary>`), and a real
+  end-to-end proof that client-side route changes now update
+  `document.title` (the concrete mechanism M9-024 below builds).
+  "Dialog focus trapping" and "Menu operation" are recorded as a
+  confirmed **N/A**, not silently skipped: a direct search for
+  `role="dialog"`/`<dialog`/`role="menu"` across `app/`/`components/`/
+  `features/` returns zero matches — every "confirm" interaction in this
+  app is `app/portfolios/page.tsx`'s own documented M4-012 inline,
+  non-modal expand-to-confirm pattern.
+- **M9-024 (Perform Screen Reader Review)**: **the batch's most
+  significant genuine defect** — every route shared one static
+  `<title>ProfitPilot</title>`, so a screen-reader user's route
+  announcer had nothing distinguishing to say on navigation. An
+  imperative `document.title` set from a page's own `useEffect` does
+  not work in Next.js App Router — confirmed empirically (console-log
+  instrumentation showed the effect ran and set the title, yet
+  `page.title()` still reported the stale value; a `page.evaluate()`
+  control test set outside React persisted fine, ruling out a periodic
+  revert) — because Next.js's own internal metadata-sync effect lives
+  higher in the tree and, since React commits effects child-before-
+  parent, always runs after and reverts a child page's own effect.
+  **Fixed** by splitting all 12 routes into a thin, non-`'use client'`
+  `page.tsx` exporting Next.js-native `metadata: Metadata`, rendering a
+  new `<Name>PageClient.tsx` Client Component holding the route's entire
+  original implementation unchanged. Every default export keeps its
+  original name, so all 167 existing page-level unit tests needed zero
+  changes. Headings, status messages (`role="status"`), form
+  errors (`role="alert"`), KPI label pairing, `<th scope="col">`, and
+  chart `role="img"`/`aria-label` text alternatives were all audited and
+  found already correct from prior milestones — no further change
+  needed for those items.
+- **M9-025 (Audit Color and Risk Communication)**: a pure audit, no code
+  change required — direct inspection found no color-only-meaning
+  violation anywhere (Health Factor is plain numeric text with no
+  colored "risk zone" banding to begin with; the `--color-status-*` CSS
+  tokens in `app/globals.css` are defined but never actually referenced
+  by any component). Warnings, comparisons, sync state, and validation
+  errors already pair color with text everywhere. Recorded in
+  `docs/ACCESSIBILITY_CONFORMANCE.md` §6.
+- **M9-026 (Audit Form Accessibility)**: closed a gap Milestone 6 Batch
+  21 (M6-022) investigated and explicitly deferred at the time
+  (`ScenarioBuilder.tsx`'s own header comment recorded that decision).
+  Every field with a conditional validation-error message — across
+  `NewPortfolioPageClient.tsx`, `PortfolioPageClient.tsx` (3 forms),
+  `LoopStrategyControls.tsx`, `ExitTargetForm.tsx`, and
+  `ScenarioBuilder.tsx` — now has a unique `id`, `aria-invalid`, and
+  `aria-describedby` pointing at its own error message's `id`, a real
+  programmatic association rather than only visual adjacency. Required
+  fields on the two portfolio forms (previously the only forms with no
+  required-field indicator at all) now carry a decorative,
+  `aria-hidden` `*` paired with `aria-required="true"` on the input —
+  not the native `required` attribute, deliberately, since these forms
+  validate entirely through `zodResolver` and native constraint
+  validation would intercept submission with browser-native error UI
+  before React Hook Form's own handler (and its own tested Zod-message
+  error text) ever runs. **A first implementation used plain sr-only
+  "(required)" text next to the marker instead of `aria-required`; this
+  silently broke 30 existing `getByLabelText('Portfolio name')`-style
+  unit test queries by becoming part of the label's own computed
+  accessible name — found by running the full suite, not assumed safe.**
+  Reverted to `aria-required` (invisible to the accessible-name
+  computation) and updated the 2 affected test files'
+  `getByLabelText` calls to `{ exact: false }`, restoring all 79 tests
+  in those 2 files to passing with no behavior loss.
+- **M9-027 (Audit Motion and Visual Stability)**: `app/globals.css`
+  gained a global `@media (prefers-reduced-motion: reduce)` rule
+  collapsing every CSS `animation-duration`/`transition-duration` to
+  near-zero — rule-based, not per-component, so it covers every current
+  and future Tailwind `animate-*`/`transition-*` utility automatically.
+  `ScenarioCharts.tsx`/`ScenarioTimeline.tsx` (the only recharts
+  consumers) gained `isAnimationActive={false}` on every `<Bar>`/`<Line>`,
+  since recharts' own SVG animation system is untouched by a CSS media
+  query. Loading-state layout stability was audited and found already
+  sound (`DashboardSkeleton.tsx` renders fixed-size placeholders
+  matching the loaded layout) — no change needed there.
+- **M9-028 (Document Accessibility Conformance)**: new
+  `docs/ACCESSIBILITY_CONFORMANCE.md` — standards targeted (WCAG 2.1 AA,
+  per `01_PRD.md`/`03_UI.md`), tools used, a per-task section for
+  M9-022–027 recording what was found and fixed, known limitations (no
+  live assistive-technology session was possible in this environment —
+  the same category of constraint `docs/CROSS_BROWSER_REVIEW.md` already
+  documents for Firefox/Safari — and Dialog/Menu N/A status), and a
+  summary list of every resolved defect and deferred improvement.
+
+**Files changed**: 12 routes split into a thin `page.tsx` (Server
+Component, `metadata` export) + new `<Name>PageClient.tsx` (Client
+Component, original implementation moved verbatim) —
+`app/page.tsx`+`DashboardPageClient.tsx`,
+`app/portfolio/page.tsx`+`PortfolioPageClient.tsx`,
+`app/portfolios/page.tsx`+`PortfoliosPageClient.tsx`,
+`app/portfolios/new/page.tsx`+`NewPortfolioPageClient.tsx`,
+`app/simulation/page.tsx`+`SimulationPageClient.tsx`,
+`app/loop-builder/page.tsx`+`LoopBuilderPageClient.tsx`,
+`app/exit-planner/page.tsx`+`ExitPlannerPageClient.tsx`,
+`app/recommendations/page.tsx`+`RecommendationsPageClient.tsx`,
+`app/settings/page.tsx`+`SettingsPageClient.tsx`,
+`app/sign-in/page.tsx`+`SignInPageClient.tsx`,
+`app/sign-up/page.tsx`+`SignUpPageClient.tsx`,
+`app/reset-password/page.tsx`+`ResetPasswordPageClient.tsx`;
+`app/globals.css` (reduced-motion rule); `features/simulation/components/ScenarioCharts.tsx`,
+`features/simulation/components/ScenarioTimeline.tsx` (animation
+disabled); `app/portfolios/new/NewPortfolioPageClient.tsx`,
+`app/portfolio/PortfolioPageClient.tsx`,
+`features/loop-builder/components/LoopStrategyControls.tsx`,
+`features/exit-planner/components/ExitTargetForm.tsx`,
+`features/simulation/components/ScenarioBuilder.tsx` (form
+accessibility); `tests/e2e/accessibility.spec.ts` (18 new tests: 8 axe
+scans, 5 keyboard-reachability checks, 1 expandable-content check, 1
+route-title check, plus supporting helpers); `tests/unit/app/portfolio/page.test.tsx`,
+`tests/unit/app/portfolios/new/page.test.tsx` (updated `getByLabelText`
+matching for the new required-field marker); 1 new doc
+(`docs/ACCESSIBILITY_CONFORMANCE.md`). No Supabase, Cloud Database, or
+Cloud Sync code introduced; no dependency or lockfile change.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 221/221 files, 2040/2040 tests, zero regressions; `pnpm test:coverage`
+— 96.25% statements / 90.28% branches / 99.46% functions / 98.63% lines;
+`rm -rf .next && pnpm build` clean, 12 routes; full Playwright suite —
+151/151 passing (43 in `accessibility.spec.ts` alone, up from 25). No
+new specification conflict found this batch; "Dialog focus trapping"/
+"Menu operation" recorded as a confirmed N/A per M9-023 above, not a
+conflict.
+
+**Environment/recovery events**: the stale-checkout/reversion issue
+recurred **twice** during this batch. The first, mid-implementation
+while applying the Sign In/Sign Up underline fix, followed the identical
+`f6fd285`-revert pattern documented in every prior Batch 1–4 recurrence
+(13 of 15 leftover files byte-identical to `origin/main`, the remaining
+2 confirmed already-verified-safe older subsets) — recovered by
+resetting to `origin/main` and recreating the wiped work (all 12
+Server/Client route splits, the underline fix, and the entire
+`tests/e2e/accessibility.spec.ts` M9-022/023 addition) from this
+conversation's own retained content, then re-validated in full. The
+second struck immediately after that recovery, mid-way through the
+Batch 5 pre-commit review itself — this time reverting not only every
+tracked file to `f6fd285` but also silently deleting every untracked
+file the batch had created (all 12 new `<Name>PageClient.tsx` files and
+`docs/ACCESSIBILITY_CONFORMANCE.md`), a wider wipe than any prior
+occurrence, which had previously left a fixed, predictable set of
+Batch-6-era leftovers. Diagnosed per the standing protocol before
+touching anything (`git fetch origin main`; `git merge-base
+--is-ancestor f6fd285 origin/main` confirmed no unique commits at risk;
+every leftover tracked file diffed individually against `origin/main`,
+again the same 13-identical-plus-2-known-safe-older-subset pattern) and
+recovered by resetting to `origin/main` and recreating the entire batch
+a second time from this conversation's own retained content;
+re-validated in full after recreation (see above) before proceeding to
+commit. These are the 4th and 5th distinct occurrences of this same
+environment-level issue across Milestone 9 Batches 1–5 combined.
+
 ---
 
 ## Unresolved documentation conflicts
