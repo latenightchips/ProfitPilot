@@ -23,6 +23,18 @@
  * document concretely (see below) and neither of which count as
  * inventing a business rule.
  *
+ * **06_TASKS.md M9-045 ("Test Provider Failure Recovery") "Price provider
+ * unavailable / Timeout / Malformed provider response" are N/A for the
+ * identical reason, not a gap** — those scenarios describe a network
+ * client this file deliberately does not contain (see the SCOPE NOTE
+ * above). What this file's own `normalizeMarketQuote` *does* own —
+ * classifying an already-obtained candidate as Fresh/Stale/Unavailable,
+ * and rejecting a malformed candidate value — is thoroughly covered by
+ * `tests/unit/services/market/quote.test.ts` (16 cases). "Partial
+ * response" and "stale data" are the same "Unavailable"/"Stale"
+ * classification this file already models as first-class outcomes, not
+ * a separate failure to simulate.
+ *
  * Two real, documented rules this file implements verbatim, not
  * invented:
  *   - **Price Freshness** (`04_BUILD_GUIDE.md` "PRICE FRESHNESS"): Fresh

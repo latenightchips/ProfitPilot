@@ -34,6 +34,14 @@
  * file reports a plain timestamp (M3-008's own "Freshness timestamp"
  * Include item) and nothing more.
  *
+ * **06_TASKS.md M9-045 ("Test Provider Failure Recovery") "Protocol
+ * provider unavailable / Timeout / Malformed provider response" are N/A
+ * for the identical reason `services/market/quote.ts`'s own header
+ * comment states for prices — no network client exists here to fail.**
+ * `normalizeProtocolQuote`'s own fallback-order selection and
+ * provenance reporting are covered by
+ * `tests/unit/services/protocol/quote.test.ts` (15 cases).
+ *
  * **`ProtocolQuote` wraps the Engine's own `ProtocolParameters` type
  * directly** (`@/engine`, M2-002) rather than 04_BUILD_GUIDE.md's more
  * elaborate illustrative "PROTOCOL PARAMETER MODEL" (which adds

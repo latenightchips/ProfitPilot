@@ -11427,6 +11427,143 @@ introduced.
 via headless Chromium (§5 of that document). No new specification
 conflict found this batch. No environment/recovery events this batch.
 
+### Batch 8 — Reliability and Error Handling (M9-043–M9-048)
+
+**Environment/recovery event before implementation began**: the
+stale-checkout/reversion issue recurred once, this time before any Batch
+8 work had started (no in-progress work was lost). Local HEAD had
+reverted to `f6fd285` (the same known-bad Milestone 8 Authentication-era
+commit as every prior recurrence) with the identical 15-file leftover
+pattern (9 byte-identical to `origin/main`, 6 differing — including the
+same `tests/unit/services/import/ImportValidator.test.ts`/
+`docs/SECURITY_REVIEW.md` pair flagged in every past occurrence, all
+confirmed strictly older/superseded, never containing anything unique).
+Diagnosed per the standing protocol (`git merge-base --is-ancestor
+f6fd285 origin/main` confirmed safe; every leftover file diffed
+individually before touching anything) and recovered by discarding the
+proven-safe leftovers and resetting to `origin/main` (`d8b4d4a`, the
+synced Batch 7 commit). Separately, this recovery surfaced that local
+`node_modules` had drifted out of sync with the lockfile (still had the
+2 dependencies Batch 7 removed installed; was missing `fast-check`,
+added in an earlier Milestone 9 batch) — caught by a real `pnpm
+typecheck` failure, not assumed; fixed with `pnpm install
+--frozen-lockfile`, which resolved cleanly against the existing lockfile
+with no content changes needed.
+
+- **M9-043 (Audit Application Error Boundaries)** — **the batch's one
+  genuine, substantial gap**: a repository-wide search found no
+  `error.tsx`/`global-error.tsx` anywhere under `app/` and no React
+  `ErrorBoundary` (class-based or otherwise) anywhere in the codebase.
+  What existed instead (`DashboardErrorBanner.tsx`,
+  `StrategyErrorBanner.tsx`) only ever caught an already-returned
+  `{ ok: false }` result, never an actual thrown-during-render exception
+  — nothing in this codebase had ever caught a real React render crash.
+  Added `app/error.tsx` (Next's own file-based route-level boundary,
+  wraps every route below the root layout) and `app/global-error.tsx`
+  (catches a crash in the root layout itself, per Next's own documented
+  requirement that this be a separate, self-contained file with its own
+  `<html>`/`<body>` and no dependency on the app's own provider/shell
+  tree). Both show a fixed, safe message (never `error.message`), a
+  generated diagnostic reference code (`utils/diagnosticId.ts`, new,
+  logged to the console alongside the real error), and a recovery action
+  (`reset()` / a Dashboard link). "Feature-level boundaries where
+  appropriate" audited and none added — this codebase's Engine → Services
+  → Stores → UI boundary means a real render-time throw can only come
+  from a genuine programming defect, equally likely in any one feature as
+  any other, so the shared route-level boundary already satisfies the
+  task's own DoD without a speculative additional nested boundary.
+- **M9-044 (Audit User-Facing Error Messages)**: audit-only, no defect
+  found — scoped specifically to whether a raw exception's internal
+  detail is ever surfaced to the user through an audited UI display
+  path, not a claim that a raw exception can never occur internally (a
+  JS exception can always occur; catching an unexpected one and keeping
+  it off the screen is exactly what M9-043's new boundaries exist for).
+  A repository-wide search for a bound `catch` clause found exactly one
+  in the entire non-test source tree
+  (`services/persistence/adapters/local-storage.adapter.ts`), and it
+  only uses the caught value to classify a quota error, never to render
+  it to the user — every other `catch` block in the codebase is unbound,
+  meaning no other _handled_ path even has a reference to a raw
+  exception it could display. Combined with `services/shared/errors.ts`'s
+  own `ApplicationError` DoD (message must always be safe/user-facing)
+  and 19 components already using `role="alert"` consistently, every
+  audited _expected_-failure display path already satisfied this task's
+  Requirements structurally; M9-043's boundaries are the separate,
+  additional safety net for the _unexpected_, unhandled case this audit
+  does not and cannot claim to rule out.
+- **M9-045 (Test Provider Failure Recovery)**: confirmed N/A for
+  "Price/Protocol provider unavailable, Timeout, Malformed provider
+  response" — no live `PriceProvider`/`ProtocolProvider` adapter exists
+  anywhere (Manual Mode, `01_PRD.md` REQ-010), so there is no network
+  client for these scenarios to exercise. Documented directly in
+  `services/market/quote.ts` and `services/protocol/quote.ts`'s own
+  header comments, citing this task by number. What each file's
+  `normalizeMarketQuote`/`normalizeProtocolQuote` actually owns
+  (Fresh/Stale/Unavailable classification, fallback order, malformed-
+  candidate rejection) was already thoroughly covered (16 and 15 existing
+  test cases respectively) — confirmed, not assumed.
+- **M9-046 (Test Persistence Failure Recovery)**: mostly already
+  satisfied (quota-exceeded, unavailable storage, malformed JSON, failed
+  migration, failed import all pre-covered). **One genuine gap found and
+  fixed**: no test exercised a genuine storage-read failure partway
+  through building a full-backup export — added a
+  `createFailingListAdapter` test double (mirroring
+  `apply.test.ts`'s own `createFailingBulkWriteAdapter` pattern) to
+  `ExportService.test.ts`, confirming `exportFullBackup` fails safely
+  with the propagated `ApplicationError` rather than returning a partial
+  or corrupted backup. Cloud-related items (Cloud unavailable, Sync
+  timeout, Conflict) remain N/A per the already-approved Cloud Sync
+  cancellation.
+- **M9-047 (Test Network Interruption)**: "Price refresh" is N/A (Manual
+  Mode, same reasoning as M9-045); "Synchronization / Cloud save /
+  Import-related cloud workflow" are N/A (Cloud Sync cancelled).
+  "Authentication / Password reset" were a genuine, previously-untested
+  gap — verified directly against the installed
+  `@supabase/supabase-js@2.110.8` source that its `GoTrueClient` converts
+  a network-layer failure into an `AuthRetryableFetchError`/
+  `AuthUnknownError` returned via the call's `{ error }` field, never a
+  rejected Promise, confirming `authService.ts`'s existing no-try/catch
+  pattern is already architecturally correct — not assumed safe. Added 2
+  regression tests (`signIn`, `requestPasswordReset`) proving a
+  network-interruption-shaped error converts to a safe
+  `ApplicationError` end-to-end. No production code change was needed;
+  the gap was test coverage, not behavior.
+- **M9-048 (Perform Data Loss Scenario Review)**: `docs/DISASTER_RECOVERY.md`
+  (M8-050) already existed and covered 5 of 7 named scenarios. Added the
+  3 missing named sections: **Device unavailable** (cross-references
+  "Deleted local browser data" — identical failure surface, more severe
+  cause); **Import replacement mistake** (documents the pre-existing
+  automatic recovery-snapshot-before-`replaceAll`/`replaceSelected`
+  mechanism and its own e2e coverage); **User deletion** (confirmed
+  directly against `stores/portfolioStore.ts` that individual delete
+  takes no automatic snapshot, unlike import's `replaceAll` — documented
+  as a deliberate, honest limitation, with Archive as the reversible
+  alternative for portfolios specifically). "Corrupted local record" is
+  the same scenario "Malformed local storage" already covers.
+
+**Files changed**: `app/error.tsx`, `app/global-error.tsx`,
+`utils/diagnosticId.ts` (all new); `tests/unit/app/error.test.tsx`,
+`tests/unit/app/globalError.test.tsx` (new, 12 tests);
+`services/market/quote.ts`, `services/protocol/quote.ts` (header-comment
+N/A documentation only, no behavior change);
+`tests/unit/services/export/ExportService.test.ts` (+1 test),
+`tests/unit/services/auth/authService.test.ts` (+2 tests);
+`docs/DISASTER_RECOVERY.md` (3 new sections). No package.json/
+pnpm-lock.yaml change. No Supabase, Cloud Database, or Cloud Sync code
+introduced (2 auth tests use the existing in-memory `FakeAuthClient`
+double, same as every other `authService.test.ts` case — no real
+Supabase call). No `engine/` file touched, no financial formula changed.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 225/225 files, 2084/2084 tests passing (+15 from this batch), zero
+regressions; `pnpm test:coverage` — 96.33% statements / 90.50% branches /
+99.55% functions / 98.67% lines (stable, no regression); `rm -rf .next
+&& pnpm build` clean, 12 routes (small expected bundle increase from the
+new shared error-boundary code, ~1kB per route); full Playwright suite
+(151/151) run since this batch adds shared/global behavior (an error
+boundary wrapping every route); `git diff --check` clean. No new
+specification conflict found this batch.
+
 ---
 
 ## Unresolved documentation conflicts

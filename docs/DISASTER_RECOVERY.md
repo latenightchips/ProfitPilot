@@ -15,6 +15,17 @@ be. Two of the seven failure modes below (**Sync conflict**,
 merely pending — documented below as such rather than as work still to
 come.
 
+**Extended in Milestone 9 Batch 8 (M9-048, "Perform Data Loss Scenario
+Review")** with 3 more named scenarios from that task's own "Include"
+list not already covered above under an exact heading: **Device
+unavailable**, **Import replacement mistake**, **User deletion**. The
+underlying recovery mechanisms for two of the three already existed
+before this batch (a recovery snapshot before `replaceAll`, the same
+exported-backup path every other scenario above already documents) —
+this batch adds the missing named section, not new architecture, for
+either. "Corrupted local record" (the 7th M9-048 Include item) is the
+same scenario "Malformed local storage" above already covers.
+
 ## Malformed local storage
 
 **Symptom**: A stored record fails to load. `PersistenceService.read`/
@@ -164,3 +175,91 @@ attempts a lossy read.
 whenever the storage envelope or a payload schema changes — the same
 discipline `services/persistence/envelope.ts`'s own header comment
 already documents for `STORAGE_SCHEMA_VERSION`'s versioning.
+
+## Device unavailable
+
+**Symptom**: The device this application's data lives on is lost, stolen,
+destroyed, or otherwise permanently inaccessible — a different, more
+severe cause than "Deleted local browser data" above, but with an
+identical failure surface from this application's own point of view:
+there is no cloud copy anywhere in this version, so an unreachable device
+and a cleared browser profile on a reachable device both leave `/`
+reporting zero records.
+
+**User-facing recovery**: Identical to "Deleted local browser data"
+above — the only recovery path is a previously exported backup file,
+opened on a different device or a fresh browser profile via `/settings`
+→ **Import** → **Full Backup**. There is no device-level recovery this
+application can perform; a lost device's own local storage is gone with
+the device.
+
+**Developer recovery**: None specific to this scenario — the application
+has no way to distinguish "this device is gone" from "this browser
+profile is empty" (both present identically as a first-time install), so
+no separate code path exists or is needed beyond what "Deleted local
+browser data" already covers.
+
+## Import replacement mistake
+
+**Symptom**: A user selects `replaceAll` (replace every local record with
+the imported file's contents) or `replaceSelected` (replace only the
+checked conflicting records) by mistake, or with a file they did not mean
+to import — a user-intent failure, not a technical one; the import itself
+completes successfully exactly as instructed.
+
+**User-facing recovery**: `/settings` → **Import**'s own `replaceAll` path
+requires an explicit, separate confirmation step before it runs
+(`SettingsPageClient.tsx`) precisely because it is the one merge mode
+with no narrower undo — and, regardless of that confirmation,
+`applyImport` (`services/import/apply.ts`) automatically creates a
+Recovery Snapshot of the entire pre-import dataset immediately before
+writing anything for `replaceAll`/`replaceSelected`. From `/settings` →
+**Recovery Snapshots**, restore the snapshot dated immediately before the
+mistaken import to undo it exactly. `addAsNew`/`mergeNonConflicting`
+(the two additive merge modes) need no such recovery path, since neither
+one ever removes an existing record — the "mistake" they could cause is
+an unwanted duplicate, removable individually via ordinary Delete.
+
+**Developer recovery**: `tests/e2e/settingsWorkflows.spec.ts`'s "a
+recovery snapshot is created before replaceAll and can be restored
+(M8-046/M8-047)" test and `tests/unit/services/import/apply.test.ts`'s
+own snapshot-creation assertions cover this end-to-end, real-browser and
+unit level respectively.
+
+## User deletion
+
+**Symptom**: A user permanently deletes a record (a portfolio, a saved
+loop strategy, a saved exit plan, a saved simulation) via each list's own
+inline "Delete" → "Confirm Delete" control, then wants it back.
+
+**User-facing recovery**: **Delete is permanent by design, with no
+automatic snapshot beforehand** — confirmed directly against
+`stores/portfolioStore.ts`'s own `delete` action, which takes no
+snapshot, unlike `applyImport`'s `replaceAll` path above. The inline
+confirmation step (`app/portfolios/page.tsx`'s own M4-012 pattern, the
+same one every other Store's own list UI reuses for saved loop
+strategies, exit plans, and simulations) exists to prevent an
+*accidental* click, not to make a genuinely intended deletion
+reversible. For portfolios specifically, 03_UI.md's own "Every action is
+reversible whenever possible" is satisfied instead by **Archive**,
+presented alongside Delete on every portfolio row as the safe, fully
+reversible alternative ("Hide from active lists" without discarding
+data) — a user who might want a portfolio back later should Archive it,
+not Delete it. Saved loop strategies, exit plans, and simulations have
+no equivalent Archive option; Delete is their only removal action, so
+the confirmation step is their sole safeguard. Recovery from an
+actually-confirmed Delete is possible only if a Recovery Snapshot
+happens to already exist from an unrelated `replaceAll`/`replaceSelected`
+import taken before the deletion, or from a previously exported backup
+containing the record — neither is guaranteed for an ordinary delete,
+which is the honest limitation this section documents rather than
+implies otherwise.
+
+**Developer recovery**: None to build — this is a documented, deliberate
+product limitation (irreversible-by-design Delete, paired with
+reversible Archive as the safer default), not a defect. If a future
+milestone wants deletions to be snapshot-recoverable too, the same
+`createRecoverySnapshot` call `apply.ts`'s `replaceAll`/`replaceSelected`
+path already makes would need to be added to each Store's own `delete`
+action — a real, identifiable extension point, not built here since no
+task in this batch or before it asks for it.

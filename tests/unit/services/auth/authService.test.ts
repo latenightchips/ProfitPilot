@@ -211,6 +211,43 @@ describe('createAuthService — configured (fake client)', () => {
     expect(result.errors[0]?.message).toBe('Invalid login credentials.');
   });
 
+  it('signIn converts a network-interruption-shaped failure to a safe ApplicationError, not a thrown/unhandled rejection (M9-047)', async () => {
+    // `@supabase/supabase-js@2.110.8`'s own `GoTrueClient` wraps a
+    // network-layer failure (a `fetch` rejection, a timeout) in an
+    // `AuthRetryableFetchError`/`AuthUnknownError` and *resolves* the
+    // call with it in the `error` field — confirmed directly against the
+    // installed package (`AuthRetryableFetchError`/`AuthUnknownError`
+    // both exist in its bundled source) — it does not reject the
+    // returned Promise. `authService.ts`'s own methods have no
+    // try/catch around `client.<method>(...)` for the identical reason:
+    // there is nothing for one to catch under this documented contract.
+    // This test proves that contract holds through to a safe result
+    // rather than assuming it.
+    const fake = new FakeAuthClient();
+    fake.signInResult = {
+      session: null,
+      error: { message: 'Failed to fetch.', code: 'AuthRetryableFetchError', status: 0 },
+    };
+    const service = createAuthService(fake);
+
+    await expect(service.signIn('a@example.com', 'password')).resolves.toMatchObject({
+      ok: false,
+      errors: [{ category: 'authentication', code: 'AuthRetryableFetchError' }],
+    });
+  });
+
+  it('requestPasswordReset converts a network-interruption-shaped failure to a safe ApplicationError (M9-047)', async () => {
+    const fake = new FakeAuthClient();
+    fake.resetError = { message: 'Network request failed.', code: 'AuthRetryableFetchError' };
+    const service = createAuthService(fake);
+
+    const result = await service.requestPasswordReset('a@example.com');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.category).toBe('authentication');
+    expect(result.errors[0]?.code).toBe('AuthRetryableFetchError');
+  });
+
   it('signOut succeeds and propagates failures', async () => {
     const fake = new FakeAuthClient();
     const service = createAuthService(fake);

@@ -8,7 +8,40 @@ import {
 } from '@/services/export/ExportService';
 import { createMemoryAdapter } from '@/services/persistence/adapters';
 import { createPersistenceService } from '@/services/persistence/persistence.service';
+import type { PersistedRecordType, PersistenceAdapter } from '@/services/persistence/types';
 import type { Portfolio } from '@/types/portfolio';
+
+/**
+ * M9-046 ("Test Persistence Failure Recovery") "Failed export" — the one
+ * gap this file's own audit found (M8-037/M8-038 only covered a
+ * not-found single-record export, never a genuine storage-read failure
+ * partway through a multi-record-type full backup). Mirrors
+ * `tests/unit/services/import/apply.test.ts`'s own
+ * `createFailingBulkWriteAdapter` pattern, applied to `list` instead of
+ * `bulkWrite` — `JsonExporter.ts`'s `buildFullBackupFile` reads every
+ * `EXPORTABLE_RECORD_TYPES` entry via `PersistenceService.listEnvelopes`,
+ * which itself calls `adapter.list` (`persistence.service.ts`).
+ */
+function createFailingListAdapter(failOnRecordType: PersistedRecordType): PersistenceAdapter {
+  const real = createMemoryAdapter();
+  const failure = {
+    ok: false as const,
+    errors: [
+      {
+        category: 'persistence' as const,
+        code: 'SIMULATED_FAILURE',
+        message: 'Simulated failure.',
+      },
+    ],
+  };
+  return {
+    ...real,
+    list: async <T>(recordType: PersistedRecordType) => {
+      if (recordType === failOnRecordType) return failure;
+      return real.list<T>(recordType);
+    },
+  };
+}
 
 function samplePortfolio(): Portfolio {
   return {
@@ -41,6 +74,18 @@ describe('exportFullBackup', () => {
     expect(result.data.mimeType).toBe('application/json');
     expect(result.data.filename).toContain('full-backup');
     expect(JSON.parse(result.data.content).records.portfolio).toHaveLength(1);
+  });
+
+  it('a genuine storage-read failure partway through fails safely rather than returning a partial or corrupted backup (M9-046)', async () => {
+    const adapter = createFailingListAdapter('loopStrategy');
+    const service = createPersistenceService(adapter);
+    await service.write('portfolio', 'portfolio-1', samplePortfolio());
+
+    const result = await exportFullBackup({ service, now });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('SIMULATED_FAILURE');
   });
 });
 
