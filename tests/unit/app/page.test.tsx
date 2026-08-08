@@ -94,10 +94,27 @@ describe('DashboardPage — valid portfolio (M5-003 pipeline)', () => {
     );
     expect(screen.getByText(/Storage: Saved/)).toBeInTheDocument();
   });
+
+  it('labels the same F-024 figure identically on the KPI Grid and the Liquidation Risk Panel (M9-055)', () => {
+    // 06_TASKS.md M9-055 ("Audit In-Application Financial Disclosures")
+    // found these two cards disagreeing on whether to hedge this
+    // calculated, forward-looking price as an estimate — DashboardKpiGrid
+    // said "Liquidation Price," LiquidationRiskPanel said "Estimated
+    // Liquidation Price," for the identical number on the identical page.
+    // Both must now read "Estimated Liquidation Price," and only that.
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getAllByText('Estimated Liquidation Price')).toHaveLength(2);
+    expect(screen.queryByText('Liquidation Price', { exact: true })).not.toBeInTheDocument();
+  });
 });
 
 describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => {
-  it('surfaces the Health Factor Service warning and marks the Liquidation Price card unavailable', () => {
+  it('surfaces the Health Factor Service warning and marks the Estimated Liquidation Price card unavailable', () => {
     const created = usePortfolioStore
       .getState()
       .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
@@ -106,8 +123,9 @@ describe('DashboardPage — zero-debt portfolio warnings (Conflict #20)', () => 
 
     render(<DashboardPage />);
 
-    // 1 from DashboardKpiGrid's own Liquidation Price card (M5-006) + 3 from
-    // LiquidationRiskPanel's price/distance/decline cards (M5-009, Batch 4) —
+    // 1 from DashboardKpiGrid's own Estimated Liquidation Price card
+    // (M5-006/M9-055) + 3 from LiquidationRiskPanel's price/distance/decline
+    // cards (M5-009, Batch 4) —
     // Distance/Buffer were deliberately left out of the KPI grid itself and
     // now live in this dedicated panel instead.
     expect(screen.getAllByText('N/A (no debt)').length).toBe(4);

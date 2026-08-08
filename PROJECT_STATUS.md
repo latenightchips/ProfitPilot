@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-08-07
-Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batches 5–11 (M9-022 through M9-064) have not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
+Last updated: 2026-08-08
+Current milestone: **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is in progress**: Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate, M9-057–064) has not been started. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
 This file is maintained by the implementation process (not part of the
 `docs/` specification set) and tracks real build status, deviations, and
@@ -11721,6 +11721,152 @@ holds); full Playwright suite (151/151) run since this batch adds
 shared/global behavior (error monitoring initialization on every
 route); `git diff --check` clean. No new specification conflict found
 this batch.
+
+---
+
+### Batch 10 — Documentation Hardening (M9-053–M9-056)
+
+**Environment/recovery event before implementation began**: the
+stale-checkout/reversion issue recurred a third consecutive time,
+before any Batch 10 work had started (no in-progress work was lost) —
+the identical `f6fd285` revert, the same predictable ~15-file leftover
+pattern (individually diffed against `origin/main`; every differing
+file confirmed strictly older/superseded, never unique work).
+Diagnosed and recovered per the now-standard protocol. **The
+node_modules-drift companion bug also recurred a third consecutive
+time**, this time checked for proactively (`pnpm install
+--frozen-lockfile` run immediately after recovery, per this batch's
+own explicit instruction) rather than discovered via a failing
+`pnpm typecheck` — confirmed the identical drift pattern (2 packages
+a later batch removed still present, `fast-check` missing) and fixed
+cleanly, with zero lockfile content change.
+
+This batch was audit-first, as instructed: most of the work is new or
+extended documentation, not code. One genuine code-level defect was
+found (M9-055, below) and fixed with regression coverage; no financial
+formula was touched.
+
+- **M9-053 (Audit User Documentation)** — **the batch's main,
+  substantial gap**: this project had no real user-facing
+  documentation. `README.md` is the original, frozen AI Project
+  Specification (`Document Type: AI Project Specification`, `Primary
+Audience: AI Coding Agents`) — confirmed by a full read — not a guide
+  for someone using the application, and it is left unmodified (it is
+  already excluded from Prettier's own "Specification documents"
+  scope, the same protected treatment as every `docs/0X_*.md` spec
+  file). New `docs/USER_GUIDE.md`: what ProfitPilot is/is not (no
+  wallet connection, no live Aave read, no transaction execution, not
+  financial advice), getting started, all 7 sidebar tools, how to read
+  a recommendation, understanding risk indicators, "Your data" (local
+  storage only, export/import, the 4 real merge modes with their exact
+  verified UI labels, Recovery Snapshots, Clear Local Data), optional
+  accounts (Sign In never required, no cloud sync even when signed in),
+  optional observability (Sentry off by default, no financial data
+  sent), limitations, and troubleshooting. Every UI-copy claim in it
+  (merge-mode labels, the Supabase-not-configured message, the Clear
+  Local Data flow) was verified directly against the real component
+  source, not written from memory — one inaccuracy (an invented
+  "Replace conflicting local data" label) was caught this way and
+  corrected to the real `app/settings/SettingsPageClient.tsx` label,
+  "Replace selected."
+- **M9-054 (Audit Developer Documentation)**: `CONTRIBUTING.md` (M1-010,
+  a living reference, not a frozen spec) already covered setup, dev/
+  test commands, project structure, and dependency direction, but was
+  missing every operational topic Milestone 8/9 batches actually added.
+  Extended with 5 new sections: an End-to-end tests subsection (the
+  Chromium-only constraint and why, referencing
+  `docs/CROSS_BROWSER_REVIEW.md`); Persistence and local-first scope
+  (the storage schema version, `REGISTERED_MIGRATIONS`'s currently-empty
+  state, and the explicit instruction not to reintroduce Cloud Database/
+  Cloud Sync); Optional authentication (dormant-by-default Supabase,
+  anon-key-only, no service-role key anywhere); Deployment (self-
+  hostable, no confirmed production domain, referencing `next.config.ts`'s
+  own HSTS-without-preload reasoning); Release process (points at the
+  not-yet-run M9-057–M9-064 Release Candidate batch, explicitly states
+  there is no release history yet rather than inventing one); Incident
+  response (links `docs/INCIDENT_RESPONSE.md`); Observability / error
+  monitoring (links `docs/OBSERVABILITY.md`, states the dynamic-import/
+  no-bundle-cost-when-unconfigured design decision).
+- **M9-055 (Audit In-Application Financial Disclosures)**: audited the
+  actual rendered UI (not documentation) across `features/dashboard/`,
+  `features/simulation/`, `features/exit-planner/`, `features/loop-builder/`,
+  `features/recommendations/`, `app/portfolio/`, `app/settings/`, and the
+  error boundaries, against 6 checks from `06_TASKS.md`'s own Verify
+  list. 5 of 6 were fully compliant, with strong existing disclosure
+  coverage confirmed live in the DOM (`DataFreshnessSection.tsx`'s own
+  Manual Mode explanation, `PortfolioPageClient.tsx`'s "Parameter
+  source: Manual" badges and stale-price warning, `LoopSafetyAnalysis.tsx`'s
+  liquidation-proximity warnings, `LoopPresets.tsx`'s explicit
+  non-guarantee disclaimer). **One genuine defect found**: the Dashboard
+  KPI Grid's own liquidation-price card (`features/dashboard/utils/
+buildDashboardViewModel.ts`) labeled the calculated, forward-looking
+  F-024 figure plainly as "Liquidation Price," while
+  `LiquidationRiskPanel.tsx`'s card — rendering the _identical_ number,
+  on the _identical_ Dashboard page — labeled it "Estimated Liquidation
+  Price." A user saw the same calculated dollar figure hedged one way
+  and not the other on one screen. **Fixed** by renaming both branches
+  (available and unavailable/no-debt) of the KPI Grid's own
+  `liquidationPrice` metric label to "Estimated Liquidation Price,"
+  matching the wording already established in `LiquidationRiskPanel.tsx`
+  — a UI-copy change only, no formula touched. New regression test
+  (`tests/unit/app/page.test.tsx`) renders the full Dashboard and
+  asserts both cards now read "Estimated Liquidation Price" (count 2)
+  and that the old, unhedged "Liquidation Price" no longer appears
+  anywhere on the page; `tests/unit/features/dashboard/
+DashboardKpiGrid.test.tsx` and `tests/e2e/dashboardWorkflows.spec.ts`
+  updated to match (the e2e assertion was also scoped to the
+  Liquidation Risk Panel specifically, since the label is no longer
+  unique to one card on the page).
+- **M9-056 (Complete Changelog and Version Metadata)**: new
+  `docs/CHANGELOG.md` — an `[Unreleased]` section (no tagged release
+  exists, so no dated version history is claimed), a version-metadata
+  table naming all 4 real, independent version axes (Application `0.1.0`,
+  Engine `0.1.0`, Formula `1.0` — confirmed identical across every
+  `engine/**` file — Storage schema `1.0.0`) plus "Database migration
+  version: N/A" (Cloud Database is cancelled; the one real
+  migration-versioned system, local storage, is the Storage schema
+  axis above) and "Release date: not yet released," and a Known
+  Limitations section mirroring the User Guide's own list. **Version
+  metadata was fully audited; no genuine numeric conflict was found
+  requiring a stop** — the differing numbers across axes (`0.1.0` vs
+  `1.0` vs `1.0.0`) are legitimately independent, matching this task's
+  own multi-axis Include list, not one figure that needs to agree.
+  **One real judgment call, made and reported rather than acted on
+  silently**: whether to bump the Application/Engine version from
+  `0.1.0` to `1.0.0` as part of "preparing Version 1 metadata." Decided
+  not to, this batch — `06_TASKS.md` M9-064 ("Complete Version 1
+  Quality Sign-Off," the final task of the not-yet-run Release
+  Candidate batch) is the specification's own explicit gate for
+  actually becoming Version 1, and bumping now would assert a
+  production-readiness claim that hasn't been earned yet. Also
+  confirmed exports (`services/export/JsonExporter.ts`,
+  `services/persistence/envelope.ts`) already read `APP_VERSION`/
+  `STORAGE_SCHEMA_VERSION` from the same single-sourced constants this
+  changelog documents, so there is no separate drift risk there; no UI
+  surface renders `APP_VERSION` to a user directly, so there was
+  nothing inconsistent to find or fix on that front.
+
+**Files changed**: 2 new docs (`docs/USER_GUIDE.md`, `docs/CHANGELOG.md`),
+`CONTRIBUTING.md` (extended), `features/dashboard/utils/
+buildDashboardViewModel.ts` (the M9-055 label fix), and the 3
+corresponding test files (`tests/unit/app/page.test.tsx`, `tests/unit/
+features/dashboard/DashboardKpiGrid.test.tsx`,
+`tests/e2e/dashboardWorkflows.spec.ts`). No package.json/pnpm-lock.yaml
+change. No Supabase, Cloud Database, or Cloud Sync code introduced. No
+`engine/` file touched, no financial formula changed. `docs/0X_*.md`
+spec files and `README.md` left untouched, per standing convention.
+
+**Validation**: `pnpm install --frozen-lockfile` clean after recovery
+(no lockfile content change); `pnpm typecheck`/`lint`/`format:check`
+clean; `pnpm test` — 228/228 files, 2123/2123 tests passing (+1 from
+this batch's new regression test), zero regressions; `pnpm
+test:coverage` — 96.33% statements / 90.54% branches / 99.47% functions
+/ 98.63% lines (stable, identical to Batch 9 — the only production code
+change is fully covered by existing plus new tests); `rm -rf .next &&
+pnpm build` clean, 12 routes, shared bundle ~303 kB (unchanged from the
+Batch 9 baseline); full Playwright suite (151/151) run since this batch
+changes shared Dashboard disclosure text; `git diff --check` clean. No
+new specification conflict found this batch.
 
 ---
 

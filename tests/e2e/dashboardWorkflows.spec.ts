@@ -186,7 +186,12 @@ test('Cover: Open risk details (M5-027)', async ({ page }) => {
 
   await expect(page.getByText('Liquidation Risk')).toBeVisible();
   await expect(page.getByText('Health Factor Status')).toBeVisible();
-  await expect(page.getByText('Estimated Liquidation Price')).toBeVisible();
+  // Scoped to the panel itself because the KPI Grid's own liquidation-price
+  // card now shares this exact label too (06_TASKS.md M9-055 — both cards
+  // render F-024 hedged the same way). `LiquidationRiskPanel.tsx`'s own
+  // `<h3>Liquidation Risk</h3>` is a direct child of the panel's wrapper div.
+  const riskPanel = page.getByRole('heading', { name: 'Liquidation Risk' }).locator('..');
+  await expect(riskPanel.getByText('Estimated Liquidation Price')).toBeVisible();
   await expect(page.getByText('Current Health Factor')).toBeVisible();
 });
 

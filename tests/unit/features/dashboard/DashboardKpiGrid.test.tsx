@@ -62,7 +62,7 @@ describe('DashboardKpiGrid — the 8 named cards (M5-006)', () => {
       'Loan-to-Value',
       'Effective Leverage',
       'Annual Interest Cost',
-      'Liquidation Price',
+      'Estimated Liquidation Price',
     ];
     for (const title of expectedTitles) {
       expect(screen.getByText(title)).toBeInTheDocument();

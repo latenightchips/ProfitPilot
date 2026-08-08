@@ -144,19 +144,27 @@ export function buildDashboardViewModel(
 
   const summary = summaryResult.data;
   const liquidation = summary.liquidation;
+  /**
+   * `liquidationPrice`'s label reads "Estimated Liquidation Price," not
+   * "Liquidation Price" (06_TASKS.md M9-055 "Audit In-Application
+   * Financial Disclosures") — a genuine defect found by that audit: this
+   * card and `LiquidationRiskPanel.tsx`'s own "Estimated Liquidation
+   * Price" card render the same F-024 figure on the same Dashboard page,
+   * and previously disagreed on whether to hedge it as an estimate.
+   */
   const liquidationMetrics: Pick<
     DashboardMetrics,
     'liquidationPrice' | 'liquidationDistance' | 'liquidationBuffer'
   > =
     liquidation === null
       ? {
-          liquidationPrice: metric('Liquidation Price', null, 'N/A (no debt)', 'F-024'),
+          liquidationPrice: metric('Estimated Liquidation Price', null, 'N/A (no debt)', 'F-024'),
           liquidationDistance: metric('Distance to Liquidation', null, 'N/A (no debt)', 'F-023'),
           liquidationBuffer: metric('Liquidation Buffer', null, 'N/A (no debt)', 'F-025'),
         }
       : {
           liquidationPrice: metric(
-            'Liquidation Price',
+            'Estimated Liquidation Price',
             liquidation.price,
             formatCurrency(liquidation.price),
             'F-024',
