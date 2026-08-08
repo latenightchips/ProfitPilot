@@ -44,8 +44,7 @@ this project's own established practice throughout every batch of this
 engagement.
 
 **Communication**: If already released, correct `docs/CHANGELOG.md`
-(when it exists — `docs/DOD_COMPLIANCE_AUDIT.md`'s own Batch 1 finding
-notes none exists yet) with an explicit, dated correction entry, not a
+(Milestone 9 Batch 10) with an explicit, dated correction entry, not a
 silent fix — a user who acted on the wrong number deserves to know it
 was wrong, per `01_PRD.md`'s own "every displayed number must have a
 documented origin" principle.

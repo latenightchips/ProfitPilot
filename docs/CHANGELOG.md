@@ -20,9 +20,15 @@ and is ready to be deployed," not "is live at a public URL."
 
 ## Version metadata
 
-ProfitPilot tracks four **independent** version numbers — they measure
+ProfitPilot tracks six **independent** version axes — they measure
 different things and are not expected to match each other. Do not read a
-difference between them as an inconsistency.
+difference between them as an inconsistency. This explicitly includes
+**Documentation version** (below): a specification document's own
+declared revision is a different concept from the Application, Engine,
+Formula, or Storage schema version — it tracks that document's own
+history, not what has actually been built or how persisted data is
+shaped. See `docs/VERSIONING_STRATEGY.md` for the forward-looking policy
+each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
@@ -31,6 +37,7 @@ difference between them as an inconsistency.
 | Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release |
 | Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`)  |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
+| Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed             | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
 
 **Why the Application/Engine version is now `1.0.0`, not `0.1.0`**:

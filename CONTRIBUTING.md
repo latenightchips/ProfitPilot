@@ -145,6 +145,59 @@ version metadata (application/engine/formula/storage-schema versions,
 each an independent axis — they are not expected to match) and known
 limitations.
 
+### Version 1.0.0 scope freeze (`06_TASKS.md` M10-001)
+
+Version 1.0.0 feature scope is frozen as of the commit that completed its
+Quality Sign-Off. Changes on top of that commit are restricted to:
+
+- approved release fixes (a genuine defect found after sign-off, fixed
+  with a regression test, per this project's own standing practice);
+- documentation corrections;
+- dependency/security patches.
+
+Not permitted without an explicit new product decision: new features, any
+undocumented change to a financial formula (`engine/`), and UI redesign.
+A change that needs any of those belongs to a future version, not a
+Version 1.0.0 patch. This mirrors `docs/DEFECT_CLASSIFICATION.md`'s own
+release-blocking rules (§2) — a P0/P1 found after sign-off is exactly the
+kind of "approved release fix" this freeze still allows; a new feature
+request is not.
+
+### Release identification — branch and tag policy (`06_TASKS.md` M10-002)
+
+This project has never used a separate release branch — every milestone,
+from Milestone 1 through the Version 1.0.0 sign-off, has integrated
+directly onto `main` (by patch application; this development process has
+no direct push access to the repository, so a human applies each
+approved, reviewed patch to `main` — see `PROJECT_STATUS.md` for that
+full history). `main` **is** the canonical, integrated release line —
+introducing a second, parallel "release" branch solely for Milestone 10
+would fragment history this project's own workflow was never built
+around, not clarify it.
+
+**Release identification uses an annotated Git tag, `v1.0.0`, on the
+commit that completed Version 1's Quality Sign-Off** — the commit
+documented in `docs/CHANGELOG.md`'s `[1.0.0]` entry and
+`PROJECT_STATUS.md`'s Milestone 9 Batch 11 write-up. This development
+process cannot push to the repository (every push attempt returns a 403;
+patches are exported and applied by the repository owner instead), so
+**this document does not claim the tag exists on the remote until it has
+actually been created there** — verify with `git ls-remote --tags origin`
+before treating `v1.0.0` as real.
+
+**Procedure for the repository owner** to create it, once the Version
+1.0.0 sign-off commit has been confirmed on `origin/main`:
+
+```bash
+git fetch origin main
+git tag -a v1.0.0 <sign-off-commit-sha> -m "Version 1.0.0 — Quality Sign-Off complete"
+git push origin v1.0.0
+```
+
+Future patch releases (`v1.0.x`) tag their own sign-off commit the same
+way, once this project's Versioning Strategy (`docs/VERSIONING_STRATEGY.md`)
+determines a patch is warranted.
+
 ## Incident response
 
 See `docs/INCIDENT_RESPONSE.md` for how to handle a production incident
