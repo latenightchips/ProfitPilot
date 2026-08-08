@@ -11564,6 +11564,164 @@ new shared error-boundary code, ~1kB per route); full Playwright suite
 boundary wrapping every route); `git diff --check` clean. No new
 specification conflict found this batch.
 
+### Batch 9 — Observability (M9-049–M9-052)
+
+**Environment/recovery event before implementation began**: the
+stale-checkout/reversion issue recurred once more, before any Batch 9
+work had started (no in-progress work was lost) — the identical
+`f6fd285` revert, identical 15-file leftover pattern (9 byte-identical
+to `origin/main`, 6 differing, all confirmed strictly older/superseded).
+Diagnosed and recovered per the now-standard protocol. **A second,
+related pattern was confirmed for the first time this batch**: local
+`node_modules` had also drifted out of sync with the lockfile (still had
+dependencies a prior batch removed installed; was missing `fast-check`)
+— caught by a real `pnpm typecheck` failure, not assumed, and fixed with
+`pnpm install --frozen-lockfile`. This is now the second consecutive
+batch this exact node_modules drift has recurred immediately after a
+stale-checkout recovery, suggesting the environment reversion resets
+more than git state — `pnpm install --frozen-lockfile` should be treated
+as a standing step of the recovery protocol itself, not an occasional
+extra.
+
+- **M9-049 (Implement Production Error Monitoring)** — **the batch's
+  main, substantial gap**: `@sentry/nextjs` was installed since M1-002
+  but completely unwired (`docs/DOD_COMPLIANCE_AUDIT.md`'s own Batch 1
+  re-check, `docs/SECURITY_REVIEW.md`'s own M9-029 section). Built
+  `services/observability/errorMonitoring.ts`
+  (`isErrorMonitoringConfigured`/`initErrorMonitoring`/`captureError`),
+  wired via `instrumentation-client.ts` (new)/`instrumentation.ts` (new)/
+  `next.config.ts` (wrapped with `withSentryConfig`, telemetry and
+  source-map upload explicitly disabled — no live Sentry project exists
+  in this environment, the same dormant-until-configured posture
+  `services/auth/` already established for Supabase). Renamed
+  `SENTRY_DSN` → `NEXT_PUBLIC_SENTRY_DSN` (built fresh this batch, not a
+  retroactive fix like M9-030's Supabase rename — nothing read the old
+  name before this batch) since a Sentry DSN is a publishable-by-design
+  token needing client-bundle inlining, the identical reasoning already
+  established for the Supabase anon key; corrected 3 references in
+  `docs/SECURITY_REVIEW.md` that had assumed the old, server-only
+  framing. **A real, measured bundle-size regression was found and
+  fixed**: a first implementation's static `import * as Sentry from
+'@sentry/nextjs'` (reached from the always-executed
+  `instrumentation-client.ts`) added ~76 kB to the shared bundle every
+  route pays for, even with no DSN configured — confirmed via a real
+  `pnpm build`. Fixed by loading `@sentry/nextjs` via a cached dynamic
+  `import()` everywhere, deferring that cost to an async chunk that
+  never loads without a configured DSN; shared bundle returned to ~302 kB
+  (~3 kB above the Batch 8 baseline, the unavoidable cost of the thin
+  wrapper itself) — see `docs/OBSERVABILITY.md` for the full before/after
+  table. Privacy ("Do not send portfolio balances or sensitive user data
+  unnecessarily") is satisfied by two deliberately layered guarantees:
+  `captureError`'s own narrow, 4-field typed context (no code path can
+  pass a `Portfolio`/financial object through it) plus a runtime
+  `beforeSend`/`beforeBreadcrumb` scrub reusing
+  `services/shared/sensitiveFields.ts`'s own detection. Wired into
+  `app/error.tsx`/`app/global-error.tsx` (M9-043's own named Dependency)
+  and the Settings import-failure path (the one place "Import and
+  migration failures" already reaches a real, tested surface, per
+  M9-046). "Provider failures"/"Synchronization failures" are N/A for
+  the same reasons M9-045/Cloud Sync cancellation already established.
+- **M9-050 (Implement Structured Diagnostic Logging)**: new
+  `services/observability/diagnosticEvent.ts` — `DiagnosticEvent` carries
+  every field the task's own Include list names (category, code, real
+  `APP_VERSION`, optional `engineVersion`/`formulaVersion` "where
+  relevant," feature, operation, outcome, sanitized context).
+  `logDiagnosticEvent` always writes to the console (the one real,
+  always-available structured log a local-first, client-only app has)
+  and additionally forwards to Sentry (a breadcrumb on success, a
+  captured message on failure) when configured — feeding M9-051
+  directly. Wired into the identical 2 Settings import-failure call
+  sites as M9-049.
+- **M9-051 (Implement Release Health Metrics)**: no new code — this
+  task's own DoD is about what M9-049/M9-050 already provide once a
+  deployer configures a real Sentry project (its own Issues/Discover
+  dashboards, automatic session/crash-free tracking), not a redundant,
+  independently-built local analytics system this local-first
+  application has nowhere durable to persist. `docs/OBSERVABILITY.md`
+  documents the mapping from each of the task's own named example
+  metrics to what actually provides it, including which are N/A
+  (Failed synchronization rate, Provider fallback rate — same reasons as
+  M9-049).
+- **M9-052 (Create Incident Response Procedure)**: new
+  `docs/INCIDENT_RESPONSE.md` — all 7 named incident types, scoped
+  honestly to this project's real solo/self-hostable operational model
+  (no on-call team, no status page) rather than an invented enterprise
+  process. "Cloud outage" is permanently N/A (Cloud Sync cancelled).
+
+**Two genuine bugs found and fixed by this batch's own new tests, not
+assumed correct**: (1) the initial `scrubForTelemetry` implementation
+used `findSensitiveField` (a whole-subtree scan) to test a single key
+name, which redacted an entire outer object merely because something
+sensitive existed nested inside it, rather than redacting only the
+inner field — fixed by exporting and using a new, narrower
+`isSensitiveFieldName` (`services/shared/sensitiveFields.ts`) that
+checks one key with no recursion. (2) `initErrorMonitoring` had no
+synchronous re-entry guard — caching only the dynamic-import promise let
+two synchronous calls both attach a `.then()` that called `Sentry.init`,
+producing a double initialization — fixed by checking and setting an
+`initStarted` flag synchronously, before the import resolves.
+
+**Three more genuine findings surfaced by the user's own 10-point
+observability/privacy pre-commit review, all fixed before commit**:
+(3) `buildDiagnosticEvent`'s `context` parameter was originally
+`Record<string, unknown>` — structurally able to accept a nested object
+(e.g. an entire `Portfolio`), leaving "no portfolio balances" resting
+only on `scrubForTelemetry`'s own credential-_name_ detection, a real
+gap for a non-credential-shaped key like `balance`/`collateralValue`
+that `SENSITIVE_FIELD_NAMES` deliberately does not cover (that list's
+own scope is credentials, not financial values). **Fixed** by
+introducing `DiagnosticContext` (`Record<string, string | number |
+boolean>`, flat primitives only) — closes off "attach a whole object"
+structurally, matching `captureError`'s own narrower guarantee. (4) The
+scrub's own scope boundary — `beforeSend` never touched
+`event.exception` (an `Error`'s own `message`/stack trace), only
+`extra`/`contexts`/`request` — was true but undocumented, reading as an
+implicit overclaim. **Fixed** by stating the boundary explicitly in
+`errorMonitoring.ts`'s own header comment and `docs/OBSERVABILITY.md`
+(verified safe under this codebase's real call sites: zero bound
+`catch` blocks surface a raw exception's `.message` anywhere per
+M9-044's own audit, and this application's domain model has no wallet/
+address field anywhere), with a new regression test locking the
+documented behavior in rather than leaving it implicit. (5)
+`initErrorMonitoring`/`captureError`'s dynamic-import promise chains had
+no `.catch()` guard — inconsistent with `diagnosticEvent.ts`'s own
+identical chain, which already had one — meaning a failed import or a
+throw inside `Sentry.init`/`captureException` itself would surface as an
+unhandled promise rejection. **Fixed** by adding the identical `.catch()`
+guard to both, with 2 new regression tests forcing the mocked SDK to
+throw and confirming no unhandled rejection/synchronous throw reaches
+the caller.
+
+**Files changed**: `services/observability/` (new: `errorMonitoring.ts`,
+`diagnosticEvent.ts`, `scrub.ts`, `index.ts`), `instrumentation-client.ts`/
+`instrumentation.ts` (new), `next.config.ts`, `utils/env.ts`,
+`.env.example`, `services/index.ts`, `services/shared/index.ts`,
+`services/shared/sensitiveFields.ts` (new `isSensitiveFieldName` export),
+`app/error.tsx`, `app/global-error.tsx`,
+`app/settings/SettingsPageClient.tsx`, `docs/SECURITY_REVIEW.md`
+(3 corrected references), 2 new docs (`docs/OBSERVABILITY.md`,
+`docs/INCIDENT_RESPONSE.md`); corresponding new/updated tests
+(`tests/unit/services/observability/` new — `scrub.test.ts`,
+`errorMonitoring.test.ts`, `diagnosticEvent.test.ts` — plus updates to
+`tests/unit/app/error.test.tsx`, `tests/unit/app/globalError.test.tsx`,
+`tests/unit/app/settings/page.test.tsx`, `tests/unit/next.config.test.ts`,
+`tests/unit/services/publicApiSurface.test.ts`). No package.json/
+pnpm-lock.yaml change (`@sentry/nextjs` was already installed since
+M1-002). No Supabase, Cloud Database, or Cloud Sync code introduced. No
+`engine/` file touched, no financial formula changed.
+
+**Validation**: `pnpm typecheck`/`lint`/`format:check` clean; `pnpm test`
+— 228/228 files, 2122/2122 tests passing (+38 from this batch, including
+3 added during the pre-commit review), zero regressions; `pnpm
+test:coverage` — 96.33% statements / 90.54% branches / 99.47% functions /
+98.63% lines (stable); `rm -rf .next && pnpm build` clean, 12 routes,
+shared bundle ~302–303 kB (confirmed via a real build, re-verified after
+the pre-commit-review fixes above, that the dynamic-import fix still
+holds); full Playwright suite (151/151) run since this batch adds
+shared/global behavior (error monitoring initialization on every
+route); `git diff --check` clean. No new specification conflict found
+this batch.
+
 ---
 
 ## Unresolved documentation conflicts

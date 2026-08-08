@@ -8,6 +8,7 @@ import { exportCsv, exportFullBackup, triggerDownload } from '@/services/export'
 import type { ImportFileValidationResult, ImportPreviewBundle } from '@/services/import';
 import type { ImportApplyResult, MergeMode } from '@/services/import';
 import { applyValidatedImport, previewImport } from '@/services/import';
+import { buildDiagnosticEvent, logDiagnosticEvent } from '@/services/observability';
 import {
   clearLocalData,
   listRecoverySnapshots,
@@ -67,6 +68,15 @@ import { useSimulationStore } from '@/stores/simulationStore';
  * This is the real "user choice" M8-020's "Retain or remove local cached
  * data according to user choice" asks for, without making the common
  * case destructive.
+ *
+ * **`logDiagnosticEvent` on both import failure paths (Milestone 9
+ * Batch 9, M9-050) — `runPreview`'s file-level rejection and
+ * `handleConfirmImport`'s apply-time failure.** This is M9-049's own
+ * named "Import and migration failures" Capture item: the one place
+ * these failures already reach a real, tested (M9-046) user-facing
+ * surface, so it is the one place this batch wires structured
+ * diagnostic logging into rather than speculatively instrumenting every
+ * Service call site in this codebase.
  */
 
 const CSV_EXPORTS: { kind: CsvExportKind; label: string }[] = [
@@ -189,6 +199,15 @@ export function SettingsPageClient() {
     if (!result.ok) {
       setPreviewBundle(null);
       setImportError(result.errors[0]?.message ?? 'This file could not be read.');
+      logDiagnosticEvent(
+        buildDiagnosticEvent({
+          category: 'import',
+          code: result.errors[0]?.code,
+          feature: 'settings',
+          operation: 'previewImport',
+          outcome: 'failure',
+        }),
+      );
       return;
     }
     setPreviewBundle(result.data);
@@ -230,6 +249,16 @@ export function SettingsPageClient() {
 
     if (!result.ok) {
       setImportError(result.errors[0]?.message ?? 'Import failed.');
+      logDiagnosticEvent(
+        buildDiagnosticEvent({
+          category: 'import',
+          code: result.errors[0]?.code,
+          feature: 'settings',
+          operation: 'applyValidatedImport',
+          outcome: 'failure',
+          context: { mergeMode },
+        }),
+      );
       return;
     }
 

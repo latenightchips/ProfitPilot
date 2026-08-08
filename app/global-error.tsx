@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 
+import { captureError } from '@/services/observability';
 import { generateDiagnosticId } from '@/utils/diagnosticId';
 
 /**
@@ -30,6 +31,15 @@ import { generateDiagnosticId } from '@/utils/diagnosticId';
  * reasoning. "Try again" here calls `reset()` in the same way; there is
  * no in-app link to render (a broken root layout cannot be trusted to
  * navigate reliably), so recovery is `reset()` or a manual reload.
+ *
+ * **`captureError` (M9-049) is imported here despite the "zero imports
+ * from the provider/shell tree" rule above — not a contradiction.**
+ * That rule is about not depending on the same React component tree
+ * that might itself be the thing that broke (`AppShell`, the providers,
+ * `next/font`). `services/observability/errorMonitoring.ts` has no
+ * React dependency at all — it is a plain module reading
+ * `utils/env.ts` and dynamically importing `@sentry/nextjs` — so it
+ * carries none of that risk.
  */
 export default function GlobalError({
   error,
@@ -42,6 +52,7 @@ export default function GlobalError({
 
   useEffect(() => {
     console.error(`[${diagnosticId}]`, error);
+    captureError(error, { feature: 'global-error-boundary', operation: 'render' });
   }, [error, diagnosticId]);
 
   return (

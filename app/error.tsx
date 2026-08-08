@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo } from 'react';
 
+import { captureError } from '@/services/observability';
 import { generateDiagnosticId } from '@/utils/diagnosticId';
 
 /**
@@ -59,6 +60,16 @@ import { generateDiagnosticId } from '@/utils/diagnosticId';
  * diagnostic context for logs" requirement M9-044 states for every other
  * error path, applied here too.
  *
+ * **`captureError` (06_TASKS.md M9-049, Milestone 9 Batch 9)** — this
+ * boundary is that task's own named Dependency and its primary "Route
+ * failures"/"Unhandled exceptions" capture point; see
+ * `services/observability/errorMonitoring.ts` for the full "dormant
+ * until `NEXT_PUBLIC_SENTRY_DSN` is configured" reasoning. `feature` is
+ * `'route-error-boundary'` — this file has no single portfolio/feature
+ * context of its own (it wraps every route in the tree, not one), so
+ * naming the boundary itself is more accurate than guessing which route
+ * was active.
+ *
  * **Safe user message**: never renders `error.message` — an uncaught
  * exception's own message is not guaranteed to be user-safe the way
  * `ApplicationError.message` is by convention (`services/shared/errors.ts`'s
@@ -81,6 +92,7 @@ export default function RouteError({
 
   useEffect(() => {
     console.error(`[${diagnosticId}]`, error);
+    captureError(error, { feature: 'route-error-boundary', operation: 'render' });
   }, [error, diagnosticId]);
 
   return (

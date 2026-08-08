@@ -73,7 +73,17 @@ function normalizeFieldName(name: string): string {
 
 const NORMALIZED_SENSITIVE_FIELD_NAMES = new Set(SENSITIVE_FIELD_NAMES.map(normalizeFieldName));
 
-function isSensitiveFieldName(name: string): boolean {
+/**
+ * Checks a single key name only, no recursion — distinct from
+ * `findSensitiveField`, which scans an entire subtree and would
+ * therefore flag an *outer* key as sensitive merely because something
+ * sensitive exists somewhere underneath it. `services/observability/scrub.ts`
+ * (M9-049/M9-050) needs exactly this narrower check: it already recurses
+ * through a structure itself, redacting one key at a time, so it must
+ * know whether *this* key's own name matches, not whether the value
+ * under it contains a match anywhere.
+ */
+export function isSensitiveFieldName(name: string): boolean {
   return NORMALIZED_SENSITIVE_FIELD_NAMES.has(normalizeFieldName(name));
 }
 

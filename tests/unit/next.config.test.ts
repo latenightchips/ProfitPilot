@@ -65,6 +65,14 @@ describe('next.config.ts — security headers (M9-035)', () => {
     expect(csp).toContain("connect-src 'self' https://example.supabase.co");
   });
 
+  it("adds a configured Sentry DSN's own origin to connect-src (M9-049), without breaking 'self'", async () => {
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'https://examplekey@o0.ingest.sentry.io/1');
+    const { default: nextConfig } = await import('../../next.config');
+    const rules = await nextConfig.headers?.();
+    const csp = rules?.[0]?.headers.find((h) => h.key === 'Content-Security-Policy')?.value;
+    expect(csp).toContain("connect-src 'self' https://o0.ingest.sentry.io");
+  });
+
   it('does not throw when an env-configured URL is malformed — utils/env.ts is responsible for rejecting that at startup, not this file', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'not-a-url');
     await expect(import('../../next.config')).resolves.toBeDefined();

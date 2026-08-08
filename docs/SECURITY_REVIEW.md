@@ -371,16 +371,22 @@ deprecation warning surfaced by `pnpm install`/`pnpm audit`) — a direct
 scan of `dependencies`/`devDependencies`, not an exhaustive
 per-package maintenance-history audit.
 
-**Unnecessary packages**: `@sentry/nextjs` is installed but unwired — no
-`Sentry.init()` call exists anywhere in this codebase
-(`docs/DOD_COMPLIANCE_AUDIT.md`'s own re-check, re-confirmed here). Not
-removed: `SENTRY_DSN` is already a declared, documented optional
-environment variable (`utils/env.ts`, `.env.example`), and wiring
-`Sentry.init()` behind that variable is named error-monitoring
-infrastructure this application intends to use, not dead weight —
-removing the package now would mean re-adding it later for no benefit.
-Recorded as a known, intentional "not yet wired" state, not an
-oversight this audit is silently accepting.
+**Unnecessary packages**: `@sentry/nextjs` was installed but unwired as
+of this batch (M9-029) — no `Sentry.init()` call existed anywhere in
+this codebase then (`docs/DOD_COMPLIANCE_AUDIT.md`'s own re-check,
+re-confirmed here at the time). Not removed: `SENTRY_DSN` was already a
+declared, documented optional environment variable (`utils/env.ts`,
+`.env.example`), and wiring `Sentry.init()` behind that variable was
+named error-monitoring infrastructure this application intended to use,
+not dead weight — removing the package then would have meant re-adding
+it later for no benefit. **Update (Milestone 9 Batch 9, M9-049
+"Implement Production Error Monitoring"): this is no longer a "not yet
+wired" state.** `services/observability/errorMonitoring.ts`,
+`instrumentation-client.ts`, and `instrumentation.ts` now call
+`Sentry.init()` (conditionally, only when `NEXT_PUBLIC_SENTRY_DSN` is
+configured — this sandbox still has none set, so it remains dormant
+here the same way Authentication does) — see that batch's own section
+below for the full implementation.
 
 **License concerns**: no license-audit tool (`license-checker`,
 `pnpm licenses`, or similar) is configured in this repository — a
@@ -418,10 +424,14 @@ application reads environment variables from.
 
 **Public variables are intentionally public**: `NEXT_PUBLIC_APP_NAME`
 (display name), `NEXT_PUBLIC_DEFAULT_CURRENCY` (a currency code label),
-and `NEXT_PUBLIC_PRICE_API_URL` (a price-provider endpoint URL, not a
-credential) are all genuinely non-sensitive. `COINGECKO_API_KEY` and
-`SENTRY_DSN` are deliberately *not* `NEXT_PUBLIC_`-prefixed, keeping them
-server-only.
+`NEXT_PUBLIC_PRICE_API_URL` (a price-provider endpoint URL, not a
+credential), and — as of Milestone 9 Batch 9 (M9-049, "Implement
+Production Error Monitoring") — `NEXT_PUBLIC_SENTRY_DSN` (a write-only
+ingestion-endpoint identifier, Sentry's own documented "safe for a
+client bundle" token category, the same one Supabase's anon key already
+belongs to) are all genuinely non-sensitive. `COINGECKO_API_KEY` remains
+deliberately *not* `NEXT_PUBLIC_`-prefixed — a real API credential,
+correctly kept server-only, unlike the three tokens above.
 
 **Missing optional configuration fails gracefully**: every field in
 `utils/env.ts`'s schema is optional or defaulted (REQ-010 "Manual Mode
@@ -456,8 +466,13 @@ future real deployment, the only place this defect was ever reachable.
 both before and after this fix, for different reasons — before, because
 nothing Supabase-related ever reached the client bundle at all (the bug
 this section fixes); after, because only the anon/publishable key
-(explicitly designed to be public) does. `COINGECKO_API_KEY` and
-`SENTRY_DSN` remain server-only and were never at risk.
+(explicitly designed to be public) does. `COINGECKO_API_KEY` remains
+server-only and was never at risk. `SENTRY_DSN` was renamed
+`NEXT_PUBLIC_SENTRY_DSN` in Milestone 9 Batch 9 for the identical
+"publishable-by-design token" reason the anon key already established
+here — see that batch's own M9-049 section below for the full reasoning
+and `PROJECT_STATUS.md`'s "Deviations from a literal reading of the
+docs" section for the record.
 
 **Production and preview values are separated**: a hosting-platform
 concern (e.g. Vercel's per-environment variable scoping), not something

@@ -11,7 +11,16 @@ import RouteError from '@/app/error';
  * error-boundary convention) — directly renderable/testable without
  * needing to actually trigger a render crash through the App Router
  * itself, the same way any other component in this codebase is tested.
+ *
+ * `@/services/observability` is mocked (M9-049, Batch 9) — this test
+ * only needs to confirm `captureError` is actually called with the real
+ * error, not exercise the real Sentry-forwarding path, which
+ * `tests/unit/services/observability/errorMonitoring.test.ts` already
+ * covers on its own.
  */
+const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
+vi.mock('@/services/observability', () => ({ captureError }));
+
 describe('RouteError (app/error.tsx)', () => {
   const testError = Object.assign(new Error('a real, unsafe internal message'), {
     digest: undefined,
@@ -19,6 +28,7 @@ describe('RouteError (app/error.tsx)', () => {
 
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureError.mockClear();
   });
 
   afterEach(() => {
@@ -67,5 +77,13 @@ describe('RouteError (app/error.tsx)', () => {
   it('offers a link back to the Dashboard', () => {
     render(<RouteError error={testError} reset={() => undefined} />);
     expect(screen.getByRole('link', { name: 'Return to Dashboard' })).toHaveAttribute('href', '/');
+  });
+
+  it('reports the real error to error monitoring (M9-049)', () => {
+    render(<RouteError error={testError} reset={() => undefined} />);
+    expect(captureError).toHaveBeenCalledWith(testError, {
+      feature: 'route-error-boundary',
+      operation: 'render',
+    });
   });
 });

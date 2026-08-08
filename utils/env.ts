@@ -30,6 +30,21 @@ import { z } from 'zod';
  * section — this environment has neither variable set either way, so the
  * rename has zero behavioral effect here; it corrects behavior for a
  * future real deployment.
+ *
+ * **`NEXT_PUBLIC_SENTRY_DSN` (06_TASKS.md M9-049 "Implement Production
+ * Error Monitoring") — `NEXT_PUBLIC_`-prefixed from the start, not a
+ * found-and-fixed defect like the Supabase rename above** (nothing read
+ * this variable before this batch, so there was no prior broken behavior
+ * to correct — this is simply building it correctly the first time,
+ * following the identical reasoning). A Sentry DSN is a write-only
+ * ingestion-endpoint identifier, explicitly documented by Sentry itself
+ * as safe to ship in client-side code (the same "public token" category
+ * as Supabase's anon key, unlike `COINGECKO_API_KEY` below, which is a
+ * real secret and deliberately NOT `NEXT_PUBLIC_`-prefixed) — and this
+ * application's error monitoring is initialized from
+ * `instrumentation-client.ts`, which runs in the browser and therefore
+ * needs the same client-bundle inlining every other `NEXT_PUBLIC_*`
+ * variable here relies on.
  */
 const envSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('ProfitPilot'),
@@ -38,7 +53,7 @@ const envSchema = z.object({
   COINGECKO_API_KEY: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
-  SENTRY_DSN: z.string().url().optional().or(z.literal('')),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional().or(z.literal('')),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -51,7 +66,7 @@ function loadEnv(): Env {
     COINGECKO_API_KEY: process.env.COINGECKO_API_KEY,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    SENTRY_DSN: process.env.SENTRY_DSN,
+    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
   });
 
   if (!result.success) {

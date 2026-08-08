@@ -24,6 +24,7 @@ export * from './export';
 export * from './import';
 export * from './loop';
 export * from './market';
+export * from './observability';
 export * from './persistence';
 export * from './portfolio';
 export * from './protocol';

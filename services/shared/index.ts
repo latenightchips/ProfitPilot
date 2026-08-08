@@ -25,4 +25,4 @@ export {
   type ServiceSuccess,
   type ServiceWarning,
 } from './result';
-export { findSensitiveField } from './sensitiveFields';
+export { findSensitiveField, isSensitiveFieldName } from './sensitiveFields';

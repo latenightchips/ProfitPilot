@@ -12,7 +12,13 @@ import GlobalError from '@/app/global-error';
  * requirement for this specific file) — jsdom accepts the resulting
  * nested markup without erroring, so no special test setup is needed
  * beyond querying inside it as usual.
+ *
+ * `@/services/observability` is mocked (M9-049, Batch 9) — see
+ * `tests/unit/app/error.test.tsx`'s own header comment for why.
  */
+const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
+vi.mock('@/services/observability', () => ({ captureError }));
+
 describe('GlobalError (app/global-error.tsx)', () => {
   const testError = Object.assign(new Error('a real, unsafe internal message'), {
     digest: undefined,
@@ -20,6 +26,7 @@ describe('GlobalError (app/global-error.tsx)', () => {
 
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureError.mockClear();
   });
 
   afterEach(() => {
@@ -54,5 +61,13 @@ describe('GlobalError (app/global-error.tsx)', () => {
     render(<GlobalError error={testError} reset={reset} />);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('reports the real error to error monitoring (M9-049)', () => {
+    render(<GlobalError error={testError} reset={() => undefined} />);
+    expect(captureError).toHaveBeenCalledWith(testError, {
+      feature: 'global-error-boundary',
+      operation: 'render',
+    });
   });
 });

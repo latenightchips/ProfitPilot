@@ -322,3 +322,26 @@ describe('Public Service layer API surface (M3-008)', () => {
     });
   });
 });
+
+/**
+ * Observability — 06_TASKS.md M9-049/M9-050. Verifies both are
+ * reachable through the root `@/services` entry point, not just
+ * `@/services/observability`.
+ */
+describe('Public Service layer API surface (M9-049, M9-050)', () => {
+  const expectedFunctionNames = [
+    'isErrorMonitoringConfigured',
+    'captureError',
+    'initErrorMonitoring',
+    'buildDiagnosticEvent',
+    'logDiagnosticEvent',
+  ];
+
+  it.each(expectedFunctionNames)('%s is reachable through @/services alone', (name) => {
+    expect(typeof (Services as Record<string, unknown>)[name]).toBe('function');
+  });
+
+  it('isErrorMonitoringConfigured reports false in this environment (no live Sentry project)', () => {
+    expect(Services.isErrorMonitoringConfigured()).toBe(false);
+  });
+});

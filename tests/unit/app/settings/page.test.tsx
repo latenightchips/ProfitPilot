@@ -24,6 +24,13 @@ vi.mock('@/services/auth', () => ({
 
 const mockAuthService = vi.mocked(authService);
 
+/** M9-050 — see `app/settings/SettingsPageClient.tsx`'s own header comment for why this is the one place this batch wires structured diagnostic logging. */
+const { logDiagnosticEvent } = vi.hoisted(() => ({ logDiagnosticEvent: vi.fn() }));
+vi.mock('@/services/observability', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/observability')>();
+  return { ...actual, logDiagnosticEvent };
+});
+
 /**
  * Settings — 06_TASKS.md M8-042/M8-043/M8-044. See `app/settings/page.tsx`'s
  * own header comment for why this route exists at all in this batch (a
@@ -142,13 +149,21 @@ describe('SettingsPage — import preview', () => {
     expect(screen.getByText(/exported at/i)).toBeInTheDocument();
   });
 
-  it('shows a readable error for a corrupted file', async () => {
+  it('shows a readable error for a corrupted file and logs a diagnostic event (M9-050)', async () => {
     render(<SettingsPage />);
     const file = new File(['{not valid json'], 'bad.json', { type: 'application/json' });
     const input = screen.getByLabelText(/import file/i);
     await userEvent.upload(input, file);
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(logDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'import',
+        feature: 'settings',
+        operation: 'previewImport',
+        outcome: 'failure',
+      }),
+    );
   });
 
   it('disables Confirm Import in replaceAll mode until the confirmation checkbox is checked', async () => {

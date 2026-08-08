@@ -1,3 +1,4 @@
+import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';
 
 /**
@@ -76,13 +77,25 @@ import type { NextConfig } from 'next';
  * password-protected preview URL), not something `next.config.ts` can
  * express — recorded as a deployment recommendation in
  * `docs/SECURITY_REVIEW.md` rather than a code change here.
+ *
+ * **`connect-src` also allows `NEXT_PUBLIC_SENTRY_DSN`'s own origin
+ * (Milestone 9 Batch 9, M9-049)** — a Sentry DSN is itself a valid URL
+ * (`https://<key>@<host>/<project>`), so `new URL(dsn).origin` extracts
+ * the real ingestion host the same way the other two origins are
+ * extracted below. Without this, a configured Sentry DSN would silently
+ * fail to report anything in production — the CSP `default-src 'self'`
+ * would block the SDK's own `fetch` call, the opposite of what a
+ * security header should do to error-monitoring infrastructure. In this
+ * environment the variable is unset, so this resolves to `'self'` alone,
+ * same as before this batch.
  */
 const SUPABASE_ORIGIN = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const PRICE_API_ORIGIN = process.env.NEXT_PUBLIC_PRICE_API_URL;
+const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 function connectSrc(): string {
   const origins = new Set(["'self'"]);
-  for (const raw of [SUPABASE_ORIGIN, PRICE_API_ORIGIN]) {
+  for (const raw of [SUPABASE_ORIGIN, PRICE_API_ORIGIN, SENTRY_DSN]) {
     if (raw === undefined || raw === '') continue;
     try {
       origins.add(new URL(raw).origin);
@@ -130,4 +143,25 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * `withSentryConfig` wrapping — 06_TASKS.md M9-049. **Source-map upload
+ * and release-tracking telemetry are explicitly disabled** (`sourcemaps:
+ * { disable: true }`, `telemetry: false`, `silent: true`) — the same
+ * "no live account, this build must never attempt to reach a real
+ * backend" constraint `services/auth/supabaseClient.ts` already
+ * documents for Supabase, applied here to Sentry's own *build-time*
+ * plugin (distinct from the *runtime* SDK `services/observability/errorMonitoring.ts`
+ * gates on `NEXT_PUBLIC_SENTRY_DSN`) — without this, `pnpm build` could
+ * attempt an authenticated call to Sentry's own API (source map upload,
+ * release creation) that has no credential in this environment and no
+ * business running in a sandbox with no live project. Confirmed via a
+ * real `pnpm build` that this wrapping introduces no network call and no
+ * build failure. `org`/`project`/`authToken` are deliberately left unset
+ * for the identical reason — there is nothing to authenticate against
+ * here, and this application has no CI-configured secret for them.
+ */
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  telemetry: false,
+  sourcemaps: { disable: true },
+});
