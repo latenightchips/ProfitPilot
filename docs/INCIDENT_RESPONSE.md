@@ -7,6 +7,16 @@ Cloud outage, Broken import, Failed migration, Critical dependency
 vulnerability." DoD: "The team has a defined escalation, mitigation,
 communication, and rollback process."
 
+**Extended in Milestone 10 Batch 2 (M10-013, "Document Incident Response
+Workflow")** with the two lifecycle stages that document's own Include
+list names but this one didn't yet have explicit sections for —
+**Classification** and **Postmortem** — added below as a cross-cutting
+"Lifecycle overview" rather than repeated seven times under every
+incident type; every incident type's own existing Detection/Escalation/
+Mitigation/Communication/Rollback content is unchanged, satisfying the
+remaining five stages M10-013 names (Detection, Escalation stays as-is,
+Mitigation ≈ Resolution, Communication, Rollback ≈ Recovery).
+
 **Scoped honestly to what this project actually is** — the same
 discipline `docs/DISASTER_RECOVERY.md`/`docs/CROSS_BROWSER_REVIEW.md`
 already establish for their own scope. ProfitPilot is a self-hostable,
@@ -19,7 +29,52 @@ invented enterprise process that doesn't fit it. One of the seven named
 incident types (**Cloud outage**) is permanently not applicable for the
 same reason `docs/DISASTER_RECOVERY.md`'s own "Unavailable Supabase"/
 "Sync conflict" sections are — Cloud Database and Cloud Synchronization
-are cancelled (`docs/MILESTONE_8_SCOPE_CHANGE.md`).
+are cancelled (`docs/MILESTONE_8_SCOPE_CHANGE.md`). No publicly operated
+production deployment exists for Version 1.0.0 (Milestone 10 Batch 1,
+explicit product/release decision; `docs/RELEASE_NOTES.md`) — every
+incident type below is written for whoever actually self-hosts this
+application, since there is no ProfitPilot-operated instance to have an
+incident on.
+
+## Lifecycle overview: Classification and Postmortem
+
+These two stages apply uniformly across every incident type below,
+rather than being repeated seven times.
+
+### Classification
+
+Severity is based on **impact**, using `docs/DEFECT_CLASSIFICATION.md`'s
+own P0–P3 definitions verbatim — not an invented organizational role or
+team, since none exists:
+
+| Severity | Definition | Example from this document |
+|---|---|---|
+| P0 | Data loss, security breach, incorrect critical financial result, unusable application, or cross-user exposure. | "Incorrect financial output" is always at least P0 |
+| P1 | Major workflow failure, misleading high-risk output, inaccessible critical workflow, or persistent synchronization failure (this last example is **N/A — removed by product decision**, `docs/DEFECT_CLASSIFICATION.md`'s own note; Cloud Synchronization is cancelled). | A "Broken import"/"Failed migration" that leaves the application unusable, not just one feature degraded |
+| P2 | Significant but recoverable defect with a documented workaround. | A "Data loss report" that resolves via an existing Recovery Snapshot or backup |
+| P3 | Minor visual, wording, or low-impact usability issue. | A cosmetic issue in an error message's own wording |
+
+Classify at Detection time, before Mitigation begins — the same
+`docs/DEFECT_CLASSIFICATION.md` §2 release-blocking rules that govern a
+pre-release defect also govern how urgently a post-release incident gets
+worked, scaled to a solo/self-hosted operational model: a P0 is dropped
+into immediately, a P3 is scheduled normally.
+
+### Postmortem
+
+For any P0 or P1 incident, once resolved: write a short, dated entry
+(in `docs/CHANGELOG.md` if it affected a released version, or as a new,
+explicitly dated addition to this document's own relevant section
+otherwise) covering what happened, the detection method, the fix
+commit, and the regression test added — the same "a fix without a
+regression test is not Resolved" standard
+`docs/DEFECT_CLASSIFICATION.md` §4 already sets for a pre-release
+defect, applied here to a post-release one. **No fabricated postmortem
+exists in this document** — every incident type below is a documented
+*procedure* for a *hypothetical future* incident, not a record of one
+that has actually happened; no ProfitPilot-operated production incident
+has occurred, because no ProfitPilot-operated production deployment
+exists yet.
 
 ## Incorrect financial output
 
