@@ -283,6 +283,14 @@ describe('SettingsPage — storage, sync, and recovery snapshots (M8-047)', () =
     expect(screen.getByText(/sync state: local only/i)).toBeInTheDocument();
   });
 
+  it('never describes Cloud Sync as pending — a cancelled feature is not "not yet" shipped (Milestone 10 Batch 7)', () => {
+    const { container } = render(<SettingsPage />);
+    expect(container.textContent).not.toMatch(/does not yet sync|not yet sync/i);
+    expect(
+      screen.getByText(/stored on this device and is not synced anywhere/i),
+    ).toBeInTheDocument();
+  });
+
   it('shows "No recovery snapshots yet" when none exist', async () => {
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText(/no recovery snapshots yet/i)).toBeInTheDocument());

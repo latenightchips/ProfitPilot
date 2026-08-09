@@ -53,12 +53,16 @@ import { useSimulationStore } from '@/stores/simulationStore';
  *
  * **"View sync state" (M8-047) and "Explain what cloud data will
  * remain" (M8-048) are both satisfied with honest, static copy, not a
- * real sync status widget or cloud-deletion behavior.** No cloud sync
- * exists anywhere in this application yet — Cloud Database/Cloud Sync
- * stay out of scope through this batch per this engagement's own
- * standing instruction. Saying so plainly ("ProfitPilot does not yet
- * sync to the cloud") is the accurate statement of the current state,
- * not a placeholder pretending a real feature exists.
+ * real sync status widget or cloud-deletion behavior.** Cloud Database
+ * and Cloud Synchronization are cancelled by product decision
+ * (Milestone 8, `docs/MILESTONE_8_SCOPE_CHANGE.md`) — a permanent
+ * disposition, not a "not yet built" one. The copy below states the
+ * local-only storage model directly ("your data is stored on this
+ * device and is not synced anywhere") rather than the earlier
+ * "does not yet sync to the cloud" wording, which read as a pending
+ * feature — corrected in Milestone 10 Batch 7 (`docs/TECHNICAL_DEBT.md`'s
+ * own recorded finding, Milestone 10 Batch 5) after Cloud Sync's
+ * cancellation had already been decided.
  *
  * **Account section (Milestone 8 Batch 5, M8-020/M8-021)**: sign-in
  * status plus two sign-out paths — a plain "Sign Out" that never touches
@@ -559,7 +563,9 @@ export function SettingsPageClient() {
         <h2 className="text-sm font-semibold text-foreground">Storage &amp; Sync</h2>
         <div className="text-xs text-muted-foreground">
           <p>Storage mode: Local storage (browser)</p>
-          <p>Sync state: Local only — ProfitPilot does not yet sync to the cloud.</p>
+          <p>
+            Sync state: Local only — your data is stored on this device and is not synced anywhere.
+          </p>
         </div>
       </section>
 
@@ -638,7 +644,7 @@ export function SettingsPageClient() {
         <h2 className="text-sm font-semibold text-foreground">Clear Local Data</h2>
         <p className="text-xs text-muted-foreground">
           This permanently deletes all portfolios, saved strategies, exit plans, simulations, and
-          preferences stored in this browser. ProfitPilot does not yet sync to the cloud, so nothing
+          preferences stored in this browser. Your data is stored only on this device, so nothing
           else holds a copy of this data unless you export it first. A recovery snapshot is saved
           automatically before clearing, but exporting a full backup is the safer option if you want
           to keep this data long-term.

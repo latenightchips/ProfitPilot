@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-08
-**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations is in progress**: Batch 1 (Release Preparation & Version Finalization, M10-001–004, M10-019, repository-level M10-005), Batch 2 (Operational Documentation, M10-012–M10-015), Batch 3 (Review Documentation Set, Publish Developer Documentation, Publish User Documentation, M10-016–M10-018), Batch 4 (Create Maintenance Schedule, M10-020), and Batch 5 (Conduct Version 1 Retrospective, Review Technical Debt, Create Version 2 Backlog, Archive Version 1 Planning, M10-021–M10-024) are complete and synchronized to GitHub. Batch 6 (Production Deployment/Monitoring disposition, M10-005–M10-011) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. Per an explicit product/release decision, no publicly hosted production deployment is part of Version 1's completion requirement; M10-006–M10-011 are each individually classified "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A" (reserved for cancelled Cloud Database/Cloud Sync) and not "complete." Milestone 10 as a whole remains **not complete** — Batch 7 has not been started.
+**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations**: Batches 1–6 (M10-001–M10-020, M10-021–M10-024, M10-005–M10-011) are complete and synchronized to GitHub. Batch 7 (Finalize Version 1, Celebrate the Release — final project closure audit, M10-025–M10-026) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. **Full, final Milestone 10 ledger (M10-001–M10-026)**: 16 COMPLETE; 5 COMPLETE UNDER APPROVED DISPOSITION (M10-002, M10-005, M10-008, M10-021, M10-025); 5 DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION (M10-006, M10-007, M10-009, M10-010, M10-011 — "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A," which is reserved for cancelled Cloud Database/Cloud Sync); 0 UNRESOLVED/BLOCKING. **This is not summarized as "all M10 tasks complete."** Pending this batch's own commit approval: **ProfitPilot Version 1.0.0 software release: COMPLETE. Version 1 quality sign-off: COMPLETE. Milestone 10: COMPLETE UNDER APPROVED PATH B DISPOSITION. Version 1 project/repository closure: COMPLETE UNDER APPROVED PATH B DISPOSITION. Operated public production deployment: DEFERRED. Live production monitoring: DEFERRED. Cloud Database/Cloud Sync: CANCELLED. Version 2: NOT STARTED.**
 
 The remainder of this summary paragraph is historical: Milestone 9 Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate and Version 1 Quality Sign-Off, M9-057–064) is also complete: a real production build/server was verified directly (security headers confirmed on a live response, not just source), the full regression suite passed (2123/2123 unit tests, 151/151 Playwright including 43/43 accessibility), 8 AI-agent-driven exploratory scenarios found zero defects, the local storage migration/rollback mechanism was confirmed genuinely wired into the real app boot path (not just unit-tested), and the open-defect review found zero P0/P1 defects — one non-blocking P2 (CI does not yet run the Playwright suite automatically) was found, classified, and documented rather than silently left unmentioned. Version 1 Quality Sign-Off passed; `package.json`/`APP_VERSION`/`ENGINE_VERSION` bumped from `0.1.0` to `1.0.0` per `01_PRD.md` REQ-017's own definition of what "Version 1.0" means, `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` left unchanged. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
@@ -12743,6 +12743,245 @@ application code, no `package.json`/lockfile change, no `engine/` file
 touched, no external infrastructure created, no deployment, no git tag,
 no LICENSE file. Milestone 10 remains in progress, and is **not**
 complete — Batch 7 has not begun.
+
+### Batch 7 — Finalize Version 1, Celebrate the Release (M10-025, M10-026) — FINAL PROJECT CLOSURE AUDIT
+
+**Environment recovery before implementation began — two occurrences
+during this batch, both fully diagnosed, neither an application
+defect.** The recurring stale-checkout signature seen before Batch 5
+recurred at the start of this batch, and again mid-batch (the container
+reverted to the same pre-Batch-5 snapshot a second time, after this
+batch's own work — the Settings copy fix, its regression test, and
+`docs/VERSION_1_CLOSURE.md` — had already been produced once). Both
+times, diagnosed per the standing protocol before touching anything:
+`HEAD` at `e48dc7a`, `git merge-base HEAD origin/main` returned
+`e48dc7a` (origin/main strictly ahead, no divergent history); the same
+12 files showed as locally modified, 8 of them already byte-identical
+to `origin/main`; the remaining 4 (`CONTRIBUTING.md`, `PROJECT_STATUS.md`,
+`docs/CHANGELOG.md`, `docs/USER_GUIDE.md`) proven byte-identical to
+commit `865d9d5` (Batch 11, already an ancestor of `origin/main`); a
+final whole-tree `git diff 865d9d5 --stat` confirmed zero difference
+each time. **No unique work was ever lost** — this batch's own new work
+had not yet been committed at either point (uncommitted work-in-progress
+is exactly what a container reset of this kind erases; nothing in this
+repository's own history or logic caused it). Recovered both times via
+`git checkout -- <files>` then `git checkout -B <branch> origin/main`,
+followed by `pnpm install --frozen-lockfile` (zero drift both times).
+The second occurrence required reconstructing this batch's own work
+from scratch — the Settings copy fix, its regression test, and
+`docs/VERSION_1_CLOSURE.md` were all rewritten identically in substance,
+this time incorporating this batch's own final closure-integrity review
+corrections directly rather than as a separate edit pass. **This is an
+environment/tooling issue in this development process's own container
+lifecycle, not a ProfitPilot application defect** — no application code
+behavior is implicated.
+
+**Canonical tasks, re-read directly from `docs/06_TASKS.md`, wording
+preserved exactly**: **M10-025 ("Finalize Version 1")** — P0, Effort S,
+depends on M10-024. Description: "Confirm — Release completed,
+Documentation complete, **Monitoring active**, Support documentation
+available, Known issues documented." DoD: "Version 1 is officially
+complete." **M10-026 ("Celebrate the Release")** — P3, Effort XS,
+depends on M10-025. Description: "Recognize the completion of Version
+1." Document: Project timeline, Milestones achieved, Lessons learned,
+Future vision. DoD: "The team closes Version 1 intentionally before
+beginning Version 2."
+
+**Material tension found and not silently resolved, wording not
+rewritten**: M10-025's own Description literally names "Monitoring
+active" as a confirmation item — false under the approved Path B
+decision (no live Sentry project exists). **Not rewritten as literally
+true anywhere in this record.** Resolved by applying the same,
+already-approved disposition framework M10-009 already established in
+Batch 6: monitoring capability/integration readiness — implemented and
+tested; live, operated production monitoring — deferred. `docs/06_TASKS.md`
+itself is not modified. Full itemized confirmation table and the frozen
+"VERSION 1 FINAL ACCEPTANCE CHECKLIST" audit in new
+`docs/VERSION_1_CLOSURE.md`. **M10-025 status: COMPLETE UNDER APPROVED
+DISPOSITION, not unconditionally complete.**
+
+**Full Milestone 10 ledger (M10-001–M10-026), re-checked one final
+time against `docs/06_TASKS.md` and current repository evidence**:
+
+| Task                                        | Status                                                                                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| M10-001 Freeze Version 1 Scope              | COMPLETE                                                                                                                                  |
+| M10-002 Create Version 1 Release Branch     | COMPLETE UNDER APPROVED DISPOSITION                                                                                                       |
+| M10-003 Finalize Version Metadata           | COMPLETE                                                                                                                                  |
+| M10-004 Prepare Release Notes               | COMPLETE                                                                                                                                  |
+| M10-005 Configure Production Environment    | COMPLETE UNDER APPROVED DISPOSITION                                                                                                       |
+| M10-006 Deploy Version 1                    | **DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION**                                                                                         |
+| M10-007 Verify Production Deployment        | **DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION**                                                                                         |
+| M10-008 Create Rollback Package             | COMPLETE UNDER APPROVED DISPOSITION                                                                                                       |
+| M10-009 Enable Production Monitoring        | **DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION**                                                                                         |
+| M10-010 Verify Production Logging           | **DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION**                                                                                         |
+| M10-011 Review Production Health            | **DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION**                                                                                         |
+| M10-012 Create Operational Runbook          | COMPLETE                                                                                                                                  |
+| M10-013 Document Incident Response Workflow | COMPLETE                                                                                                                                  |
+| M10-014 Create Support Playbook             | COMPLETE                                                                                                                                  |
+| M10-015 Document Known Issues               | COMPLETE                                                                                                                                  |
+| M10-016 Review Documentation Set            | COMPLETE                                                                                                                                  |
+| M10-017 Publish Developer Documentation     | COMPLETE                                                                                                                                  |
+| M10-018 Publish User Documentation          | COMPLETE                                                                                                                                  |
+| M10-019 Create Versioning Strategy          | COMPLETE                                                                                                                                  |
+| M10-020 Create Maintenance Schedule         | COMPLETE                                                                                                                                  |
+| M10-021 Conduct Version 1 Retrospective     | COMPLETE UNDER APPROVED DISPOSITION (formal dependency M10-006 remains deferred; documented deviation preserved unchanged, not rewritten) |
+| M10-022 Review Technical Debt               | COMPLETE                                                                                                                                  |
+| M10-023 Create Version 2 Backlog            | COMPLETE                                                                                                                                  |
+| M10-024 Archive Version 1 Planning          | COMPLETE                                                                                                                                  |
+| M10-025 Finalize Version 1                  | COMPLETE UNDER APPROVED DISPOSITION                                                                                                       |
+| M10-026 Celebrate the Release               | COMPLETE                                                                                                                                  |
+
+**Whole-task counts, verified exactly as expected**: **16 COMPLETE**;
+**5 COMPLETE UNDER APPROVED DISPOSITION** — exactly M10-002, M10-005,
+M10-008, M10-021, M10-025; **5 DEFERRED BY EXPLICIT PRODUCT/RELEASE
+DECISION** — exactly M10-006, M10-007, M10-009, M10-010, M10-011; **0
+CANCELLED/N/A at the whole-task level**; **0 OWNER/EXTERNAL ACTION
+REQUIRED at the whole-task level**; **0 UNRESOLVED/BLOCKING**. No
+deferred task is converted into a complete task for the purpose of
+closing the project.
+
+**`06_TASKS.md`'s own frozen "VERSION 1 FINAL ACCEPTANCE CHECKLIST"
+re-audited, not assumed, not edited**: full itemized disposition in
+`docs/VERSION_1_CLOSURE.md`. Four statements ("Cloud synchronization
+completed," "Production deployment completed," "Monitoring enabled,"
+"all documents are internally consistent and version aligned") are
+**not literally true** — each is an already-known, already-approved
+disposition (Milestone 8 cancellation; Path B deferral; Conflict #38)
+predating this audit. **Later-approved scope/release decisions
+supersede literal satisfaction of these checklist lines for closure
+purposes**; the frozen checklist itself remains unedited.
+
+**Project-wide Version 1 closure findings, re-verified fresh this
+batch**: `APP_VERSION`/`ENGINE_VERSION` = `1.0.0`, `FORMULA_VERSION` =
+`1.0`, `STORAGE_SCHEMA_VERSION` = `1.0.0`. `git ls-remote --tags origin`
+re-run twice this batch — no `v1.0.0` tag exists remotely, not created
+or claimed here. `docs/DEFECT_CLASSIFICATION.md` — **P0 = 0, P1 = 0**
+(unchanged). A fresh `pnpm audit` found **exactly 18 advisory instances
+(11 high, 7 moderate, 0 critical)** across the same 7 already-recorded
+packages (`sharp`, `postcss`, `brace-expansion`, `undici`, `fast-uri`,
+`js-yaml`, `nanoid`) — no drift, and **this repository is not described
+as vulnerability-free**; every instance is a build/lint/test-tooling
+dependency path, evidence-classified as such, not a demonstrated
+runtime application vulnerability. `playwright.config.ts` still runs
+Chromium only — **Firefox/Safari automated verification is not
+claimed**; `.github/workflows/ci.yml` still does not reference
+`test:e2e`/Playwright — the known **P2 CI gap is unchanged**.
+`.env.example` still ships every variable unset; `supabase/` still
+contains only `.gitkeep` — no external infrastructure was created.
+Conflict #38 and Conflict #39 re-confirmed present and unedited in this
+file. No `LICENSE` file, no `package.json` `license` field — the
+governing project license remains an unresolved owner decision/
+distribution consideration, not a legal conclusion and not a closure
+blocker, not selected here.
+
+**Technical-debt classification** (`docs/TECHNICAL_DEBT.md`,
+`docs/KNOWN_ISSUES.md`, read line by line): every remaining item
+classifies as **A** (acceptable post-Version-1 debt), **B** (intentional
+limitation), **C** (owner decision), or **D** (cancelled scope). **Zero
+items classify as E (project-closure blocker).**
+
+**Stale Settings Cloud-Sync copy — fixed this batch, reconstructed
+identically after the second recovery.** `app/settings/SettingsPageClient.tsx`'s
+"does not yet sync to the cloud" (2 occurrences) replaced with
+permanent, local-only framing that (a) describes local-device storage
+accurately, (b) does not imply Cloud Sync is planned, (c) does not
+imply automatic backup, and (d) does not reopen Cloud Sync scope — no
+persistence behavior was altered. A regression test was added to
+`tests/unit/app/settings/page.test.tsx`, rendering the real
+`SettingsPage` (`@/app/settings/page`) component and asserting both
+that the corrected wording is present and that the stale phrase is
+absent from the rendered output.
+
+**Conflict #38**: left unchanged — remains a frozen documentation-
+version inconsistency, documented, non-runtime, non-blocking; not
+normalized to agree with living documentation.
+
+**Conflict #39 reassessed for closure, preserved, not resolved**: the
+missing `03_UI.md` About-section fields are not a Version 1 release
+blocker — nothing was ever tasked to build them. Two of six fields
+remain genuinely blocked on owner decisions (License; Last
+Synchronization's own compatibility with a cancelled-sync product) —
+neither is fabricated. The conflict does not disappear merely because
+the project is closing Version 1.
+
+**License disposition, reconfirmed twice this batch**: no `LICENSE`
+file, no `package.json` `license` field, no authoritative repository
+document selects one. Not chosen here. Classified owner decision/
+distribution consideration — not a legal conclusion, not a Version 1
+closure blocker under the approved closure disposition.
+
+**Deployment/monitoring disposition**: operated public production
+deployment remains **DEFERRED**; live production monitoring remains
+**DEFERRED**; Cloud Database/Cloud Sync remain **CANCELLED**. No
+Vercel/Supabase/Sentry project was created; no production traffic,
+uptime, incident, dashboard, alert, or deployment/rollback history is
+claimed anywhere in this batch.
+
+**Release-tag disposition**: `git ls-remote --tags origin` re-run —
+absent remotely, both checks this batch. Classified owner/external
+action (`CONTRIBUTING.md`'s documented procedure); not created or
+pushed, and its existence is not claimed.
+
+**Complete validation pipeline, run in full a final time after
+reconstruction**: `pnpm install --frozen-lockfile` (zero drift, both
+recovery events) → `pnpm typecheck` ✓ → `pnpm lint` ✓ →
+`pnpm format:check` ✓ → `pnpm test` — **2,124/2,124** passed (2,123 +
+1 new regression test; `tests/performance/engineBenchmarks.test.ts`
+runs as part of this same suite, matching vitest's own `include`
+pattern — no separate benchmark command exists in this repository) →
+`pnpm test:coverage` — **96.33% statements**, exactly unchanged from
+the established baseline → `rm -rf .next && pnpm build` — succeeded,
+all 16 static routes generated (the `import-in-the-middle`/
+`require-in-the-middle` warnings are the already-documented, known,
+accepted limitation, not a functional break) → full Playwright suite —
+**151/151 passed**, including `settingsWorkflows.spec.ts`, confirming
+no regression from the copy fix → `git diff --check` ✓.
+
+**Local production-mode startup and smoke checks** (explicitly local —
+not hosted deployment evidence): `pnpm start` — ready in just over one
+second; all 12 named routes returned `200`, an unknown route returned
+`404`; all 5 security headers (CSP, HSTS, X-Frame-Options,
+X-Content-Type-Options, Referrer-Policy) present and correct;
+`/settings`'s rendered HTML confirmed the corrected copy is live and
+the stale phrase is gone; `document.title` correct on `/` and
+`/settings`. Server stopped after verification.
+
+**Owner actions remaining** (unchanged, not newly introduced): create
+the `v1.0.0` tag (procedure documented, requires repository-owner push
+access); select a governing project license; decide Conflict #39's
+About-section fields; decide whether an affirmative in-app financial-
+advice disclaimer is wanted; any future operated deployment/monitoring
+infrastructure, entirely at the owner's discretion and outside this
+process's authority to create.
+
+**Recommendation: project closure is justified under the approved Path
+B disposition.** Zero P0/P1 defects, zero UNRESOLVED/BLOCKING ledger
+items, zero project-closure-blocker (E) technical-debt items, every
+deferred item is a deliberate, already-approved disposition rather
+than an unresolved problem, and the one genuine user-facing defect
+found this batch was fixed with full regression coverage and a
+complete, green validation pipeline — run in full twice, once before
+each recovery-driven reconstruction.
+
+**Files changed**: `app/settings/SettingsPageClient.tsx`,
+`tests/unit/app/settings/page.test.tsx` (both modified — the Cloud
+Sync copy fix and its regression test); `docs/VERSION_1_CLOSURE.md`
+(new); `PROJECT_STATUS.md` (this section). No `package.json`/lockfile
+change, no `engine/` file touched, no persistence behavior changed, no
+external infrastructure, no deployment, no Sentry project, no Supabase
+project, no Git tag, no LICENSE file, no build artifacts, no Version 2
+work.
+
+**ProfitPilot Version 1.0.0 software release: COMPLETE. Version 1
+quality sign-off: COMPLETE. Milestone 10: COMPLETE UNDER APPROVED PATH
+B DISPOSITION. Version 1 project/repository closure: COMPLETE UNDER
+APPROVED PATH B DISPOSITION. Operated public production deployment:
+DEFERRED. Live production monitoring: DEFERRED. Cloud Database/Cloud
+Sync: CANCELLED. Version 2: NOT STARTED.** This batch does not state
+"all M10 tasks complete" — the matrix above is the actual closure
+state, and "release complete" is not used anywhere in this record to
+mean "publicly deployed."
 
 ---
 
