@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-08
-**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations is in progress**: Batch 1 (Release Preparation & Version Finalization, M10-001–004, M10-019, repository-level M10-005), Batch 2 (Operational Documentation, M10-012–M10-015), Batch 3 (Review Documentation Set, Publish Developer Documentation, Publish User Documentation, M10-016–M10-018), and Batch 4 (Create Maintenance Schedule, M10-020) are complete and synchronized to GitHub. Batch 5 (Conduct Version 1 Retrospective, Review Technical Debt, Create Version 2 Backlog, Archive Version 1 Planning, M10-021–M10-024) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. Per an explicit product/release decision, no publicly hosted production deployment is part of Version 1's completion requirement; the deployment-dependent tasks (parts of M10-005, plus M10-006–M10-011) are classified "Deferred by explicit product/release decision," reserved for a later batch, not "N/A." Milestone 10 as a whole remains **not complete** — Batch 6 has not been started.
+**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations is in progress**: Batch 1 (Release Preparation & Version Finalization, M10-001–004, M10-019, repository-level M10-005), Batch 2 (Operational Documentation, M10-012–M10-015), Batch 3 (Review Documentation Set, Publish Developer Documentation, Publish User Documentation, M10-016–M10-018), Batch 4 (Create Maintenance Schedule, M10-020), and Batch 5 (Conduct Version 1 Retrospective, Review Technical Debt, Create Version 2 Backlog, Archive Version 1 Planning, M10-021–M10-024) are complete and synchronized to GitHub. Batch 6 (Production Deployment/Monitoring disposition, M10-005–M10-011) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. Per an explicit product/release decision, no publicly hosted production deployment is part of Version 1's completion requirement; M10-006–M10-011 are each individually classified "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A" (reserved for cancelled Cloud Database/Cloud Sync) and not "complete." Milestone 10 as a whole remains **not complete** — Batch 7 has not been started.
 
 The remainder of this summary paragraph is historical: Milestone 9 Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate and Version 1 Quality Sign-Off, M9-057–064) is also complete: a real production build/server was verified directly (security headers confirmed on a live response, not just source), the full regression suite passed (2123/2123 unit tests, 151/151 Playwright including 43/43 accessibility), 8 AI-agent-driven exploratory scenarios found zero defects, the local storage migration/rollback mechanism was confirmed genuinely wired into the real app boot path (not just unit-tested), and the open-defect review found zero P0/P1 defects — one non-blocking P2 (CI does not yet run the Playwright suite automatically) was found, classified, and documented rather than silently left unmentioned. Version 1 Quality Sign-Off passed; `package.json`/`APP_VERSION`/`ENGINE_VERSION` bumped from `0.1.0` to `1.0.0` per `01_PRD.md` REQ-017's own definition of what "Version 1.0" means, `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` left unchanged. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
@@ -12658,6 +12658,91 @@ reclassified by this batch; Conflict #39 is cited as-is in
 `engine/` file touched, no external infrastructure, no deployment, no
 git tag, no license file. Milestone 10 remains in progress — Batch 6
 has not begun.
+
+### Batch 6 — Configure Production Environment, Deploy Version 1, Verify Production Deployment, Create Rollback Package, Enable Production Monitoring, Verify Production Logging, Review Production Health (M10-005–M10-011)
+
+**Canonical tasks, re-read directly from `docs/06_TASKS.md`** — full
+definitions, per-requirement A–F classification, and evidence are
+recorded in new `docs/DEPLOYMENT_DISPOSITION.md` rather than duplicated
+here; this section records only the factual outcome.
+
+**None of M10-006–M10-011 is complete, and none is represented as
+complete.** Every one of these six tasks either directly requires an
+operated production deployment (M10-006's own DoD: "Version 1 is
+available in production") or transitively depends on one (M10-007/008
+depend on M10-006; M10-010/011 depend on M10-009). Per the already-
+approved Path B decision, each remains classified **"Deferred by
+explicit product/release decision — no operated production deployment
+exists for Version 1.0.0."** No Vercel/Supabase/Sentry project was
+created; no production traffic, uptime, incident, monitoring dashboard,
+alert, log aggregation, or deployment/rollback history is claimed
+anywhere in this batch.
+
+**M10-005 (Configure Production Environment)** — the repository-
+controllable portion (environment variables, security headers, caching,
+build configuration, Supabase's own code path) was already completed
+in Milestone 10 Batch 1 (`docs/PRODUCTION_READINESS.md`); re-confirmed
+by citation, not re-run, this batch. The external portion (a real
+Supabase project, deployment secrets) remains **F — owner/external
+action**. Not marked fully complete.
+
+**M10-021's dependency deviation is unaffected and not rewritten.**
+Milestone 10 Batch 5 completed M10-021 (Conduct Version 1 Retrospective)
+under an explicitly documented dependency deviation — its formal
+dependency, M10-006, was not complete then and remains not complete
+now. This batch confirms, rather than changes, that disposition:
+M10-006 is still deferred; M10-021's own retrospective record stands
+exactly as written.
+
+**Release tag**: `git ls-remote --tags origin` (re-run this batch)
+confirms no `v1.0.0` tag exists on the remote. M10-006's own "Tagged
+release" requirement is classified **F — owner/external action**. The
+tag was **not** created or pushed — this development process has no
+push access, and this batch's own instruction requires separate,
+explicit approval regardless.
+
+**Monitoring/logging**: the underlying Sentry/diagnostic-logging
+capability (Milestone 9 Batch 9, `docs/OBSERVABILITY.md`) is genuinely
+complete and tested — classified **A**. "Enabling" it against a live
+project (M10-009) is **C**, since Path B forbids creating one. **M10-010
+("Verify Production Logging") remains deferred/partially satisfied
+under Path B, not complete** — its title names _production_ logging,
+and no production environment exists to verify logging _in_. What is
+genuinely implemented and locally validated: the structured diagnostic-
+logging mechanism itself and every field/privacy behavior the task
+names (error/version/formula/engine identifiers, sanitized context),
+verified against the browser console. What remains deferred: actual
+production-environment verification (**C**) — no operated deployment
+exists to generate a real log to check. No centralized, hosted log
+aggregation is implemented or claimed. Local logging working correctly
+is not redefined as "production logging" being verified.
+
+**Production health (M10-011)**: cannot be evaluated — there has been
+no launch and no production traffic exists to review. Classified **C**
+throughout (a known, approved deferral), not **E** (not a blocker,
+since nothing is unexpectedly wrong — this is the deliberate,
+already-approved Path B outcome).
+
+**Stale Settings UI copy** (`docs/TECHNICAL_DEBT.md`'s "does not yet
+sync to the cloud" finding, Batch 5): determined **out of M10-005–011's
+canonical scope** — none of these seven tasks' own Include/Verify/
+Review/Monitor lists mention Settings UI copy. Left untouched; no
+runtime code was modified this batch. Remains tracked technical debt
+for a Batch 7 closure review or a specifically approved follow-up.
+
+**Owner decisions**: none of M10-005–011's canonical requirements
+require a governing license, legal entity, jurisdiction, or disclosure
+decision — the three already-open owner decisions (license; Conflict
+#39 About-section fields; optional financial-advice disclaimer) are
+unaffected and not re-litigated here.
+
+**Files changed**: `docs/DEPLOYMENT_DISPOSITION.md` (new);
+`docs/PRODUCTION_READINESS.md` (one cross-reference line added, pointing
+to the new document); `PROJECT_STATUS.md` (this section). No
+application code, no `package.json`/lockfile change, no `engine/` file
+touched, no external infrastructure created, no deployment, no git tag,
+no LICENSE file. Milestone 10 remains in progress, and is **not**
+complete — Batch 7 has not begun.
 
 ---
 

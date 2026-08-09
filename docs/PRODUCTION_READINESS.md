@@ -160,4 +160,6 @@ lock-in, matches Build Guide through the build step.**
 Everything this repository controls is production-ready. The remaining
 gap between "production-ready" and "in production" is entirely external
 infrastructure this release deliberately does not include — see
-`docs/RELEASE_NOTES.md`.
+`docs/RELEASE_NOTES.md`. See `docs/DEPLOYMENT_DISPOSITION.md`
+(Milestone 10 Batch 6) for the full M10-006–M10-011 requirement-by-
+requirement disposition that follows from this readiness state.
