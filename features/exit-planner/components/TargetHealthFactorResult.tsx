@@ -90,9 +90,9 @@ export function TargetHealthFactorResult() {
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        A non-zero difference is expected — the underlying formula (F-040) assumes fixed collateral,
-        but this exit actually sells BTC, which changes collateral value too (PROJECT_STATUS.md
-        Conflict #13).
+        A small non-zero difference is expected: this estimate is calculated assuming your
+        collateral amount stays fixed, but selling BTC to exit actually reduces your collateral
+        value too — so the resulting Health Factor can land slightly off the exact target you set.
       </p>
     </div>
   );

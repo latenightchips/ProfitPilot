@@ -33,12 +33,14 @@
 export type HoldingPeriod = '30' | '90' | '180' | '365' | 'custom';
 
 /**
- * **`percentageChange` (M6-005, Batch 4)**: a fraction, matching
- * `engine/simulation/resolveScenarioPrice.ts`'s (F-051) own
- * `New Price = Current Price × (1 + Change%)` — `0.10` for +10%, `-0.20`
- * for -20% — the same 0–1 fraction convention every other rate field in
- * this codebase already uses (`borrowApr`, `maxLoanToValue`, etc.), not
- * an invented percent-out-of-100 unit.
+ * **`percentageChange`/`borrowApr` are percentage-scale strings** (`"10"`
+ * for +10%, `"-20"` for -20%) — 06_TASKS.md UX punch-list UX-05: the
+ * fraction `engine/simulation/resolveScenarioPrice.ts` (F-051) and
+ * `simulateInterestScenario` actually require (`0.10`, matching every
+ * other rate field in this codebase) is produced only at the UI boundary,
+ * in `resolveScenarioInputs.ts`, right before either Service call — never
+ * stored in this form's own string state, which stays in the units a user
+ * actually types.
  */
 export interface ScenarioBuilderFormValues {
   btcPriceUsd: string;

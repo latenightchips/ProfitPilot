@@ -83,13 +83,22 @@ describe('LoopCostAnalysis — a viable strategy', () => {
     ).toMatch(/%/);
   });
 
-  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as not itemized', () => {
+  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as not included', () => {
     runViableStrategy();
     render(<LoopCostAnalysis />);
     expect(screen.getByText('Swap Fees')).toBeInTheDocument();
     expect(screen.getByText('Slippage')).toBeInTheDocument();
     expect(screen.getByText('Gas Estimate')).toBeInTheDocument();
     expect(screen.getByText('Total Implementation Cost')).toBeInTheDocument();
-    expect(screen.getAllByText(/Not itemized —/).length).toBe(4);
+    expect(screen.getAllByText('Not included in this estimate').length).toBe(4);
+  });
+
+  it('does not expose the internal Formula ID / specification reference for unavailable costs (UX-06 same-class fix)', () => {
+    runViableStrategy();
+    render(<LoopCostAnalysis />);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toMatch(/F-0\d\d\d/);
+    expect(bodyText).not.toContain('02_Formulas.md');
+    expect(bodyText).not.toContain('Formula ID');
   });
 });

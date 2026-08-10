@@ -261,6 +261,50 @@ describe('collateralManagementSchema (M4-007)', () => {
   });
 });
 
+describe('UX punch-list UX-02/UX-03 — friendly numeric error messages (not the raw Zod default)', () => {
+  it('gives debt.balance a friendly message for NaN input, not "Invalid input: expected number, received NaN"', () => {
+    const result = debtPositionSchema.safeParse({ asset: 'USDC', balance: NaN });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter a valid debt amount.');
+    expect(result.error.issues[0]?.message).not.toContain('NaN');
+    expect(result.error.issues[0]?.message).not.toContain('Invalid input');
+  });
+
+  it('gives collateral.quantity a friendly message for NaN input', () => {
+    const result = collateralPositionSchema.safeParse({ asset: 'BTC', quantity: NaN });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter a valid BTC quantity.');
+  });
+
+  it('gives protocol.maxLoanToValue/liquidationThreshold/borrowApr/supplyApr friendly messages for NaN input', () => {
+    const base = {
+      maxLoanToValue: NaN,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+    };
+    const result = protocolParametersSchema.safeParse(base);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter Maximum LTV as a percentage.');
+  });
+
+  it('describes an out-of-range Maximum LTV/Liquidation Threshold in percentage terms, not the raw 0–1 bound', () => {
+    const result = protocolParametersSchema.safeParse({
+      maxLoanToValue: 1.5,
+      liquidationThreshold: 1.5,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const messages = result.error.issues.map((issue) => issue.message);
+    expect(messages).toContain('Maximum LTV must be between 0% and 100%.');
+  });
+});
+
 describe('debtManagementSchema (M4-008)', () => {
   const validProtocol = {
     maxLoanToValue: 0.75,

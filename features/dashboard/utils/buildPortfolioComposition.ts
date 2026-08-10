@@ -30,7 +30,7 @@ export function buildPortfolioComposition(
     debt: {
       assetLabel: portfolio.debt.asset,
       formattedQuantity: formatQuantity(portfolio.debt.balance),
-      formattedCurrentPrice: 'N/A (stablecoin, 1:1 — F-003)',
+      formattedCurrentPrice: '$1.00 (stablecoin)',
       formattedPositionValue: formatCurrency(summary.debtValue),
       formattedPortfolioPercentage: ALWAYS_100_PERCENT,
     },

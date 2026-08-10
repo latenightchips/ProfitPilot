@@ -115,17 +115,18 @@ describe('LoopSafetyAnalysis — a healthy, viable strategy', () => {
     );
   });
 
-  it('cites PROJECT_STATUS.md Conflict #1 for Risk Classification, rather than fabricating a band', () => {
+  it('explains Risk Classification in plain language, rather than fabricating a band or citing an internal conflict reference (UX-06 same-class fix)', () => {
     useLoopBuilderStore
       .getState()
       .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopSafetyAnalysis portfolio={validPortfolio()} />);
-    expect(
-      screen.getByText((_, element) => element?.textContent === 'Risk Classification')
-        .nextElementSibling?.textContent,
-    ).toMatch(/Not available[\s\S]*Conflict #1/);
+    const text = screen.getByText((_, element) => element?.textContent === 'Risk Classification')
+      .nextElementSibling?.textContent;
+    expect(text).toMatch(/Not shown/);
+    expect(text).not.toMatch(/PROJECT_STATUS\.md/);
+    expect(text).not.toMatch(/Conflict #\d+/);
   });
 });
 

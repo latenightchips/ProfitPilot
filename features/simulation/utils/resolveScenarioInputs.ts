@@ -56,7 +56,7 @@ export function resolvePriceScenarioInput(
 
   if (values.percentageChange.trim() !== '') {
     if (errors.percentageChange !== null) return null;
-    return { type: 'percentageChange', percentageChange: Number(values.percentageChange) };
+    return { type: 'percentageChange', percentageChange: Number(values.percentageChange) / 100 };
   }
 
   if (errors.btcPriceUsd !== null) return null;
@@ -90,6 +90,6 @@ export function resolveInterestScenario(
     type: 'interest',
     priceScenario,
     timeHorizonDays,
-    borrowApr: Number(values.borrowApr),
+    borrowApr: Number(values.borrowApr) / 100,
   };
 }

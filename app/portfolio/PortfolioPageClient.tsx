@@ -424,6 +424,26 @@ function formatPercent(value: number): string {
   );
 }
 
+/**
+ * UX punch-list UX-01 — percentage-scale UI boundary conversion.
+ * `protocol.maxLoanToValue`/`liquidationThreshold`/`borrowApr`/`supplyApr`
+ * remain stored and validated as a 0–1 fraction throughout the Engine and
+ * `types/portfolio.schema.ts` (unchanged); these two helpers are the only
+ * place a fraction becomes the "75" a user types into these forms' number
+ * inputs, and back. Used at exactly three points per field: the form's
+ * `defaultValues` (initial display), `register`'s `setValueAs` (typed
+ * value → decimal, before Zod validation), and the post-Apply `reset()`
+ * call (decimal → display again) — never anywhere else, so a value is
+ * converted exactly once in each direction.
+ */
+function toPercentInput(decimal: number): number {
+  return decimal * 100;
+}
+
+function fromPercentInput(percent: number): number {
+  return percent / 100;
+}
+
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
@@ -838,7 +858,11 @@ function CollateralPositionForm({
     defaultValues: {
       collateral: portfolio.collateral,
       market: portfolio.market,
-      protocol: portfolio.protocol,
+      protocol: {
+        ...portfolio.protocol,
+        maxLoanToValue: toPercentInput(portfolio.protocol.maxLoanToValue),
+        liquidationThreshold: toPercentInput(portfolio.protocol.liquidationThreshold),
+      },
     },
   });
 
@@ -871,7 +895,15 @@ function CollateralPositionForm({
     if (result.ok) {
       setPreview(null);
       setRiskAcknowledged(false);
-      reset({ collateral: data.collateral, market: data.market, protocol: data.protocol });
+      reset({
+        collateral: data.collateral,
+        market: data.market,
+        protocol: {
+          ...data.protocol,
+          maxLoanToValue: toPercentInput(data.protocol.maxLoanToValue),
+          liquidationThreshold: toPercentInput(data.protocol.liquidationThreshold),
+        },
+      });
     }
   });
 
@@ -942,37 +974,58 @@ function CollateralPositionForm({
         )}
         <label className="flex flex-col gap-1 text-sm">
           <span>
-            Maximum LTV (0–1) <RequiredMark />
+            Maximum LTV (%) <RequiredMark />
           </span>
           <input
             id="protocol.maxLoanToValue"
             aria-required="true"
             type="number"
             step="any"
-            {...register('protocol.maxLoanToValue', { valueAsNumber: true })}
+            {...register('protocol.maxLoanToValue', {
+              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+            })}
             aria-invalid={errors.protocol?.maxLoanToValue ? 'true' : undefined}
             aria-describedby={
               errors.protocol?.maxLoanToValue ? 'protocol.maxLoanToValue-error' : undefined
             }
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
+          <span className="text-xs text-muted-foreground">
+            The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
+          </span>
         </label>
+        {errors.protocol?.maxLoanToValue && (
+          <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
+            {errors.protocol.maxLoanToValue.message}
+          </span>
+        )}
         <label className="flex flex-col gap-1 text-sm">
           <span>
-            Liquidation threshold (0–1) <RequiredMark />
+            Liquidation threshold (%) <RequiredMark />
           </span>
           <input
             id="protocol.liquidationThreshold"
             aria-required="true"
             type="number"
             step="any"
-            {...register('protocol.liquidationThreshold', { valueAsNumber: true })}
+            {...register('protocol.liquidationThreshold', {
+              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+            })}
+            aria-invalid={errors.protocol?.liquidationThreshold ? 'true' : undefined}
+            aria-describedby={
+              errors.protocol?.liquidationThreshold
+                ? 'protocol.liquidationThreshold-error'
+                : undefined
+            }
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
+          <span className="text-xs text-muted-foreground">
+            The LTV at which your position becomes eligible for liquidation, as a percentage.
+          </span>
         </label>
-        {errors.protocol?.maxLoanToValue && (
-          <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
-            {errors.protocol.maxLoanToValue.message}
+        {errors.protocol?.liquidationThreshold && (
+          <span id="protocol.liquidationThreshold-error" className="text-xs text-destructive">
+            {errors.protocol.liquidationThreshold.message}
           </span>
         )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1049,7 +1102,10 @@ function DebtPositionForm({
     mode: 'onChange',
     defaultValues: {
       debt: portfolio.debt,
-      protocol: portfolio.protocol,
+      protocol: {
+        ...portfolio.protocol,
+        borrowApr: toPercentInput(portfolio.protocol.borrowApr),
+      },
     },
   });
 
@@ -1079,7 +1135,10 @@ function DebtPositionForm({
     if (result.ok) {
       setPreview(null);
       setRiskAcknowledged(false);
-      reset({ debt: data.debt, protocol: data.protocol });
+      reset({
+        debt: data.debt,
+        protocol: { ...data.protocol, borrowApr: toPercentInput(data.protocol.borrowApr) },
+      });
     }
   });
 
@@ -1125,22 +1184,33 @@ function DebtPositionForm({
           </span>
         )}
         <p className="text-xs text-muted-foreground">
-          Price: $1.00 (assumed 1:1 stablecoin peg — see conflict #25, no editable price exists at
-          the Engine layer)
+          Price: $1.00 (stablecoins are tracked at a fixed 1:1 value with the US dollar)
         </p>
         <label className="flex flex-col gap-1 text-sm">
           <span>
-            Borrow rate (0–1) <RequiredMark />
+            Borrow rate (%) <RequiredMark />
           </span>
           <input
             id="protocol.borrowApr"
             aria-required="true"
             type="number"
             step="any"
-            {...register('protocol.borrowApr', { valueAsNumber: true })}
+            {...register('protocol.borrowApr', {
+              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+            })}
+            aria-invalid={errors.protocol?.borrowApr ? 'true' : undefined}
+            aria-describedby={errors.protocol?.borrowApr ? 'protocol.borrowApr-error' : undefined}
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
+          <span className="text-xs text-muted-foreground">
+            Your annual interest rate on this debt, as a percentage (e.g. 5 for 5%).
+          </span>
         </label>
+        {errors.protocol?.borrowApr && (
+          <span id="protocol.borrowApr-error" className="text-xs text-destructive">
+            {errors.protocol.borrowApr.message}
+          </span>
+        )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-muted px-2 py-0.5">Parameter source: Manual</span>
           {protocolQuote?.available && (

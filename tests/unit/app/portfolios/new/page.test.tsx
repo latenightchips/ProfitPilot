@@ -46,14 +46,14 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Debt balance', { exact: false }), '20000');
   await user.clear(screen.getByLabelText('Current BTC price (USD)', { exact: false }));
   await user.type(screen.getByLabelText('Current BTC price (USD)', { exact: false }), '50000');
-  await user.clear(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }));
-  await user.type(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.75');
-  await user.clear(screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }));
-  await user.type(screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }), '0.8');
-  await user.clear(screen.getByLabelText('Borrow APR (0–1)', { exact: false }));
-  await user.type(screen.getByLabelText('Borrow APR (0–1)', { exact: false }), '0.05');
-  await user.clear(screen.getByLabelText('Supply APR (0–1)', { exact: false }));
-  await user.type(screen.getByLabelText('Supply APR (0–1)', { exact: false }), '0.02');
+  await user.clear(screen.getByLabelText('Maximum LTV (%)', { exact: false }));
+  await user.type(screen.getByLabelText('Maximum LTV (%)', { exact: false }), '75');
+  await user.clear(screen.getByLabelText('Liquidation threshold (%)', { exact: false }));
+  await user.type(screen.getByLabelText('Liquidation threshold (%)', { exact: false }), '80');
+  await user.clear(screen.getByLabelText('Borrow APR (%)', { exact: false }));
+  await user.type(screen.getByLabelText('Borrow APR (%)', { exact: false }), '5');
+  await user.clear(screen.getByLabelText('Supply APR (%)', { exact: false }));
+  await user.type(screen.getByLabelText('Supply APR (%)', { exact: false }), '2');
 }
 
 describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
@@ -65,12 +65,12 @@ describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
     expect(screen.getByLabelText('Debt asset', { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText('Debt balance', { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText('Current BTC price (USD)', { exact: false })).toBeInTheDocument();
-    expect(screen.getByLabelText('Maximum LTV (0–1)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toBeInTheDocument();
     expect(
-      screen.getByLabelText('Liquidation threshold (0–1)', { exact: false }),
+      screen.getByLabelText('Liquidation threshold (%)', { exact: false }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Borrow APR (0–1)', { exact: false })).toBeInTheDocument();
-    expect(screen.getByLabelText('Supply APR (0–1)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Borrow APR (%)', { exact: false })).toBeInTheDocument();
+    expect(screen.getByLabelText('Supply APR (%)', { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText('Target Health Factor', { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText('Holding period (days)', { exact: false })).toBeInTheDocument();
     expect(screen.getByLabelText('Target BTC price (USD)', { exact: false })).toBeInTheDocument();
@@ -114,12 +114,38 @@ describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
     const user = userEvent.setup();
     render(<NewPortfolioPage />);
     await fillValidForm(user);
-    await user.clear(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }));
-    await user.type(screen.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.9');
+    await user.clear(screen.getByLabelText('Maximum LTV (%)', { exact: false }));
+    await user.type(screen.getByLabelText('Maximum LTV (%)', { exact: false }), '90');
     await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
 
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('shows a field-level error for an invalid Liquidation threshold, Borrow APR, or Supply APR (UX-02/UX-03 same-class fix — previously silent)', async () => {
+    // This form validates on submit (no `mode: 'onChange'`), so each
+    // invalid field needs its own submit attempt to surface — unlike
+    // `PortfolioPageClient.tsx`'s Collateral/Debt forms, which validate
+    // live.
+    const user = userEvent.setup();
+    render(<NewPortfolioPage />);
+    await fillValidForm(user);
+
+    await user.clear(screen.getByLabelText('Liquidation threshold (%)', { exact: false }));
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+    expect(screen.getByText('Enter Liquidation Threshold as a percentage.')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Liquidation threshold (%)', { exact: false }), '80');
+    await user.clear(screen.getByLabelText('Borrow APR (%)', { exact: false }));
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+    expect(screen.getByText('Enter Borrow Rate as a percentage.')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Borrow APR (%)', { exact: false }), '5');
+    await user.clear(screen.getByLabelText('Supply APR (%)', { exact: false }));
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+    expect(screen.getByText('Enter Supply APR as a percentage.')).toBeInTheDocument();
+
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
   });
 
   it("shows the Store's own error and does not navigate if create() itself fails (defense-in-depth fallback)", async () => {

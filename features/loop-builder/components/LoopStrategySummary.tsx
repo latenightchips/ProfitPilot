@@ -145,8 +145,7 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Estimated Implementation Cost</span>
           <span className="text-xs text-muted-foreground">
-            Not included — no Formula ID or equation for swap fees, slippage, or gas estimation
-            exists in 02_Formulas.md.
+            Estimated fees, slippage, and gas costs are not included.
           </span>
         </div>
         {currentResult.strategy !== null && (

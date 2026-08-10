@@ -205,10 +205,8 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     expect(section.getByLabelText('Quantity', { exact: false })).toHaveValue(2);
     expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
     expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(50000);
-    expect(section.getByLabelText('Maximum LTV (0–1)', { exact: false })).toHaveValue(0.75);
-    expect(section.getByLabelText('Liquidation threshold (0–1)', { exact: false })).toHaveValue(
-      0.8,
-    );
+    expect(section.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(75);
+    expect(section.getByLabelText('Liquidation threshold (%)', { exact: false })).toHaveValue(80);
   });
 
   it('does not apply a change without first previewing it (hard gate)', () => {
@@ -265,8 +263,8 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
     const section = within(form);
 
-    await user.clear(section.getByLabelText('Maximum LTV (0–1)', { exact: false }));
-    await user.type(section.getByLabelText('Maximum LTV (0–1)', { exact: false }), '0.95');
+    await user.clear(section.getByLabelText('Maximum LTV (%)', { exact: false }));
+    await user.type(section.getByLabelText('Maximum LTV (%)', { exact: false }), '95');
     await user.click(section.getByRole('button', { name: 'Preview Changes' }));
 
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
@@ -281,7 +279,7 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     expect(section.getByLabelText('Asset', { exact: false })).toHaveValue('USDC');
     expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
     expect(section.getByText(/Price: \$1\.00/)).toBeInTheDocument();
-    expect(section.getByLabelText('Borrow rate (0–1)', { exact: false })).toHaveValue(0.05);
+    expect(section.getByLabelText('Borrow rate (%)', { exact: false })).toHaveValue(5);
     expect(section.queryByText(/rate type/i)).not.toBeInTheDocument();
   });
 
@@ -681,5 +679,147 @@ describe('PortfolioPage — Calculation Error Recovery (M4-017)', () => {
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+});
+
+/**
+ * UX punch-list UX-01/UX-02/UX-03 regression tests — added while fixing
+ * these three reproduced defects (see `PROJECT_STATUS.md`'s UX
+ * remediation batch write-up):
+ *
+ * - UX-01: `protocol.maxLoanToValue`/`liquidationThreshold`/`borrowApr`
+ *   are displayed and typed as a percentage (e.g. "75"), not the raw 0–1
+ *   fraction, while remaining stored/validated as 0–1 throughout the
+ *   Store/Engine. The regression risk is double conversion or a
+ *   conversion that only applies in one direction (e.g. `defaultValues`
+ *   converts but the post-Apply `reset()` doesn't, silently reverting the
+ *   display to a raw decimal after every save).
+ * - UX-02/UX-03: clearing a numeric field must never surface Zod's raw
+ *   "Invalid input: expected number, received NaN" message, and every
+ *   field must show *some* error text when invalid — `protocol.borrowApr`
+ *   and `protocol.liquidationThreshold` previously had no error rendering
+ *   in JSX at all, so an invalid value there silently disabled Apply
+ *   Changes with zero feedback.
+ */
+describe('PortfolioPage — UX-01 percentage-scale round-trip (UI boundary conversion)', () => {
+  it('applies a percentage edit, stores the 0–1 decimal, and keeps displaying it as a percentage after Apply', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    const thresholdInput = section.getByLabelText('Liquidation threshold (%)', {
+      exact: false,
+    });
+    expect(thresholdInput).toHaveValue(80);
+
+    await user.clear(thresholdInput);
+    await user.type(thresholdInput, '85');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    // Stored as a 0–1 decimal, unchanged storage representation.
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.protocol.liquidationThreshold,
+    ).toBe(0.85);
+    // Still displayed as a percentage after Apply's own reset() — not
+    // reverted to the raw "0.85" a naive reset() would show.
+    expect(section.getByLabelText('Liquidation threshold (%)', { exact: false })).toHaveValue(85);
+  });
+
+  it('applies a Borrow rate percentage edit on the Debt form and stores the 0–1 decimal', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    const borrowRateInput = section.getByLabelText('Borrow rate (%)', { exact: false });
+    expect(borrowRateInput).toHaveValue(5);
+
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '7.5');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.protocol.borrowApr).toBe(
+      0.075,
+    );
+    expect(section.getByLabelText('Borrow rate (%)', { exact: false })).toHaveValue(7.5);
+  });
+
+  it('no longer exposes the internal Formula ID / conflict reference in the Debt price note (F-003 same-class fix)', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText(/Price: \$1\.00/)).toBeInTheDocument();
+    expect(screen.queryByText(/F-003/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/conflict #25/)).not.toBeInTheDocument();
+  });
+});
+
+describe('PortfolioPage — UX-02/UX-03 validation feedback (functional, not cosmetic)', () => {
+  it('shows a friendly message, never the raw Zod NaN message, when Debt amount is cleared', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+
+    expect(section.getByText('Enter a valid debt amount.')).toBeInTheDocument();
+    expect(screen.queryByText(/received NaN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Invalid input: expected number/)).not.toBeInTheDocument();
+  });
+
+  it('shows a field-level error for an invalid Liquidation threshold (previously silent — no error rendering existed)', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Liquidation threshold (%)', { exact: false }));
+
+    expect(section.getByText('Enter Liquidation Threshold as a percentage.')).toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+
+  it('shows a field-level error for an invalid Borrow rate (previously silent — no error rendering existed)', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Borrow rate (%)', { exact: false }));
+
+    expect(section.getByText('Enter Borrow Rate as a percentage.')).toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+
+  it('a valid edit survives input, preview, apply, and a full page remount (persistence across refresh)', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    const { unmount } = render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '15000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(15000);
+
+    // Simulate "survive refresh" — remount the page against the same,
+    // already-updated Store state (a real refresh re-hydrates from
+    // persistence into the same shape this Store already holds).
+    unmount();
+    render(<PortfolioPage />);
+    const remountedSection = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(remountedSection.getByLabelText('Debt amount', { exact: false })).toHaveValue(15000);
   });
 });

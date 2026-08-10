@@ -81,6 +81,16 @@ function RequiredMark() {
   return <span aria-hidden="true">*</span>;
 }
 
+/**
+ * UX punch-list UX-01 — same percentage-scale UI boundary conversion as
+ * `app/portfolio/PortfolioPageClient.tsx`'s identically-named helper.
+ * `protocol.*` fields remain stored/validated as a 0–1 fraction; only the
+ * text a user types into this form's number inputs is percentage-scale.
+ */
+function fromPercentInput(percent: number): number {
+  return percent / 100;
+}
+
 const DEFAULT_VALUES: PortfolioFormValues = {
   name: '',
   description: undefined,
@@ -263,63 +273,108 @@ export function NewPortfolioPageClient() {
           </legend>
           <label className="flex flex-col gap-1 text-sm">
             <span>
-              Maximum LTV (0–1) <RequiredMark />
+              Maximum LTV (%) <RequiredMark />
             </span>
             <input
               id="protocol.maxLoanToValue"
               aria-required="true"
               type="number"
               step="any"
-              {...register('protocol.maxLoanToValue', { valueAsNumber: true })}
+              {...register('protocol.maxLoanToValue', {
+                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+              })}
               aria-invalid={errors.protocol?.maxLoanToValue ? 'true' : undefined}
               aria-describedby={
                 errors.protocol?.maxLoanToValue ? 'protocol.maxLoanToValue-error' : undefined
               }
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
+            <span className="text-xs text-muted-foreground">
+              The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
+            </span>
           </label>
+          {errors.protocol?.maxLoanToValue && (
+            <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
+              {errors.protocol.maxLoanToValue.message}
+            </span>
+          )}
           <label className="flex flex-col gap-1 text-sm">
             <span>
-              Liquidation threshold (0–1) <RequiredMark />
+              Liquidation threshold (%) <RequiredMark />
             </span>
             <input
               id="protocol.liquidationThreshold"
               aria-required="true"
               type="number"
               step="any"
-              {...register('protocol.liquidationThreshold', { valueAsNumber: true })}
+              {...register('protocol.liquidationThreshold', {
+                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+              })}
+              aria-invalid={errors.protocol?.liquidationThreshold ? 'true' : undefined}
+              aria-describedby={
+                errors.protocol?.liquidationThreshold
+                  ? 'protocol.liquidationThreshold-error'
+                  : undefined
+              }
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
+            <span className="text-xs text-muted-foreground">
+              The LTV at which your position becomes eligible for liquidation, as a percentage.
+            </span>
           </label>
+          {errors.protocol?.liquidationThreshold && (
+            <span id="protocol.liquidationThreshold-error" className="text-xs text-destructive">
+              {errors.protocol.liquidationThreshold.message}
+            </span>
+          )}
           <label className="flex flex-col gap-1 text-sm">
             <span>
-              Borrow APR (0–1) <RequiredMark />
+              Borrow APR (%) <RequiredMark />
             </span>
             <input
               id="protocol.borrowApr"
               aria-required="true"
               type="number"
               step="any"
-              {...register('protocol.borrowApr', { valueAsNumber: true })}
+              {...register('protocol.borrowApr', {
+                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+              })}
+              aria-invalid={errors.protocol?.borrowApr ? 'true' : undefined}
+              aria-describedby={errors.protocol?.borrowApr ? 'protocol.borrowApr-error' : undefined}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
+            <span className="text-xs text-muted-foreground">
+              Your annual borrow interest rate, as a percentage (e.g. 5 for 5%).
+            </span>
           </label>
+          {errors.protocol?.borrowApr && (
+            <span id="protocol.borrowApr-error" className="text-xs text-destructive">
+              {errors.protocol.borrowApr.message}
+            </span>
+          )}
           <label className="flex flex-col gap-1 text-sm">
             <span>
-              Supply APR (0–1) <RequiredMark />
+              Supply APR (%) <RequiredMark />
             </span>
             <input
               id="protocol.supplyApr"
               aria-required="true"
               type="number"
               step="any"
-              {...register('protocol.supplyApr', { valueAsNumber: true })}
+              {...register('protocol.supplyApr', {
+                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+              })}
+              aria-invalid={errors.protocol?.supplyApr ? 'true' : undefined}
+              aria-describedby={errors.protocol?.supplyApr ? 'protocol.supplyApr-error' : undefined}
               className="rounded-md border border-border bg-transparent px-3 py-2"
             />
+            <span className="text-xs text-muted-foreground">
+              Your annual supply interest rate, as a percentage.
+            </span>
           </label>
-          {errors.protocol?.maxLoanToValue && (
-            <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
-              {errors.protocol.maxLoanToValue.message}
+          {errors.protocol?.supplyApr && (
+            <span id="protocol.supplyApr-error" className="text-xs text-destructive">
+              {errors.protocol.supplyApr.message}
             </span>
           )}
         </fieldset>

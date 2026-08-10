@@ -59,27 +59,59 @@ import { SUPPORTED_DEBT_ASSETS } from './portfolio';
 
 export const collateralPositionSchema = z.object({
   asset: z.literal('BTC'),
-  quantity: z.number().finite().nonnegative(),
+  quantity: z
+    .number({ error: 'Enter a valid BTC quantity.' })
+    .finite('Enter a valid BTC quantity.')
+    .nonnegative('BTC quantity cannot be negative.'),
 });
 
 export const debtPositionSchema = z.object({
   asset: z.enum(SUPPORTED_DEBT_ASSETS),
-  balance: z.number().finite().nonnegative(),
+  balance: z
+    .number({ error: 'Enter a valid debt amount.' })
+    .finite('Enter a valid debt amount.')
+    .nonnegative('Debt amount cannot be negative.'),
 });
 
 export const marketPricesSchema = z.object({
-  btcPriceUsd: z.number().finite().positive(),
+  btcPriceUsd: z
+    .number({ error: 'Enter a valid BTC price.' })
+    .finite('Enter a valid BTC price.')
+    .positive('BTC price must be greater than 0.'),
 });
 
+/**
+ * `maxLoanToValue`/`liquidationThreshold` are stored/validated as a 0–1
+ * fraction (unchanged, matches `engine/validation/validate.ts`), but the
+ * UI boundary (M4-007/M4-008 forms) converts to/from a 0–100 percentage
+ * for display — 06_TASKS.md UX punch-list UX-01. These messages describe
+ * the percentage the user actually typed, not the internal fraction, so a
+ * bound violation reads correctly regardless of which side of that
+ * conversion produced it.
+ */
 export const protocolParametersSchema = z
   .object({
-    maxLoanToValue: z.number().finite().min(0).max(1),
-    liquidationThreshold: z.number().finite().min(0).max(1),
-    borrowApr: z.number().finite().nonnegative(),
-    supplyApr: z.number().finite().nonnegative(),
+    maxLoanToValue: z
+      .number({ error: 'Enter Maximum LTV as a percentage.' })
+      .finite('Enter Maximum LTV as a percentage.')
+      .min(0, 'Maximum LTV must be between 0% and 100%.')
+      .max(1, 'Maximum LTV must be between 0% and 100%.'),
+    liquidationThreshold: z
+      .number({ error: 'Enter Liquidation Threshold as a percentage.' })
+      .finite('Enter Liquidation Threshold as a percentage.')
+      .min(0, 'Liquidation Threshold must be between 0% and 100%.')
+      .max(1, 'Liquidation Threshold must be between 0% and 100%.'),
+    borrowApr: z
+      .number({ error: 'Enter Borrow Rate as a percentage.' })
+      .finite('Enter Borrow Rate as a percentage.')
+      .nonnegative('Borrow Rate cannot be negative.'),
+    supplyApr: z
+      .number({ error: 'Enter Supply APR as a percentage.' })
+      .finite('Enter Supply APR as a percentage.')
+      .nonnegative('Supply APR cannot be negative.'),
   })
   .refine((protocol) => protocol.maxLoanToValue <= protocol.liquidationThreshold, {
-    message: 'maxLoanToValue must not exceed liquidationThreshold.',
+    message: 'Maximum LTV must not exceed Liquidation Threshold.',
     path: ['maxLoanToValue'],
   });
 

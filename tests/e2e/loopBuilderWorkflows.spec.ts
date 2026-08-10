@@ -52,10 +52,10 @@ async function createPortfolioAndOpenLoopBuilder(
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', options.debtBalance ?? '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   await page.getByRole('button', { name: 'Create Portfolio' }).click();
   await page.waitForURL('**/portfolio');
 
@@ -69,7 +69,7 @@ async function createPortfolioAndOpenLoopBuilder(
 test('Cover: Valid strategy (M7-041)', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'Valid Strategy Portfolio');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   const steps = page.getByRole('table', { name: 'Loop strategy steps' });
@@ -101,7 +101,7 @@ test('Cover: Borrowing-capacity limit (M7-041)', async ({ page }) => {
     debtBalance: '75000',
   });
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   await expect(page.getByText('Safety check "BORROWING_CAPACITY" raised a warning.')).toBeVisible();
@@ -124,7 +124,7 @@ test('Cover: Minimum Health Factor stop (M7-041)', async ({ page }) => {
 test('Cover: Cost calculations (M7-041)', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'Cost Calculations Portfolio');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   await expect(page.getByText('Effective Leverage Achieved')).toBeVisible();
@@ -135,7 +135,7 @@ test('Cover: Cost calculations (M7-041)', async ({ page }) => {
 test('Cover: Stress scenario (M7-041)', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'Stress Scenario Portfolio');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   await page.getByRole('button', { name: 'BTC Price Decline (-25%)' }).click();
@@ -148,7 +148,7 @@ test('Cover: Stress scenario (M7-041)', async ({ page }) => {
 test('Cover: Save and reload (M7-041)', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'Save Reload Portfolio');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
   const originalStepCount = await page
     .getByRole('table', { name: 'Loop strategy steps' })
@@ -160,7 +160,7 @@ test('Cover: Save and reload (M7-041)', async ({ page }) => {
   await expect(page.getByText(/My Saved Strategy — /)).toBeVisible();
 
   // The user keeps working — a real, later, unrelated settings change.
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.2');
+  await fillByLabel(page, 'How much to borrow each loop', '20');
   await page.waitForTimeout(300);
   const divergedStepCount = await page
     .getByRole('table', { name: 'Loop strategy steps' })
@@ -181,7 +181,7 @@ test('Cover: Save and reload (M7-041)', async ({ page }) => {
 test('Cover: Export (M7-041)', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'Export Portfolio');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   const downloadPromise = page.waitForEvent('download');

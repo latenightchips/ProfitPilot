@@ -60,10 +60,10 @@ async function createPortfolioViaDashboard(page: Page, name: string) {
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   await page.getByRole('button', { name: 'Create Portfolio' }).click();
   await page.waitForURL('**/portfolio');
   await page.locator('a', { hasText: 'Dashboard' }).click();
@@ -137,10 +137,10 @@ async function createPortfolioAndNavigateToSimulation(page: Page, name: string) 
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   await page.getByRole('button', { name: 'Create Portfolio' }).click();
   await page.waitForURL('**/portfolio');
   await page.locator('a', { hasText: 'Simulation' }).click();
@@ -170,7 +170,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     // Populate Scenario Charts/Timeline (interest scenario) and the
     // Comparison table (3 saved scenarios, all selected) — the
     // heaviest real content this route renders.
-    await fillByLabel(page, 'Borrow Rate (0–1)', '0.1');
+    await fillByLabel(page, 'Borrow Rate (%)', '10');
     await page.waitForTimeout(150);
     await saveScenario(page, 60000, 'Bear Case');
     await saveScenario(page, 70000, 'Base Case');
@@ -241,10 +241,10 @@ async function createPortfolioAndNavigateTo(page: Page, name: string, navLinkNam
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   await page.getByRole('button', { name: 'Create Portfolio' }).click();
   await page.waitForURL('**/portfolio');
   await page
@@ -259,7 +259,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await page.waitForURL('**/loop-builder');
     // 0.5 is the form's own default — a genuinely different value is
     // required to force a real, observable recalculation.
-    await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+    await fillByLabel(page, 'How much to borrow each loop', '60');
     await page.waitForTimeout(400);
 
     await page.setViewportSize(viewport);
@@ -275,7 +275,7 @@ test('Cover: Loop Steps table scrolls within its own container, not the page, at
 }) => {
   await createPortfolioAndNavigateTo(page, 'Loop Builder Table Scroll Check', 'Loop Builder');
   await page.waitForURL('**/loop-builder');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(400);
 
   await page.setViewportSize(VIEWPORTS.mobile);

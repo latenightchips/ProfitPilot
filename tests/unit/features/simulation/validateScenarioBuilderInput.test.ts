@@ -30,7 +30,7 @@ function values(overrides: Partial<ScenarioBuilderFormValues> = {}): ScenarioBui
   return {
     btcPriceUsd: '50000',
     percentageChange: '',
-    borrowApr: '0.05',
+    borrowApr: '5',
     collateralDelta: '0',
     debtDelta: '0',
     targetHealthFactor: '',
@@ -67,22 +67,22 @@ describe('validateScenarioBuilderInput — Percentage Change (M6-005, Batch 4)',
 
   it('rejects a change of -100% or worse (would drop the price to zero or below, per F-051)', () => {
     expect(
-      validateScenarioBuilderInput(values({ percentageChange: '-1' }), portfolio())
+      validateScenarioBuilderInput(values({ percentageChange: '-100' }), portfolio())
         .percentageChange,
     ).not.toBeNull();
     expect(
-      validateScenarioBuilderInput(values({ percentageChange: '-2' }), portfolio())
+      validateScenarioBuilderInput(values({ percentageChange: '-200' }), portfolio())
         .percentageChange,
     ).not.toBeNull();
   });
 
   it('accepts a valid negative or positive percentage change', () => {
     expect(
-      validateScenarioBuilderInput(values({ percentageChange: '-0.5' }), portfolio())
+      validateScenarioBuilderInput(values({ percentageChange: '-50' }), portfolio())
         .percentageChange,
     ).toBeNull();
     expect(
-      validateScenarioBuilderInput(values({ percentageChange: '0.25' }), portfolio())
+      validateScenarioBuilderInput(values({ percentageChange: '25' }), portfolio())
         .percentageChange,
     ).toBeNull();
   });

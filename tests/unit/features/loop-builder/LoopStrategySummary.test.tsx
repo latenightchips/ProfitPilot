@@ -85,7 +85,12 @@ describe('LoopStrategySummary — comparison (DoD: distinguishes current and pro
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopStrategySummary portfolio={validPortfolio()} />);
-    expect(screen.getByText(/Not included — no Formula ID/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Estimated fees, slippage, and gas costs are not included.'),
+    ).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('02_Formulas.md');
+    expect(bodyText).not.toContain('Formula ID');
   });
 
   it('shows a human-readable Stop Reason label, not the raw enum value', () => {

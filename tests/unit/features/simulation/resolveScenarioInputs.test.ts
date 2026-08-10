@@ -35,7 +35,7 @@ function values(overrides: Partial<ScenarioBuilderFormValues> = {}): ScenarioBui
   return {
     btcPriceUsd: '50000',
     percentageChange: '',
-    borrowApr: '0.05',
+    borrowApr: '5',
     collateralDelta: '0',
     debtDelta: '0',
     targetHealthFactor: '',
@@ -53,7 +53,7 @@ describe('resolvePriceScenarioInput', () => {
 
   it('prefers a valid Percentage Change over the absolute BTC price', () => {
     const result = resolvePriceScenarioInput(
-      values({ btcPriceUsd: '60000', percentageChange: '0.1' }),
+      values({ btcPriceUsd: '60000', percentageChange: '10' }),
       portfolio(),
     );
     expect(result).toEqual({ type: 'percentageChange', percentageChange: 0.1 });
@@ -65,7 +65,7 @@ describe('resolvePriceScenarioInput', () => {
   });
 
   it('returns null when Percentage Change is present but invalid', () => {
-    const result = resolvePriceScenarioInput(values({ percentageChange: '-1' }), portfolio());
+    const result = resolvePriceScenarioInput(values({ percentageChange: '-100' }), portfolio());
     expect(result).toBeNull();
   });
 });
@@ -97,7 +97,7 @@ describe('resolveTimeHorizonDays', () => {
 describe('resolveInterestScenario', () => {
   it('combines Borrow Rate, the resolved price, and the resolved time horizon', () => {
     const result = resolveInterestScenario(
-      values({ borrowApr: '0.1', holdingPeriod: '90' }),
+      values({ borrowApr: '10', holdingPeriod: '90' }),
       portfolio(),
     );
     expect(result).toEqual({
@@ -110,7 +110,7 @@ describe('resolveInterestScenario', () => {
 
   it('uses a valid Percentage Change over the absolute price, same as resolvePriceScenarioInput', () => {
     const result = resolveInterestScenario(
-      values({ borrowApr: '0.08', percentageChange: '0.2' }),
+      values({ borrowApr: '8', percentageChange: '20' }),
       portfolio(),
     );
     expect(result).toMatchObject({

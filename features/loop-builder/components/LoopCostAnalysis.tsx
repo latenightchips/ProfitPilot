@@ -30,28 +30,25 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * "Proposed" column, read here a second time for this component's own
  * narrower, cost-focused framing.
  *
- * **"Implementation costs (itemized)" reuses the Engine's own
- * `LoopCostResult.unavailable` array (conflict #8) rather than
- * fabricating a total** — `calculateLoopCosts` (M2-017) already itemizes
- * exactly why `swapFees`/`slippage`/`gasEstimate`/`totalImplementationCost`
- * cannot be computed (no Formula ID in 02_Formulas.md for any of the
- * three underlying costs, so a "total" cannot be honestly derived
- * either). Rendered as 4 explicit "Not itemized — <reason>" rows, the
- * same honest-gap convention `LoopStrategySummary.tsx`'s own "Estimated
- * Implementation Cost" row already established for this exact conflict.
+ * **"Implementation costs (itemized)" names the same 4 items the
+ * Engine's own `LoopCostResult.unavailable` array itemizes (conflict #8)
+ * rather than fabricating a total** — `calculateLoopCosts` (M2-017)
+ * cannot compute `swapFees`/`slippage`/`gasEstimate`/
+ * `totalImplementationCost` (no formula for any of the three underlying
+ * costs exists), so a "total" cannot be honestly derived either. Rendered
+ * as 4 rows naming each item and stating plainly that it isn't included
+ * — UX punch-list UX-06: the Engine's own internal `reason` string (an
+ * implementation-documentation reference) is deliberately not surfaced
+ * here; a normal user gains nothing from it that the row label doesn't
+ * already convey.
  *
- * **The `unavailable(item)` lookup's own "not found" fallback is
- * type-system-provably unreachable, not force-tested** — `UNAVAILABLE_COSTS`
- * (`engine/loop/calculateLoopCosts.ts`) is a hardcoded 4-entry array and
- * this component iterates the exact same 4 literal item names, so the
- * lookup can never miss in practice. `monthlyInterestCost !== null`'s own
- * false branch is equally unreachable here: this component's own
- * top-level guard already requires `currentResult.strategy !== null`,
- * and `planLoopStrategy` (see that Service's own header comment)
- * guarantees `monthlyInterestCost` is non-null exactly when `strategy`
- * is non-null. Neither is force-tested just to move a coverage
- * percentage, the same discipline this engagement has applied
- * consistently since Milestone 6 Batch 22's own audit.
+ * `monthlyInterestCost !== null`'s own false branch is unreachable here:
+ * this component's own top-level guard already requires
+ * `currentResult.strategy !== null`, and `planLoopStrategy` (see that
+ * Service's own header comment) guarantees `monthlyInterestCost` is
+ * non-null exactly when `strategy` is non-null. Not force-tested just to
+ * move a coverage percentage, the same discipline this engagement has
+ * applied consistently since Milestone 6 Batch 22's own audit.
  */
 const ITEMIZED_COSTS: UnavailableLoopCost['item'][] = [
   'swapFees',
@@ -66,13 +63,6 @@ const ITEMIZED_COST_LABELS: Record<UnavailableLoopCost['item'], string> = {
   gasEstimate: 'Gas Estimate',
   totalImplementationCost: 'Total Implementation Cost',
 };
-
-function unavailable(
-  items: UnavailableLoopCost[],
-  item: UnavailableLoopCost['item'],
-): UnavailableLoopCost | undefined {
-  return items.find((entry) => entry.item === item);
-}
 
 export function LoopCostAnalysis() {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
@@ -118,13 +108,10 @@ export function LoopCostAnalysis() {
         <span className="text-muted-foreground">Implementation Costs</span>
         <dl className="flex flex-col gap-1 text-xs">
           {ITEMIZED_COSTS.map((item) => {
-            const entry = unavailable(costs.unavailable, item);
             return (
               <div key={item} className="flex justify-between gap-2">
                 <dt className="text-muted-foreground">{ITEMIZED_COST_LABELS[item]}</dt>
-                <dd className="text-right text-muted-foreground">
-                  Not itemized — {entry?.reason ?? 'Not itemized.'}
-                </dd>
+                <dd className="text-right text-muted-foreground">Not included in this estimate</dd>
               </div>
             );
           })}

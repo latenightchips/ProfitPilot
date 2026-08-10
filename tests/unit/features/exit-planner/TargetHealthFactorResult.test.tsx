@@ -73,12 +73,16 @@ describe('TargetHealthFactorResult — a real Target Health Factor result', () =
     expect(screen.getByText('Resulting Health Factor')).toBeInTheDocument();
   });
 
-  it('shows a real, non-zero Difference From Target — the fixed-collateral approximation (Conflict #13)', () => {
+  it('shows a real, non-zero Difference From Target, explained in plain language without exposing the internal Formula ID or PROJECT_STATUS.md conflict reference (UX punch-list item 8)', () => {
     runTargetHealthFactor();
     render(<TargetHealthFactorResult />);
     const difference = screen.getByText('Difference From Target').nextElementSibling?.textContent;
     expect(difference).not.toBe('+0');
-    expect(screen.getByText(/Conflict #13/)).toBeInTheDocument();
+    expect(screen.getByText(/A small non-zero difference is expected/)).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toMatch(/F-0\d\d\d/);
+    expect(bodyText).not.toMatch(/Conflict #\d+/);
+    expect(bodyText).not.toContain('PROJECT_STATUS.md');
   });
 
   it('shows a real, exact "+0" difference with the non-destructive style when the target already matches the current Health Factor (no sale needed)', () => {

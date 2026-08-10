@@ -117,23 +117,43 @@ import {
  */
 const DEBOUNCE_MS = 300;
 
+/**
+ * UX punch-list UX-06 — percentage-scale UI boundary conversion.
+ * `borrowPercentagePerStep`/`maxLoanToValue`/`borrowRateAssumption` remain
+ * stored as a 0–1 fraction throughout `LoopStrategySettings`
+ * (`services/loop/strategy.ts`) and `LoopPresets.tsx` (unchanged — presets
+ * keep producing byte-identical internal values); this form's own
+ * `LoopStrategyControlsFormValues`/`loopStrategyControlsSchema` are the
+ * one place a fraction becomes the "50" a user types, converted at
+ * exactly two points: `defaultFormValues`/`toFormValues` (decimal →
+ * display) and `handleFieldChange`'s `nextSettings` construction (display
+ * → decimal, the only place a value re-enters `LoopStrategySettings`).
+ */
+function toPercentInput(decimal: number): number {
+  return decimal * 100;
+}
+
+function fromPercentInput(percent: number): number {
+  return percent / 100;
+}
+
 function defaultFormValues(portfolio: ApplicationPortfolio): LoopStrategyControlsFormValues {
   return {
-    borrowPercentagePerStep: 0.5,
+    borrowPercentagePerStep: 50,
     maxLoops: 3,
     minHealthFactor: 1.5,
-    maxLoanToValue: portfolio.protocol.maxLoanToValue,
-    borrowRateAssumption: portfolio.protocol.borrowApr,
+    maxLoanToValue: toPercentInput(portfolio.protocol.maxLoanToValue),
+    borrowRateAssumption: toPercentInput(portfolio.protocol.borrowApr),
   };
 }
 
 function toFormValues(settings: LoopStrategySettings): LoopStrategyControlsFormValues {
   return {
-    borrowPercentagePerStep: settings.targetBorrowPercentage,
+    borrowPercentagePerStep: toPercentInput(settings.targetBorrowPercentage),
     maxLoops: settings.maxLoops,
     minHealthFactor: settings.minHealthFactor,
-    maxLoanToValue: settings.maxLoanToValueOverride ?? 0,
-    borrowRateAssumption: settings.borrowAprOverride ?? 0,
+    maxLoanToValue: toPercentInput(settings.maxLoanToValueOverride ?? 0),
+    borrowRateAssumption: toPercentInput(settings.borrowAprOverride ?? 0),
   };
 }
 
@@ -214,11 +234,11 @@ export function LoopStrategyControls({
       if (!parsed.success) return;
 
       const nextSettings: LoopStrategySettings = {
-        targetBorrowPercentage: parsed.data.borrowPercentagePerStep,
+        targetBorrowPercentage: fromPercentInput(parsed.data.borrowPercentagePerStep),
         maxLoops: parsed.data.maxLoops,
         minHealthFactor: parsed.data.minHealthFactor,
-        maxLoanToValueOverride: parsed.data.maxLoanToValue,
-        borrowAprOverride: parsed.data.borrowRateAssumption,
+        maxLoanToValueOverride: fromPercentInput(parsed.data.maxLoanToValue),
+        borrowAprOverride: fromPercentInput(parsed.data.borrowRateAssumption),
       };
       lastPushedSettingsRef.current = nextSettings;
       setSettings(nextSettings);
@@ -236,7 +256,7 @@ export function LoopStrategyControls({
   return (
     <form className="flex flex-col gap-3">
       <label className="flex flex-col gap-1 text-sm">
-        <span>Borrow Percentage Per Step (0–1)</span>
+        <span>How much to borrow each loop (%)</span>
         <input
           id="borrowPercentagePerStep"
           type="number"
@@ -251,6 +271,11 @@ export function LoopStrategyControls({
           }
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
+        <span className="text-xs text-muted-foreground">
+          At each step, how much of your new borrowing capacity to actually borrow, as a percentage
+          (e.g. 50 for 50%). A higher number reaches more leverage in fewer steps, but leaves less
+          safety margin at each one.
+        </span>
       </label>
       {errors.borrowPercentagePerStep && (
         <span id="borrowPercentagePerStep-error" className="text-xs text-destructive">
@@ -287,6 +312,12 @@ export function LoopStrategyControls({
           aria-describedby={errors.minHealthFactor ? 'minHealthFactor-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
+        <span className="text-xs text-muted-foreground">
+          Health Factor measures how close your position is to liquidation — above 1 is safe, below
+          1 means your collateral could be liquidated. This strategy stops adding loops before
+          Health Factor would drop below the number you set here, so a higher value is more
+          conservative.
+        </span>
       </label>
       {errors.minHealthFactor && (
         <span id="minHealthFactor-error" className="text-xs text-destructive">
@@ -295,7 +326,7 @@ export function LoopStrategyControls({
       )}
 
       <label className="flex flex-col gap-1 text-sm">
-        <span>Maximum LTV (0–1)</span>
+        <span>Maximum LTV (%)</span>
         <input
           id="maxLoanToValue"
           type="number"
@@ -305,6 +336,10 @@ export function LoopStrategyControls({
           aria-describedby={errors.maxLoanToValue ? 'maxLoanToValue-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
+        <span className="text-xs text-muted-foreground">
+          The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
+          Pre-filled from your portfolio&apos;s current protocol setting.
+        </span>
       </label>
       {errors.maxLoanToValue && (
         <span id="maxLoanToValue-error" className="text-xs text-destructive">
@@ -313,7 +348,7 @@ export function LoopStrategyControls({
       )}
 
       <label className="flex flex-col gap-1 text-sm">
-        <span>Borrow-Rate Assumption (0–1)</span>
+        <span>Borrow interest rate assumption (%)</span>
         <input
           id="borrowRateAssumption"
           type="number"
@@ -326,6 +361,10 @@ export function LoopStrategyControls({
           aria-describedby={errors.borrowRateAssumption ? 'borrowRateAssumption-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
+        <span className="text-xs text-muted-foreground">
+          The annual interest rate assumed on borrowed funds, as a percentage (e.g. 5 for 5%), used
+          to estimate this strategy&apos;s ongoing cost.
+        </span>
       </label>
       {errors.borrowRateAssumption && (
         <span id="borrowRateAssumption-error" className="text-xs text-destructive">

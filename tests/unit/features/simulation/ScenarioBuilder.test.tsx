@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -39,7 +39,7 @@ describe('ScenarioBuilder — Include list (M6-004)', () => {
   it('renders all six named inputs, pre-filled from the portfolio’s own current values', () => {
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
     expect(screen.getByLabelText('BTC Price')).toHaveValue(50000);
-    expect(screen.getByLabelText('Borrow Rate (0–1)')).toHaveValue(0.05);
+    expect(screen.getByLabelText('Borrow Rate (%)')).toHaveValue(5);
     expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(0);
     expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(0);
     expect(screen.getByLabelText('Target Health Factor')).toHaveValue(null);
@@ -117,8 +117,8 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
-    await user.type(percentInput, '0.2');
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '20');
 
     const state = useSimulationStore.getState();
     expect(state.currentScenario).toEqual({
@@ -133,8 +133,8 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
-    await user.type(percentInput, '0.2');
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '20');
     await user.clear(percentInput);
 
     expect(percentInput).toHaveValue(null);
@@ -144,12 +144,16 @@ describe('ScenarioBuilder — live Percentage Change wiring (M6-005, Batch 4)', 
     });
   });
 
-  it('shows an inline error for a percentage change that would drop the price to zero or below', async () => {
-    const user = userEvent.setup();
+  it('shows an inline error for a percentage change that would drop the price to zero or below', () => {
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
-    await user.type(percentInput, '-1');
+    // A single atomic change (not keystroke-by-keystroke `user.type`,
+    // whose intermediate values like "-10" are themselves still valid
+    // and would spuriously commit a scenario before the final "-100" is
+    // reached) — a real user pasting or a browser number-spinner would
+    // also produce one atomic change, not per-keystroke ones.
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    fireEvent.change(percentInput, { target: { value: '-100' } });
 
     expect(
       screen.getByText('Percentage change cannot reduce the price to zero or below.'),
@@ -179,7 +183,7 @@ describe('ScenarioBuilder — Preset Scenarios (M6-005, Batch 4)', () => {
     });
     // BTC price $50,000 * 1.1 = $55,000; 2 BTC * $55,000 - $20,000 debt = $90,000.
     expect(state.currentResult?.scenario.equity).toBe(90000);
-    expect(screen.getByLabelText('Percentage Change (0–1)')).toHaveValue(0.1);
+    expect(screen.getByLabelText('Percentage Change (%)')).toHaveValue(10);
   });
 });
 
@@ -188,9 +192,9 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '0.1');
+    await user.type(borrowRateInput, '10');
 
     const state = useSimulationStore.getState();
     expect(state.currentScenario).toEqual({
@@ -212,12 +216,12 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const percentInput = screen.getByLabelText('Percentage Change (0–1)');
-    await user.type(percentInput, '0.2');
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '20');
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '0.08');
+    await user.type(borrowRateInput, '8');
 
     const state = useSimulationStore.getState();
     expect(state.currentScenario).toMatchObject({
@@ -231,7 +235,7 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
     await user.type(borrowRateInput, '-1');
 
@@ -270,9 +274,9 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '0.1');
+    await user.type(borrowRateInput, '10');
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
 
@@ -288,9 +292,9 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '0.1');
+    await user.type(borrowRateInput, '10');
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), 'custom');
     const customInput = screen.getByLabelText('Custom Holding Period (days)');
@@ -304,9 +308,9 @@ describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () 
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
-    const borrowRateInput = screen.getByLabelText('Borrow Rate (0–1)');
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
     await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '0.1');
+    await user.type(borrowRateInput, '10');
     const scenarioBeforeEdit = useSimulationStore.getState().currentScenario;
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), 'custom');

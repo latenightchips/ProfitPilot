@@ -65,10 +65,11 @@ describe('buildPortfolioComposition — collateral and debt rows', () => {
     expect(composition.debt.formattedPortfolioPercentage).toBe('100%');
   });
 
-  it('reports the debt row price as not applicable (no stablecoin price lookup exists, F-003)', () => {
+  it('reports the debt row price as a fixed 1:1 stablecoin peg, in plain user-facing language (UX punch-list UX-04: no internal Formula ID)', () => {
     const { portfolio, summary, marketFreshness } = buildOk();
     const composition = buildPortfolioComposition(portfolio, summary, marketFreshness);
-    expect(composition.debt.formattedCurrentPrice).toBe('N/A (stablecoin, 1:1 — F-003)');
+    expect(composition.debt.formattedCurrentPrice).toBe('$1.00 (stablecoin)');
+    expect(composition.debt.formattedCurrentPrice).not.toContain('F-003');
   });
 });
 

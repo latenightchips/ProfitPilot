@@ -132,11 +132,26 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * touches (see `LoopStrategyControls.tsx`'s own header comment for the
  * same fix applied there).
  */
+/**
+ * UX punch-list UX-01/UX-05 — percentage-scale UI boundary conversion.
+ * `percentageChange`/`borrowApr` are plain `useState` string fields (not
+ * RHF), so the same "raw decimal in, raw decimal out" that `simulateScenario`
+ * expects is converted to/from the percentage a user actually types (e.g.
+ * "10" for +10%) at exactly the three points below: `defaultFormValues`
+ * (initial display), `applyPreset` (button click → displayed field), and
+ * `resolveScenarioInputs.ts` (displayed field → decimal, right before it
+ * reaches the Simulation Service). `PRICE_PRESETS` itself stays decimal —
+ * only the string state a user sees/types is percentage-scale.
+ */
+function toPercentInput(decimal: number): string {
+  return String(decimal * 100);
+}
+
 function defaultFormValues(portfolio: ApplicationPortfolio): ScenarioBuilderFormValues {
   return {
     btcPriceUsd: String(portfolio.market.btcPriceUsd),
     percentageChange: '',
-    borrowApr: String(portfolio.protocol.borrowApr),
+    borrowApr: toPercentInput(portfolio.protocol.borrowApr),
     collateralDelta: '0',
     debtDelta: '0',
     targetHealthFactor: '',
@@ -211,7 +226,7 @@ export function ScenarioBuilder({
       if (nextValues.percentageChange.trim() === '') return;
       const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
       if (nextErrors.percentageChange !== null) return;
-      const percentageChange = Number(nextValues.percentageChange);
+      const percentageChange = Number(nextValues.percentageChange) / 100;
       setCurrentScenario({
         type: 'price',
         priceScenario: { type: 'percentageChange', percentageChange },
@@ -250,7 +265,7 @@ export function ScenarioBuilder({
   }
 
   function applyPreset(percentageChange: number) {
-    updateField('percentageChange', String(percentageChange));
+    updateField('percentageChange', toPercentInput(percentageChange));
   }
 
   function handleReset() {
@@ -280,12 +295,12 @@ export function ScenarioBuilder({
       )}
 
       <label className="flex flex-col gap-1 text-sm">
-        <span>Percentage Change (0–1)</span>
+        <span>Percentage Change (%)</span>
         <input
           id="percentageChange"
           type="number"
           step="any"
-          placeholder="e.g. 0.10 for +10%"
+          placeholder="e.g. 10 for +10%"
           value={values.percentageChange}
           onChange={(event) => updateField('percentageChange', event.target.value)}
           aria-invalid={errors.percentageChange ? 'true' : undefined}
@@ -316,7 +331,7 @@ export function ScenarioBuilder({
       </div>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span>Borrow Rate (0–1)</span>
+        <span>Borrow Rate (%)</span>
         <input
           id="borrowApr"
           type="number"

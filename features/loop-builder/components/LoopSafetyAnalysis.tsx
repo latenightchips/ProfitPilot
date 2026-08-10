@@ -160,8 +160,9 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">Risk Classification</span>
         <span className="text-xs text-muted-foreground">
-          Not available — Health Factor risk-band thresholds disagree across the documented
-          specification (PROJECT_STATUS.md Conflict #1).
+          Not shown — there&apos;s no single agreed-upon set of Health Factor risk bands (e.g.
+          &ldquo;Safe&rdquo;/&ldquo;Moderate&rdquo;/&ldquo;High risk&rdquo;) to classify against.
+          Use the Health Factor number itself and the Minimum Health Factor you set above.
         </span>
       </div>
     </div>

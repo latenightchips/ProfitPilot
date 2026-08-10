@@ -49,12 +49,13 @@ export function validateScenarioBuilderInput(
 
   // Optional — only validated when the user actually enters a value
   // (mirrors Target Health Factor's own optional-field pattern below).
-  // Bound matches `resolveScenarioPrice`'s (F-051) own rejection: a
-  // change of -100% or worse would drop the resulting price to zero or
-  // below.
+  // This field is percentage-scale (UX punch-list UX-05: the user types
+  // "10" for +10%, not "0.10") — bound is -100 (not -1), matching the
+  // same underlying rejection as before the scale changed: a change of
+  // -100% or worse would drop the resulting price to zero or below.
   if (values.percentageChange.trim() !== '') {
     const percentageChange = parseNumber(values.percentageChange);
-    if (percentageChange === null || percentageChange <= -1) {
+    if (percentageChange === null || percentageChange <= -100) {
       errors.percentageChange = 'Percentage change cannot reduce the price to zero or below.';
     }
   }

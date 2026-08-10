@@ -77,9 +77,11 @@ describe('LoopStepTable — real step rows traceable to final values (DoD)', () 
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopStepTable />);
-    const cells = screen.getAllByText('Not included — see 02_Formulas.md');
+    const cells = screen.getAllByText('Fees, slippage, and gas not included');
     const { strategy } = useLoopBuilderStore.getState().currentResult!;
     expect(cells.length).toBe(strategy!.steps.length);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('02_Formulas.md');
   });
 });
 

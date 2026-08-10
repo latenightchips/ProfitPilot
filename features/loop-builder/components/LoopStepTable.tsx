@@ -146,7 +146,7 @@ export function LoopStepTable() {
                 {formatHealthFactor(stepRecord.newHealthFactor)}
               </td>
               <td className="py-2 text-xs text-muted-foreground">
-                Not included — see 02_Formulas.md
+                Fees, slippage, and gas not included
               </td>
             </tr>
           ))}

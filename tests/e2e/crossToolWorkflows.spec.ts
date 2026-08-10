@@ -52,10 +52,10 @@ async function createPortfolio(
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', options.debtBalance ?? '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   if (options.targetHealthFactor !== undefined) {
     await fillByLabel(page, 'Target Health Factor', options.targetHealthFactor);
   }
@@ -87,10 +87,10 @@ async function createPortfolioMidFlow(
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', options.debtBalance ?? '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   await page.getByRole('button', { name: 'Create Portfolio' }).click();
   await page.waitForURL('**/portfolio');
 }
@@ -144,7 +144,7 @@ test('Flow: Build a loop and stress-test it in Simulation Workspace (M7-044)', a
   await createPortfolio(page, 'Cross-Tool Loop Simulation Flow Portfolio');
   await goTo(page, 'Loop Builder', '**/loop-builder');
 
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'Apply Loop as Simulation' }).click();
   await page.waitForTimeout(200);
@@ -183,7 +183,7 @@ test('Flow: Copy an exit plan into a simulation (M7-044)', async ({ page }) => {
 test('Flow: Switch portfolios and verify strategy isolation (M7-044)', async ({ page }) => {
   await createPortfolio(page, 'Cross-Tool Isolation Portfolio A');
   await goTo(page, 'Loop Builder', '**/loop-builder');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
   await page.locator('label', { hasText: 'Name' }).locator('input').fill('Strategy A');
   await page.getByRole('button', { name: 'Save Strategy' }).click();
@@ -214,7 +214,7 @@ test('Flow: Switch portfolios and verify strategy isolation (M7-044)', async ({ 
 test('Flow: Reload a saved strategy (M7-044)', async ({ page }) => {
   await createPortfolio(page, 'Cross-Tool Reload Flow Portfolio');
   await goTo(page, 'Loop Builder', '**/loop-builder');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
   const savedStepCount = await page
     .getByRole('table', { name: 'Loop strategy steps' })

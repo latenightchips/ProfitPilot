@@ -44,7 +44,7 @@ describe('StrategyAssumptionsPanel', () => {
     expect(screen.getAllByText('5.00%').length).toBeGreaterThan(0);
   });
 
-  it('itemizes fees, slippage, and gas estimate as unavailable rather than fabricating values', () => {
+  it('itemizes fees, slippage, and gas estimate as unavailable rather than fabricating values, in plain language (UX punch-list item 6)', () => {
     render(
       <StrategyAssumptionsPanel
         portfolio={basePortfolio()}
@@ -53,8 +53,11 @@ describe('StrategyAssumptionsPanel', () => {
       />,
     );
     expect(
-      screen.getByText(/no Formula ID or equation for swap fees, slippage, or gas estimation/),
+      screen.getByText('Estimated fees, slippage, and gas costs are not included.'),
     ).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('02_Formulas.md');
+    expect(bodyText).not.toContain('Formula ID');
   });
 
   it('omits the Time Horizon row when the caller supplies null', () => {

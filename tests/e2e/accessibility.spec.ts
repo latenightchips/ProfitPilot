@@ -116,10 +116,10 @@ async function createPortfolio(
   await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
   await fillByLabel(page, 'Debt balance', options.debtBalance ?? '20000');
   await fillByLabel(page, 'Current BTC price (USD)', '50000');
-  await fillByLabel(page, 'Maximum LTV (0–1)', '0.75');
-  await fillByLabel(page, 'Liquidation threshold (0–1)', '0.8');
-  await fillByLabel(page, 'Borrow APR (0–1)', '0.05');
-  await fillByLabel(page, 'Supply APR (0–1)', '0.02');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
   if (options.targetHealthFactor !== undefined) {
     await fillByLabel(page, 'Target Health Factor', options.targetHealthFactor);
   }
@@ -314,7 +314,7 @@ test('Cover: no WCAG AA violations — Simulation Workspace, interest scenario w
   await createPortfolioAndOpenSimulation(page, 'A11y Simulation Interest Portfolio');
   await fillByLabel(page, 'BTC Price', '65000');
   await page.waitForTimeout(150);
-  await fillByLabel(page, 'Borrow Rate (0–1)', '0.1');
+  await fillByLabel(page, 'Borrow Rate (%)', '10');
   await page.waitForTimeout(200);
   await expectNoWcagAaViolations(page);
 });
@@ -473,7 +473,7 @@ async function createPortfolioAndOpenRecommendations(page: Page, name: string) {
 
 test('Cover: no WCAG AA violations — Loop Builder, viable strategy result', async ({ page }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'A11y Loop Builder Portfolio');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
   await expect(page.getByText('Loop Steps')).toBeVisible();
   await expectNoWcagAaViolations(page);
@@ -531,7 +531,7 @@ test('Cover: every interactive Loop Builder control is reachable and operable by
   page,
 }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'A11y Loop Builder Keyboard Portfolio');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   const reachableRoles = new Set<string>();
@@ -811,7 +811,7 @@ test('Cover: Loop Step Table row details are keyboard-operable (Expandable conte
   page,
 }) => {
   await createPortfolioAndOpenLoopBuilder(page, 'A11y Expandable Details Portfolio');
-  await fillByLabel(page, 'Borrow Percentage Per Step', '0.6');
+  await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
   // Scoped to the first row specifically — with more than one loop step,
