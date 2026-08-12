@@ -179,7 +179,8 @@ export function ScenarioCharts() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Debt and BTC exposure charts are not shown — see this component&rsquo;s own source comment.
+        Debt and BTC exposure charts aren&rsquo;t available for saved price/interest scenarios —
+        only portfolio-action scenarios record that data.
       </p>
     </div>
   );

@@ -181,8 +181,12 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
 
     expect(screen.queryByText('Debt')).not.toBeInTheDocument();
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
-    expect(screen.getByText(/Debt and Liquidation Price are not shown/)).toBeInTheDocument();
-    expect(screen.getByText(/Risk is blocked by Conflict #1/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Debt and Liquidation Price aren.t available for saved scenarios/),
+    ).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toMatch(/Conflict #\d+/);
+    expect(bodyText).not.toContain('source comment');
   });
 });
 

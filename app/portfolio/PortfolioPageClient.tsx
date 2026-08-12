@@ -540,6 +540,30 @@ function canApply(
 }
 
 /**
+ * PT-10 (physical-testing round 2) — "Apply Changes appears broken
+ * because risk acknowledgement is easy to miss." `canApply` above is
+ * unchanged (the safety gate itself is not being touched); this only
+ * identifies the one specific case worth explaining inline — a valid,
+ * risk-increasing preview blocked solely on the unchecked
+ * acknowledgement box, as opposed to "no preview yet" or "preview
+ * invalid," which already have their own, different affordances
+ * (button disabled with nothing to preview yet; the Store's own error
+ * message on an invalid preview).
+ */
+function blockedByRiskAcknowledgment(
+  preview: ServiceResult<PortfolioSummary> | null,
+  beforeSummary: ServiceResult<PortfolioSummary>,
+  riskAcknowledged: boolean,
+): boolean {
+  return (
+    preview !== null &&
+    preview.ok &&
+    isRiskIncreasing(beforeSummary, preview.data) &&
+    !riskAcknowledged
+  );
+}
+
+/**
  * M4-017 ("Implement Portfolio Error Recovery") — see this file's own
  * M4-017 header note for the full reasoning. Additive, not a
  * replacement: the caller keeps rendering the Details/Collateral/Debt
@@ -813,16 +837,20 @@ function PreviewDiff({
       )}
 
       {riskIncreasing && (
-        <label className="flex items-start gap-2 text-xs text-destructive">
+        <label
+          id="risk-acknowledgment"
+          className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-2 text-sm text-destructive"
+        >
           <input
             type="checkbox"
             checked={riskAcknowledged}
             onChange={(event) => onRiskAcknowledgedChange(event.target.checked)}
-            className="mt-0.5"
+            className="mt-0.5 h-4 w-4"
           />
           <span>
-            This change lowers your Health Factor. I understand the increased risk and want to
-            proceed.
+            <strong>Action required:</strong> this change lowers your Health Factor. Check this box
+            to confirm you understand the increased risk — Apply Changes stays disabled until you
+            do.
           </span>
         </label>
       )}
@@ -1058,11 +1086,22 @@ function CollateralPositionForm({
           type="button"
           onClick={onApply}
           disabled={!canApply(preview, beforeSummary, riskAcknowledged)}
+          aria-describedby={
+            blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
+              ? 'collateral-apply-blocked-hint'
+              : undefined
+          }
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           Apply Changes
         </button>
       </div>
+
+      {blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged) && (
+        <p id="collateral-apply-blocked-hint" className="text-xs text-destructive">
+          Apply Changes is disabled until you check the risk acknowledgment box below.
+        </p>
+      )}
 
       {preview && (
         <PreviewDiff
@@ -1246,11 +1285,22 @@ function DebtPositionForm({
           type="button"
           onClick={onApply}
           disabled={!canApply(preview, beforeSummary, riskAcknowledged)}
+          aria-describedby={
+            blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
+              ? 'debt-apply-blocked-hint'
+              : undefined
+          }
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           Apply Changes
         </button>
       </div>
+
+      {blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged) && (
+        <p id="debt-apply-blocked-hint" className="text-xs text-destructive">
+          Apply Changes is disabled until you check the risk acknowledgment box below.
+        </p>
+      )}
 
       {preview && (
         <PreviewDiff

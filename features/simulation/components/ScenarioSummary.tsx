@@ -162,8 +162,8 @@ function PriceOrInterestSummary() {
         );
       })}
       <p className="text-xs text-muted-foreground">
-        Debt is not shown for price/interest scenarios — see this component&rsquo;s own source
-        comment.
+        Debt balance isn&rsquo;t shown here because a price/interest scenario doesn&rsquo;t change
+        your debt amount — see the Portfolio Action section below for scenarios that do.
       </p>
     </div>
   );

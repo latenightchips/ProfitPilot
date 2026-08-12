@@ -32,9 +32,7 @@ describe('ScenarioTimeline — empty state', () => {
   it('prompts the user to change Borrow Rate or Holding Period, rather than rendering empty charts', () => {
     render(<ScenarioTimeline />);
     expect(
-      screen.getByText(
-        'Change Borrow Rate or Holding Period on an interest scenario to see the timeline.',
-      ),
+      screen.getByText('Change Borrow Rate or Holding Period to see the timeline.'),
     ).toBeInTheDocument();
   });
 
@@ -47,9 +45,7 @@ describe('ScenarioTimeline — empty state', () => {
 
     render(<ScenarioTimeline />);
     expect(
-      screen.getByText(
-        'Change Borrow Rate or Holding Period on an interest scenario to see the timeline.',
-      ),
+      screen.getByText('Change Borrow Rate or Holding Period to see the timeline.'),
     ).toBeInTheDocument();
   });
 });

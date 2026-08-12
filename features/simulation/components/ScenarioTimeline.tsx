@@ -99,7 +99,7 @@ export function ScenarioTimeline() {
   if (timelineProjection === null) {
     return (
       <p className="text-sm text-muted-foreground">
-        Change Borrow Rate or Holding Period on an interest scenario to see the timeline.
+        Change Borrow Rate or Holding Period to see the timeline.
       </p>
     );
   }

@@ -150,12 +150,17 @@ test('Flow: Build a loop and stress-test it in Simulation Workspace (M7-044)', a
   await page.waitForTimeout(200);
 
   await goTo(page, 'Simulation', '**/simulation');
-  await expect(page.getByText('Portfolio Action')).toBeVisible();
+  // PT-11 (physical-testing round 2) added a "Portfolio Action" fieldset
+  // legend to the Scenario Builder, which now shares this text with the
+  // "Portfolio Action" result-section span this test is actually
+  // checking — scope to the span to avoid a strict-mode collision.
+  const portfolioActionResult = page.locator('span').filter({ hasText: 'Portfolio Action' });
+  await expect(portfolioActionResult).toBeVisible();
 
   // Stress-test on top of the applied loop with a real price scenario.
   await fillByLabel(page, 'BTC Price', '30000');
   await page.waitForTimeout(200);
-  await expect(page.getByText('Portfolio Action')).toBeVisible();
+  await expect(portfolioActionResult).toBeVisible();
   await expect(page.getByText('Portfolio Value').first()).toBeVisible();
 
   await expectUnchangedPortfolio(page, '2', '20000');
@@ -173,7 +178,9 @@ test('Flow: Copy an exit plan into a simulation (M7-044)', async ({ page }) => {
   await page.waitForTimeout(200);
 
   await goTo(page, 'Simulation', '**/simulation');
-  await expect(page.getByText('Portfolio Action')).toBeVisible();
+  // PT-11's fieldset legend shares this text with the result-section
+  // span — scope to the span to avoid a strict-mode collision.
+  await expect(page.locator('span').filter({ hasText: 'Portfolio Action' })).toBeVisible();
   // A full exit repays the entire $20,000 debt — Debt after is $0.
   await expect(page.getByText('$0.00').first()).toBeVisible();
 

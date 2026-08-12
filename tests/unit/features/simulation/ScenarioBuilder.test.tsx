@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -245,13 +245,32 @@ describe('ScenarioBuilder — live Borrow Rate wiring (M6-006, Batch 6)', () => 
 });
 
 describe('ScenarioBuilder — live Holding Period wiring (M6-007, Batch 7)', () => {
-  it('does nothing when no interest scenario is active yet', async () => {
+  it('initiates an interest scenario from the baseline state, using the pre-filled Borrow Rate — PT-12 fix (physical-testing round 2): previously only re-ran an already-active interest scenario, so changing Holding Period from the default state silently did nothing', async () => {
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
 
-    expect(useSimulationStore.getState().currentScenario).toBeNull();
+    expect(useSimulationStore.getState().currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 90,
+      borrowApr: 0.05,
+    });
+  });
+
+  it('Interest Cost actually changes when Holding Period changes (PT-12: was previously pinned to the annual figure)', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
+    const interestAt30Days = useSimulationStore.getState().currentResult?.scenario.debtCost;
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
+    const interestAt365Days = useSimulationStore.getState().currentResult?.scenario.debtCost;
+
+    expect(interestAt30Days).not.toBe(interestAt365Days);
+    expect(interestAt365Days).toBeGreaterThan(interestAt30Days!);
   });
 
   it('does not disturb an active price scenario', async () => {
@@ -394,5 +413,64 @@ describe('ScenarioBuilder — Reset Scenario', () => {
     expect(screen.getByLabelText('BTC Price')).toHaveValue(50000);
     expect(useSimulationStore.getState().currentScenario).toBeNull();
     expect(useSimulationStore.getState().currentResult).toBeNull();
+  });
+});
+
+describe('ScenarioBuilder — PT-11 scenario grouping is unmistakable', () => {
+  it('groups Price/Interest Scenario fields and Portfolio Action fields into two distinct, accessibly-named fieldsets', () => {
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const priceInterestGroup = screen.getByRole('group', { name: 'Price / Interest Scenario' });
+    const portfolioActionGroup = screen.getByRole('group', { name: 'Portfolio Action' });
+
+    expect(within(priceInterestGroup).getByLabelText('BTC Price')).toBeInTheDocument();
+    expect(within(priceInterestGroup).getByLabelText('Borrow Rate (%)')).toBeInTheDocument();
+    expect(within(priceInterestGroup).getByLabelText('Holding Period')).toBeInTheDocument();
+    expect(
+      within(portfolioActionGroup).getByLabelText('Collateral Change (BTC)'),
+    ).toBeInTheDocument();
+    expect(within(portfolioActionGroup).getByLabelText('Debt Change (USD)')).toBeInTheDocument();
+  });
+
+  it('states in plain language that the two groups are independent scenarios', () => {
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    expect(
+      screen.getByText(
+        /changing a field in one does not affect the other, and each has its own separate result below/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps Price/Interest Scenario and Portfolio Action results independent for the PT-11 repro (BTC -50%, +1 BTC collateral, +$10,000 debt)', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '-50');
+
+    const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
+    await user.clear(collateralInput);
+    await user.type(collateralInput, '1');
+
+    const debtInput = screen.getByLabelText('Debt Change (USD)');
+    await user.clear(debtInput);
+    await user.type(debtInput, '10000');
+
+    const state = useSimulationStore.getState();
+    // Price/Interest Scenario: 2 BTC * ($50,000 * 0.5) - $20,000 debt = $30,000 equity —
+    // unaffected by the Portfolio Action fields below.
+    expect(state.currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.5 },
+    });
+    expect(state.currentResult?.scenario.equity).toBe(30000);
+
+    // Portfolio Action: 3 BTC * $50,000 = $150,000 collateral; $30,000 debt —
+    // computed against the unmodified current price, unaffected by the
+    // Percentage Change field above.
+    expect(state.portfolioActionPreview?.before.collateralValue).toBe(100000);
+    expect(state.portfolioActionPreview?.after.collateralValue).toBe(150000);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
   });
 });

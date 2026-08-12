@@ -64,8 +64,8 @@ export function SimulationWarnings({ portfolio }: { portfolio: Portfolio }) {
         ))
       )}
       <p className="text-xs text-muted-foreground">
-        Near liquidation, Invalid assumptions, High leverage, and High borrowing cost are not
-        checked — see this component&rsquo;s own source comment.
+        Near liquidation, Invalid assumptions, High leverage, and High borrowing cost aren&rsquo;t
+        checked — there&rsquo;s no defined threshold for any of them yet.
       </p>
     </div>
   );

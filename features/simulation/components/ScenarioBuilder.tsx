@@ -59,19 +59,20 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * (M6-006's own Include list) are all satisfied by this one free-form
  * field — M6-006, unlike M6-005, names no preset buttons.
  *
- * **Holding Period / Custom Holding Period Days re-run the interest
- * scenario when one is already active (M6-007, Batch 7)** — satisfying
- * M6-007's own Description ("Project portfolio changes over time")
- * literally: a live projection changes when the assumed time span
- * changes, not just when Borrow Rate is touched. Gated on
- * `currentScenario?.type === 'interest'`: changing Holding Period
- * before any interest scenario exists must not spontaneously invent
- * one — `03_UI.md` Page 5's own "HOLDING PERIOD" section is explicit
- * that "Interest calculations use the selected period," a claim about
- * an *existing* interest calculation, not a trigger to create one from
- * a price-only or empty state. Time horizon has no meaning for a
- * `type: 'price'` scenario (`SimulationScenario`'s own price variant
- * has no `timeHorizonDays` field at all).
+ * **Holding Period / Custom Holding Period Days initiate or re-run the
+ * interest scenario (M6-007, Batch 7; trigger condition fixed PT-12,
+ * physical-testing round 2)** — satisfying M6-007's own Description
+ * ("Project portfolio changes over time") and `03_UI.md` Page 5's own
+ * "HOLDING PERIOD" section ("Interest calculations use the selected
+ * period") literally: a live projection changes when the assumed time
+ * span changes, whether or not Borrow Rate was ever actively retyped
+ * away from its pre-filled default. Gated on `currentScenario?.type !==
+ * 'price'`: still declines to silently convert an active *price*
+ * scenario into an interest one (unchanged, existing behavior/tests) —
+ * only a price scenario in progress is left undisturbed. Time horizon
+ * has no meaning for a `type: 'price'` scenario (`SimulationScenario`'s
+ * own price variant has no `timeHorizonDays` field at all), which is
+ * exactly the case this gate still protects.
  *
  * **M6-007's own DoD ("Time assumptions are clearly displayed") is
  * satisfied by the Holding Period `<select>` and the conditionally
@@ -255,7 +256,21 @@ export function ScenarioBuilder({
     }
 
     if (field === 'holdingPeriod' || field === 'customHoldingPeriodDays') {
-      if (currentScenario?.type !== 'interest') return;
+      // PT-12 (physical-testing round 2) — previously gated on
+      // `currentScenario?.type === 'interest'`, so Holding Period only
+      // ever re-ran an *already-active* interest scenario. From the
+      // baseline/default state (the ordinary first interaction — Borrow
+      // Rate still shows its pre-filled portfolio default, never
+      // actively retyped), that meant Holding Period silently did
+      // nothing and Interest Cost stayed pinned at the annual figure —
+      // contradicting 03_UI.md Page 5's own "Interest calculations use
+      // the selected period." Still declining to overwrite an active
+      // *price* scenario (unchanged, existing behavior/tests) so this
+      // never silently converts a scenario type the user is actively
+      // using; `resolveInterestScenario` itself is the same, unmodified
+      // formula path `borrowApr`'s own handler already uses, so this is
+      // a trigger-condition fix, not a new calculation.
+      if (currentScenario?.type === 'price') return;
       const scenario = resolveInterestScenario(nextValues, portfolio);
       if (scenario === null) return;
       setCurrentScenario(scenario);
@@ -274,118 +289,182 @@ export function ScenarioBuilder({
   }
 
   return (
-    <form className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm">
-        <span>BTC Price</span>
-        <input
-          id="btcPriceUsd"
-          type="number"
-          step="any"
-          value={values.btcPriceUsd}
-          onChange={(event) => updateField('btcPriceUsd', event.target.value)}
-          aria-invalid={errors.btcPriceUsd ? 'true' : undefined}
-          aria-describedby={errors.btcPriceUsd ? 'btcPriceUsd-error' : undefined}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        />
-      </label>
-      {errors.btcPriceUsd && (
-        <span id="btcPriceUsd-error" className="text-xs text-destructive">
-          {errors.btcPriceUsd}
-        </span>
-      )}
+    <form className="flex flex-col gap-4">
+      {/* PT-11 (physical-testing round 2) — these two fieldsets, and the
+          intro sentence below, are the fix: `services/simulation/scenario.ts`'s
+          own header comment documents that price/interest scenarios and
+          portfolio actions are genuinely independent Store fields/Service
+          calls by spec ("Scope: price and interest scenarios only, not
+          position-change... forcing it into this same ScenarioSummary
+          shape would require inventing a 'profit or loss' meaning...
+          that no document defines"), so this is a presentation fix, not
+          a formula change — the two groups below (and their matching
+          "Price / Interest Scenario" / "Portfolio Action" result
+          sections in ScenarioSummary.tsx) now share the same explicit
+          naming and grouping so the separation reads as intentional
+          rather than looking like one broken combined scenario. */}
+      <p className="text-xs text-muted-foreground">
+        The two groups below are independent &ldquo;what if&rdquo; scenarios — changing a field in
+        one does not affect the other, and each has its own separate result below.
+      </p>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Percentage Change (%)</span>
-        <input
-          id="percentageChange"
-          type="number"
-          step="any"
-          placeholder="e.g. 10 for +10%"
-          value={values.percentageChange}
-          onChange={(event) => updateField('percentageChange', event.target.value)}
-          aria-invalid={errors.percentageChange ? 'true' : undefined}
-          aria-describedby={errors.percentageChange ? 'percentageChange-error' : undefined}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        />
-      </label>
-      {errors.percentageChange && (
-        <span id="percentageChange-error" className="text-xs text-destructive">
-          {errors.percentageChange}
-        </span>
-      )}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="text-sm font-semibold text-foreground">Price / Interest Scenario</legend>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>BTC Price</span>
+          <input
+            id="btcPriceUsd"
+            type="number"
+            step="any"
+            value={values.btcPriceUsd}
+            onChange={(event) => updateField('btcPriceUsd', event.target.value)}
+            aria-invalid={errors.btcPriceUsd ? 'true' : undefined}
+            aria-describedby={errors.btcPriceUsd ? 'btcPriceUsd-error' : undefined}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.btcPriceUsd && (
+          <span id="btcPriceUsd-error" className="text-xs text-destructive">
+            {errors.btcPriceUsd}
+          </span>
+        )}
 
-      <div className="flex flex-col gap-2">
-        <span className="text-sm">Preset Scenarios</span>
-        <div className="flex flex-wrap gap-2">
-          {PRICE_PRESETS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              onClick={() => applyPreset(preset)}
-              className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
-            >
-              {formatPreset(preset)}
-            </button>
-          ))}
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Percentage Change (%)</span>
+          <input
+            id="percentageChange"
+            type="number"
+            step="any"
+            placeholder="e.g. 10 for +10%"
+            value={values.percentageChange}
+            onChange={(event) => updateField('percentageChange', event.target.value)}
+            aria-invalid={errors.percentageChange ? 'true' : undefined}
+            aria-describedby={errors.percentageChange ? 'percentageChange-error' : undefined}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.percentageChange && (
+          <span id="percentageChange-error" className="text-xs text-destructive">
+            {errors.percentageChange}
+          </span>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <span className="text-sm">Preset Scenarios</span>
+          <div className="flex flex-wrap gap-2">
+            {PRICE_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+              >
+                {formatPreset(preset)}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Borrow Rate (%)</span>
-        <input
-          id="borrowApr"
-          type="number"
-          step="any"
-          value={values.borrowApr}
-          onChange={(event) => updateField('borrowApr', event.target.value)}
-          aria-invalid={errors.borrowApr ? 'true' : undefined}
-          aria-describedby={errors.borrowApr ? 'borrowApr-error' : undefined}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        />
-      </label>
-      {errors.borrowApr && (
-        <span id="borrowApr-error" className="text-xs text-destructive">
-          {errors.borrowApr}
-        </span>
-      )}
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Borrow Rate (%)</span>
+          <input
+            id="borrowApr"
+            type="number"
+            step="any"
+            value={values.borrowApr}
+            onChange={(event) => updateField('borrowApr', event.target.value)}
+            aria-invalid={errors.borrowApr ? 'true' : undefined}
+            aria-describedby={errors.borrowApr ? 'borrowApr-error' : undefined}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.borrowApr && (
+          <span id="borrowApr-error" className="text-xs text-destructive">
+            {errors.borrowApr}
+          </span>
+        )}
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Collateral Change (BTC)</span>
-        <input
-          id="collateralDelta"
-          type="number"
-          step="any"
-          value={values.collateralDelta}
-          onChange={(event) => updateField('collateralDelta', event.target.value)}
-          aria-invalid={errors.collateralDelta ? 'true' : undefined}
-          aria-describedby={errors.collateralDelta ? 'collateralDelta-error' : undefined}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        />
-      </label>
-      {errors.collateralDelta && (
-        <span id="collateralDelta-error" className="text-xs text-destructive">
-          {errors.collateralDelta}
-        </span>
-      )}
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Holding Period</span>
+          <select
+            value={values.holdingPeriod}
+            onChange={(event) => updateField('holdingPeriod', event.target.value as HoldingPeriod)}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          >
+            {HOLDING_PERIOD_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Debt Change (USD)</span>
-        <input
-          id="debtDelta"
-          type="number"
-          step="any"
-          value={values.debtDelta}
-          onChange={(event) => updateField('debtDelta', event.target.value)}
-          aria-invalid={errors.debtDelta ? 'true' : undefined}
-          aria-describedby={errors.debtDelta ? 'debtDelta-error' : undefined}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        />
-      </label>
-      {errors.debtDelta && (
-        <span id="debtDelta-error" className="text-xs text-destructive">
-          {errors.debtDelta}
-        </span>
-      )}
+        {values.holdingPeriod === 'custom' && (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>Custom Holding Period (days)</span>
+              <input
+                id="customHoldingPeriodDays"
+                type="number"
+                step="1"
+                value={values.customHoldingPeriodDays}
+                onChange={(event) => updateField('customHoldingPeriodDays', event.target.value)}
+                aria-invalid={errors.customHoldingPeriodDays ? 'true' : undefined}
+                aria-describedby={
+                  errors.customHoldingPeriodDays ? 'customHoldingPeriodDays-error' : undefined
+                }
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+            </label>
+            {errors.customHoldingPeriodDays && (
+              <span id="customHoldingPeriodDays-error" className="text-xs text-destructive">
+                {errors.customHoldingPeriodDays}
+              </span>
+            )}
+          </>
+        )}
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-3">
+        <legend className="text-sm font-semibold text-foreground">Portfolio Action</legend>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Collateral Change (BTC)</span>
+          <input
+            id="collateralDelta"
+            type="number"
+            step="any"
+            value={values.collateralDelta}
+            onChange={(event) => updateField('collateralDelta', event.target.value)}
+            aria-invalid={errors.collateralDelta ? 'true' : undefined}
+            aria-describedby={errors.collateralDelta ? 'collateralDelta-error' : undefined}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.collateralDelta && (
+          <span id="collateralDelta-error" className="text-xs text-destructive">
+            {errors.collateralDelta}
+          </span>
+        )}
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Debt Change (USD)</span>
+          <input
+            id="debtDelta"
+            type="number"
+            step="any"
+            value={values.debtDelta}
+            onChange={(event) => updateField('debtDelta', event.target.value)}
+            aria-invalid={errors.debtDelta ? 'true' : undefined}
+            aria-describedby={errors.debtDelta ? 'debtDelta-error' : undefined}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.debtDelta && (
+          <span id="debtDelta-error" className="text-xs text-destructive">
+            {errors.debtDelta}
+          </span>
+        )}
+      </fieldset>
 
       <label className="flex flex-col gap-1 text-sm">
         <span>Target Health Factor</span>
@@ -404,46 +483,6 @@ export function ScenarioBuilder({
         <span id="targetHealthFactor-error" className="text-xs text-destructive">
           {errors.targetHealthFactor}
         </span>
-      )}
-
-      <label className="flex flex-col gap-1 text-sm">
-        <span>Holding Period</span>
-        <select
-          value={values.holdingPeriod}
-          onChange={(event) => updateField('holdingPeriod', event.target.value as HoldingPeriod)}
-          className="rounded-md border border-border bg-transparent px-3 py-2"
-        >
-          {HOLDING_PERIOD_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {values.holdingPeriod === 'custom' && (
-        <>
-          <label className="flex flex-col gap-1 text-sm">
-            <span>Custom Holding Period (days)</span>
-            <input
-              id="customHoldingPeriodDays"
-              type="number"
-              step="1"
-              value={values.customHoldingPeriodDays}
-              onChange={(event) => updateField('customHoldingPeriodDays', event.target.value)}
-              aria-invalid={errors.customHoldingPeriodDays ? 'true' : undefined}
-              aria-describedby={
-                errors.customHoldingPeriodDays ? 'customHoldingPeriodDays-error' : undefined
-              }
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-          </label>
-          {errors.customHoldingPeriodDays && (
-            <span id="customHoldingPeriodDays-error" className="text-xs text-destructive">
-              {errors.customHoldingPeriodDays}
-            </span>
-          )}
-        </>
       )}
 
       <button

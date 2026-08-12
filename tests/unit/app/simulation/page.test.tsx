@@ -118,9 +118,7 @@ describe('SimulationPage — active portfolio (M6-001, M6-004)', () => {
     selectActivePortfolio();
     render(<SimulationPage />);
     expect(
-      screen.getByText(
-        'Change Borrow Rate or Holding Period on an interest scenario to see the timeline.',
-      ),
+      screen.getByText('Change Borrow Rate or Holding Period to see the timeline.'),
     ).toBeInTheDocument();
   });
 
@@ -183,7 +181,10 @@ describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
       useSimulationStore.getState().runSimulation(portfolioA);
     });
 
-    expect(screen.getByText('Price / Interest Scenario')).toBeInTheDocument();
+    // PT-11's Scenario Builder fieldset legend shares this text with
+    // ScenarioSummary's own result-section span, so both are present at
+    // once (2) before the switch, and only the legend remains (1) after.
+    expect(screen.getAllByText('Price / Interest Scenario')).toHaveLength(2);
 
     act(() => {
       const createdB = usePortfolioStore.getState().create(validInput({ name: 'Portfolio B' }));
@@ -191,7 +192,7 @@ describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
       usePortfolioStore.getState().select(createdB.data.id);
     });
 
-    expect(screen.queryByText('Price / Interest Scenario')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Price / Interest Scenario')).toHaveLength(1);
     expect(screen.getByText('Change a scenario input to see results here.')).toBeInTheDocument();
   });
 });

@@ -66,7 +66,11 @@ describe('ScenarioSummary — price/interest scenario result', () => {
     render(<ScenarioSummary />);
 
     expect(screen.queryByText('Debt')).not.toBeInTheDocument();
-    expect(screen.getByText(/Debt is not shown for price\/interest scenarios/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Debt balance isn.t shown here because a price\/interest scenario/),
+    ).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('source comment');
   });
 });
 

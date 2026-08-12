@@ -412,8 +412,10 @@ export function ScenarioComparison({
             </tbody>
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
-            Debt and Liquidation Price are not shown — see this component&rsquo;s own source
-            comment. Risk is blocked by Conflict #1 (no documented risk-band thresholds).
+            Debt and Liquidation Price aren&rsquo;t available for saved scenarios — see Interest and
+            Liquidation Distance above instead. A Risk category isn&rsquo;t shown because
+            there&rsquo;s no single agreed-upon set of Health Factor risk bands to classify against;
+            use the Health Factor number itself.
           </p>
         </div>
       )}

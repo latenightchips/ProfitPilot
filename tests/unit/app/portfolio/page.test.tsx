@@ -323,6 +323,34 @@ describe('PortfolioPage — Debt Position Management (M4-008)', () => {
     const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
+
+  it("explains why Apply Changes is disabled when a debt increase requires risk acknowledgment (PT-10 — the punch-list's own repro: increasing debt from $0)", async () => {
+    const created = createAndSelect({ debt: { asset: 'USDC', balance: 0 } });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '20000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).toBeDisabled();
+    expect(applyButton).toHaveAttribute('aria-describedby', 'debt-apply-blocked-hint');
+    expect(
+      section.getByText(
+        'Apply Changes is disabled until you check the risk acknowledgment box below.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(section.getByRole('checkbox'));
+    expect(applyButton).not.toBeDisabled();
+    expect(applyButton).not.toHaveAttribute('aria-describedby');
+
+    await user.click(applyButton);
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(20000);
+  });
 });
 
 describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
@@ -431,6 +459,52 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
     // Editing again clears both the preview and the acknowledgment.
     await user.type(section.getByLabelText('Quantity', { exact: false }), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+  });
+
+  it('explains why Apply Changes is disabled when only the risk acknowledgment is missing (PT-10)', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    // Withdrawing collateral lowers Health Factor: 4 -> 2.
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '1');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).toBeDisabled();
+    expect(applyButton).toHaveAttribute('aria-describedby', 'collateral-apply-blocked-hint');
+    expect(
+      section.getByText(
+        'Apply Changes is disabled until you check the risk acknowledgment box below.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(section.getByRole('checkbox'));
+    expect(applyButton).not.toBeDisabled();
+    expect(
+      section.queryByText(
+        'Apply Changes is disabled until you check the risk acknowledgment box below.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not show the risk-acknowledgment hint when Apply is disabled for an unrelated reason (no preview yet)', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).toBeDisabled();
+    expect(applyButton).not.toHaveAttribute('aria-describedby');
+    expect(
+      section.queryByText(
+        'Apply Changes is disabled until you check the risk acknowledgment box below.',
+      ),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -123,8 +123,7 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Fees &amp; Slippage</span>
         <span className="text-muted-foreground">
-          Not included — no Formula ID or equation for swap fees or slippage exists in
-          02_Formulas.md.
+          Estimated swap fees and slippage are not included.
         </span>
       </div>
 

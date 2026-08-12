@@ -100,7 +100,11 @@ describe('ScenarioCharts — with selected scenarios', () => {
 
     expect(screen.queryByText('Debt')).not.toBeInTheDocument();
     expect(screen.queryByText('BTC Exposure')).not.toBeInTheDocument();
-    expect(screen.getByText(/Debt and BTC exposure charts are not shown/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Debt and BTC exposure charts aren.t available for saved/),
+    ).toBeInTheDocument();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('source comment');
   });
 
   it('labels an interest scenario’s own bar distinctly from a price scenario', () => {
