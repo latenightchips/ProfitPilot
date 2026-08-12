@@ -474,3 +474,129 @@ describe('ScenarioBuilder — PT-11 scenario grouping is unmistakable', () => {
     expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
   });
 });
+
+describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Price/Percentage Change edits', () => {
+  // Known-good baseline from the physical-testing report: Debt $26,000,
+  // Borrow APR 5%, Holding Period 30 days -> prorated interest
+  // $26,000 * 5% * 30/365 ≈ $106.85; the full annual figure is $1,300.
+  const DEBT_PORTFOLIO: ApplicationPortfolio = {
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 26000 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+    },
+  };
+
+  it('reproduces the reported stale-state sequence — selecting a 30-day interest scenario, changing the price scenario, and returning the price back to baseline all keep the prorated 30-day interest, never the stale $1,300 annual figure', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
+    let state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.05,
+    });
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+
+    // Reported repro: change the price scenario (-70%). The prior bug
+    // unconditionally rebuilt a bare `type: 'price'` scenario here,
+    // discarding the active Holding Period/Borrow Rate and reverting
+    // Interest Cost to the unprorated $1,300 annual figure.
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '-70');
+    state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.7 },
+      timeHorizonDays: 30,
+      borrowApr: 0.05,
+    });
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+
+    // Reported repro: returning the price change to 0 did not restore the
+    // prorated value under the prior bug, since nothing ever re-promoted
+    // the scenario back to `type: 'interest'` once demoted.
+    await user.clear(percentInput);
+    await user.type(percentInput, '0');
+    state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'percentageChange', percentageChange: 0 },
+      timeHorizonDays: 30,
+      borrowApr: 0.05,
+    });
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    // Holding Period must still read "30 Days" throughout, matching the
+    // report's own observation that the selector never changed.
+    expect(screen.getByLabelText('Holding Period')).toHaveValue('30');
+  });
+
+  it('also preserves the active interest scenario when the absolute BTC Price field is edited instead of Percentage Change', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
+
+    const priceInput = screen.getByLabelText('BTC Price');
+    await user.clear(priceInput);
+    await user.type(priceInput, '15000');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 15000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.05,
+    });
+    // Accrued interest depends only on debt balance/APR/time horizon
+    // (calculateProratedInterest), never on price — unaffected by the
+    // $15,000 stress price above.
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+  });
+
+  it('365 days matches the reported $1,300 annual figure, confirming the authoritative formula itself is unchanged', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
+  });
+
+  it('still builds a plain price scenario from BTC Price/Percentage Change when no interest scenario is active (unchanged behavior)', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const priceInput = screen.getByLabelText('BTC Price');
+    await user.clear(priceInput);
+    await user.type(priceInput, '60000');
+
+    expect(useSimulationStore.getState().currentScenario).toEqual({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+  });
+
+  it('Reset Scenario returns to a coherent default state after the stale-state sequence — no leftover interest figure of any kind', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
+    const percentInput = screen.getByLabelText('Percentage Change (%)');
+    await user.type(percentInput, '-70');
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+
+    await user.click(screen.getByRole('button', { name: 'Reset Scenario' }));
+
+    expect(screen.getByLabelText('Holding Period')).toHaveValue('30');
+    expect(screen.getByLabelText('Percentage Change (%)')).toHaveValue(null);
+    expect(useSimulationStore.getState().currentScenario).toBeNull();
+    expect(useSimulationStore.getState().currentResult).toBeNull();
+  });
+});

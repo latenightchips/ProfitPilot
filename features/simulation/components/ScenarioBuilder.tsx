@@ -74,6 +74,26 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * own price variant has no `timeHorizonDays` field at all), which is
  * exactly the case this gate still protects.
  *
+ * **BTC Price / Percentage Change preserve an already-active interest
+ * scenario instead of silently demoting it back to `type: 'price'`
+ * (PT-12 follow-up, physical-testing round 2)** — the PT-12 fix above
+ * made Holding Period able to *start* an interest scenario, but left the
+ * BTC Price/Percentage Change handlers unconditionally rebuilding a bare
+ * `type: 'price'` scenario on every edit, discarding whatever Borrow
+ * Rate/Holding Period was already active. Since a `type: 'price'`
+ * scenario's own `debtCost` is always the unprorated annual figure (see
+ * `services/simulation/scenario.ts`'s own `calculateAnnualInterest`
+ * call for a price scenario — unmodified here), that silent demotion is
+ * what made Interest Cost jump back to the annual value the instant BTC
+ * Price/Percentage Change was touched again, and kept it stuck there
+ * afterward (including returning the price back to its original value),
+ * since nothing ever re-promoted the scenario back to `type: 'interest'`.
+ * Fixed the same way the Holding Period gate already reads intent from
+ * `currentScenario?.type`: when it is already `'interest'`, these two
+ * fields now resolve through the same, unmodified `resolveInterestScenario`
+ * path instead, updating only the price side while keeping Borrow Rate/
+ * Holding Period intact.
+ *
  * **M6-007's own DoD ("Time assumptions are clearly displayed") is
  * satisfied by the Holding Period `<select>` and the conditionally
  * shown Custom Holding Period input themselves** — both are already
@@ -217,6 +237,28 @@ export function ScenarioBuilder({
     if (field === 'btcPriceUsd') {
       const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
       if (nextErrors.btcPriceUsd !== null) return;
+      // PT-12 follow-up (physical testing round 2) — previously always
+      // built a fresh `type: 'price'` scenario here, unconditionally
+      // discarding an already-active `type: 'interest'` scenario's own
+      // borrowApr/timeHorizonDays. Interest Cost for a `type: 'price'`
+      // scenario is always the full annual figure (no time-horizon
+      // proration — see services/simulation/scenario.ts's own
+      // calculateAnnualInterest call, unchanged here), so that silent
+      // demotion is what made Interest Cost revert to the annual value
+      // the moment BTC Price/Percentage Change was touched again, even
+      // though Holding Period was still visibly selected on screen. When
+      // an interest scenario is already active, this field is resolved
+      // through the same `resolveInterestScenario` path the Holding
+      // Period/Borrow Rate handlers already use, preserving the active
+      // Borrow Rate + Holding Period while only the price input changes.
+      if (currentScenario?.type === 'interest') {
+        const scenario = resolveInterestScenario(nextValues, portfolio);
+        if (scenario === null) return;
+        setCurrentScenario(scenario);
+        runSimulation(portfolio);
+        runTimelineProjection(portfolio);
+        return;
+      }
       const btcPriceUsd = Number(nextValues.btcPriceUsd);
       setCurrentScenario({ type: 'price', priceScenario: { type: 'absolute', btcPriceUsd } });
       runSimulation(portfolio);
@@ -227,6 +269,17 @@ export function ScenarioBuilder({
       if (nextValues.percentageChange.trim() === '') return;
       const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
       if (nextErrors.percentageChange !== null) return;
+      // PT-12 follow-up — same fix as btcPriceUsd above, for the same
+      // reason: preserve an already-active interest scenario instead of
+      // silently demoting it back to a bare price scenario.
+      if (currentScenario?.type === 'interest') {
+        const scenario = resolveInterestScenario(nextValues, portfolio);
+        if (scenario === null) return;
+        setCurrentScenario(scenario);
+        runSimulation(portfolio);
+        runTimelineProjection(portfolio);
+        return;
+      }
       const percentageChange = Number(nextValues.percentageChange) / 100;
       setCurrentScenario({
         type: 'price',
