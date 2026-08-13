@@ -208,3 +208,113 @@ describe('simulateScenario — interest scenarios (M3-009)', () => {
     expect(result.errors).toHaveLength(1);
   });
 });
+
+/**
+ * Interest Cost comparison semantics — physical-testing report (PT-12
+ * follow-up round 3). `debtCost` previously compared apples to oranges
+ * for an interest scenario: the baseline side stayed the unprorated
+ * *annual* figure (set up once, before either scenario branch, with no
+ * time horizon in scope), while the scenario side was prorated to
+ * `timeHorizonDays` — e.g. "$1,300 → $106.85" at a 30-day Holding
+ * Period, reading as though the portfolio's own current cost were the
+ * full annual figure. Both sides must represent the same Holding Period.
+ * Portfolio: $26,000 debt, 5% Borrow APR (the report's own numbers) —
+ * annual interest $1,300; 30/90/180/365-day prorated figures below are
+ * the same `calculateProratedInterest` formula the interest-scenario
+ * side already used, unmodified — this fix only makes the baseline call
+ * it too, over the same time horizon.
+ */
+describe("simulateScenario — baseline Interest Cost matches the scenario's own Holding Period (PT-12 follow-up round 3)", () => {
+  function debtPortfolio(): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 26000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+  }
+
+  it.each([
+    [30, 106.85],
+    [90, 320.55],
+    [180, 641.1],
+    [365, 1300],
+  ])(
+    'reprorates the baseline debtCost to a %i-day Holding Period, matching the scenario side ($%s)',
+    (timeHorizonDays, expected) => {
+      const scenario: SimulationScenario = {
+        type: 'interest',
+        priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+        timeHorizonDays,
+        borrowApr: 0.05,
+      };
+      const result = simulateScenario(debtPortfolio(), scenario, `${timeHorizonDays} days`, 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.data.baseline.debtCost).toBeCloseTo(expected, 2);
+      expect(result.data.scenario.debtCost).toBeCloseTo(expected, 2);
+      // Both sides represent the same Holding Period — no longer
+      // "annual baseline vs. prorated scenario."
+      expect(result.data.baseline.debtCost).toBeCloseTo(result.data.scenario.debtCost, 8);
+    },
+  );
+
+  it('switching repeatedly between Holding Periods never leaves a stale baseline debtCost from a previous time horizon', () => {
+    const priceScenario = { type: 'absolute' as const, btcPriceUsd: 50000 };
+    const results = [30, 90, 30, 365, 180, 30].map((timeHorizonDays) =>
+      simulateScenario(
+        debtPortfolio(),
+        { type: 'interest', priceScenario, timeHorizonDays, borrowApr: 0.05 },
+        `${timeHorizonDays} days`,
+        'live',
+      ),
+    );
+
+    const expected = [106.85, 320.55, 106.85, 1300, 641.1, 106.85];
+    results.forEach((result, index) => {
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.baseline.debtCost).toBeCloseTo(expected[index], 2);
+      expect(result.data.scenario.debtCost).toBeCloseTo(expected[index], 2);
+    });
+  });
+
+  it("reprorates using the debt value/rate actually on the portfolio today, not the scenario's own (possibly stress-tested) Borrow Rate", () => {
+    // Scenario stress-tests a 10% Borrow Rate; the portfolio's own real,
+    // current rate is still 5%. "Current Portfolio" must reflect today's
+    // real cost, not the hypothetical rate being tested.
+    const scenario: SimulationScenario = {
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.1,
+    };
+    const result = simulateScenario(debtPortfolio(), scenario, '30 days at 10%', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Baseline: $26,000 * 5% * 30/365 ≈ $106.85 (today's real rate).
+    expect(result.data.baseline.debtCost).toBeCloseTo(106.85, 2);
+    // Scenario: $26,000 * 10% * 30/365 ≈ $213.70 (the stress-tested rate).
+    expect(result.data.scenario.debtCost).toBeCloseTo(213.7, 2);
+  });
+
+  it("does not affect a type: 'price' scenario's baseline — both sides remain the annual figure, as before", () => {
+    const scenario: SimulationScenario = {
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+    };
+    const result = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.baseline.debtCost).toBeCloseTo(1300, 2);
+    expect(result.data.scenario.debtCost).toBeCloseTo(1300, 2);
+  });
+});

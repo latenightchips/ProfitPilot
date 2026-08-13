@@ -54,6 +54,7 @@ import {
   calculateEffectiveLeverage,
   calculateLiquidationDistance,
   calculatePortfolioGain,
+  calculateProratedInterest,
   compareScenarios,
   type PriceScenarioInput,
   type ScenarioComparisonResult,
@@ -216,6 +217,42 @@ export function simulateScenario(
   warnings.push(...interestStep.warnings);
   const interestResult = interestStep.value;
 
+  // Interest Cost comparison semantics fix — the baseline `debtCost` set
+  // up above (`toScenarioSummary`, via `calculatePortfolioSummary`'s own
+  // `interestCost`) is always the unprorated *annual* figure, since it
+  // is computed once, before either scenario branch, with no time
+  // horizon in scope. That is the correct comparison for a `type:
+  // 'price'` scenario (whose own `debtCost` above is also annual, via
+  // `calculateAnnualInterest` — unmodified, still true), but for a
+  // `type: 'interest'` scenario the two sides no longer represent the
+  // same span: the scenario side is `interestResult.accruedInterest`,
+  // prorated to `scenario.timeHorizonDays`, while the baseline stayed
+  // annual — e.g. "$1,300 → $106.85" at a 30-day Holding Period, reading
+  // as if the portfolio's own current cost were the annual figure. Both
+  // sides of an interest-scenario comparison must represent the same
+  // Holding Period, so the baseline is reprorated here over that same
+  // `scenario.timeHorizonDays`, using the portfolio's own actual current
+  // debt value and Borrow APR (not the scenario's own, possibly
+  // stress-tested `borrowApr`) — reusing `calculateProratedInterest`
+  // exactly as `simulateInterestScenario` already does internally, not a
+  // new or modified formula.
+  const baselineDebtCostStep = formulaStep(
+    calculateProratedInterest(
+      baselineResult.data.debtValue,
+      engineInput.protocol.borrowApr,
+      scenario.timeHorizonDays,
+    ),
+    tracked,
+    sourceStatus,
+  );
+  if (!baselineDebtCostStep.ok) return baselineDebtCostStep.failure;
+  tracked = baselineDebtCostStep.tracked;
+  warnings.push(...baselineDebtCostStep.warnings);
+  const proratedBaselineSummary: ScenarioSummary = {
+    ...baselineSummary,
+    debtCost: baselineDebtCostStep.value,
+  };
+
   const liquidationDistanceStep = formulaStep(
     calculateLiquidationDistance(
       interestResult.projectedCollateralValue,
@@ -264,5 +301,12 @@ export function simulateScenario(
     leverage: leverageStep.value,
   };
 
-  return finalize(baselineSummary, scenarioSummary, tracked, warnings, scenario, sourceStatus);
+  return finalize(
+    proratedBaselineSummary,
+    scenarioSummary,
+    tracked,
+    warnings,
+    scenario,
+    sourceStatus,
+  );
 }
