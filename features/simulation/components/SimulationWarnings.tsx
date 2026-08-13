@@ -21,11 +21,22 @@ import { buildSimulationWarnings } from '../utils/buildSimulationWarnings';
  *
  * **Renders whenever either simulation result exists** — the same gate
  * `SimulationAssumptions.tsx` (Batch 12) uses — computing whichever
- * simulated Health Factor is active (`currentResult.scenario` or
- * `portfolioActionPreview.after`) and handing it to
+ * simulated Health Factor/equity/leverage is active (`currentResult.scenario`
+ * or `portfolioActionPreview.after`) and handing them to
  * `buildSimulationWarnings`, which does the real work. See that file's
  * own header comment, and `../types/simulationWarnings.ts`, for the
- * full "2 built, 4 blocked" reasoning.
+ * full "7 built, 1 blocked" reasoning.
+ *
+ * **Borrow APR/Holding Period are read from `currentResult.assumptions`
+ * only when it is an active `type: 'interest'` scenario** — the only
+ * case with either concept at all (a `type: 'price'` scenario's own
+ * `SimulationScenario` variant has no `timeHorizonDays`/`borrowApr`
+ * field; neither does a Portfolio Action). Borrow APR still falls back
+ * to the portfolio's own real, currently configured rate otherwise, so
+ * "High borrowing cost" stays checkable for every simulation kind; a
+ * long Holding Period has no meaning outside an interest scenario, so
+ * that check is simply skipped (`timeHorizonDays: null`) for every other
+ * kind.
  *
  * **A zero-warnings result is shown as positive confirmation text, not
  * rendered as nothing** — the same "always-visible section" convention
@@ -45,7 +56,25 @@ export function SimulationWarnings({ portfolio }: { portfolio: Portfolio }) {
 
   const simulatedHealthFactor =
     currentResult?.scenario.healthFactor ?? portfolioActionPreview?.after.healthFactor ?? null;
-  const warnings = buildSimulationWarnings(portfolio, simulatedHealthFactor);
+  const simulatedEquity =
+    currentResult?.scenario.equity ?? portfolioActionPreview?.after.netEquity ?? null;
+  const simulatedLeverage =
+    currentResult?.scenario.leverage ?? portfolioActionPreview?.after.leverage ?? null;
+  const simulatedBorrowApr =
+    currentResult?.assumptions.type === 'interest'
+      ? currentResult.assumptions.borrowApr
+      : portfolio.protocol.borrowApr;
+  const simulatedTimeHorizonDays =
+    currentResult?.assumptions.type === 'interest'
+      ? currentResult.assumptions.timeHorizonDays
+      : null;
+  const warnings = buildSimulationWarnings(portfolio, {
+    healthFactor: simulatedHealthFactor,
+    equity: simulatedEquity,
+    leverage: simulatedLeverage,
+    borrowApr: simulatedBorrowApr,
+    timeHorizonDays: simulatedTimeHorizonDays,
+  });
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -64,8 +93,8 @@ export function SimulationWarnings({ portfolio }: { portfolio: Portfolio }) {
         ))
       )}
       <p className="text-xs text-muted-foreground">
-        Near liquidation, Invalid assumptions, High leverage, and High borrowing cost aren&rsquo;t
-        checked — there&rsquo;s no defined threshold for any of them yet.
+        Invalid assumptions aren&rsquo;t checked here — the Scenario Builder&rsquo;s own validation
+        already rejects invalid input before a simulation runs.
       </p>
     </div>
   );
