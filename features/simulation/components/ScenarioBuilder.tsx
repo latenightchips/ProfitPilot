@@ -61,18 +61,34 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  *
  * **Holding Period / Custom Holding Period Days initiate or re-run the
  * interest scenario (M6-007, Batch 7; trigger condition fixed PT-12,
- * physical-testing round 2)** — satisfying M6-007's own Description
- * ("Project portfolio changes over time") and `03_UI.md` Page 5's own
- * "HOLDING PERIOD" section ("Interest calculations use the selected
- * period") literally: a live projection changes when the assumed time
- * span changes, whether or not Borrow Rate was ever actively retyped
- * away from its pre-filled default. Gated on `currentScenario?.type !==
- * 'price'`: still declines to silently convert an active *price*
- * scenario into an interest one (unchanged, existing behavior/tests) —
- * only a price scenario in progress is left undisturbed. Time horizon
- * has no meaning for a `type: 'price'` scenario (`SimulationScenario`'s
- * own price variant has no `timeHorizonDays` field at all), which is
- * exactly the case this gate still protects.
+ * physical-testing round 2; interaction-order fix PT-12 follow-up 2)** —
+ * satisfying M6-007's own Description ("Project portfolio changes over
+ * time") and `03_UI.md` Page 5's own "HOLDING PERIOD" section ("Interest
+ * calculations use the selected period") literally: a live projection
+ * changes when the assumed time span changes, regardless of what other
+ * fields were touched, in what order, beforehand. Unconditional, the
+ * same as the Borrow Rate handler below — no longer gated on
+ * `currentScenario?.type`. The original PT-12 fix (physical-testing
+ * round 2) still guarded this on `currentScenario?.type === 'price'`,
+ * meaning to leave a deliberate price-only stress test undisturbed; the
+ * PT-12 follow-up round found that gate was actually the reverse-order
+ * cause of its own reported bug: BTC Price/Percentage Change are always
+ * touched first in the ordinary physical flow (Holding Period already
+ * shows its pre-filled "30 Days" default, so there's no reason to
+ * re-select it before anything else), which sets `currentScenario` to
+ * `type: 'price'` — and once that happened, this gate permanently
+ * blocked Holding Period from ever promoting to `'interest'` for the
+ * rest of the session, no matter how many times it was changed
+ * afterward. Removing the gate makes Holding Period behave exactly like
+ * Borrow Rate already does (unconditional promotion/refresh via
+ * `resolveInterestScenario`), which is what "Interest Cost must always
+ * be derived from the currently displayed Borrow Rate + Holding Period,
+ * regardless of prior scenario interactions" actually requires. Time
+ * horizon has no meaning for a `type: 'price'` scenario
+ * (`SimulationScenario`'s own price variant has no `timeHorizonDays`
+ * field at all), but that is no longer a reason to withhold the
+ * conversion — a `type: 'price'` scenario is what Holding Period is
+ * always meant to convert *into* `type: 'interest'`.
  *
  * **BTC Price / Percentage Change preserve an already-active interest
  * scenario instead of silently demoting it back to `type: 'price'`
@@ -309,21 +325,20 @@ export function ScenarioBuilder({
     }
 
     if (field === 'holdingPeriod' || field === 'customHoldingPeriodDays') {
-      // PT-12 (physical-testing round 2) — previously gated on
-      // `currentScenario?.type === 'interest'`, so Holding Period only
-      // ever re-ran an *already-active* interest scenario. From the
-      // baseline/default state (the ordinary first interaction — Borrow
-      // Rate still shows its pre-filled portfolio default, never
-      // actively retyped), that meant Holding Period silently did
-      // nothing and Interest Cost stayed pinned at the annual figure —
-      // contradicting 03_UI.md Page 5's own "Interest calculations use
-      // the selected period." Still declining to overwrite an active
-      // *price* scenario (unchanged, existing behavior/tests) so this
-      // never silently converts a scenario type the user is actively
-      // using; `resolveInterestScenario` itself is the same, unmodified
-      // formula path `borrowApr`'s own handler already uses, so this is
-      // a trigger-condition fix, not a new calculation.
-      if (currentScenario?.type === 'price') return;
+      // PT-12 (physical-testing round 2) fixed the trigger condition so
+      // this no longer requires an *already-active* interest scenario.
+      // PT-12 follow-up (round 2) removed the `currentScenario?.type ===
+      // 'price'` guard this handler used to have: in the ordinary
+      // physical interaction order (BTC Price/Percentage Change touched
+      // first, since Holding Period already shows its pre-filled "30
+      // Days" default and looks already set), that guard permanently
+      // blocked Holding Period from ever promoting to `'interest'` once
+      // any price field had been edited — reproducing the exact reported
+      // regression (Interest Cost stuck at the annual figure, unmoved by
+      // Holding Period, for the rest of the session). Unconditional now,
+      // matching the Borrow Rate handler immediately above — the same,
+      // unmodified `resolveInterestScenario` formula path, just no
+      // longer gated on prior scenario-type history.
       const scenario = resolveInterestScenario(nextValues, portfolio);
       if (scenario === null) return;
       setCurrentScenario(scenario);
