@@ -1,84 +1,42 @@
 import { NextResponse } from 'next/server';
 
-import { fetchAaveReserves, mapAaveReserves } from '@/infrastructure/protocols/aave';
-import { AAVE_V3_ETHEREUM_MAINNET } from '@/infrastructure/protocols/aave/market';
-import type { RawPriceCandidate } from '@/services/market/quote';
-import type { RawProtocolCandidate } from '@/services/protocol/quote';
+import type { AaveAdapterData, AaveAdapterError } from '@/infrastructure/protocols/aave';
+import { getAaveAdapter } from '@/infrastructure/protocols/aave';
+import { AAVE_V3_DEFAULT_RPC_URL } from '@/infrastructure/protocols/aave/v3/addresses';
 import { env } from '@/utils/env';
 
 /**
- * Server-only Route Handler for the Phase 1 read-only Aave live-data
- * integration. `THEGRAPH_API_KEY` (`utils/env.ts`) is read here, never
- * in client code — `04_BUILD_GUIDE.md`'s "CLIENT AND SERVER BOUNDARIES"
- * ("Credentials or protected operations must execute on the server").
- * `stores/aaveLiveDataStore.ts` (client-side) calls this same-origin
- * route instead of talking to the Aave subgraph / The Graph directly,
- * so the API key never reaches the browser.
+ * Read-only Aave V3 reserve snapshot — server-side only (RPC calls happen
+ * here, not in the browser, via `infrastructure/protocols/aave/v3`'s
+ * direct-RPC adapter). No wallet, no transaction execution.
  *
- * A missing/empty key is a normal, fully-handled state (no key
- * provisioned yet for this deployment), not a special case — it
- * returns the same clean, non-retryable error shape any other provider
- * failure would, so the client-side fallback logic needs no branch for
- * "not configured" versus "failed."
+ * Supersedes the earlier Graph-subgraph-based Phase 1 route: same
+ * `{ priceCandidate, protocolCandidate, collateralSymbol, borrowSymbol }`
+ * response shape `stores/aaveLiveDataStore.ts` already consumes (plus a
+ * new `source` field carrying protocol/version/network/block-number
+ * metadata), so that store needs no changes. Falls back to a public
+ * default RPC endpoint when `AAVE_RPC_URL` is unset — no "not configured"
+ * state, unlike the old Graph-API-key-gated route — so Manual Mode's "no
+ * external services required" guarantee holds without configuration.
  */
 export interface AaveReserveApiResponse {
   ok: boolean;
-  data?: {
-    priceCandidate: RawPriceCandidate;
-    protocolCandidate: RawProtocolCandidate;
-    collateralSymbol: string;
-    borrowSymbol: string;
-  };
-  error?: {
-    code: string;
-    userMessage: string;
-    retryable: boolean;
-  };
+  data?: AaveAdapterData;
+  error?: AaveAdapterError;
 }
 
 export async function GET(): Promise<NextResponse<AaveReserveApiResponse>> {
-  const apiKey = env.THEGRAPH_API_KEY;
+  const rpcUrl =
+    env.AAVE_RPC_URL !== '' && env.AAVE_RPC_URL != null
+      ? env.AAVE_RPC_URL
+      : AAVE_V3_DEFAULT_RPC_URL;
+  const adapter = getAaveAdapter({ version: 'v3', rpcUrl });
+  const result = await adapter.fetchReserveSnapshot();
 
-  if (apiKey === undefined || apiKey === '') {
-    return NextResponse.json({
-      ok: false,
-      error: {
-        code: 'AAVE_NOT_CONFIGURED',
-        userMessage: 'Live Aave data is not configured for this deployment.',
-        retryable: false,
-      },
-    });
+  if (!result.ok) {
+    const status = result.error.retryable ? 503 : 502;
+    return NextResponse.json({ ok: false, error: result.error }, { status });
   }
 
-  const fetchResult = await fetchAaveReserves({
-    subgraphId: AAVE_V3_ETHEREUM_MAINNET.subgraphId,
-    apiKey,
-    collateralSymbol: AAVE_V3_ETHEREUM_MAINNET.collateralSymbol,
-    borrowSymbol: AAVE_V3_ETHEREUM_MAINNET.borrowSymbol,
-  });
-
-  if (!fetchResult.ok) {
-    return NextResponse.json({
-      ok: false,
-      error: {
-        code: fetchResult.error.code,
-        userMessage: fetchResult.error.userMessage,
-        retryable: fetchResult.error.retryable,
-      },
-    });
-  }
-
-  const mapped = mapAaveReserves(fetchResult.reserves, AAVE_V3_ETHEREUM_MAINNET);
-  if (!mapped.ok) {
-    return NextResponse.json({
-      ok: false,
-      error: {
-        code: mapped.error.code,
-        userMessage: 'Live Aave data is temporarily unavailable.',
-        retryable: false,
-      },
-    });
-  }
-
-  return NextResponse.json({ ok: true, data: mapped.data });
+  return NextResponse.json({ ok: true, data: result.data });
 }

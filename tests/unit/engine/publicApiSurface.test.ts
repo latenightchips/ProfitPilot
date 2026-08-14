@@ -45,6 +45,8 @@ describe('Public Engine API surface (M2-031)', () => {
     'calculateLoopStrategy',
     'calculateMaximumBorrowLimit',
     'validateLoopStrategySafety',
+    // Aave V3 protocol-specific accrual (not a Formula ID)
+    'projectVariableDebt',
     // Portfolio
     'calculateCollateralValue',
     'calculateDebtRatio',

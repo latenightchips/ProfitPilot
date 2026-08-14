@@ -98,6 +98,15 @@ export {
   validateLoopStrategySafety,
 } from './loop';
 
+/**
+ * Aave V3 protocol-specific accrual — not a 02_Formulas.md Formula ID.
+ * Reproduces Aave V3's own on-chain compounded variable-debt math
+ * (`MathUtils.calculateCompoundedInterest`), isolated from the generic
+ * Simple Interest formulas above (F-030–F-032, unchanged). A future V4
+ * adapter would export its own sibling from `./protocols/aaveV4`.
+ */
+export { projectVariableDebt } from './protocols/aaveV3';
+
 /** Portfolio Metrics — F-001–F-004, F-006, F-010, F-011, F-020; M2-006–M2-008. */
 export {
   calculateCollateralValue,

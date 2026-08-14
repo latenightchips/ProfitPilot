@@ -25,19 +25,51 @@
  * already established. `profitOrLoss` is trivially `0` for the baseline
  * (compared to itself).
  *
- * **Field completion per scenario type**: neither `simulatePriceScenario`
- * nor `simulateInterestScenario` returns every field `ScenarioSummary`
- * needs (`leverage` is never included by either; `simulateInterestScenario`
- * also omits `liquidationDistance` and `profitOrLoss`). Rather than
- * reimplementing those functions' own logic through a different
- * composition path, this file calls the documented Engine functions
- * directly for the fields they provide (preserving their own Formula
- * IDs, validation, and warnings) and supplements only the missing
- * fields with additional already-public Engine calls
- * (`calculateEffectiveLeverage`, `calculateLiquidationDistance`,
- * `calculatePortfolioGain`, `calculateAnnualInterest` — the same
- * "Annual Interest" interpretation M3-005 already established for
- * "debt cost").
+ * **Field completion per scenario type**: `simulatePriceScenario` doesn't
+ * return every field `ScenarioSummary` needs (`leverage` is never
+ * included), so this file supplements it with additional already-public
+ * Engine calls (`calculateEffectiveLeverage`, `calculateAnnualInterest` —
+ * the same "Annual Interest" interpretation M3-005 already established
+ * for "debt cost").
+ *
+ * **Interest scenarios compose Engine primitives directly rather than
+ * calling `simulateInterestScenario`.** `simulateInterestScenario`
+ * (F-033) internally uses `calculateProratedInterest`/`calculateDebtGrowth`
+ * — simple, non-compounding interest, correct for its own documented
+ * scope but not Aave V3's actual on-chain variable-debt accrual
+ * (`MathUtils.calculateCompoundedInterest`, continuously compounding).
+ * Since ProfitPilot v0.1 is Aave-V3-only (01_PRD.md REQ-003) and this is
+ * the one place in the app that projects debt forward over an explicit
+ * holding period, this branch calls `resolveScenarioPrice` +
+ * `calculateCollateralValue` + `projectVariableDebt` (Aave V3's own
+ * compounding curve, `engine/protocols/aaveV3/`) + `calculateNetWorth` +
+ * `calculateHealthFactor` + `calculateLiquidationDistance` +
+ * `calculatePortfolioGain` + `calculateEffectiveLeverage` directly —
+ * the same "call several already-public Engine primitives instead of one
+ * bundled function" pattern the price-scenario branch above already
+ * uses. `simulateInterestScenario`/`calculateDebtGrowth` themselves are
+ * untouched and remain available with their original, documented
+ * simple-interest semantics for any other caller.
+ *
+ * **Interest Cost comparison semantics (PT-12 follow-up round 3,
+ * preserved and updated for compounding)**: the baseline `debtCost` set
+ * up above (`toScenarioSummary`, via `calculatePortfolioSummary`'s own
+ * `interestCost`) is always the unprorated *annual* figure, since it is
+ * computed once, before either scenario branch, with no time horizon in
+ * scope. That is the correct comparison for a `type: 'price'` scenario
+ * (whose own `debtCost` above is also annual, via `calculateAnnualInterest`
+ * — unmodified, still true), but for a `type: 'interest'` scenario the
+ * two sides must represent the same Holding Period, so the baseline is
+ * reprorated here over that same `scenario.timeHorizonDays`, using the
+ * portfolio's own actual current debt value and Borrow APR (not the
+ * scenario's own, possibly stress-tested `borrowApr`). This now calls
+ * `projectVariableDebt` (the same Aave V3 compounding curve as the
+ * scenario side below) rather than the old `calculateProratedInterest` —
+ * both sides of the comparison must use the same accrual formula, or a
+ * scenario run at the portfolio's own real current rate would show a
+ * spurious baseline/scenario gap that is purely an artifact of comparing
+ * simple interest against compound interest, not a real rate or price
+ * difference.
  *
  * **"Preserve assumptions"**: interpreted as never discarding the
  * caller's own scenario definition — `SimulationResult.assumptions`
@@ -51,15 +83,18 @@
  */
 import {
   calculateAnnualInterest,
+  calculateCollateralValue,
   calculateEffectiveLeverage,
+  calculateHealthFactor,
   calculateLiquidationDistance,
+  calculateNetWorth,
   calculatePortfolioGain,
-  calculateProratedInterest,
   compareScenarios,
   type PriceScenarioInput,
+  projectVariableDebt,
+  resolveScenarioPrice,
   type ScenarioComparisonResult,
   type ScenarioSummary,
-  simulateInterestScenario,
   simulatePriceScenario,
 } from '@/engine';
 
@@ -202,42 +237,74 @@ export function simulateScenario(
     return finalize(baselineSummary, scenarioSummary, tracked, warnings, scenario, sourceStatus);
   }
 
-  const interestStep = formulaStep(
-    simulateInterestScenario({
-      portfolio: engineInput,
-      priceScenario: scenario.priceScenario,
-      timeHorizonDays: scenario.timeHorizonDays,
-      borrowApr: scenario.borrowApr,
-    }),
+  const scenarioPriceStep = formulaStep(
+    resolveScenarioPrice(engineInput.market.btcPriceUsd, scenario.priceScenario),
     tracked,
     sourceStatus,
   );
-  if (!interestStep.ok) return interestStep.failure;
-  tracked = interestStep.tracked;
-  warnings.push(...interestStep.warnings);
-  const interestResult = interestStep.value;
+  if (!scenarioPriceStep.ok) return scenarioPriceStep.failure;
+  tracked = scenarioPriceStep.tracked;
+  warnings.push(...scenarioPriceStep.warnings);
+  const scenarioMarket = { btcPriceUsd: scenarioPriceStep.value };
 
-  // Interest Cost comparison semantics fix — the baseline `debtCost` set
-  // up above (`toScenarioSummary`, via `calculatePortfolioSummary`'s own
-  // `interestCost`) is always the unprorated *annual* figure, since it
-  // is computed once, before either scenario branch, with no time
-  // horizon in scope. That is the correct comparison for a `type:
-  // 'price'` scenario (whose own `debtCost` above is also annual, via
-  // `calculateAnnualInterest` — unmodified, still true), but for a
-  // `type: 'interest'` scenario the two sides no longer represent the
-  // same span: the scenario side is `interestResult.accruedInterest`,
-  // prorated to `scenario.timeHorizonDays`, while the baseline stayed
-  // annual — e.g. "$1,300 → $106.85" at a 30-day Holding Period, reading
-  // as if the portfolio's own current cost were the annual figure. Both
-  // sides of an interest-scenario comparison must represent the same
-  // Holding Period, so the baseline is reprorated here over that same
-  // `scenario.timeHorizonDays`, using the portfolio's own actual current
-  // debt value and Borrow APR (not the scenario's own, possibly
-  // stress-tested `borrowApr`) — reusing `calculateProratedInterest`
-  // exactly as `simulateInterestScenario` already does internally, not a
-  // new or modified formula.
-  const baselineDebtCostStep = formulaStep(
-    calculateProratedInterest(
+  const projectedCollateralValueStep = formulaStep(
+    calculateCollateralValue(engineInput.collateral, scenarioMarket),
+    tracked,
+    sourceStatus,
+  );
+  if (!projectedCollateralValueStep.ok) return projectedCollateralValueStep.failure;
+  tracked = projectedCollateralValueStep.tracked;
+  warnings.push(...projectedCollateralValueStep.warnings);
+
+  // Aave V3's own compounded variable-debt accrual — see this file's header
+  // comment. Not `simulateInterestScenario`/`calculateProratedInterest`
+  // (simple interest), which remain unchanged for any other caller.
+  const projectedDebtStep = formulaStep(
+    projectVariableDebt(engineInput.debt.balance, scenario.borrowApr, scenario.timeHorizonDays),
+    tracked,
+    sourceStatus,
+  );
+  if (!projectedDebtStep.ok) return projectedDebtStep.failure;
+  tracked = projectedDebtStep.tracked;
+  warnings.push(...projectedDebtStep.warnings);
+  const projectedDebt = projectedDebtStep.value;
+  const accruedInterest = projectedDebt - engineInput.debt.balance;
+
+  const projectedPortfolio = {
+    ...engineInput,
+    market: scenarioMarket,
+    debt: { asset: engineInput.debt.asset, balance: projectedDebt },
+  };
+
+  const projectedEquityStep = formulaStep(
+    calculateNetWorth(projectedPortfolio),
+    tracked,
+    sourceStatus,
+  );
+  if (!projectedEquityStep.ok) return projectedEquityStep.failure;
+  tracked = projectedEquityStep.tracked;
+  warnings.push(...projectedEquityStep.warnings);
+
+  const projectedHealthFactorStep = formulaStep(
+    calculateHealthFactor(
+      projectedCollateralValueStep.value,
+      engineInput.protocol.liquidationThreshold,
+      projectedDebt,
+    ),
+    tracked,
+    sourceStatus,
+  );
+  if (!projectedHealthFactorStep.ok) return projectedHealthFactorStep.failure;
+  tracked = projectedHealthFactorStep.tracked;
+  warnings.push(...projectedHealthFactorStep.warnings);
+
+  // Baseline debtCost reproration (PT-12 follow-up round 3) — matches the
+  // scenario side's own accrual formula (Aave V3 compounding) so both
+  // sides of the comparison stay apples-to-apples over the same Holding
+  // Period, using the portfolio's own real current debt/rate rather than
+  // the scenario's own (possibly stress-tested) borrowApr.
+  const baselineProjectedDebtStep = formulaStep(
+    projectVariableDebt(
       baselineResult.data.debtValue,
       engineInput.protocol.borrowApr,
       scenario.timeHorizonDays,
@@ -245,19 +312,19 @@ export function simulateScenario(
     tracked,
     sourceStatus,
   );
-  if (!baselineDebtCostStep.ok) return baselineDebtCostStep.failure;
-  tracked = baselineDebtCostStep.tracked;
-  warnings.push(...baselineDebtCostStep.warnings);
+  if (!baselineProjectedDebtStep.ok) return baselineProjectedDebtStep.failure;
+  tracked = baselineProjectedDebtStep.tracked;
+  warnings.push(...baselineProjectedDebtStep.warnings);
   const proratedBaselineSummary: ScenarioSummary = {
     ...baselineSummary,
-    debtCost: baselineDebtCostStep.value,
+    debtCost: baselineProjectedDebtStep.value - baselineResult.data.debtValue,
   };
 
   const liquidationDistanceStep = formulaStep(
     calculateLiquidationDistance(
-      interestResult.projectedCollateralValue,
+      projectedCollateralValueStep.value,
       engineInput.protocol.liquidationThreshold,
-      interestResult.projectedDebt,
+      projectedDebt,
     ),
     tracked,
     sourceStatus,
@@ -267,10 +334,7 @@ export function simulateScenario(
   warnings.push(...liquidationDistanceStep.warnings);
 
   const profitOrLossStep = formulaStep(
-    calculatePortfolioGain(
-      interestResult.projectedCollateralValue,
-      baselineResult.data.collateralValue,
-    ),
+    calculatePortfolioGain(projectedCollateralValueStep.value, baselineResult.data.collateralValue),
     tracked,
     sourceStatus,
   );
@@ -279,11 +343,7 @@ export function simulateScenario(
   warnings.push(...profitOrLossStep.warnings);
 
   const leverageStep = formulaStep(
-    calculateEffectiveLeverage({
-      ...engineInput,
-      market: { btcPriceUsd: interestResult.scenarioBtcPriceUsd },
-      debt: { asset: engineInput.debt.asset, balance: interestResult.projectedDebt },
-    }),
+    calculateEffectiveLeverage(projectedPortfolio),
     tracked,
     sourceStatus,
   );
@@ -293,11 +353,11 @@ export function simulateScenario(
 
   const scenarioSummary: ScenarioSummary = {
     label: scenarioLabel,
-    equity: interestResult.projectedEquity,
+    equity: projectedEquityStep.value,
     profitOrLoss: profitOrLossStep.value,
-    healthFactor: interestResult.projectedHealthFactor,
+    healthFactor: projectedHealthFactorStep.value,
     liquidationDistance: liquidationDistanceStep.value,
-    debtCost: interestResult.accruedInterest,
+    debtCost: accruedInterest,
     leverage: leverageStep.value,
   };
 

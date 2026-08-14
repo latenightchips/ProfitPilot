@@ -509,7 +509,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
       timeHorizonDays: 30,
       borrowApr: 0.05,
     });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     // Reported repro: change the price scenario (-70%). The prior bug
     // unconditionally rebuilt a bare `type: 'price'` scenario here,
@@ -524,7 +524,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
       timeHorizonDays: 30,
       borrowApr: 0.05,
     });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     // Reported repro: returning the price change to 0 did not restore the
     // prorated value under the prior bug, since nothing ever re-promoted
@@ -538,7 +538,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
       timeHorizonDays: 30,
       borrowApr: 0.05,
     });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
     // Holding Period must still read "30 Days" throughout, matching the
     // report's own observation that the selector never changed.
     expect(screen.getByLabelText('Holding Period')).toHaveValue('30');
@@ -564,15 +564,18 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
     // Accrued interest depends only on debt balance/APR/time horizon
     // (calculateProratedInterest), never on price — unaffected by the
     // $15,000 stress price above.
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
   });
 
-  it('365 days matches the reported $1,300 annual figure, confirming the authoritative formula itself is unchanged', async () => {
+  it('365 days uses the same Aave V3 compounded-accrual formula as every other Holding Period (no longer coincides with the simple-interest $1,300 annual figure)', async () => {
     const user = userEvent.setup();
     render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      1333.041667,
+      3,
+    );
   });
 
   it('still builds a plain price scenario from BTC Price/Percentage Change when no interest scenario is active (unchanged behavior)', async () => {
@@ -596,7 +599,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
     await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
     const percentInput = screen.getByLabelText('Percentage Change (%)');
     await user.type(percentInput, '-70');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     await user.click(screen.getByRole('button', { name: 'Reset Scenario' }));
 
@@ -628,13 +631,13 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     await user.type(screen.getByLabelText('Percentage Change (%)'), '-70');
 
     const state = useSimulationStore.getState();
     expect(state.currentScenario?.type).toBe('interest');
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
   });
 
   it('direction 2 — a price change first, then Holding Period: the real physical-testing repro (Holding Period is never actively re-selected until after the price field, since it already shows its "30 Days" default) — Holding Period must still be able to promote the scenario to interest and drive a prorated Interest Cost', async () => {
@@ -669,7 +672,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
       timeHorizonDays: 30,
       borrowApr: 0.05,
     });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     // Repeating the reported repro's own follow-on step: other Holding
     // Period values must also take effect, not just the first selection
@@ -677,7 +680,7 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     await user.selectOptions(screen.getByLabelText('Holding Period'), '365');
     state = useSimulationStore.getState();
     expect(state.currentScenario).toMatchObject({ type: 'interest', timeHorizonDays: 365 });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(1333.041667, 3);
   });
 
   it('repeated switching between a price change and 30/90/365-day Holding Periods keeps recalculating correctly every time, never getting stuck on a stale value', async () => {
@@ -692,10 +695,10 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
 
     await user.selectOptions(holdingPeriodSelect, '30');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
 
     await user.selectOptions(holdingPeriodSelect, '90');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(320.55, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(322.532046, 3);
 
     // Another price edit while an interest scenario is active must keep
     // the current Holding Period (90 days) rather than reverting.
@@ -703,10 +706,13 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     await user.type(percentInput, '-40');
     let state = useSimulationStore.getState();
     expect(state.currentScenario).toMatchObject({ type: 'interest', timeHorizonDays: 90 });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(320.55, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(322.532046, 3);
 
     await user.selectOptions(holdingPeriodSelect, '365');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      1333.041667,
+      3,
+    );
 
     await user.selectOptions(holdingPeriodSelect, '30');
     state = useSimulationStore.getState();
@@ -715,6 +721,6 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
       timeHorizonDays: 30,
       priceScenario: { type: 'percentageChange', percentageChange: -0.4 },
     });
-    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(106.85, 2);
+    expect(state.currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
   });
 });

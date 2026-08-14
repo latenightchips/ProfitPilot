@@ -46,13 +46,15 @@ import { z } from 'zod';
  * needs the same client-bundle inlining every other `NEXT_PUBLIC_*`
  * variable here relies on.
  *
- * **`THEGRAPH_API_KEY` (Phase 1 read-only Aave live-data integration) —
- * a real secret, deliberately NOT `NEXT_PUBLIC_`-prefixed**, the same
- * treatment as `COINGECKO_API_KEY` above. It is read only inside
- * `app/api/aave/reserve/route.ts` (a server-only Route Handler) — see
- * that file's own header comment. A Graph Protocol API key, not an
- * Aave-issued credential; missing/empty is a normal, fully-handled
- * state (Manual Mode fallback), not an error.
+ * **`AAVE_RPC_URL` (direct-RPC Aave V3 adapter, supersedes the earlier
+ * Graph-subgraph-based `THEGRAPH_API_KEY`) — server-side only (no
+ * `NEXT_PUBLIC_` prefix): an RPC URL is not inherently safe to ship to
+ * the browser bundle if a deployer points it at a paid/rate-limited
+ * provider with a URL-embedded API key, unlike the Supabase/Sentry
+ * values above. Read only inside `app/api/aave/reserve/route.ts`.
+ * Falls back to a public default endpoint when unset, so Manual Mode's
+ * "must run with no external services configured" guarantee is
+ * preserved without requiring configuration.
  */
 const envSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('ProfitPilot'),
@@ -62,7 +64,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional().or(z.literal('')),
-  THEGRAPH_API_KEY: z.string().optional(),
+  AAVE_RPC_URL: z.string().url().optional().or(z.literal('')),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -76,7 +78,7 @@ function loadEnv(): Env {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
-    THEGRAPH_API_KEY: process.env.THEGRAPH_API_KEY,
+    AAVE_RPC_URL: process.env.AAVE_RPC_URL,
   });
 
   if (!result.success) {

@@ -147,7 +147,18 @@ describe('simulateScenario — price scenarios (M3-009)', () => {
 });
 
 describe('simulateScenario — interest scenarios (M3-009)', () => {
-  it('computes a one-year interest accrual scenario at an unchanged price', () => {
+  /**
+   * These expected values reflect Aave V3's exact compounded variable-debt
+   * accrual (`engine/protocols/aaveV3/`), not the generic simple-interest
+   * formula (F-030/F-033) the Interest Scenario used before this batch.
+   * Independently derived (Python + a standalone Node/BigInt script, see
+   * `tests/unit/engine/protocols/aaveV3/math.test.ts`) for $20,000 debt @
+   * 5% APR over 365 days: compounded factor 1.0512708333... ->
+   * projectedDebt = 20000 * 1.0512708333... = 21025.41666... (vs. 21000
+   * under the old simple-interest formula — a real, small, expected
+   * divergence, not a regression).
+   */
+  it('computes a one-year interest accrual scenario at an unchanged price using Aave V3 compounded accrual', () => {
     const scenario: SimulationScenario = {
       type: 'interest',
       priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
@@ -158,14 +169,39 @@ describe('simulateScenario — interest scenarios (M3-009)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.data.scenario.debtCost).toBe(1000);
-    expect(result.data.scenario.equity).toBe(79000);
-    expect(result.data.scenario.healthFactor).toBeCloseTo(3.809524, 5);
-    expect(result.data.scenario.liquidationDistance).toBeCloseTo(2.809524, 5);
+    expect(result.data.scenario.debtCost).toBeCloseTo(1025.4167, 4);
+    expect(result.data.scenario.equity).toBeCloseTo(78974.5833, 4);
+    expect(result.data.scenario.healthFactor).toBeCloseTo(3.804919, 5);
+    expect(result.data.scenario.liquidationDistance).toBeCloseTo(2.804919, 5);
     // Price unchanged: no profit or loss from interest accrual alone.
     expect(result.data.scenario.profitOrLoss).toBe(0);
-    expect(result.data.scenario.leverage).toBeCloseTo(1.265823, 5);
+    expect(result.data.scenario.leverage).toBeCloseTo(1.26623, 5);
   });
+
+  it.each([
+    [30, 82.3609, 20082.3609],
+    [90, 248.1016, 20248.1016],
+    [180, 499.2806, 20499.2806],
+    [365, 1025.4167, 21025.4167],
+    [800, 2316.2655, 22316.2655],
+  ])(
+    'projects %i days of compounded debt accrual at 5%% APR to the exact independently-derived value',
+    (days, expectedDebtCost, expectedProjectedDebt) => {
+      const scenario: SimulationScenario = {
+        type: 'interest',
+        priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+        timeHorizonDays: days,
+        borrowApr: 0.05,
+      };
+      const result = simulateScenario(basePortfolio(), scenario, `${days} days`, 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.data.scenario.debtCost).toBeCloseTo(expectedDebtCost, 3);
+      // Collateral value is unchanged at $100,000 (price held at $50,000).
+      expect(100000 - result.data.scenario.equity).toBeCloseTo(expectedProjectedDebt, 3);
+    },
+  );
 
   it('combines a price movement with interest accrual in one scenario', () => {
     const scenario: SimulationScenario = {
@@ -179,7 +215,9 @@ describe('simulateScenario — interest scenarios (M3-009)', () => {
     if (!result.ok) return;
     // Collateral value at $40,000: 80000; baseline collateral value: 100000.
     expect(result.data.scenario.profitOrLoss).toBe(-20000);
-    expect(result.data.scenario.debtCost).toBe(1000);
+    // debtCost (accrued interest) is price-independent — same compounded
+    // value as the unchanged-price case above.
+    expect(result.data.scenario.debtCost).toBeCloseTo(1025.4167, 4);
   });
 
   it('preserves the time horizon and rate as part of "assumptions"', () => {
@@ -219,10 +257,16 @@ describe('simulateScenario — interest scenarios (M3-009)', () => {
  * Period, reading as though the portfolio's own current cost were the
  * full annual figure. Both sides must represent the same Holding Period.
  * Portfolio: $26,000 debt, 5% Borrow APR (the report's own numbers) —
- * annual interest $1,300; 30/90/180/365-day prorated figures below are
- * the same `calculateProratedInterest` formula the interest-scenario
- * side already used, unmodified — this fix only makes the baseline call
- * it too, over the same time horizon.
+ * annual interest $1,300.
+ *
+ * Updated this batch: both sides now use `projectVariableDebt` (Aave V3
+ * compounding, `engine/protocols/aaveV3/`) instead of the old
+ * `calculateProratedInterest` (simple interest) — expected values below
+ * are the independently-derived compounded figures, not the original
+ * PT-12 report's simple-interest ones. The invariant the fix exists to
+ * guarantee — baseline and scenario debtCost must match exactly when
+ * both use the portfolio's own real current rate — still holds; it just
+ * now holds for the compounded formula instead of the simple one.
  */
 describe("simulateScenario — baseline Interest Cost matches the scenario's own Holding Period (PT-12 follow-up round 3)", () => {
   function debtPortfolio(): ApplicationPortfolio {
@@ -240,10 +284,10 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
   }
 
   it.each([
-    [30, 106.85],
-    [90, 320.55],
-    [180, 641.1],
-    [365, 1300],
+    [30, 107.069169],
+    [90, 322.532046],
+    [180, 649.064776],
+    [365, 1333.041667],
   ])(
     'reprorates the baseline debtCost to a %i-day Holding Period, matching the scenario side ($%s)',
     (timeHorizonDays, expected) => {
@@ -257,8 +301,8 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      expect(result.data.baseline.debtCost).toBeCloseTo(expected, 2);
-      expect(result.data.scenario.debtCost).toBeCloseTo(expected, 2);
+      expect(result.data.baseline.debtCost).toBeCloseTo(expected, 3);
+      expect(result.data.scenario.debtCost).toBeCloseTo(expected, 3);
       // Both sides represent the same Holding Period — no longer
       // "annual baseline vs. prorated scenario."
       expect(result.data.baseline.debtCost).toBeCloseTo(result.data.scenario.debtCost, 8);
@@ -276,12 +320,12 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
       ),
     );
 
-    const expected = [106.85, 320.55, 106.85, 1300, 641.1, 106.85];
+    const expected = [107.069169, 322.532046, 107.069169, 1333.041667, 649.064776, 107.069169];
     results.forEach((result, index) => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data.baseline.debtCost).toBeCloseTo(expected[index], 2);
-      expect(result.data.scenario.debtCost).toBeCloseTo(expected[index], 2);
+      expect(result.data.baseline.debtCost).toBeCloseTo(expected[index], 3);
+      expect(result.data.scenario.debtCost).toBeCloseTo(expected[index], 3);
     });
   });
 
@@ -299,10 +343,10 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Baseline: $26,000 * 5% * 30/365 ≈ $106.85 (today's real rate).
-    expect(result.data.baseline.debtCost).toBeCloseTo(106.85, 2);
-    // Scenario: $26,000 * 10% * 30/365 ≈ $213.70 (the stress-tested rate).
-    expect(result.data.scenario.debtCost).toBeCloseTo(213.7, 2);
+    // Baseline: $26,000 compounded at 5% over 30 days ≈ $107.07 (today's real rate).
+    expect(result.data.baseline.debtCost).toBeCloseTo(107.069169, 3);
+    // Scenario: $26,000 compounded at 10% over 30 days ≈ $214.58 (the stress-tested rate).
+    expect(result.data.scenario.debtCost).toBeCloseTo(214.57925, 3);
   });
 
   it("does not affect a type: 'price' scenario's baseline — both sides remain the annual figure, as before", () => {

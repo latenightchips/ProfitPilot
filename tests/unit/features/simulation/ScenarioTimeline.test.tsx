@@ -70,8 +70,10 @@ describe('ScenarioTimeline — with an active interest scenario', () => {
     const equityChart = screen.getByRole('img', { name: /Portfolio Value Over Time/ });
     expect(equityChart).toHaveAccessibleName(/Day 0 \$100,000\.00/);
 
-    // Day 100: $20,000 * 10% / 365 * 100 ≈ $547.95 accrued interest.
+    // Day 100: $20,000 debt at 10% APR compounded over 100 days (Aave V3's
+    // exact compounding, engine/protocols/aaveV3/) ≈ $555.52 accrued
+    // interest — not the old simple-interest $547.95 figure.
     const interestChart = screen.getByRole('img', { name: /Interest Cost Over Time/ });
-    expect(interestChart).toHaveAccessibleName(/Day 100 \$547\.95/);
+    expect(interestChart).toHaveAccessibleName(/Day 100 \$555\.52/);
   });
 });

@@ -220,9 +220,12 @@ describe('useSimulationStore — runTimelineProjection (M6-012, Batch 11)', () =
     // Day 0: no interest accrued yet, but the scenario price is already
     // fully applied (2 BTC * $60,000 - $20,000 = $100,000).
     expect(points[0].summary.equity).toBe(100000);
-    // Day 100: $20,000 debt * 10% APR / 365 * 100 days ≈ $547.95 accrued
-    // interest, reducing equity by that amount from the day-0 figure.
-    expect(points[4].summary.equity).toBeCloseTo(100000 - (20000 * 0.1 * 100) / 365, 2);
+    // Day 100: $20,000 debt at 10% APR compounded over 100 days (Aave V3's
+    // exact `calculateCompoundedInterest`, engine/protocols/aaveV3/) ≈
+    // $555.52 accrued interest — independently derived, see
+    // tests/unit/engine/protocols/aaveV3/math.test.ts — not the old simple
+    // 20000*0.1*100/365 ≈ $547.95 figure.
+    expect(points[4].summary.equity).toBeCloseTo(100000 - 555.519853, 2);
     // debtCost strictly increases as days increase, since the scenario
     // price is fixed across all 5 points and only the day count varies.
     for (let i = 1; i < points.length; i += 1) {
