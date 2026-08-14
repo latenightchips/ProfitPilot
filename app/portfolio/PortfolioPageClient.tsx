@@ -25,6 +25,8 @@ import {
 } from '@/types/portfolio.schema';
 import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
 
+import { LiveAaveDataPanel } from './LiveAaveDataPanel';
+
 /**
  * Portfolio Details Form — 06_TASKS.md M4-006 ("Implement Portfolio
  * Details Form"): "Create a form for editing general portfolio
@@ -1346,6 +1348,7 @@ export function PortfolioPageClient() {
             portfolio={record.portfolio}
             summary={record.summary}
           />
+          <LiveAaveDataPanel />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <CollateralPositionForm
             portfolioId={activePortfolioId}

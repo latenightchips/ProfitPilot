@@ -45,6 +45,14 @@ import { z } from 'zod';
  * `instrumentation-client.ts`, which runs in the browser and therefore
  * needs the same client-bundle inlining every other `NEXT_PUBLIC_*`
  * variable here relies on.
+ *
+ * **`THEGRAPH_API_KEY` (Phase 1 read-only Aave live-data integration) —
+ * a real secret, deliberately NOT `NEXT_PUBLIC_`-prefixed**, the same
+ * treatment as `COINGECKO_API_KEY` above. It is read only inside
+ * `app/api/aave/reserve/route.ts` (a server-only Route Handler) — see
+ * that file's own header comment. A Graph Protocol API key, not an
+ * Aave-issued credential; missing/empty is a normal, fully-handled
+ * state (Manual Mode fallback), not an error.
  */
 const envSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('ProfitPilot'),
@@ -54,6 +62,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional().or(z.literal('')),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional().or(z.literal('')),
+  THEGRAPH_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -67,6 +76,7 @@ function loadEnv(): Env {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    THEGRAPH_API_KEY: process.env.THEGRAPH_API_KEY,
   });
 
   if (!result.success) {

@@ -17,7 +17,9 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov'],
       include: [
         'engine/**',
+        'infrastructure/**',
         'services/**',
+        'app/api/**',
         'utils/**',
         'types/**',
         'stores/**',
