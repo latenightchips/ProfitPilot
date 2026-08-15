@@ -898,3 +898,199 @@ describe('Backward compatibility — existing V3 create/update/duplicate behavio
     expect(record.portfolio.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
   });
 });
+
+/**
+ * `setAaveV4DebtState` — V4 Readiness Audit §12 Stage 6.
+ */
+const VALID_V4_DEBT_STATE = {
+  drawnDebt: 15000,
+  premiumDebt: 500,
+  baseDrawnApr: 0.05,
+  riskPremium: 0.01,
+};
+
+describe('usePortfolioStore.setAaveV4DebtState (Stage 6)', () => {
+  it('sets a well-formed v4DebtState on the target portfolio', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
+      VALID_V4_DEBT_STATE,
+    );
+  });
+
+  it('rejects a v4DebtState with a negative field, leaving the portfolio unchanged', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, { ...VALID_V4_DEBT_STATE, drawnDebt: -1 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every((error) => error.category === 'validation')).toBe(true);
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState,
+    ).toBeUndefined();
+    expect(usePortfolioStore.getState().errors).toEqual(result.errors);
+  });
+
+  it('clears v4DebtState back to undefined', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    const cleared = usePortfolioStore.getState().setAaveV4DebtState(created.id, undefined);
+
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.data.v4DebtState).toBeUndefined();
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState,
+    ).toBeUndefined();
+  });
+
+  it('does not set or require protocolVersion/v4Position as a side effect (no cross-inference)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.protocolVersion).toBeUndefined();
+    expect(record.v4Position).toBeUndefined();
+  });
+
+  it('reports a not-found error for an unknown id and does not throw', () => {
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState('missing-id', VALID_V4_DEBT_STATE);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+
+  it('schedules a save (saveStatus reaches "saved") on a successful set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+
+  it('does not schedule a save on a rejected (invalid) set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, { ...VALID_V4_DEBT_STATE, riskPremium: -0.01 });
+    await autoSaveCoordinator.flushAll();
+
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+});
+
+describe('Portfolio v4DebtState — real write/reload round trip (Stage 6)', () => {
+  it('v4DebtState survives a genuine local storage round trip, surviving a simulated refresh', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+  });
+
+  it('clearing v4DebtState also survives the round trip (does not resurrect on reload)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, undefined);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState,
+    ).toBeUndefined();
+  });
+
+  it('v4DebtState, v4Position, and protocolVersion all survive the same round trip together', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.protocolVersion).toBe('v4');
+    expect(record.portfolio.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+    expect(record.portfolio.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+  });
+});
+
+describe('Backward compatibility — v4DebtState absence does not affect existing V3 behavior (Stage 6)', () => {
+  it('create leaves v4DebtState undefined for an ordinary portfolio', () => {
+    const created = createValidPortfolio();
+    expect(created.v4DebtState).toBeUndefined();
+  });
+
+  it('update (name-only) does not introduce v4DebtState', () => {
+    const created = createValidPortfolio();
+    const updated = usePortfolioStore.getState().update(created.id, { name: 'Renamed' });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.data.v4DebtState).toBeUndefined();
+  });
+
+  it('duplicate does not introduce v4DebtState on the copy', () => {
+    const created = createValidPortfolio();
+    const duplicated = usePortfolioStore.getState().duplicate(created.id);
+    expect(duplicated.ok).toBe(true);
+    if (!duplicated.ok) return;
+    expect(duplicated.data.v4DebtState).toBeUndefined();
+  });
+
+  it('duplicate carries an existing v4DebtState through unchanged (not stripped, not reset)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+
+    const duplicated = usePortfolioStore.getState().duplicate(created.id);
+    expect(duplicated.ok).toBe(true);
+    if (!duplicated.ok) return;
+    expect(duplicated.data.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+  });
+
+  it('archive/unarchive on a portfolio with v4DebtState set does not touch it', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+
+    usePortfolioStore.getState().archive(created.id);
+    usePortfolioStore.getState().unarchive(created.id);
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
+      VALID_V4_DEBT_STATE,
+    );
+  });
+
+  it('a plain V3 portfolio (v4DebtState never set) still survives a full write/reload round trip', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.v4DebtState).toBeUndefined();
+  });
+});

@@ -100,3 +100,65 @@ describe('persistedPortfolioPayloadSchema (Stage 5: protocolVersion/v4Position)'
     expect(result.data.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
   });
 });
+
+/**
+ * `v4DebtState` — Stage 6 (V4 Readiness Audit §12), same "don't silently
+ * strip it" regression this schema already closed for
+ * `protocolVersion`/`v4Position` in Stage 5.
+ */
+const VALID_DEBT_STATE = {
+  drawnDebt: 15000,
+  premiumDebt: 500,
+  baseDrawnApr: 0.05,
+  riskPremium: 0.01,
+};
+
+describe('persistedPortfolioPayloadSchema (Stage 6: v4DebtState)', () => {
+  it('accepts a payload with no v4DebtState (V3/pre-Stage-6 backward compatibility)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtState).toBeUndefined();
+  });
+
+  it('accepts and preserves a valid v4DebtState', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtState).toEqual(VALID_DEBT_STATE);
+  });
+
+  it('rejects a v4DebtState with a negative field, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: { ...VALID_DEBT_STATE, drawnDebt: -1 } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts protocolVersion, v4Position, and v4DebtState all set together', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        protocolVersion: 'v4',
+        v4Position: { userAddress: VALID_V4_ADDRESS },
+        v4DebtState: VALID_DEBT_STATE,
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.protocolVersion).toBe('v4');
+    expect(result.data.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+    expect(result.data.v4DebtState).toEqual(VALID_DEBT_STATE);
+  });
+
+  it('accepts v4DebtState set while protocolVersion/v4Position remain unset (no cross-field requirement)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.protocolVersion).toBeUndefined();
+    expect(result.data.v4Position).toBeUndefined();
+  });
+});

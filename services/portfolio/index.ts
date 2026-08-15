@@ -23,7 +23,8 @@
  * `./models.ts` or `@/engine` directly — the same boundary
  * `types/portfolio.ts`'s own `Portfolio extends ApplicationPortfolio`
  * already respects. Both are re-exports of Stage 1's/Stage 4A's existing
- * types, not new models.
+ * types, not new models. `AaveV4DebtState` (Stage 6) joins them for the
+ * same reason: `setAaveV4DebtState` is its first Store-layer consumer.
  */
 export {
   type PortfolioAction,
@@ -40,6 +41,7 @@ export {
   type MappingSuccess,
 } from './mapping';
 export type {
+  AaveV4DebtState,
   AaveV4PositionIdentity,
   ApplicationPortfolio,
   PersistenceCollateralPosition,

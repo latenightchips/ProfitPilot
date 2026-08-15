@@ -39,11 +39,18 @@
  * same schemas `stores/portfolioStore.ts`'s new `setProtocolVersion`/
  * `setAaveV4Position` actions validate against) rather than redefining
  * either shape here.
+ *
+ * **`v4DebtState` (V4 Readiness Audit §12 Stage 6)** — same reasoning and
+ * same "extend model, schema, and Store action together" discipline as
+ * `v4Position` above, now for `services/portfolio/models.ts`'s
+ * `AaveV4DebtState` (drawn/premium debt, base drawn rate, risk premium).
+ * Reuses `aaveV4DebtStateSchema` directly.
  */
 import { z } from 'zod';
 
 import { sanitizedOptionalTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
 import {
+  aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   collateralPositionSchema,
   debtPositionSchema,
@@ -65,6 +72,7 @@ export const persistedPortfolioPayloadSchema = z.object({
   settings: portfolioSettingsSchema,
   protocolVersion: protocolVersionSchema.optional(),
   v4Position: aaveV4PositionIdentitySchema.optional(),
+  v4DebtState: aaveV4DebtStateSchema.optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

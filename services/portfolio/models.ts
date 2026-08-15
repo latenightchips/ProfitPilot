@@ -20,6 +20,7 @@
  */
 import type {
   AaveProtocolVersion,
+  AaveV4DebtProjectionRequest,
   CollateralPosition,
   DebtPosition,
   MarketPrices,
@@ -63,6 +64,52 @@ export interface AaveV4PositionIdentity {
 }
 
 /**
+ * Aave V4 live debt shape — Stage 6 (V4 Readiness Audit §12), closing the
+ * "Portfolio/Dashboard data-gap analysis" finding from the original Stage
+ * 4 design audit. `services/simulation/scenario.ts`'s own header comment
+ * has, since Stage 2, explicitly named this exact gap as the reason V4
+ * interest-scenario simulation fails closed for every real portfolio:
+ * the Engine's V4 math (`engine/protocols/aaveV4`) is real, but "this
+ * Service's portfolio model doesn't have a source for" `drawnDebt`/
+ * `premiumDebt`/`riskPremium`. This type is that source.
+ *
+ * Kept as its own optional sub-object, the same reasoning as
+ * `AaveV4PositionIdentity` above: V4's live debt shape is fundamentally
+ * different data from V3's single `debt.balance` figure (two separately-
+ * accruing streams plus a currently-effective Risk Premium — see
+ * `engine/protocols/types.ts`'s own `AaveV4DebtProjectionRequest` doc
+ * comment), not a value that fits into the existing `debt`/`protocol`
+ * fields without either overloading their meaning or losing precision.
+ *
+ * `Omit<AaveV4DebtProjectionRequest, 'protocolVersion' | 'elapsedDays'>`
+ * — a type-only derivation from the Engine's own already-public request
+ * shape (`@/engine`), not a hand-duplicated interface, the same pattern
+ * `infrastructure/protocols/aave/v4/types.ts`'s own `AaveV4EngineDebtInputs`
+ * already uses for the identical Omit. The two are intentionally
+ * separate nominal types in separate layers (this one belongs to the
+ * domain/application layer, that one to infrastructure), mirroring how
+ * `AaveProtocolVersion` is deliberately duplicated, not shared, between
+ * `engine/protocols/types.ts` and `infrastructure/protocols/aave/types.ts`
+ * — but being structurally identical Omits of the same Engine type means
+ * a future caller can assign a Stage 4B `AaveV4DebtSnapshot.engineInputs`
+ * value directly into this field with zero mapping code, by construction.
+ * `elapsedDays` is excluded because it is a projection horizon supplied
+ * per-calculation, not persisted portfolio state, exactly like V3's
+ * `elapsedDays` was never stored either.
+ *
+ * **Stage 6 scope note**: this field is defined and persistable
+ * (`services/persistence/schemas/portfolio.schema.ts`,
+ * `stores/portfolioStore.ts`'s `setAaveV4DebtState`) but consumed by
+ * nothing yet — `services/simulation/scenario.ts`'s V4 dispatch guard is
+ * intentionally untouched this stage (V4 Readiness Audit §12 recommends
+ * wiring it as a later, separate stage). No live-sync mechanism
+ * populates it automatically either. Same deliberate "no cross-inference"
+ * discipline as `v4Position`: setting this does not imply or require
+ * `protocolVersion: 'v4'` or a set `v4Position`, and vice versa.
+ */
+export type AaveV4DebtState = Omit<AaveV4DebtProjectionRequest, 'protocolVersion' | 'elapsedDays'>;
+
+/**
  * The application-layer Portfolio shape, as far as M3-004 defines it.
  * Every field here is already validated and Engine-compatible — reusing
  * the Engine's own published domain types (`@/engine`'s
@@ -82,17 +129,23 @@ export interface AaveV4PositionIdentity {
  * protocol version from, and so tests can construct a V4 portfolio to
  * prove the unsupported path fails closed (§12 Stage 1 requirements).
  *
- * **`v4Position` (V4 Readiness Audit §12 Stage 4A)** — same backward-
- * compatibility discipline as `protocolVersion`: optional, and, like
- * `protocolVersion`, deliberately NOT wired into `PersistencePortfolio`/
- * `mapPersistencePortfolioToApplicationPortfolio`/`services/persistence`'s
- * write schema this stage — there is still no Store action or UI form
- * that sets it, so extending the real persistence pipeline now would be
- * schema/mapping code with no caller. Every currently-persisted or
- * newly-created portfolio has this field `undefined` today; deferred to
- * whichever later stage adds the actual Store mutation that sets it,
- * which should extend `PersistencePortfolio`/the mapping/the persistence
- * write schema together in one coherent change.
+ * **`v4Position` (V4 Readiness Audit §12 Stage 4A, persisted since
+ * Stage 5)** — same backward-compatibility discipline as
+ * `protocolVersion`: optional, `undefined` on every portfolio unless
+ * explicitly set via `stores/portfolioStore.ts`'s `setAaveV4Position`
+ * (Stage 5), which also durably persists it
+ * (`services/persistence/schemas/portfolio.schema.ts`). Still NOT wired
+ * into `PersistencePortfolio`/`mapPersistencePortfolioToApplicationPortfolio`
+ * below — those remain the M3-004-era defensive mapper with no
+ * production caller (see that interface's own comment), not the real
+ * write/read path, which is `persistedPortfolioPayloadSchema` directly.
+ *
+ * **`v4DebtState` (V4 Readiness Audit §12 Stage 6)** — same pattern as
+ * `v4Position`: optional, persisted via
+ * `services/persistence/schemas/portfolio.schema.ts` and
+ * `stores/portfolioStore.ts`'s `setAaveV4DebtState`, `undefined` on
+ * every portfolio until explicitly set. See `AaveV4DebtState`'s own doc
+ * comment above for what it holds and why.
  */
 export interface ApplicationPortfolio {
   collateral: CollateralPosition;
@@ -101,6 +154,7 @@ export interface ApplicationPortfolio {
   protocol: ProtocolParameters;
   protocolVersion?: AaveProtocolVersion;
   v4Position?: AaveV4PositionIdentity;
+  v4DebtState?: AaveV4DebtState;
 }
 
 /**

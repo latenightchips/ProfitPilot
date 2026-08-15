@@ -530,5 +530,35 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       expect(v4Result.errors[0]?.code).toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
       expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
     });
+
+    /**
+     * V4 Readiness Audit §12 Stage 6 isolation check. Stage 6 gives
+     * `ApplicationPortfolio` a real place to hold V4's live debt shape
+     * (`v4DebtState` — `services/portfolio/models.ts`) but deliberately
+     * does not wire it into this dispatch (see that type's own "Stage 6
+     * scope note"). This proves that addition alone changes nothing here
+     * — the guard below still keys only on `protocolVersion`, so a
+     * portfolio carrying real `v4DebtState` still fails exactly the same
+     * way until a later stage explicitly consumes it.
+     */
+    it('still fails closed even when v4DebtState is present — Stage 6 adds the data-model field only, Simulation dispatch wiring is a later stage', () => {
+      const result = simulateScenario(
+        debtPortfolio({
+          protocolVersion: 'v4',
+          v4DebtState: {
+            drawnDebt: 15000,
+            premiumDebt: 500,
+            baseDrawnApr: 0.05,
+            riskPremium: 0.01,
+          },
+        }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_SIMULATION_UNSUPPORTED' });
+    });
   });
 });

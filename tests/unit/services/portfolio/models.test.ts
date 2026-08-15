@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AaveV4DebtState,
   AaveV4PositionIdentity,
   ApplicationPortfolio,
   PersistenceCollateralPosition,
@@ -154,5 +155,82 @@ describe('AaveV4PositionIdentity / ApplicationPortfolio.v4Position (Stage 4A)', 
     };
     const roundTripped: ApplicationPortfolio = JSON.parse(JSON.stringify(application));
     expect(roundTripped.v4Position).toEqual(application.v4Position);
+  });
+});
+
+/**
+ * `AaveV4DebtState`/`ApplicationPortfolio.v4DebtState` — Stage 6 (V4
+ * Readiness Audit §12). Mirrors `AaveV4PositionIdentity`'s own test
+ * coverage style directly above.
+ */
+describe('AaveV4DebtState / ApplicationPortfolio.v4DebtState (Stage 6)', () => {
+  function basePortfolio(): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 1.5 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 65000 },
+      protocol: {
+        maxLoanToValue: 0.8,
+        liquidationThreshold: 0.83,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+  }
+
+  it('ApplicationPortfolio accepts a value with v4DebtState set, matching AaveV4DebtProjectionRequest minus protocolVersion/elapsedDays', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const application: ApplicationPortfolio = { ...basePortfolio(), v4DebtState };
+    expect(application.v4DebtState).toEqual(v4DebtState);
+  });
+
+  it('ApplicationPortfolio remains valid without v4DebtState (backward compatible, same as protocolVersion/v4Position)', () => {
+    const application: ApplicationPortfolio = basePortfolio();
+    expect(application.v4DebtState).toBeUndefined();
+  });
+
+  it('a V3 portfolio (no protocolVersion, no v4Position, no v4DebtState) is unchanged from existing behavior', () => {
+    const application: ApplicationPortfolio = basePortfolio();
+    expect(application.protocolVersion).toBeUndefined();
+    expect(application.v4Position).toBeUndefined();
+    expect(application.v4DebtState).toBeUndefined();
+    expect(application.collateral.asset).toBe('BTC');
+  });
+
+  it('does not duplicate debt.balance — v4DebtState carries only the V4-specific drawn/premium/rate/riskPremium fields', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    expect(Object.keys(v4DebtState).sort()).toEqual(
+      ['baseDrawnApr', 'drawnDebt', 'premiumDebt', 'riskPremium'].sort(),
+    );
+  });
+
+  it('v4DebtState survives a plain JSON serialization round-trip', () => {
+    const application: ApplicationPortfolio = {
+      ...basePortfolio(),
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+    const roundTripped: ApplicationPortfolio = JSON.parse(JSON.stringify(application));
+    expect(roundTripped.v4DebtState).toEqual(application.v4DebtState);
+  });
+
+  it('v4DebtState, v4Position, and protocolVersion can all be set independently with no coupling', () => {
+    const application: ApplicationPortfolio = {
+      ...basePortfolio(),
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+    // v4DebtState set alone, protocolVersion/v4Position still absent —
+    // proves no field silently implies another.
+    expect(application.protocolVersion).toBeUndefined();
+    expect(application.v4Position).toBeUndefined();
   });
 });

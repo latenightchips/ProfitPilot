@@ -175,6 +175,41 @@ export const protocolVersionSchema = z.enum(['v3', 'v4']);
 
 export type ProtocolVersionInput = z.infer<typeof protocolVersionSchema>;
 
+/**
+ * Aave V4 live debt shape — Stage 6 (V4 Readiness Audit §12). Validates
+ * `services/portfolio/models.ts`'s `AaveV4DebtState` shape (see that
+ * type's own doc comment for why this data exists and what closes on
+ * top of it later). Bounds mirror
+ * `engine/protocols/aaveV4/projectAaveV4Debt.ts`'s own validation
+ * exactly, the same "mirror the Engine, don't invent a second rule"
+ * discipline this file's header comment already states for every other
+ * schema here: `drawnDebt`/`premiumDebt` use `validateNonNegative`;
+ * `baseDrawnApr`/`riskPremium` use `validateRate` (non-negative, no
+ * stated upper bound — the same bound `protocolParametersSchema`'s own
+ * `borrowApr`/`supplyApr` already use for the identical Engine
+ * validator).
+ */
+export const aaveV4DebtStateSchema = z.object({
+  drawnDebt: z
+    .number({ error: 'Enter a valid drawn debt amount.' })
+    .finite('Enter a valid drawn debt amount.')
+    .nonnegative('Drawn debt cannot be negative.'),
+  premiumDebt: z
+    .number({ error: 'Enter a valid premium debt amount.' })
+    .finite('Enter a valid premium debt amount.')
+    .nonnegative('Premium debt cannot be negative.'),
+  baseDrawnApr: z
+    .number({ error: 'Enter a valid base drawn rate.' })
+    .finite('Enter a valid base drawn rate.')
+    .nonnegative('Base drawn rate cannot be negative.'),
+  riskPremium: z
+    .number({ error: 'Enter a valid risk premium.' })
+    .finite('Enter a valid risk premium.')
+    .nonnegative('Risk premium cannot be negative.'),
+});
+
+export type AaveV4DebtStateInput = z.infer<typeof aaveV4DebtStateSchema>;
+
 export const portfolioInputSchema = z.object({
   name: z
     .string()

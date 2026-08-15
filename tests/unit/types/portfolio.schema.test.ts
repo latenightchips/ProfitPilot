@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   collateralManagementSchema,
   collateralPositionSchema,
@@ -274,6 +275,80 @@ describe('protocolVersionSchema (Stage 5)', () => {
 
   it('rejects undefined (the schema itself is required; optionality is applied by callers)', () => {
     expect(protocolVersionSchema.safeParse(undefined).success).toBe(false);
+  });
+});
+
+/**
+ * `aaveV4DebtStateSchema` — Stage 6 (V4 Readiness Audit §12). Bounds
+ * mirror `engine/protocols/aaveV4/projectAaveV4Debt.ts`'s own
+ * `validateNonNegative`/`validateRate` checks exactly (see
+ * `portfolio.schema.ts`'s own comment on this schema).
+ */
+describe('aaveV4DebtStateSchema (Stage 6)', () => {
+  function validDebtState() {
+    return { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 };
+  }
+
+  it('accepts a well-formed debt state', () => {
+    expect(aaveV4DebtStateSchema.safeParse(validDebtState()).success).toBe(true);
+  });
+
+  it('accepts zero for every field (a freshly-opened V4 position with no drawn/premium debt yet)', () => {
+    const result = aaveV4DebtStateSchema.safeParse({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0,
+      riskPremium: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a negative drawnDebt', () => {
+    expect(aaveV4DebtStateSchema.safeParse({ ...validDebtState(), drawnDebt: -1 }).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects a negative premiumDebt', () => {
+    expect(aaveV4DebtStateSchema.safeParse({ ...validDebtState(), premiumDebt: -1 }).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects a negative baseDrawnApr', () => {
+    expect(
+      aaveV4DebtStateSchema.safeParse({ ...validDebtState(), baseDrawnApr: -0.01 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a negative riskPremium', () => {
+    expect(
+      aaveV4DebtStateSchema.safeParse({ ...validDebtState(), riskPremium: -0.01 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-finite value (Infinity/NaN)', () => {
+    expect(
+      aaveV4DebtStateSchema.safeParse({ ...validDebtState(), drawnDebt: Infinity }).success,
+    ).toBe(false);
+    expect(
+      aaveV4DebtStateSchema.safeParse({ ...validDebtState(), riskPremium: Number.NaN }).success,
+    ).toBe(false);
+  });
+
+  it.each(['drawnDebt', 'premiumDebt', 'baseDrawnApr', 'riskPremium'])(
+    'rejects a payload missing %s entirely',
+    (field) => {
+      const payload = validDebtState() as Record<string, unknown>;
+      delete payload[field];
+      expect(aaveV4DebtStateSchema.safeParse(payload).success).toBe(false);
+    },
+  );
+
+  it('rejects a non-numeric value', () => {
+    expect(
+      aaveV4DebtStateSchema.safeParse({ ...validDebtState(), drawnDebt: '15000' }).success,
+    ).toBe(false);
   });
 });
 

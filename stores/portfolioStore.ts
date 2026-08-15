@@ -201,12 +201,25 @@
  * therefore legally hold `v4Position` set while `protocolVersion` stays
  * `'v3'`/unset, or vice versa — both actions accept `undefined` to clear
  * their own field independently, with no side effect on the other.
+ *
+ * **`setAaveV4DebtState` (V4 Readiness Audit §12 Stage 6)** — same shape
+ * and same reasoning as `setAaveV4Position`: returns
+ * `MappingResult<Portfolio>` because `aaveV4DebtStateSchema` (Stage 6)
+ * is real, failable validation, mirrors the `create`/`update`/
+ * `setAaveV4Position` "saving" → validate → commit → schedule save
+ * sequence exactly, and participates in the same no-cross-inference rule
+ * — setting `v4DebtState` neither requires nor implies `protocolVersion`
+ * or `v4Position`. `services/simulation/scenario.ts` does not read this
+ * field yet (Stage 6 is data-model/persistence only; see
+ * `AaveV4DebtState`'s own doc comment in `services/portfolio/models.ts`
+ * for what wires it up later).
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
 
 import {
   type AaveProtocolVersion,
+  type AaveV4DebtState,
   type AaveV4PositionIdentity,
   type ApplicationError,
   autoSaveCoordinator,
@@ -221,6 +234,7 @@ import {
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import {
+  aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   type PortfolioInput,
   portfolioInputSchema,
@@ -261,6 +275,10 @@ export interface PortfolioStoreActions {
   setAaveV4Position: (
     id: string,
     v4Position: AaveV4PositionIdentity | undefined,
+  ) => MappingResult<Portfolio>;
+  setAaveV4DebtState: (
+    id: string,
+    v4DebtState: AaveV4DebtState | undefined,
   ) => MappingResult<Portfolio>;
 }
 
@@ -656,6 +674,42 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4Position: validated,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+    }));
+    schedulePortfolioSave(portfolio);
+
+    return { ok: true, data: portfolio };
+  },
+
+  setAaveV4DebtState: (id, v4DebtState) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    let validated: AaveV4DebtState | undefined;
+    if (v4DebtState !== undefined) {
+      const parsed = aaveV4DebtStateSchema.safeParse(v4DebtState);
+      if (!parsed.success) {
+        const errors = zodErrorToErrors(parsed.error);
+        set({ errors, saveStatus: 'error' });
+        return { ok: false, errors };
+      }
+      validated = parsed.data;
+    }
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      v4DebtState: validated,
       updatedAt: new Date().toISOString(),
     };
 
