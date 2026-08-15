@@ -47,6 +47,8 @@ describe('Public Engine API surface (M2-031)', () => {
     'validateLoopStrategySafety',
     // Aave V3 protocol-specific accrual (not a Formula ID)
     'projectVariableDebt',
+    // Protocol/version dispatch (V4 Readiness Audit §12 Stage 1)
+    'projectProtocolDebt',
     // Portfolio
     'calculateCollateralValue',
     'calculateDebtRatio',

@@ -18,7 +18,13 @@
  * with identity/description/base-currency/settings/timestamp fields later.
  * Adding those here now would be inventing M4-001's scope, not M3-004's.
  */
-import type { CollateralPosition, DebtPosition, MarketPrices, ProtocolParameters } from '@/engine';
+import type {
+  AaveProtocolVersion,
+  CollateralPosition,
+  DebtPosition,
+  MarketPrices,
+  ProtocolParameters,
+} from '@/engine';
 
 /**
  * The application-layer Portfolio shape, as far as M3-004 defines it.
@@ -27,12 +33,25 @@ import type { CollateralPosition, DebtPosition, MarketPrices, ProtocolParameters
  * `CollateralPosition`/`DebtPosition`/`MarketPrices`/`ProtocolParameters`,
  * M2-002) rather than duplicating them, per this batch's instruction to
  * reuse existing shared contracts where appropriate.
+ *
+ * **`protocolVersion` (V4 Readiness Audit §12 Stage 1)** — which Aave
+ * protocol version this portfolio's debt is denominated under. Optional,
+ * and deliberately never written by any persistence/mapping code this
+ * stage (`services/persistence/*`, `mapPersistencePortfolioToApplicationPortfolio`
+ * are untouched) — every currently-persisted or newly-created portfolio
+ * has this field `undefined`, which every consumer must read as Aave V3
+ * (backward compatible by construction, not by a migration). Stage 1 adds
+ * no user-facing way to set this to `'v4'`; it exists so
+ * `services/simulation/scenario.ts` has a real, typed place to resolve
+ * protocol version from, and so tests can construct a V4 portfolio to
+ * prove the unsupported path fails closed (§12 Stage 1 requirements).
  */
 export interface ApplicationPortfolio {
   collateral: CollateralPosition;
   debt: DebtPosition;
   market: MarketPrices;
   protocol: ProtocolParameters;
+  protocolVersion?: AaveProtocolVersion;
 }
 
 /**

@@ -362,3 +362,169 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
     expect(result.data.scenario.debtCost).toBeCloseTo(1300, 2);
   });
 });
+
+/**
+ * Protocol/version dispatch — V4 Readiness Audit §12 Stage 1.
+ * `simulateScenario` no longer imports `projectVariableDebt` from
+ * `engine/protocols/aaveV3` directly; it resolves
+ * `portfolio.protocolVersion ?? 'v3'` and calls `projectProtocolDebt`.
+ * These tests prove that refactor is behavior-preserving for V3 (with and
+ * without the field explicitly set — the "old persisted record" case has
+ * no such field at all) and that a V4 portfolio fails closed rather than
+ * silently reusing V3's math.
+ */
+describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §12 Stage 1)', () => {
+  function debtPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  const interestScenario: SimulationScenario = {
+    type: 'interest',
+    priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+    timeHorizonDays: 365,
+    borrowApr: 0.05,
+  };
+
+  describe('V3 regression — identical output through the new dispatch (representative scenarios)', () => {
+    it('a portfolio with no protocolVersion field (an "old persisted record") still produces the exact V3 compounded value', () => {
+      const result = simulateScenario(debtPortfolio(), interestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Same exact expected value as the pre-existing, untouched "interest scenarios" suite above.
+      expect(result.data.scenario.debtCost).toBeCloseTo(1025.4167, 4);
+      expect(result.data.scenario.equity).toBeCloseTo(78974.5833, 4);
+      expect(result.data.scenario.healthFactor).toBeCloseTo(3.804919, 5);
+    });
+
+    it('a portfolio with protocolVersion explicitly set to "v3" produces byte-identical results to one with the field omitted', () => {
+      const withoutField = simulateScenario(debtPortfolio(), interestScenario, '1 year', 'live');
+      const withField = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v3' }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(withoutField.ok).toBe(true);
+      expect(withField.ok).toBe(true);
+      if (!withoutField.ok || !withField.ok) return;
+      expect(withField.data.scenario).toEqual(withoutField.data.scenario);
+      expect(withField.data.baseline).toEqual(withoutField.data.baseline);
+    });
+
+    it.each([
+      [30, 82.3609, 20082.3609],
+      [90, 248.1016, 20248.1016],
+      [180, 499.2806, 20499.2806],
+      [365, 1025.4167, 21025.4167],
+      [800, 2316.2655, 22316.2655],
+    ])(
+      'reproduces the exact %i-day compounded-debt regression vector through the dispatch layer',
+      (days, expectedDebtCost, expectedProjectedDebt) => {
+        const scenario: SimulationScenario = {
+          type: 'interest',
+          priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+          timeHorizonDays: days,
+          borrowApr: 0.05,
+        };
+        const result = simulateScenario(debtPortfolio(), scenario, `${days} days`, 'live');
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.scenario.debtCost).toBeCloseTo(expectedDebtCost, 3);
+        expect(100000 - result.data.scenario.equity).toBeCloseTo(expectedProjectedDebt, 3);
+      },
+    );
+
+    it('reproduces the exact PT-12 baseline-reproration regression vector through the dispatch layer', () => {
+      const scenario: SimulationScenario = {
+        type: 'interest',
+        priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+        timeHorizonDays: 30,
+        borrowApr: 0.05,
+      };
+      const result = simulateScenario(
+        debtPortfolio({ debt: { asset: 'USDC', balance: 26000 } }),
+        scenario,
+        '30 days',
+        'live',
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.baseline.debtCost).toBeCloseTo(107.069169, 3);
+      expect(result.data.scenario.debtCost).toBeCloseTo(107.069169, 3);
+    });
+
+    it('a "price" scenario is unaffected by protocol version (does not call debt projection at all)', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const v3Result = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
+      const v4Result = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v4' }),
+        scenario,
+        'Price drop',
+        'live',
+      );
+      expect(v3Result.ok).toBe(true);
+      expect(v4Result.ok).toBe(true);
+      if (!v3Result.ok || !v4Result.ok) return;
+      expect(v4Result.data.scenario).toEqual(v3Result.data.scenario);
+    });
+  });
+
+  describe('V4 — fails closed, never silently falls back to V3 (unsupported this stage)', () => {
+    it('an interest scenario on a protocolVersion: "v4" portfolio fails rather than returning a value', () => {
+      const result = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v4' }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_PROJECTION_NOT_IMPLEMENTED' });
+    });
+
+    it('does not have a data field on the V4 failure result (no partial/placeholder result leaks through)', () => {
+      const result = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v4' }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      expect('data' in result).toBe(false);
+    });
+
+    it('the V4 failure is not the same error a genuinely invalid V3 input would produce (a real, distinct unsupported-protocol error, not a coincidental validation failure)', () => {
+      const v4Result = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v4' }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      const invalidV3Result = simulateScenario(
+        debtPortfolio({ debt: { asset: 'USDC', balance: -1 } }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(v4Result.ok).toBe(false);
+      expect(invalidV3Result.ok).toBe(false);
+      if (v4Result.ok || invalidV3Result.ok) return;
+      expect(v4Result.errors[0]?.code).toBe('AAVE_V4_PROJECTION_NOT_IMPLEMENTED');
+      expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_PROJECTION_NOT_IMPLEMENTED');
+    });
+  });
+});

@@ -36,13 +36,11 @@
  * calling `simulateInterestScenario`.** `simulateInterestScenario`
  * (F-033) internally uses `calculateProratedInterest`/`calculateDebtGrowth`
  * — simple, non-compounding interest, correct for its own documented
- * scope but not Aave V3's actual on-chain variable-debt accrual
- * (`MathUtils.calculateCompoundedInterest`, continuously compounding).
- * Since ProfitPilot v0.1 is Aave-V3-only (01_PRD.md REQ-003) and this is
- * the one place in the app that projects debt forward over an explicit
- * holding period, this branch calls `resolveScenarioPrice` +
- * `calculateCollateralValue` + `projectVariableDebt` (Aave V3's own
- * compounding curve, `engine/protocols/aaveV3/`) + `calculateNetWorth` +
+ * scope but not a real protocol's actual on-chain variable-debt accrual.
+ * Since this is the one place in the app that projects debt forward over
+ * an explicit holding period, this branch calls `resolveScenarioPrice` +
+ * `calculateCollateralValue` + `projectProtocolDebt` (protocol/version
+ * dispatch, `engine/protocols/`) + `calculateNetWorth` +
  * `calculateHealthFactor` + `calculateLiquidationDistance` +
  * `calculatePortfolioGain` + `calculateEffectiveLeverage` directly —
  * the same "call several already-public Engine primitives instead of one
@@ -50,6 +48,21 @@
  * uses. `simulateInterestScenario`/`calculateDebtGrowth` themselves are
  * untouched and remain available with their original, documented
  * simple-interest semantics for any other caller.
+ *
+ * **`projectProtocolDebt` — protocol/version dispatch (V4 Readiness Audit
+ * §12 Stage 1).** This file previously imported `projectVariableDebt`
+ * from `engine/protocols/aaveV3` directly — a hardcoded V3 assumption
+ * with no version boundary, the exact architectural gap the audit
+ * identified. Both `projectVariableDebt` call sites below now go through
+ * `projectProtocolDebt(protocolVersion, ...)` instead, resolving
+ * `protocolVersion` from `portfolio.protocolVersion ?? 'v3'` once per
+ * call to `simulateScenario`. For `'v3'` (every portfolio today —
+ * `protocolVersion` is not settable anywhere yet), the dispatcher forwards
+ * to the exact same, unmodified V3 projector: identical inputs, identical
+ * outputs, identical `FormulaResult` metadata. A portfolio explicitly
+ * marked `'v4'` (test-only this stage; no UI sets it) fails closed with a
+ * structured `AAVE_V4_PROJECTION_NOT_IMPLEMENTED` error instead of
+ * silently reusing V3's math or a placeholder number.
  *
  * **Interest Cost comparison semantics (PT-12 follow-up round 3,
  * preserved and updated for compounding)**: the baseline `debtCost` set
@@ -63,13 +76,13 @@
  * reprorated here over that same `scenario.timeHorizonDays`, using the
  * portfolio's own actual current debt value and Borrow APR (not the
  * scenario's own, possibly stress-tested `borrowApr`). This now calls
- * `projectVariableDebt` (the same Aave V3 compounding curve as the
- * scenario side below) rather than the old `calculateProratedInterest` —
- * both sides of the comparison must use the same accrual formula, or a
- * scenario run at the portfolio's own real current rate would show a
- * spurious baseline/scenario gap that is purely an artifact of comparing
- * simple interest against compound interest, not a real rate or price
- * difference.
+ * `projectProtocolDebt` (the same dispatch, and for V3 the same
+ * compounding curve, as the scenario side below) rather than the old
+ * `calculateProratedInterest` — both sides of the comparison must use the
+ * same accrual formula, or a scenario run at the portfolio's own real
+ * current rate would show a spurious baseline/scenario gap that is purely
+ * an artifact of comparing simple interest against compound interest, not
+ * a real rate or price difference.
  *
  * **"Preserve assumptions"**: interpreted as never discarding the
  * caller's own scenario definition — `SimulationResult.assumptions`
@@ -82,6 +95,7 @@
  * conflict #19 formula-version-tracking stopgap M3-005 established.
  */
 import {
+  type AaveProtocolVersion,
   calculateAnnualInterest,
   calculateCollateralValue,
   calculateEffectiveLeverage,
@@ -91,7 +105,7 @@ import {
   calculatePortfolioGain,
   compareScenarios,
   type PriceScenarioInput,
-  projectVariableDebt,
+  projectProtocolDebt,
   resolveScenarioPrice,
   type ScenarioComparisonResult,
   type ScenarioSummary,
@@ -121,6 +135,15 @@ export interface SimulationResult {
 }
 
 const BASELINE_LABEL = 'Current Portfolio';
+
+/**
+ * Backward-compatible default (V4 Readiness Audit §12 Stage 1) —
+ * `ApplicationPortfolio.protocolVersion` is not settable anywhere yet, so
+ * every real portfolio resolves here. See `services/portfolio/models.ts`'s
+ * own `protocolVersion` doc comment for the full backward-compatibility
+ * reasoning.
+ */
+const DEFAULT_PROTOCOL_VERSION: AaveProtocolVersion = 'v3';
 
 function toScenarioSummary(
   label: string,
@@ -184,6 +207,8 @@ export function simulateScenario(
   const baselineResult = calculatePortfolioSummary(portfolio, sourceStatus);
   if (!baselineResult.ok) return baselineResult;
 
+  const protocolVersion: AaveProtocolVersion =
+    portfolio.protocolVersion ?? DEFAULT_PROTOCOL_VERSION;
   const baselineSummary = toScenarioSummary(BASELINE_LABEL, baselineResult.data, 0);
   const engineInput = mapApplicationPortfolioToEngineInput(portfolio);
   const warnings: ServiceWarning[] = [...baselineResult.warnings];
@@ -256,11 +281,16 @@ export function simulateScenario(
   tracked = projectedCollateralValueStep.tracked;
   warnings.push(...projectedCollateralValueStep.warnings);
 
-  // Aave V3's own compounded variable-debt accrual — see this file's header
+  // Protocol/version-dispatched debt accrual — see this file's header
   // comment. Not `simulateInterestScenario`/`calculateProratedInterest`
   // (simple interest), which remain unchanged for any other caller.
   const projectedDebtStep = formulaStep(
-    projectVariableDebt(engineInput.debt.balance, scenario.borrowApr, scenario.timeHorizonDays),
+    projectProtocolDebt(
+      protocolVersion,
+      engineInput.debt.balance,
+      scenario.borrowApr,
+      scenario.timeHorizonDays,
+    ),
     tracked,
     sourceStatus,
   );
@@ -299,12 +329,13 @@ export function simulateScenario(
   warnings.push(...projectedHealthFactorStep.warnings);
 
   // Baseline debtCost reproration (PT-12 follow-up round 3) — matches the
-  // scenario side's own accrual formula (Aave V3 compounding) so both
-  // sides of the comparison stay apples-to-apples over the same Holding
-  // Period, using the portfolio's own real current debt/rate rather than
-  // the scenario's own (possibly stress-tested) borrowApr.
+  // scenario side's own accrual formula (same protocol/version dispatch)
+  // so both sides of the comparison stay apples-to-apples over the same
+  // Holding Period, using the portfolio's own real current debt/rate
+  // rather than the scenario's own (possibly stress-tested) borrowApr.
   const baselineProjectedDebtStep = formulaStep(
-    projectVariableDebt(
+    projectProtocolDebt(
+      protocolVersion,
       baselineResult.data.debtValue,
       engineInput.protocol.borrowApr,
       scenario.timeHorizonDays,

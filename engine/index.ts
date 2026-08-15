@@ -99,11 +99,26 @@ export {
 } from './loop';
 
 /**
+ * Protocol/version dispatch for debt projection — V4 Readiness Audit §12
+ * Stage 1. `projectProtocolDebt` is the one place a Service resolves
+ * "which protocol-version's math to run" from an explicit
+ * `AaveProtocolVersion`, instead of importing a specific version's
+ * projector by name (`services/simulation/scenario.ts` previously did
+ * exactly that, importing `projectVariableDebt` from `./protocols/aaveV3`
+ * directly — the architectural gap this dispatcher closes). See
+ * `./protocols/index.ts` for the registry itself.
+ */
+export { type AaveProtocolVersion, projectProtocolDebt } from './protocols';
+
+/**
  * Aave V3 protocol-specific accrual — not a 02_Formulas.md Formula ID.
  * Reproduces Aave V3's own on-chain compounded variable-debt math
  * (`MathUtils.calculateCompoundedInterest`), isolated from the generic
- * Simple Interest formulas above (F-030–F-032, unchanged). A future V4
- * adapter would export its own sibling from `./protocols/aaveV4`.
+ * Simple Interest formulas above (F-030–F-032, unchanged). Still exported
+ * directly for callers/tests that intentionally want V3's math by name.
+ * Aave V4's own implementation (`./protocols/aaveV4`) is deliberately NOT
+ * exported here by name — it has no real math yet (fails closed by
+ * design); reach it only through `projectProtocolDebt`, never directly.
  */
 export { projectVariableDebt } from './protocols/aaveV3';
 
