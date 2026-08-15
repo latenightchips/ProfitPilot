@@ -31,6 +31,7 @@ import {
   RiskWarningBanner,
 } from '@/features/dashboard';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
+import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -176,6 +177,11 @@ export function DashboardPageClient() {
   // on the Dashboard (never having visited /portfolio this session) still
   // sees current on-chain values rather than a stale/never-synced record.
   useAaveLiveSync(activePortfolioId);
+  // V4 Readiness Audit §12 Stage 7 — same independence as above, for V4
+  // debt-state sync. A strict no-op for every portfolio today (neither
+  // `protocolVersion: 'v4'` nor `v4Position` is settable from any UI yet)
+  // — see that hook's own header comment.
+  useAaveV4LiveSync(activePortfolioId);
 
   useEffect(() => {
     load();

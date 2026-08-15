@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
+import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
 import { calculatePortfolioSummary, type PortfolioSummary, type ServiceResult } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { type PortfolioSaveStatus, usePortfolioStore } from '@/stores/portfolioStore';
@@ -1156,6 +1157,12 @@ export function PortfolioPageClient() {
   // keeps `market`/`protocol` in sync (equality-gated, never touching
   // `collateral`/`debt` — see that hook's own header comment).
   useAaveLiveSync(activePortfolioId);
+  // V4 Readiness Audit §12 Stage 7 — fetches live Aave V4 debt data and
+  // keeps `v4DebtState` in sync, but ONLY for a portfolio that already has
+  // both `protocolVersion: 'v4'` and `v4Position` set (neither is settable
+  // from any UI yet) — a strict no-op for every portfolio today, see that
+  // hook's own header comment.
+  useAaveV4LiveSync(activePortfolioId);
 
   return (
     <div className="flex flex-col gap-6">

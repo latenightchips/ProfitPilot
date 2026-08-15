@@ -213,6 +213,15 @@
  * field yet (Stage 6 is data-model/persistence only; see
  * `AaveV4DebtState`'s own doc comment in `services/portfolio/models.ts`
  * for what wires it up later).
+ *
+ * **`aaveV4DebtStateEqual` (V4 Readiness Audit §12 Stage 7)** — exported
+ * for `hooks/useAaveV4LiveSync.ts`, the same role
+ * `marketPricesEqual`/`protocolParametersEqual` already play for
+ * `hooks/useAaveLiveSync.ts`: that hook is `setAaveV4DebtState`'s first
+ * production caller (Stage 6 only added the action itself), and this
+ * equality check is what keeps a background sync from bumping
+ * `updatedAt` — and therefore clearing an open Preview, same as the V3
+ * equality gates — on a refresh that fetched identical values.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -326,6 +335,27 @@ export function protocolParametersEqual(
     a.liquidationThreshold === b.liquidationThreshold &&
     a.borrowApr === b.borrowApr &&
     a.supplyApr === b.supplyApr
+  );
+}
+
+/**
+ * `aaveV4DebtStateEqual` (V4 Readiness Audit §12 Stage 7) — same
+ * equality-gate role as `marketPricesEqual`/`protocolParametersEqual`
+ * above, for `hooks/useAaveV4LiveSync.ts`'s own sync effect. Unlike
+ * `market`/`protocol` (always-present fields), `v4DebtState` is
+ * optional, so both "undefined" sides are handled explicitly rather than
+ * assuming a caller already narrowed them.
+ */
+export function aaveV4DebtStateEqual(
+  a: AaveV4DebtState | undefined,
+  b: AaveV4DebtState | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.drawnDebt === b.drawnDebt &&
+    a.premiumDebt === b.premiumDebt &&
+    a.baseDrawnApr === b.baseDrawnApr &&
+    a.riskPremium === b.riskPremium
   );
 }
 
