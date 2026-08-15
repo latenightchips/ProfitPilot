@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PortfolioPage from '@/app/portfolio/page';
 import { autoSaveCoordinator } from '@/services';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -16,6 +17,18 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * for why: required fields now render a trailing `<RequiredMark />`
  * inside their `<label>`, which becomes part of the label's computed
  * text content.
+ *
+ * **Portfolio Live-State Cleanup batch**: rendering `<PortfolioPage />`
+ * now also mounts `hooks/useAaveLiveSync.ts`, which calls
+ * `useAaveLiveDataStore`'s `fetchLiveAaveData` on mount. The default
+ * `beforeEach` below stubs that store into a `'ready'` state whose
+ * fetched values exactly match `validInput()`'s own `market`/`protocol`
+ * defaults — the live-sync equality gate then sees no difference and
+ * never calls `update()`, so every existing test below (written before
+ * live sync existed) keeps behaving exactly as it did — this is itself
+ * a standing regression test for "identical data causes no portfolio
+ * update," exercised on every single test in this file, not just the
+ * ones that name it explicitly.
  */
 const INITIAL_STATE = {
   portfolios: {},
@@ -26,8 +39,50 @@ const INITIAL_STATE = {
   lastSynchronizedAt: null,
 };
 
+function matchingAaveLiveState(
+  overrides: Partial<ReturnType<typeof useAaveLiveDataStore.getState>> = {},
+) {
+  return {
+    status: 'ready' as const,
+    marketQuote: {
+      asset: 'BTC',
+      currency: 'USD',
+      freshness: 'fresh' as const,
+      price: 50000,
+      origin: 'provider' as const,
+      timestamp: new Date().toISOString(),
+    },
+    protocolQuote: {
+      available: true as const,
+      collateralAsset: 'WBTC',
+      borrowAsset: 'USDC',
+      parameters: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      origin: 'live' as const,
+      timestamp: new Date().toISOString(),
+    },
+    collateralSymbol: 'WBTC',
+    borrowSymbol: 'USDC',
+    source: {
+      protocol: 'aave' as const,
+      version: 'v3' as const,
+      network: 'Ethereum Mainnet',
+      method: 'rpc' as const,
+      blockNumber: '21000000',
+    },
+    errorMessage: null,
+    fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  useAaveLiveDataStore.setState(matchingAaveLiveState());
   window.localStorage.clear();
 });
 
@@ -196,17 +251,28 @@ describe('PortfolioPage — remounts on portfolio switch (M4-010 state-isolation
   });
 });
 
-describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
-  it('renders exactly this task\'s own "Fields" list, prefilled', () => {
+describe('PortfolioPage — Collateral Position Management (Portfolio Live-State Cleanup batch)', () => {
+  it('renders Quantity as editable and BTC price/Maximum LTV/Liquidation threshold as live, read-only values', () => {
     createAndSelect();
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Collateral' }));
     expect(section.getByText('Asset: BTC')).toBeInTheDocument();
     expect(section.getByLabelText('Quantity', { exact: false })).toHaveValue(2);
-    expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
-    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(50000);
-    expect(section.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(75);
-    expect(section.getByLabelText('Liquidation threshold (%)', { exact: false })).toHaveValue(80);
+    // No longer editable inputs — read-only value + status.
+    expect(
+      section.queryByLabelText('Manual price (USD)', { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(section.queryByLabelText('Maximum LTV (%)', { exact: false })).not.toBeInTheDocument();
+    expect(
+      section.queryByLabelText('Liquidation threshold (%)', { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(section.getByText('BTC price')).toBeInTheDocument();
+    expect(section.getByText('$50,000.00')).toBeInTheDocument();
+    expect(section.getByText('Maximum LTV')).toBeInTheDocument();
+    expect(section.getByText('75%')).toBeInTheDocument();
+    expect(section.getByText('Liquidation threshold')).toBeInTheDocument();
+    expect(section.getByText('80%')).toBeInTheDocument();
+    expect(section.getByText('Aave V3 · Live')).toBeInTheDocument();
   });
 
   it('does not apply a change without first previewing it (hard gate)', () => {
@@ -255,31 +321,20 @@ describe('PortfolioPage — Collateral Position Management (M4-007)', () => {
     await user.type(section.getByLabelText('Quantity', { exact: false }), '5');
     expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
-
-  it('shows an invalid-preview message rather than applying when the protocol invariant is broken', async () => {
-    createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
-    const section = within(form);
-
-    await user.clear(section.getByLabelText('Maximum LTV (%)', { exact: false }));
-    await user.type(section.getByLabelText('Maximum LTV (%)', { exact: false }), '95');
-    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
-
-    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
-  });
 });
 
 describe('PortfolioPage — Debt Position Management (M4-008)', () => {
-  it('renders exactly this task\'s own "Fields" list, prefilled, except the undefined "Rate type" (conflict #25)', () => {
+  it('renders Asset/Debt amount as editable and Borrow rate as a live, read-only value, except the undefined "Rate type" (conflict #25)', () => {
     createAndSelect();
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
     expect(section.getByLabelText('Asset', { exact: false })).toHaveValue('USDC');
     expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
     expect(section.getByText(/Price: \$1\.00/)).toBeInTheDocument();
-    expect(section.getByLabelText('Borrow rate (%)', { exact: false })).toHaveValue(5);
+    expect(section.queryByLabelText('Borrow rate (%)', { exact: false })).not.toBeInTheDocument();
+    expect(section.getByText('Borrow rate')).toBeInTheDocument();
+    expect(section.getByText('5%')).toBeInTheDocument();
+    expect(section.getByText('Aave V3 · Live')).toBeInTheDocument();
     expect(section.queryByText(/rate type/i)).not.toBeInTheDocument();
   });
 
@@ -508,94 +563,84 @@ describe('PortfolioPage — Portfolio Action Preview (M4-009)', () => {
   });
 });
 
-describe('PortfolioPage — Manual Price Controls (M4-014)', () => {
-  it('shows a Manual badge and the last-updated timestamp for the price', () => {
+describe('PortfolioPage — Live/Stale/Unavailable presentation (Portfolio Live-State Cleanup batch)', () => {
+  it('shows "Aave V3 · Live" on both forms when the live fetch is fresh', () => {
     createAndSelect();
     render(<PortfolioPage />);
-    const section = within(screen.getByRole('group', { name: 'Collateral' }));
-    expect(section.getByText('Manual', { selector: 'span' })).toBeInTheDocument();
-    // Two "Last updated:" lines exist in this fieldset — price and
-    // protocol (M4-015) — so this only checks at least one renders.
-    expect(section.getAllByText(/Last updated:/).length).toBeGreaterThan(0);
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    const debtSection = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(collateralSection.getByText('Aave V3 · Live')).toBeInTheDocument();
+    expect(debtSection.getByText('Aave V3 · Live')).toBeInTheDocument();
   });
 
-  it('does not show a stale-data warning for a freshly created portfolio', () => {
+  it('shows "Aave V3 · Stale" when the last successful fetch is older than 5 minutes', () => {
     createAndSelect();
-    render(<PortfolioPage />);
-    const section = within(screen.getByRole('group', { name: 'Collateral' }));
-    expect(section.queryByText(/may be stale/)).not.toBeInTheDocument();
-  });
-
-  it('shows a stale-data warning when the price was last updated over 5 minutes ago (reuses Market Data Service, M3-007)', () => {
-    const created = createAndSelect();
-    const staleTimestamp = new Date(Date.now() - 10 * 60_000).toISOString();
-    usePortfolioStore.setState((state) => ({
-      portfolios: {
-        ...state.portfolios,
-        [created.id]: {
-          ...state.portfolios[created.id],
-          portfolio: { ...state.portfolios[created.id].portfolio, marketUpdatedAt: staleTimestamp },
+    useAaveLiveDataStore.setState(
+      matchingAaveLiveState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'stale',
+          price: 50000,
+          origin: 'provider',
+          timestamp: new Date(Date.now() - 10 * 60_000).toISOString(),
         },
-      },
-    }));
+      }),
+    );
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Collateral' }));
-    expect(section.getByText(/may be stale/)).toBeInTheDocument();
+    expect(section.getByText('Aave V3 · Stale')).toBeInTheDocument();
+    expect(section.queryByText('Aave V3 · Live')).not.toBeInTheDocument();
   });
 
-  it('resets an unsaved price edit back to the currently-applied value', async () => {
+  it('shows "Aave V3 · Unavailable" and the portfolio\'s last-known stored value when no live fetch has ever succeeded', () => {
     createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
-    const section = within(form);
-
-    await user.clear(section.getByLabelText('Manual price (USD)', { exact: false }));
-    await user.type(section.getByLabelText('Manual price (USD)', { exact: false }), '99999');
-    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(99999);
-
-    await user.click(section.getByRole('button', { name: 'Reset price' }));
-    expect(section.getByLabelText('Manual price (USD)', { exact: false })).toHaveValue(50000);
-  });
-
-  it('clears an existing preview when the price is reset (still under the preview hard gate)', async () => {
-    createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
-    const section = within(form);
-
-    await user.clear(section.getByLabelText('Manual price (USD)', { exact: false }));
-    await user.type(section.getByLabelText('Manual price (USD)', { exact: false }), '60000');
-    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
-    expect(section.getByText('Health Factor', { selector: 'dt' })).toBeInTheDocument();
-
-    await user.click(section.getByRole('button', { name: 'Reset price' }));
-    expect(section.queryByText('Health Factor', { selector: 'dt' })).not.toBeInTheDocument();
-  });
-});
-
-describe('PortfolioPage — Protocol Configuration Controls (M4-015)', () => {
-  it('shows a Parameter source badge and last-updated timestamp on the Collateral form', () => {
-    createAndSelect();
+    useAaveLiveDataStore.setState({
+      status: 'error',
+      marketQuote: null,
+      protocolQuote: null,
+      collateralSymbol: null,
+      borrowSymbol: null,
+      source: null,
+      errorMessage: 'Live Aave data is temporarily unavailable.',
+      fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    });
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Collateral' }));
-    expect(section.getByText('Parameter source: Manual')).toBeInTheDocument();
-    expect(section.getAllByText(/Last updated:/).length).toBeGreaterThan(0);
-  });
-
-  it('shows a Parameter source badge and last-updated timestamp on the Debt form', () => {
-    createAndSelect();
-    render(<PortfolioPage />);
-    const section = within(screen.getByRole('group', { name: 'Debt' }));
-    expect(section.getByText('Parameter source: Manual')).toBeInTheDocument();
-    expect(section.getByText(/Last updated:/)).toBeInTheDocument();
+    expect(section.getByText(/Aave V3 · Unavailable/)).toBeInTheDocument();
+    // The value is not blanked/zeroed — the portfolio's own stored (last-known) price still renders.
+    expect(section.getByText('$50,000.00')).toBeInTheDocument();
   });
 
   it('does not offer a protocol preset selector (conflict #24 recurrence)', () => {
     createAndSelect();
     render(<PortfolioPage />);
     expect(screen.queryByText(/preset/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('PortfolioPage — an open Preview survives a no-op live refresh (Portfolio Live-State Cleanup batch)', () => {
+  it('keeps an open Collateral Preview visible when the live store re-renders with identical values', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
+    const section = within(form);
+
+    await user.clear(section.getByLabelText('Quantity', { exact: false }));
+    await user.type(section.getByLabelText('Quantity', { exact: false }), '3');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+
+    // Simulate a background refresh landing with the exact same values —
+    // this must not touch the portfolio (equality-gated in
+    // `useAaveLiveSync`) and therefore must not clear the open Preview.
+    act(() => {
+      useAaveLiveDataStore.setState(matchingAaveLiveState());
+    });
+
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+    expect(section.getByText(/\$80,000\.00 → \$130,000\.00/)).toBeInTheDocument();
   });
 });
 
@@ -759,70 +804,17 @@ describe('PortfolioPage — Calculation Error Recovery (M4-017)', () => {
 /**
  * UX punch-list UX-01/UX-02/UX-03 regression tests — added while fixing
  * these three reproduced defects (see `PROJECT_STATUS.md`'s UX
- * remediation batch write-up):
- *
- * - UX-01: `protocol.maxLoanToValue`/`liquidationThreshold`/`borrowApr`
- *   are displayed and typed as a percentage (e.g. "75"), not the raw 0–1
- *   fraction, while remaining stored/validated as 0–1 throughout the
- *   Store/Engine. The regression risk is double conversion or a
- *   conversion that only applies in one direction (e.g. `defaultValues`
- *   converts but the post-Apply `reset()` doesn't, silently reverting the
- *   display to a raw decimal after every save).
- * - UX-02/UX-03: clearing a numeric field must never surface Zod's raw
- *   "Invalid input: expected number, received NaN" message, and every
- *   field must show *some* error text when invalid — `protocol.borrowApr`
- *   and `protocol.liquidationThreshold` previously had no error rendering
- *   in JSX at all, so an invalid value there silently disabled Apply
- *   Changes with zero feedback.
+ * remediation batch write-up). The percentage-scale round-trip tests for
+ * `protocol.maxLoanToValue`/`liquidationThreshold`/`borrowApr` (UX-01) and
+ * the invalid-input field-level-error tests for those same fields
+ * (UX-02/UX-03) are removed here, not merely edited — the Portfolio
+ * Live-State Cleanup batch removed the editable inputs those tests
+ * exercised entirely (BTC price/Maximum LTV/Liquidation threshold/Borrow
+ * rate are now live/read-only), so there is no longer a UI path for a
+ * user to type an invalid percentage into any of them. Debt amount
+ * remains editable and keeps its own UX-02/UX-03 coverage below.
  */
-describe('PortfolioPage — UX-01 percentage-scale round-trip (UI boundary conversion)', () => {
-  it('applies a percentage edit, stores the 0–1 decimal, and keeps displaying it as a percentage after Apply', async () => {
-    const created = createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
-    const section = within(form);
-
-    const thresholdInput = section.getByLabelText('Liquidation threshold (%)', {
-      exact: false,
-    });
-    expect(thresholdInput).toHaveValue(80);
-
-    await user.clear(thresholdInput);
-    await user.type(thresholdInput, '85');
-    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
-    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
-
-    // Stored as a 0–1 decimal, unchanged storage representation.
-    expect(
-      usePortfolioStore.getState().portfolios[created.id].portfolio.protocol.liquidationThreshold,
-    ).toBe(0.85);
-    // Still displayed as a percentage after Apply's own reset() — not
-    // reverted to the raw "0.85" a naive reset() would show.
-    expect(section.getByLabelText('Liquidation threshold (%)', { exact: false })).toHaveValue(85);
-  });
-
-  it('applies a Borrow rate percentage edit on the Debt form and stores the 0–1 decimal', async () => {
-    const created = createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
-    const section = within(form);
-
-    const borrowRateInput = section.getByLabelText('Borrow rate (%)', { exact: false });
-    expect(borrowRateInput).toHaveValue(5);
-
-    await user.clear(borrowRateInput);
-    await user.type(borrowRateInput, '7.5');
-    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
-    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.protocol.borrowApr).toBe(
-      0.075,
-    );
-    expect(section.getByLabelText('Borrow rate (%)', { exact: false })).toHaveValue(7.5);
-  });
-
+describe('PortfolioPage — UX-01 (Debt price note, still applicable)', () => {
   it('no longer exposes the internal Formula ID / conflict reference in the Debt price note (F-003 same-class fix)', () => {
     createAndSelect();
     render(<PortfolioPage />);
@@ -846,32 +838,6 @@ describe('PortfolioPage — UX-02/UX-03 validation feedback (functional, not cos
     expect(section.getByText('Enter a valid debt amount.')).toBeInTheDocument();
     expect(screen.queryByText(/received NaN/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Invalid input: expected number/)).not.toBeInTheDocument();
-  });
-
-  it('shows a field-level error for an invalid Liquidation threshold (previously silent — no error rendering existed)', async () => {
-    createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Collateral' }).closest('form')!;
-    const section = within(form);
-
-    await user.clear(section.getByLabelText('Liquidation threshold (%)', { exact: false }));
-
-    expect(section.getByText('Enter Liquidation Threshold as a percentage.')).toBeInTheDocument();
-    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
-  });
-
-  it('shows a field-level error for an invalid Borrow rate (previously silent — no error rendering existed)', async () => {
-    createAndSelect();
-    const user = userEvent.setup();
-    render(<PortfolioPage />);
-    const form = screen.getByRole('group', { name: 'Debt' }).closest('form')!;
-    const section = within(form);
-
-    await user.clear(section.getByLabelText('Borrow rate (%)', { exact: false }));
-
-    expect(section.getByText('Enter Borrow Rate as a percentage.')).toBeInTheDocument();
-    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
   });
 
   it('a valid edit survives input, preview, apply, and a full page remount (persistence across refresh)', async () => {

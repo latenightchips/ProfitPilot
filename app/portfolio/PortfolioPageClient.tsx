@@ -6,13 +6,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
-import {
-  calculatePortfolioSummary,
-  normalizeMarketQuote,
-  normalizeProtocolQuote,
-  type PortfolioSummary,
-  type ServiceResult,
-} from '@/services';
+import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
+import { calculatePortfolioSummary, type PortfolioSummary, type ServiceResult } from '@/services';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { type PortfolioSaveStatus, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import {
@@ -23,9 +19,30 @@ import {
   type PortfolioDetailsInput,
   portfolioDetailsSchema,
 } from '@/types/portfolio.schema';
+import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
 import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
 
-import { LiveAaveDataPanel } from './LiveAaveDataPanel';
+import { AaveTechnicalDetails } from './AaveTechnicalDetails';
+
+/**
+ * Portfolio Live-State Cleanup batch — supersedes the "Manual price
+ * (USD)"/"Maximum LTV (%)"/"Liquidation threshold (%)"/"Borrow rate (%)"
+ * editable inputs and the "Manual"/"Parameter source: Manual" badges
+ * this file's own M4-007/M4-008/M4-014/M4-015 sections below describe
+ * historically. BTC price, Maximum LTV, Liquidation threshold, and
+ * Borrow rate are now live/read-only, synced from Aave V3 by
+ * `hooks/useAaveLiveSync.ts` into `portfolio.market`/`portfolio.protocol`
+ * — this page only ever *displays* those two objects now, via the
+ * shared `deriveAaveDataStatus`/`formatAaveDataStatus` Live/Stale/
+ * Unavailable badge (identical wording on both forms, since both are
+ * fetched together in one request). Collateral quantity, debt asset, and
+ * debt amount remain exactly as documented below: manually entered,
+ * user-editable, until wallet/address integration exists. Verification
+ * detail (protocol/version, network, block number, method, fetch
+ * timestamp) moved to the shared, Developer-Mode-gated
+ * `AaveTechnicalDetails` block, replacing the old reference-only
+ * `LiveAaveDataPanel`.
+ */
 
 /**
  * Portfolio Details Form — 06_TASKS.md M4-006 ("Implement Portfolio
@@ -427,32 +444,6 @@ function formatPercent(value: number): string {
 }
 
 /**
- * UX punch-list UX-01 — percentage-scale UI boundary conversion.
- * `protocol.maxLoanToValue`/`liquidationThreshold`/`borrowApr`/`supplyApr`
- * remain stored and validated as a 0–1 fraction throughout the Engine and
- * `types/portfolio.schema.ts` (unchanged); these two helpers are the only
- * place a fraction becomes the "75" a user types into these forms' number
- * inputs, and back. Used at exactly three points per field: the form's
- * `defaultValues` (initial display), `register`'s `setValueAs` (typed
- * value → decimal, before Zod validation), and the post-Apply `reset()`
- * call (decimal → display again) — never anywhere else, so a value is
- * converted exactly once in each direction.
- */
-function toPercentInput(decimal: number): number {
-  return decimal * 100;
-}
-
-function fromPercentInput(percent: number): number {
-  return percent / 100;
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  );
-}
-
-/**
  * M4-013's "Display save state" — see this file's own M4-013 header note
  * for why `'saving'` is real but practically never observed by a user
  * (every Store mutation is synchronous), and why `'offline'` never
@@ -471,45 +462,6 @@ function formatSaveStatus(status: PortfolioSaveStatus): string {
     case 'offline':
       return 'Offline';
   }
-}
-
-/**
- * M4-014's stale-data warning — reuses `normalizeMarketQuote` (M3-007)
- * rather than re-implementing its 5-minute threshold. Returns `null` on
- * the (practically unreachable) `MappingFailure` case, since
- * `portfolio.market.btcPriceUsd` is already Zod-validated and
- * `marketUpdatedAt` is always a Store-generated ISO string.
- */
-function getMarketQuote(portfolio: Portfolio) {
-  const result = normalizeMarketQuote({
-    asset: portfolio.collateral.asset,
-    currency: 'USD',
-    candidates: [
-      {
-        origin: 'manual',
-        price: portfolio.market.btcPriceUsd,
-        timestamp: portfolio.marketUpdatedAt,
-      },
-    ],
-    now: new Date().toISOString(),
-  });
-  return result.ok ? result.data : null;
-}
-
-/**
- * M4-015's "Parameter source"/"Freshness status" — reuses
- * `normalizeProtocolQuote` (M3-008) rather than re-deriving the same
- * `origin`/`timestamp` pair inline.
- */
-function getProtocolQuote(portfolio: Portfolio) {
-  const result = normalizeProtocolQuote({
-    collateralAsset: portfolio.collateral.asset,
-    borrowAsset: portfolio.debt.asset,
-    candidates: [
-      { origin: 'manual', parameters: portfolio.protocol, timestamp: portfolio.protocolUpdatedAt },
-    ],
-  });
-  return result.ok ? result.data : null;
 }
 
 /**
@@ -880,19 +832,12 @@ function CollateralPositionForm({
     handleSubmit,
     watch,
     reset,
-    resetField,
     formState: { errors },
   } = useForm<CollateralManagementFormValues, unknown, CollateralManagementInput>({
     resolver: zodResolver(collateralManagementSchema),
     mode: 'onChange',
     defaultValues: {
       collateral: portfolio.collateral,
-      market: portfolio.market,
-      protocol: {
-        ...portfolio.protocol,
-        maxLoanToValue: toPercentInput(portfolio.protocol.maxLoanToValue),
-        liquidationThreshold: toPercentInput(portfolio.protocol.liquidationThreshold),
-      },
     },
   });
 
@@ -910,6 +855,10 @@ function CollateralPositionForm({
   // commits a change to the Store; clearing the preview here covers the
   // one case the `watch()` effect above cannot — a sibling form applying
   // a change to this same portfolio while this form's preview is open.
+  // Portfolio Live-State Cleanup batch: also fires whenever
+  // `hooks/useAaveLiveSync.ts` lands a live BTC price/protocol sync — but
+  // only on a genuine change (its own equality gate), never on a no-op
+  // refresh, so an open Preview survives an identical background sync.
   useEffect(() => {
     setPreview(null);
     setRiskAcknowledged(false);
@@ -925,20 +874,12 @@ function CollateralPositionForm({
     if (result.ok) {
       setPreview(null);
       setRiskAcknowledged(false);
-      reset({
-        collateral: data.collateral,
-        market: data.market,
-        protocol: {
-          ...data.protocol,
-          maxLoanToValue: toPercentInput(data.protocol.maxLoanToValue),
-          liquidationThreshold: toPercentInput(data.protocol.liquidationThreshold),
-        },
-      });
+      reset({ collateral: data.collateral });
     }
   });
 
-  const marketQuote = getMarketQuote(portfolio);
-  const protocolQuote = getProtocolQuote(portfolio);
+  const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
+  const aaveStatusLabel = formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
@@ -966,114 +907,30 @@ function CollateralPositionForm({
             {errors.collateral.quantity.message}
           </span>
         )}
+
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-muted-foreground">BTC price</dt>
+            <dd className="text-sm font-medium text-foreground">
+              {formatCurrency(portfolio.market.btcPriceUsd)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Maximum LTV</dt>
+            <dd className="text-sm font-medium text-foreground">
+              {formatPercent(portfolio.protocol.maxLoanToValue)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Liquidation threshold</dt>
+            <dd className="text-sm font-medium text-foreground">
+              {formatPercent(portfolio.protocol.liquidationThreshold)}
+            </dd>
+          </div>
+        </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5">Manual</span>
-          <span>Last updated: {formatDateTime(portfolio.marketUpdatedAt)}</span>
+          <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
         </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span>
-            Manual price (USD) <RequiredMark />
-          </span>
-          <input
-            id="market.btcPriceUsd"
-            aria-required="true"
-            type="number"
-            step="any"
-            {...register('market.btcPriceUsd', { valueAsNumber: true })}
-            aria-invalid={errors.market?.btcPriceUsd ? 'true' : undefined}
-            aria-describedby={errors.market?.btcPriceUsd ? 'market.btcPriceUsd-error' : undefined}
-            className="rounded-md border border-border bg-transparent px-3 py-2"
-          />
-        </label>
-        {errors.market?.btcPriceUsd && (
-          <span id="market.btcPriceUsd-error" className="text-xs text-destructive">
-            {errors.market.btcPriceUsd.message}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => resetField('market.btcPriceUsd')}
-          className="self-start rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
-        >
-          Reset price
-        </button>
-        {marketQuote?.freshness === 'stale' && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
-            ⚠ This price was last updated over 5 minutes ago and may be stale.
-          </p>
-        )}
-        <label className="flex flex-col gap-1 text-sm">
-          <span>
-            Maximum LTV (%) <RequiredMark />
-          </span>
-          <input
-            id="protocol.maxLoanToValue"
-            aria-required="true"
-            type="number"
-            step="any"
-            {...register('protocol.maxLoanToValue', {
-              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-            })}
-            aria-invalid={errors.protocol?.maxLoanToValue ? 'true' : undefined}
-            aria-describedby={
-              errors.protocol?.maxLoanToValue ? 'protocol.maxLoanToValue-error' : undefined
-            }
-            className="rounded-md border border-border bg-transparent px-3 py-2"
-          />
-          <span className="text-xs text-muted-foreground">
-            The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
-          </span>
-        </label>
-        {errors.protocol?.maxLoanToValue && (
-          <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
-            {errors.protocol.maxLoanToValue.message}
-          </span>
-        )}
-        <label className="flex flex-col gap-1 text-sm">
-          <span>
-            Liquidation threshold (%) <RequiredMark />
-          </span>
-          <input
-            id="protocol.liquidationThreshold"
-            aria-required="true"
-            type="number"
-            step="any"
-            {...register('protocol.liquidationThreshold', {
-              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-            })}
-            aria-invalid={errors.protocol?.liquidationThreshold ? 'true' : undefined}
-            aria-describedby={
-              errors.protocol?.liquidationThreshold
-                ? 'protocol.liquidationThreshold-error'
-                : undefined
-            }
-            className="rounded-md border border-border bg-transparent px-3 py-2"
-          />
-          <span className="text-xs text-muted-foreground">
-            The LTV at which your position becomes eligible for liquidation, as a percentage.
-          </span>
-        </label>
-        {errors.protocol?.liquidationThreshold && (
-          <span id="protocol.liquidationThreshold-error" className="text-xs text-destructive">
-            {errors.protocol.liquidationThreshold.message}
-          </span>
-        )}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5">Parameter source: Manual</span>
-          {protocolQuote?.available && (
-            <span>Last updated: {formatDateTime(protocolQuote.timestamp)}</span>
-          )}
-        </div>
-        <input
-          type="hidden"
-          {...register('protocol.borrowApr', { valueAsNumber: true })}
-          value={portfolio.protocol.borrowApr}
-        />
-        <input
-          type="hidden"
-          {...register('protocol.supplyApr', { valueAsNumber: true })}
-          value={portfolio.protocol.supplyApr}
-        />
       </fieldset>
 
       <div className="flex gap-2">
@@ -1143,10 +1000,6 @@ function DebtPositionForm({
     mode: 'onChange',
     defaultValues: {
       debt: portfolio.debt,
-      protocol: {
-        ...portfolio.protocol,
-        borrowApr: toPercentInput(portfolio.protocol.borrowApr),
-      },
     },
   });
 
@@ -1160,7 +1013,9 @@ function DebtPositionForm({
 
   // M4-013 — see `CollateralPositionForm`'s identical note above for the
   // full reasoning: clears a stale preview when a sibling form on this
-  // same page applies a change to this same portfolio.
+  // same page applies a change to this same portfolio (Portfolio
+  // Live-State Cleanup batch: including this portfolio's own equality-
+  // gated live sync — never on a no-op refresh).
   useEffect(() => {
     setPreview(null);
     setRiskAcknowledged(false);
@@ -1176,14 +1031,12 @@ function DebtPositionForm({
     if (result.ok) {
       setPreview(null);
       setRiskAcknowledged(false);
-      reset({
-        debt: data.debt,
-        protocol: { ...data.protocol, borrowApr: toPercentInput(data.protocol.borrowApr) },
-      });
+      reset({ debt: data.debt });
     }
   });
 
-  const protocolQuote = getProtocolQuote(portfolio);
+  const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
+  const aaveStatusLabel = formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
@@ -1227,52 +1080,18 @@ function DebtPositionForm({
         <p className="text-xs text-muted-foreground">
           Price: $1.00 (stablecoins are tracked at a fixed 1:1 value with the US dollar)
         </p>
-        <label className="flex flex-col gap-1 text-sm">
-          <span>
-            Borrow rate (%) <RequiredMark />
-          </span>
-          <input
-            id="protocol.borrowApr"
-            aria-required="true"
-            type="number"
-            step="any"
-            {...register('protocol.borrowApr', {
-              setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-            })}
-            aria-invalid={errors.protocol?.borrowApr ? 'true' : undefined}
-            aria-describedby={errors.protocol?.borrowApr ? 'protocol.borrowApr-error' : undefined}
-            className="rounded-md border border-border bg-transparent px-3 py-2"
-          />
-          <span className="text-xs text-muted-foreground">
-            Your annual interest rate on this debt, as a percentage (e.g. 5 for 5%).
-          </span>
-        </label>
-        {errors.protocol?.borrowApr && (
-          <span id="protocol.borrowApr-error" className="text-xs text-destructive">
-            {errors.protocol.borrowApr.message}
-          </span>
-        )}
+
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-muted-foreground">Borrow rate</dt>
+            <dd className="text-sm font-medium text-foreground">
+              {formatPercent(portfolio.protocol.borrowApr)}
+            </dd>
+          </div>
+        </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5">Parameter source: Manual</span>
-          {protocolQuote?.available && (
-            <span>Last updated: {formatDateTime(protocolQuote.timestamp)}</span>
-          )}
+          <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
         </div>
-        <input
-          type="hidden"
-          {...register('protocol.maxLoanToValue', { valueAsNumber: true })}
-          value={portfolio.protocol.maxLoanToValue}
-        />
-        <input
-          type="hidden"
-          {...register('protocol.liquidationThreshold', { valueAsNumber: true })}
-          value={portfolio.protocol.liquidationThreshold}
-        />
-        <input
-          type="hidden"
-          {...register('protocol.supplyApr', { valueAsNumber: true })}
-          value={portfolio.protocol.supplyApr}
-        />
       </fieldset>
 
       <div className="flex gap-2">
@@ -1323,6 +1142,11 @@ export function PortfolioPageClient() {
   );
   const saveStatus = usePortfolioStore((state) => state.saveStatus);
 
+  // Portfolio Live-State Cleanup batch — fetches live Aave V3 data and
+  // keeps `market`/`protocol` in sync (equality-gated, never touching
+  // `collateral`/`debt` — see that hook's own header comment).
+  useAaveLiveSync(activePortfolioId);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -1348,7 +1172,6 @@ export function PortfolioPageClient() {
             portfolio={record.portfolio}
             summary={record.summary}
           />
-          <LiveAaveDataPanel />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <CollateralPositionForm
             portfolioId={activePortfolioId}
@@ -1360,6 +1183,7 @@ export function PortfolioPageClient() {
             portfolio={record.portfolio}
             beforeSummary={record.summary}
           />
+          <AaveTechnicalDetails />
         </div>
       )}
     </div>

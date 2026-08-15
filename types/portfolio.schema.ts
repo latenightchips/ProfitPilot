@@ -181,35 +181,31 @@ export const portfolioDetailsSchema = portfolioInputSchema.pick({
 export type PortfolioDetailsInput = z.infer<typeof portfolioDetailsSchema>;
 
 /**
- * Collateral Position Management form schema — 06_TASKS.md M4-007.
- * Fields: "Asset, Quantity, Price source, Manual price, Maximum LTV,
- * Liquidation threshold." `.pick()` from `portfolioInputSchema` for the
- * same reason as `portfolioDetailsSchema`: this form can never submit
- * `debt` even by mistake. `protocol` is included in full (not just
- * `maxLoanToValue`/`liquidationThreshold`) because
- * `protocolParametersSchema`'s cross-field invariant
- * (`maxLoanToValue <= liquidationThreshold`) and `borrowApr`/`supplyApr`
- * need a real, current value to submit alongside the two fields this
- * form actually edits — see `app/portfolio/page.tsx` for how the
- * untouched two are carried through unedited.
+ * Collateral Position Management form schema — 06_TASKS.md M4-007,
+ * narrowed by the Portfolio Live-State Cleanup batch. Fields: "Asset,
+ * Quantity" — Price source/Manual price/Maximum LTV/Liquidation
+ * threshold became live/read-only, synced from Aave V3 via
+ * `hooks/useAaveLiveSync.ts`, not user-submitted through this form
+ * anymore. `.pick()` from `portfolioInputSchema` means this form is now
+ * structurally incapable of submitting `market`/`protocol`/`debt`, not
+ * merely conventionally prevented by omitting inputs for them.
  */
 export const collateralManagementSchema = portfolioInputSchema.pick({
   collateral: true,
-  market: true,
-  protocol: true,
 });
 
 export type CollateralManagementInput = z.infer<typeof collateralManagementSchema>;
 
 /**
- * Debt Position Management form schema — 06_TASKS.md M4-008. Fields:
- * "Asset, Debt amount, Price, Borrow rate, Rate type." Same `.pick()`
- * reasoning as above, in reverse: this form can never submit
- * `collateral`/`market`.
+ * Debt Position Management form schema — 06_TASKS.md M4-008, narrowed by
+ * the Portfolio Live-State Cleanup batch. Fields: "Asset, Debt amount" —
+ * Borrow rate became live/read-only, synced from Aave V3, not
+ * user-submitted through this form anymore. Same `.pick()` reasoning as
+ * above, in reverse: this form can never submit
+ * `collateral`/`market`/`protocol`.
  */
 export const debtManagementSchema = portfolioInputSchema.pick({
   debt: true,
-  protocol: true,
 });
 
 export type DebtManagementInput = z.infer<typeof debtManagementSchema>;

@@ -6,8 +6,20 @@
 import type { DataFreshnessIndicators, FreshnessIndicator } from '../types/dataFreshnessIndicators';
 import type { DashboardFreshness } from '../types/viewModel';
 
+/**
+ * Dashboard Live-State Cleanup batch: `DashboardSummaryHeader`'s
+ * "Refresh" button now genuinely fetches a live Aave V3 snapshot
+ * (`useAaveLiveDataStore.fetchLiveAaveData`, via
+ * `hooks/useAaveLiveSync.ts`'s equality-gated sync) in addition to
+ * recalculating the summary — this note must say so, not retain the
+ * older "does not fetch new Aave data" claim from before that
+ * integration existed. "Cannot erase or replace your existing entries"
+ * remains true: the sync path this button triggers only ever writes
+ * `market`/`protocol`, never `collateral`/`debt` (see
+ * `hooks/useAaveLiveSync.ts`'s own header comment).
+ */
 export const REFRESH_NOTE =
-  'This application runs in Manual Mode: no live price or protocol data provider is connected. "Refresh" recalculates your portfolio summary using the values you last entered — it does not fetch new data, and it cannot fail in a way that erases or replaces your existing entries.';
+  '"Refresh" fetches the latest Aave V3 live snapshot and recalculates your portfolio summary — it cannot fail in a way that erases or replaces your collateral quantity, debt asset, or debt amount.';
 
 function toIndicator(
   label: string,

@@ -20,6 +20,7 @@ const INITIAL_STATE = {
   protocolQuote: null,
   collateralSymbol: null,
   borrowSymbol: null,
+  source: null,
   errorMessage: null,
 };
 
@@ -40,6 +41,13 @@ function successBody() {
       },
       collateralSymbol: 'WBTC',
       borrowSymbol: 'USDC',
+      source: {
+        protocol: 'aave',
+        version: 'v3',
+        network: 'Ethereum Mainnet',
+        method: 'rpc',
+        blockNumber: '21000000',
+      },
     },
   };
 }
@@ -74,6 +82,13 @@ describe('useAaveLiveDataStore — success', () => {
     expect(state.collateralSymbol).toBe('WBTC');
     expect(state.borrowSymbol).toBe('USDC');
     expect(state.errorMessage).toBeNull();
+    expect(state.source).toEqual({
+      protocol: 'aave',
+      version: 'v3',
+      network: 'Ethereum Mainnet',
+      method: 'rpc',
+      blockNumber: '21000000',
+    });
   });
 
   it('sets status to loading while the fetch is in flight', () => {
@@ -138,6 +153,8 @@ describe('useAaveLiveDataStore — failure / fallback (never erases prior good d
     // The last successfully fetched quote is still there, underneath the error.
     expect(state.marketQuote).toEqual(previousQuote);
     expect(state.protocolQuote).not.toBeNull();
+    // Technical details (protocol/version/network/block number) also survive.
+    expect(state.source).not.toBeNull();
   });
 
   it('does not crash on a malformed (non-JSON) API response', async () => {

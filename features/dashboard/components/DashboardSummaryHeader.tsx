@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 import type { DashboardViewModel } from '../types/viewModel';
@@ -27,17 +28,21 @@ import { formatSaveStatus } from '../utils/format';
  * through a different control for no benefit — M5-004's own Include item
  * is satisfied by the one that already exists.
  *
- * **"Refresh action" — re-derives from currently-entered data, not a
- * live market fetch.** `01_PRD.md` REQ-010: "Version 0.1 uses Manual
- * Mode" — no price-provider integration exists anywhere in this codebase
- * (`services/market/quote.ts`'s own header comment describes the
- * `PriceProvider`/CoinGecko adapter as future infrastructure, never
- * built). The only honest thing "Refresh" can do in Manual Mode is
- * re-run the calculation against the portfolio's currently-entered
- * values — this button calls `recomputeSummary` (M4-017's own, already
- * real, already-shipped mechanism — the same one that task's Retry
- * button uses), rather than fabricating a live-data refresh that does
- * not exist in this application.
+ * **"Refresh action" — Dashboard Live-State Cleanup batch: now actually
+ * fetches live Aave V3 data, not just a local recompute.** Before this
+ * batch, this button only called `recomputeSummary` (a pure, synchronous
+ * re-derivation from whatever was already stored) — accurate back when
+ * `01_PRD.md` REQ-010's "Manual Mode" was still true and no live-data path
+ * existed at all, but stale once the Aave V3 direct-RPC integration and
+ * `hooks/useAaveLiveSync.ts` shipped. Refresh now also calls
+ * `useAaveLiveDataStore`'s `fetchLiveAaveData` — the already-mounted
+ * `useAaveLiveSync` hook picks up the resulting quote change and applies
+ * it through its own equality-gated `update()` (never touching
+ * `collateral`/`debt` — see that hook's own header comment), the same
+ * safe path an automatic sync uses. `recomputeSummary` is kept alongside
+ * it (not replaced) so this button still recomputes immediately and
+ * synchronously against whatever is currently stored, rather than only
+ * after the async fetch resolves.
  *
  * **"Storage status"** reuses the exact same `saveStatus` wording
  * `app/portfolio/page.tsx`'s own `formatSaveStatus` already uses
@@ -47,6 +52,7 @@ import { formatSaveStatus } from '../utils/format';
 export function DashboardSummaryHeader({ viewModel }: { viewModel: DashboardViewModel }) {
   const saveStatus = usePortfolioStore((state) => state.saveStatus);
   const recomputeSummary = usePortfolioStore((state) => state.recomputeSummary);
+  const fetchLiveAaveData = useAaveLiveDataStore((state) => state.fetchLiveAaveData);
 
   return (
     <div className="flex flex-col gap-2 border-b border-border pb-4">
@@ -60,7 +66,10 @@ export function DashboardSummaryHeader({ viewModel }: { viewModel: DashboardView
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => recomputeSummary(viewModel.portfolioId)}
+            onClick={() => {
+              void fetchLiveAaveData();
+              recomputeSummary(viewModel.portfolioId);
+            }}
             className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
           >
             Refresh

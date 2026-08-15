@@ -1,9 +1,10 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DashboardPage from '@/app/page';
 import { autoSaveCoordinator } from '@/services';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -22,6 +23,55 @@ const INITIAL_STATE = {
   lastSynchronizedAt: null,
 };
 
+/**
+ * Portfolio Live-State Cleanup batch — `DashboardPageClient` now also
+ * mounts `hooks/useAaveLiveSync.ts` (fetches live Aave data independently
+ * of the Portfolio page). Stubbing a `'ready'` quote matching
+ * `validInput()`'s own `market`/`protocol` defaults keeps the live-sync
+ * equality gate a no-op for every pre-existing test below, and avoids an
+ * unmocked real `fetch()` call during render.
+ */
+function matchingAaveLiveState(
+  overrides: Partial<ReturnType<typeof useAaveLiveDataStore.getState>> = {},
+) {
+  return {
+    status: 'ready' as const,
+    marketQuote: {
+      asset: 'BTC',
+      currency: 'USD',
+      freshness: 'fresh' as const,
+      price: 50000,
+      origin: 'provider' as const,
+      timestamp: new Date().toISOString(),
+    },
+    protocolQuote: {
+      available: true as const,
+      collateralAsset: 'WBTC',
+      borrowAsset: 'USDC',
+      parameters: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      origin: 'live' as const,
+      timestamp: new Date().toISOString(),
+    },
+    collateralSymbol: 'WBTC',
+    borrowSymbol: 'USDC',
+    source: {
+      protocol: 'aave' as const,
+      version: 'v3' as const,
+      network: 'Ethereum Mainnet',
+      method: 'rpc' as const,
+      blockNumber: '21000000',
+    },
+    errorMessage: null,
+    fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   // `load: async () => {}` prevents DashboardPage's own mount effect
   // (a pre-existing `useEffect(() => { load(); }, [load])`) from
@@ -31,6 +81,7 @@ beforeEach(() => {
   // hydration itself (covered by `stores/portfolioStore.test.ts`).
   usePortfolioStore.setState({ ...INITIAL_STATE, load: async () => {} });
   useDeveloperModeStore.setState({ enabled: false });
+  useAaveLiveDataStore.setState(matchingAaveLiveState());
   window.localStorage.clear();
 });
 
@@ -379,6 +430,128 @@ describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7; emp
 
     expect(screen.getByText('Recommendations')).toBeInTheDocument();
     expect(screen.getByText('Priority 1')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — independent live Aave sync (Portfolio Live-State Cleanup batch)', () => {
+  it('fetches live Aave data on mount, independently of the Portfolio page', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalled();
+  });
+
+  it('shows the Aave V3 · Live status badge when the live fetch is fresh', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Aave V3 · Live')).toBeInTheDocument();
+  });
+
+  it('shows the Aave V3 · Unavailable badge, without crashing, when no live fetch has ever succeeded', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    useAaveLiveDataStore.setState({
+      status: 'error',
+      marketQuote: null,
+      protocolQuote: null,
+      collateralSymbol: null,
+      borrowSymbol: null,
+      source: null,
+      errorMessage: 'Live Aave data is temporarily unavailable.',
+      fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/Aave V3 · Unavailable/)).toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — one coherent live source of truth (Dashboard Live-State Cleanup batch)', () => {
+  it('never labels a live-synced BTC price "(manual)" in the Summary Header', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    // The exact bug reported: Portfolio shows live data while Dashboard's
+    // Summary Header still says "(manual)" for the identical, currently
+    // Aave-synced value — buildDashboardViewModel.ts's own header comment
+    // documents why this happened and how the live snapshot fixes it.
+    expect(screen.queryByText(/\(manual\)/)).not.toBeInTheDocument();
+    expect(screen.getByText(/\(provider\)/)).toBeInTheDocument();
+  });
+
+  it('never renders the "(manual entry)" Data Freshness callout for a live-synced portfolio', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByText('(manual entry)')).not.toBeInTheDocument();
+  });
+
+  it('falls back to "cache," not "manual," and still shows the last-known price (never blanked) when live data has never successfully loaded', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    useAaveLiveDataStore.setState({
+      status: 'error',
+      marketQuote: null,
+      protocolQuote: null,
+      collateralSymbol: null,
+      borrowSymbol: null,
+      source: null,
+      errorMessage: 'Live Aave data is temporarily unavailable.',
+      fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByText(/\(manual\)/)).not.toBeInTheDocument();
+    expect(screen.getByText(/BTC \$50,000\.00 \(cache/)).toBeInTheDocument();
+  });
+
+  it('the Refresh button fetches live Aave data without altering collateral quantity or debt amount', async () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        debt: { asset: 'USDC', balance: 20000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    const user = userEvent.setup();
+
+    render(<DashboardPage />);
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalled();
+    const afterPortfolio = usePortfolioStore.getState().portfolios[created.data.id].portfolio;
+    expect(afterPortfolio.collateral.quantity).toBe(2);
+    expect(afterPortfolio.debt.asset).toBe('USDC');
+    expect(afterPortfolio.debt.balance).toBe(20000);
+  });
+
+  it('the Rate source shown for Debt and Interest reads "live," not "manual," when Aave data is live-synced', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Rate source: live')).toBeInTheDocument();
+    expect(screen.queryByText('Rate source: manual')).not.toBeInTheDocument();
   });
 });
 

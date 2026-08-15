@@ -26,6 +26,37 @@
  * remain available even when `summaryResult.ok` is `false`, letting
  * `DashboardSummaryHeader` show "which portfolio and data source are
  * currently active" (M5-004's own DoD) regardless of calculation status.
+ *
+ * **`liveAave` (optional 3rd param) — Dashboard Live-State Cleanup
+ * batch.** Before this batch, `buildMarketFreshness`/`buildProtocolFreshness`
+ * unconditionally tagged every candidate `origin: 'manual'`, a leftover
+ * from before the Aave V3 direct-RPC integration existed — by the time
+ * that integration shipped, this pure function had no way to know
+ * `portfolio.market`/`portfolio.protocol` were in fact being kept in
+ * sync with live Aave data by `hooks/useAaveLiveSync.ts`, so it kept
+ * reporting "(manual)" on values that were actually live. Callers that
+ * have a current `useAaveLiveDataStore` snapshot (`DashboardPageClient`,
+ * mirroring what `app/portfolio/PortfolioPageClient.tsx` already reads
+ * directly) now pass it through as `liveAave`, and freshness is reported
+ * straight off that snapshot — the same one Portfolio's own read-only
+ * fields render — rather than re-derived and mislabeled. Three states:
+ *   1. `liveAave` omitted entirely (legacy callers/tests) — falls back to
+ *      the original portfolio-derived, `origin: 'manual'` behavior,
+ *      unchanged, so nothing that doesn't opt in regresses.
+ *   2. `liveAave` supplied with an available quote — freshness is read
+ *      directly off that quote (price, origin, staleness, timestamp all
+ *      Aave-sourced, not re-derived from the stored portfolio).
+ *   3. `liveAave` supplied but currently unavailable (never fetched
+ *      successfully this session, or the last fetch failed) — falls back
+ *      to the portfolio's own last-known stored value, same as case 1,
+ *      but tagged `origin: 'cache'` rather than `'manual'`: the caller
+ *      told us it *tried* to reach live Aave data, so "last known
+ *      cached value" is the honest label, not "manually entered."
+ * Never changes what `summaryResult`/`PortfolioSummary` already computed
+ * — `portfolio.market`/`portfolio.protocol` (kept in sync by
+ * `useAaveLiveSync`'s own equality-gated `update()`) remain the only
+ * source of truth for the actual calculated numbers; `liveAave` only
+ * affects how the freshness/origin *label* is reported.
  */
 import {
   normalizeMarketQuote,
@@ -33,6 +64,9 @@ import {
   type PortfolioSummary,
   type ServiceResult,
 } from '@/services';
+import type { PriceOrigin } from '@/services/market/quote';
+import type { MarketQuote } from '@/services/market/quote';
+import type { ProtocolOrigin, ProtocolQuote } from '@/services/protocol/quote';
 import type { Portfolio } from '@/types/portfolio';
 
 import type {
@@ -69,21 +103,47 @@ function metric(
   };
 }
 
+/** The current `useAaveLiveDataStore` snapshot — see this module's own header comment for the 3-state fallback this drives. */
+export interface AaveLiveSnapshot {
+  marketQuote: MarketQuote | null;
+  protocolQuote: ProtocolQuote | null;
+}
+
 /**
  * Reuses `normalizeMarketQuote` (M3-007) exactly as `app/portfolio/page.tsx`'s
- * own `getMarketQuote` does — same single-manual-candidate shape, same
+ * own `getMarketQuote` does — same single-candidate shape, same
  * Service-owned staleness threshold, not re-derived here. Returns `null`
  * only on the practically-unreachable `MappingFailure`/`'unavailable'`
  * case (`portfolio.market.btcPriceUsd` is already Zod-validated,
  * `marketUpdatedAt` is always a Store-generated ISO string).
+ *
+ * When `liveAave` carries an available quote, that quote — not the
+ * stored portfolio — is the source of truth for what gets reported here
+ * (see this module's own header comment).
  */
-function buildMarketFreshness(portfolio: Portfolio): DashboardFreshness['market'] {
+function buildMarketFreshness(
+  portfolio: Portfolio,
+  liveAave: AaveLiveSnapshot | undefined,
+): DashboardFreshness['market'] {
+  const liveQuote = liveAave?.marketQuote;
+  if (liveQuote !== null && liveQuote !== undefined && liveQuote.freshness !== 'unavailable') {
+    return {
+      price: liveQuote.price,
+      formattedPrice: formatCurrency(liveQuote.price),
+      origin: liveQuote.origin,
+      freshness: liveQuote.freshness,
+      updatedAt: liveQuote.timestamp,
+      formattedUpdatedAt: formatDateTime(liveQuote.timestamp),
+    };
+  }
+
+  const fallbackOrigin: PriceOrigin = liveAave === undefined ? 'manual' : 'cache';
   const result = normalizeMarketQuote({
     asset: portfolio.collateral.asset,
     currency: 'USD',
     candidates: [
       {
-        origin: 'manual',
+        origin: fallbackOrigin,
         price: portfolio.market.btcPriceUsd,
         timestamp: portfolio.marketUpdatedAt,
       },
@@ -102,12 +162,29 @@ function buildMarketFreshness(portfolio: Portfolio): DashboardFreshness['market'
 }
 
 /** Mirrors `buildMarketFreshness` for `normalizeProtocolQuote` (M3-008) — no freshness concept exists for protocol parameters, only `origin`/`timestamp` (see this module's own header comment). */
-function buildProtocolFreshness(portfolio: Portfolio): DashboardFreshness['protocol'] {
+function buildProtocolFreshness(
+  portfolio: Portfolio,
+  liveAave: AaveLiveSnapshot | undefined,
+): DashboardFreshness['protocol'] {
+  const liveQuote = liveAave?.protocolQuote;
+  if (liveQuote !== null && liveQuote !== undefined && liveQuote.available) {
+    return {
+      origin: liveQuote.origin,
+      updatedAt: liveQuote.timestamp,
+      formattedUpdatedAt: formatDateTime(liveQuote.timestamp),
+    };
+  }
+
+  const fallbackOrigin: ProtocolOrigin = liveAave === undefined ? 'manual' : 'cache';
   const result = normalizeProtocolQuote({
     collateralAsset: portfolio.collateral.asset,
     borrowAsset: portfolio.debt.asset,
     candidates: [
-      { origin: 'manual', parameters: portfolio.protocol, timestamp: portfolio.protocolUpdatedAt },
+      {
+        origin: fallbackOrigin,
+        parameters: portfolio.protocol,
+        timestamp: portfolio.protocolUpdatedAt,
+      },
     ],
   });
   if (!result.ok || !result.data.available) return null;
@@ -127,14 +204,15 @@ function buildProtocolFreshness(portfolio: Portfolio): DashboardFreshness['proto
 export function buildDashboardViewModel(
   portfolio: Portfolio,
   summaryResult: ServiceResult<PortfolioSummary>,
+  liveAave?: AaveLiveSnapshot,
 ): DashboardViewModel {
   const base: DashboardViewModelBase = {
     portfolioId: portfolio.id,
     portfolioName: portfolio.name,
     portfolioDescription: portfolio.description ?? null,
     freshness: {
-      market: buildMarketFreshness(portfolio),
-      protocol: buildProtocolFreshness(portfolio),
+      market: buildMarketFreshness(portfolio, liveAave),
+      protocol: buildProtocolFreshness(portfolio, liveAave),
     },
   };
 

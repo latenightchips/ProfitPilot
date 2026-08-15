@@ -95,7 +95,12 @@ async function addAnotherPortfolio(page: Page, options: { name: string; quantity
   await page.waitForURL('**/');
 }
 
-async function updateManualPriceFromDashboard(page: Page, newPrice: string) {
+// Portfolio Live-State Cleanup batch — BTC price became live/read-only on
+// the Portfolio page, so this helper now drives the still-editable
+// Collateral quantity field instead of the removed "Manual price (USD)"
+// input, keeping the same "edit from Dashboard, observe recalculation"
+// workflow intent.
+async function updateCollateralQuantityFromDashboard(page: Page, newQuantity: string) {
   // `exact: true` — `QuickActionsSection` separately renders its own
   // "Edit portfolio" (lowercase) link, otherwise ambiguous with
   // `DashboardSummaryHeader`'s "Edit Portfolio".
@@ -104,10 +109,10 @@ async function updateManualPriceFromDashboard(page: Page, newPrice: string) {
   const collateralSection = page
     .locator('form')
     .filter({ has: page.locator('legend', { hasText: 'Collateral' }) });
-  const priceInput = collateralSection
-    .locator('label', { hasText: 'Manual price (USD)' })
+  const quantityInput = collateralSection
+    .locator('label', { hasText: 'Quantity' })
     .locator('input');
-  await priceInput.fill(newPrice);
+  await quantityInput.fill(newQuantity);
   await collateralSection.getByRole('button', { name: 'Preview Changes' }).click();
   await collateralSection.getByRole('button', { name: 'Apply Changes' }).click();
   await page.locator('a', { hasText: 'Dashboard' }).click();
@@ -151,33 +156,21 @@ test('Cover: Switch portfolios (M5-027)', async ({ page }) => {
   await expect(page.getByText('$80,000.00').first()).toBeVisible();
 });
 
-test('Cover: Update manual BTC price (M5-027)', async ({ page }) => {
-  await createPortfolioFromDashboard(page, { name: 'Price Update Portfolio' });
-
-  await page.getByRole('link', { name: 'Edit Portfolio', exact: true }).click();
-  await page.waitForURL('**/portfolio');
-  const collateralSection = page
-    .locator('form')
-    .filter({ has: page.locator('legend', { hasText: 'Collateral' }) });
-  const priceInput = collateralSection
-    .locator('label', { hasText: 'Manual price (USD)' })
-    .locator('input');
-  await priceInput.fill('60000');
-  await collateralSection.getByRole('button', { name: 'Preview Changes' }).click();
-  await expect(collateralSection.getByText('Health Factor', { exact: true })).toBeVisible();
-  await collateralSection.getByRole('button', { name: 'Apply Changes' }).click();
-
-  await expect(priceInput).toHaveValue('60000');
-});
+// "Cover: Update manual BTC price" is removed — Portfolio Live-State
+// Cleanup batch made BTC price live/read-only on the Portfolio page, so
+// there is no longer a UI path for a user to type a manual price.
+// "Cover: Edit collateral" (portfolioWorkflows.spec.ts) and the
+// recalculation test below now cover the equivalent "edit a still-user-
+// editable field, observe the change persist" workflow via quantity.
 
 test('Cover: Observe recalculation (M5-027)', async ({ page }) => {
   await createPortfolioFromDashboard(page, { name: 'Recalc Portfolio' });
   await expect(page.getByText('$80,000.00').first()).toBeVisible();
 
-  await updateManualPriceFromDashboard(page, '60000');
+  await updateCollateralQuantityFromDashboard(page, '3');
 
-  // 2 BTC * $60,000 - $20,000 debt = $100,000, replacing the original $80,000.
-  await expect(page.getByText('$100,000.00').first()).toBeVisible();
+  // 3 BTC * $50,000 - $20,000 debt = $130,000, replacing the original $80,000.
+  await expect(page.getByText('$130,000.00').first()).toBeVisible();
   await expect(page.getByText('$80,000.00')).not.toBeVisible();
 });
 
@@ -238,15 +231,15 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     await addAnotherPortfolio(page, { name: 'Viewport Beta', quantity: '5' });
     const switcher = page.locator('select[aria-label="Active portfolio"]');
     await switcher.selectOption({ label: 'Viewport Alpha' });
-    await updateManualPriceFromDashboard(page, '60000');
+    await updateCollateralQuantityFromDashboard(page, '3');
 
     await page.setViewportSize(viewport);
     await page.waitForTimeout(100);
 
     await expect(page.getByRole('heading', { name: 'Viewport Alpha' })).toBeVisible();
     await expect(page.getByText('Net Portfolio Value')).toBeVisible();
-    // 2 BTC * $60,000 - $20,000 debt = $100,000.
-    await expect(page.getByText('$100,000.00').first()).toBeVisible();
+    // 3 BTC * $50,000 - $20,000 debt = $130,000.
+    await expect(page.getByText('$130,000.00').first()).toBeVisible();
     await expect(page.getByText('Liquidation Risk')).toBeVisible();
 
     const overflow = await page.evaluate(() => ({

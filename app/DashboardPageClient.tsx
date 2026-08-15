@@ -30,8 +30,11 @@ import {
   RecommendationSummarySection,
   RiskWarningBanner,
 } from '@/features/dashboard';
+import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
 
 /**
  * Dashboard Route — 06_TASKS.md M5-001 ("Create Dashboard Route").
@@ -165,13 +168,31 @@ export function DashboardPageClient() {
     state.activePortfolioId !== null ? state.portfolios[state.activePortfolioId] : undefined,
   );
   const developerMode = useDeveloperModeStore((state) => state.enabled);
+  const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
+  const aaveProtocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
+
+  // Portfolio Live-State Cleanup batch — fetches and syncs live Aave V3
+  // data independently of the Portfolio page, so a user landing directly
+  // on the Dashboard (never having visited /portfolio this session) still
+  // sees current on-chain values rather than a stale/never-synced record.
+  useAaveLiveSync(activePortfolioId);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  // Dashboard Live-State Cleanup batch — the same live snapshot
+  // `aaveMarketQuote`/the Portfolio page's own read-only fields read,
+  // passed through so `buildDashboardViewModel`'s freshness/origin
+  // reporting stops hardcoding "manual" on values that are actually
+  // live-synced (see that module's own header comment).
   const viewModel =
-    record !== undefined ? buildDashboardViewModel(record.portfolio, record.summary) : null;
+    record !== undefined
+      ? buildDashboardViewModel(record.portfolio, record.summary, {
+          marketQuote: aaveMarketQuote,
+          protocolQuote: aaveProtocolQuote,
+        })
+      : null;
 
   const summary = record !== undefined && record.summary.ok ? record.summary.data : null;
   const healthFactorStatus =
@@ -215,6 +236,11 @@ export function DashboardPageClient() {
       ) : (
         <div key={activePortfolioId} className="flex flex-col gap-6">
           <DashboardSummaryHeader viewModel={viewModel} />
+          <p className="text-xs text-muted-foreground">
+            <span className="rounded-full bg-muted px-2 py-0.5">
+              {formatAaveDataStatus(deriveAaveDataStatus(aaveMarketQuote))}
+            </span>
+          </p>
           {dataFreshnessIndicators !== null && (
             <DataFreshnessSection indicators={dataFreshnessIndicators} />
           )}

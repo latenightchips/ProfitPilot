@@ -38,37 +38,29 @@
  * callout rather than folded silently into the source label.
  *
  * **"Refresh status" resolves to `refreshNote`, a fixed explanatory
- * string, not a transient state.** `01_PRD.md` REQ-010 ("Version 0.1 uses
- * Manual Mode") and `services/market/quote.ts`'s own header comment
- * (no `PriceProvider`/CoinGecko adapter exists anywhere in this codebase)
- * already establish that no live data source exists to report a
- * request/response cycle for. `stores/portfolioStore.ts`'s own
- * `recomputeSummary` (the mechanism behind `DashboardSummaryHeader`'s
- * "Refresh" button, M4-017/M5-004) is a synchronous, in-memory
- * recalculation against already-entered values — there is no observable
- * "refreshing" transient state to render (the same "instant transition,
- * not fabricated latency" reasoning `app/page.tsx`'s own `loadStatus`
- * comment already applies to `'loading'`). `refreshNote` states this
- * honestly instead of inventing a progress indicator for a network
- * request that never happens.
+ * string, not a transient progress indicator.** Originally (M5-017/M5-018,
+ * before the Aave V3 integration existed) this documented that "Refresh"
+ * had nothing to request — pure Manual Mode, `recomputeSummary` only
+ * re-derived from already-entered values. **Dashboard Live-State Cleanup
+ * batch: no longer true.** "Refresh" (`DashboardSummaryHeader`) now also
+ * calls `useAaveLiveDataStore.fetchLiveAaveData`, a real request this
+ * module's own `refreshNote` must describe honestly, matching M5-018's
+ * original "Request new market data / Request updated protocol
+ * parameters" Workflow items it once explained away as N/A. `refreshNote`
+ * remains a fixed string rather than a transient "refreshing…" state
+ * because the fetch itself is handled by `useAaveLiveDataStore.status`
+ * (surfaced elsewhere, via `utils/aaveDataStatus.ts`'s Live/Stale/
+ * Unavailable badge) — this section's own job is the static explanation
+ * of what the button does, not a live progress indicator.
  *
- * **This also resolves M5-018 ("Implement Dashboard Refresh Workflow")
- * without new workflow code.** M5-018's own Workflow list — "Request new
- * market data. Request updated protocol parameters. Validate responses.
- * Recalculate portfolio summary. Retain previous valid values if refresh
- * fails." — splits into two halves: the first three steps require a live
- * data provider, which does not exist in this Manual-Mode version (same
- * structural gap this file's own `refreshNote` documents, not a new
- * conflict); the last two are already true today, for free, with zero new
- * code — `recomputeSummary` only re-derives from the portfolio's already-
- * validated, already-stored fields (it does not fetch, so there is
- * nothing external to fail and nothing valid to lose — see that action's
- * own header comment in `stores/portfolioStore.ts`). M5-018's DoD
- * ("Refresh failures do not erase valid existing data") is therefore
- * already satisfied structurally: there is no failure mode in which
- * `recomputeSummary` can erase or replace `portfolio.market`/
- * `portfolio.protocol`. No new component or action was added for M5-018;
- * `refreshNote` below is the one visible artifact explaining why.
+ * **M5-018's DoD ("Refresh failures do not erase valid existing data")
+ * remains satisfied, now for a different, still-structural reason.**
+ * `hooks/useAaveLiveSync.ts`'s equality-gated `update()` call — the same
+ * path `fetchLiveAaveData` feeds — only ever writes `market`/`protocol`,
+ * never `collateral`/`debt`, and on fetch failure leaves the portfolio's
+ * currently-stored values untouched entirely (see that hook's own header
+ * comment). There is still no failure mode in which "Refresh" can erase
+ * or replace a user's entered position data.
  */
 export interface FreshnessIndicator {
   label: string;

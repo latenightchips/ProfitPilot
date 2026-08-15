@@ -4,11 +4,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildDashboardViewModel, DashboardSummaryHeader } from '@/features/dashboard';
 import { autoSaveCoordinator } from '@/services';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
  * Dashboard Summary Header — 06_TASKS.md M5-004. DoD: "The user can
  * identify which portfolio and data source are currently active."
+ *
+ * **Dashboard Live-State Cleanup batch**: "Refresh" now also reads
+ * `useAaveLiveDataStore.fetchLiveAaveData` directly (not just
+ * `usePortfolioStore.recomputeSummary`) — the store's real
+ * `fetchLiveAaveData` calls actual `fetch()`, so every test below stubs
+ * it with a mock before rendering, the same convention
+ * `tests/unit/app/portfolio/page.test.tsx`/`tests/unit/app/page.test.tsx`
+ * already established.
  */
 beforeEach(() => {
   usePortfolioStore.setState({
@@ -18,6 +27,16 @@ beforeEach(() => {
     saveStatus: 'idle',
     errors: [],
     lastSynchronizedAt: null,
+  });
+  useAaveLiveDataStore.setState({
+    status: 'idle',
+    marketQuote: null,
+    protocolQuote: null,
+    collateralSymbol: null,
+    borrowSymbol: null,
+    source: null,
+    errorMessage: null,
+    fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
   });
   window.localStorage.clear();
 });
@@ -86,8 +105,8 @@ describe('DashboardSummaryHeader — identity and freshness (M5-004)', () => {
   });
 });
 
-describe('DashboardSummaryHeader — actions (M5-004)', () => {
-  it('the Refresh button re-derives the summary via recomputeSummary, not a live market fetch', async () => {
+describe('DashboardSummaryHeader — actions (Dashboard Live-State Cleanup batch)', () => {
+  it('the Refresh button both fetches a live Aave snapshot and immediately re-derives the summary', async () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     const record = usePortfolioStore.getState().portfolios[created.data.id];
@@ -97,6 +116,10 @@ describe('DashboardSummaryHeader — actions (M5-004)', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
+    // Fetches live Aave data — no longer a claim this button doesn't make.
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledTimes(1);
+    // Still recomputes synchronously against whatever is currently stored,
+    // rather than only after the async fetch above resolves.
     const afterRecord = usePortfolioStore.getState().portfolios[created.data.id];
     expect(afterRecord.summary.ok).toBe(true);
   });

@@ -248,12 +248,21 @@ function notFoundError(id: string): ApplicationError {
   );
 }
 
-/** Field-by-field, not `JSON.stringify` — small flat objects, no key-order risk either way. */
-function marketPricesEqual(a: Portfolio['market'], b: Portfolio['market']): boolean {
+/**
+ * Field-by-field, not `JSON.stringify` — small flat objects, no key-order
+ * risk either way. Exported for reuse by `hooks/useAaveLiveSync.ts`'s
+ * equality gate (Portfolio Live-State Cleanup batch) — the same "is this
+ * actually a change" check this Store's own `update()` already relies on
+ * to decide whether to bump `marketUpdatedAt`/`protocolUpdatedAt`.
+ */
+export function marketPricesEqual(a: Portfolio['market'], b: Portfolio['market']): boolean {
   return a.btcPriceUsd === b.btcPriceUsd;
 }
 
-function protocolParametersEqual(a: Portfolio['protocol'], b: Portfolio['protocol']): boolean {
+export function protocolParametersEqual(
+  a: Portfolio['protocol'],
+  b: Portfolio['protocol'],
+): boolean {
   return (
     a.maxLoanToValue === b.maxLoanToValue &&
     a.liquidationThreshold === b.liquidationThreshold &&

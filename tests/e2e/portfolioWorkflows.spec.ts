@@ -118,24 +118,21 @@ test('Cover: Edit debt', async ({ page }) => {
   ).toHaveValue('15000');
 });
 
-test('Cover: Use manual prices', async ({ page }) => {
+test('Cover: BTC price is live and read-only, not manually editable', async ({ page }) => {
+  // Portfolio Live-State Cleanup batch — BTC price, Maximum LTV,
+  // Liquidation threshold, and Borrow rate became live/read-only fields
+  // synced from Aave V3, replacing the old "Manual price (USD)" input and
+  // "Reset price" button this test used to exercise.
   await createPortfolio(page, { name: 'Price Test', fresh: true });
   const collateralSection = page
     .locator('form')
     .filter({ has: page.locator('legend', { hasText: 'Collateral' }) });
-  const priceInput = collateralSection
-    .locator('label', { hasText: 'Manual price (USD)' })
-    .locator('input');
 
-  await expect(collateralSection.getByText('Manual', { exact: true })).toBeVisible();
-  await priceInput.fill('55000');
-  await collateralSection.getByRole('button', { name: 'Preview Changes' }).click();
-  await expect(collateralSection.getByText('Health Factor', { exact: true })).toBeVisible();
-
-  // Reset discards the unsaved edit and clears the stale preview.
-  await collateralSection.getByRole('button', { name: 'Reset price' }).click();
-  await expect(priceInput).toHaveValue('50000');
-  await expect(collateralSection.getByText('Health Factor', { exact: true })).not.toBeVisible();
+  await expect(collateralSection.locator('label', { hasText: 'Manual price (USD)' })).toHaveCount(
+    0,
+  );
+  await expect(collateralSection.getByRole('button', { name: 'Reset price' })).toHaveCount(0);
+  await expect(collateralSection.getByText('Maximum LTV')).toBeVisible();
 });
 
 function rowByExactName(page: Page, name: string) {

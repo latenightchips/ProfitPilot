@@ -222,40 +222,36 @@ describe('portfolioDetailsSchema (M4-006)', () => {
   });
 });
 
-describe('collateralManagementSchema (M4-007)', () => {
-  const validProtocol = {
-    maxLoanToValue: 0.75,
-    liquidationThreshold: 0.8,
-    borrowApr: 0.05,
-    supplyApr: 0.02,
-  };
-
-  it('accepts a valid collateral + market + protocol payload', () => {
+describe('collateralManagementSchema (Portfolio Live-State Cleanup batch — collateral only)', () => {
+  it('accepts a valid collateral-only payload', () => {
     const result = collateralManagementSchema.safeParse({
       collateral: { asset: 'BTC', quantity: 2 },
-      market: { btcPriceUsd: 50000 },
-      protocol: validProtocol,
     });
     expect(result.success).toBe(true);
   });
 
-  it('is structurally incapable of accepting a debt field', () => {
+  it('is structurally incapable of accepting a debt/market/protocol field (BTC price/LTV/threshold became live/read-only, not user-submitted)', () => {
     const result = collateralManagementSchema.safeParse({
       collateral: { asset: 'BTC', quantity: 2 },
-      market: { btcPriceUsd: 50000 },
-      protocol: validProtocol,
       debt: { asset: 'USDC', balance: 999 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect('debt' in result.data).toBe(false);
+    expect('market' in result.data).toBe(false);
+    expect('protocol' in result.data).toBe(false);
   });
 
-  it('still enforces the protocol invariant (maxLoanToValue <= liquidationThreshold)', () => {
+  it('rejects invalid collateral quantity', () => {
     const result = collateralManagementSchema.safeParse({
-      collateral: { asset: 'BTC', quantity: 2 },
-      market: { btcPriceUsd: 50000 },
-      protocol: { ...validProtocol, maxLoanToValue: 0.9 },
+      collateral: { asset: 'BTC', quantity: NaN },
     });
     expect(result.success).toBe(false);
   });
@@ -305,18 +301,10 @@ describe('UX punch-list UX-02/UX-03 — friendly numeric error messages (not the
   });
 });
 
-describe('debtManagementSchema (M4-008)', () => {
-  const validProtocol = {
-    maxLoanToValue: 0.75,
-    liquidationThreshold: 0.8,
-    borrowApr: 0.05,
-    supplyApr: 0.02,
-  };
-
-  it('accepts a valid debt + protocol payload', () => {
+describe('debtManagementSchema (Portfolio Live-State Cleanup batch — debt only)', () => {
+  it('accepts a valid debt-only payload', () => {
     const result = debtManagementSchema.safeParse({
       debt: { asset: 'USDC', balance: 20000 },
-      protocol: validProtocol,
     });
     expect(result.success).toBe(true);
   });
@@ -324,7 +312,6 @@ describe('debtManagementSchema (M4-008)', () => {
   it('accepts a zero balance (M4-008: support zero-debt portfolios)', () => {
     const result = debtManagementSchema.safeParse({
       debt: { asset: 'USDC', balance: 0 },
-      protocol: validProtocol,
     });
     expect(result.success).toBe(true);
   });
@@ -332,21 +319,26 @@ describe('debtManagementSchema (M4-008)', () => {
   it('rejects a negative balance (M4-008: validate non-negative debt)', () => {
     const result = debtManagementSchema.safeParse({
       debt: { asset: 'USDC', balance: -1 },
-      protocol: validProtocol,
     });
     expect(result.success).toBe(false);
   });
 
-  it('is structurally incapable of accepting collateral/market fields', () => {
+  it('is structurally incapable of accepting collateral/market/protocol fields (Borrow rate became live/read-only, not user-submitted)', () => {
     const result = debtManagementSchema.safeParse({
       debt: { asset: 'USDC', balance: 20000 },
-      protocol: validProtocol,
       collateral: { asset: 'BTC', quantity: 999 },
       market: { btcPriceUsd: 1 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect('collateral' in result.data).toBe(false);
     expect('market' in result.data).toBe(false);
+    expect('protocol' in result.data).toBe(false);
   });
 });
