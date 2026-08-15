@@ -124,7 +124,7 @@ describe('DashboardSummaryHeader — actions (Dashboard Live-State Cleanup batch
     expect(afterRecord.summary.ok).toBe(true);
   });
 
-  it('the Refresh button fetches live data for the portfolio\'s own debt asset, not a hardcoded default (USDT Support milestone)', async () => {
+  it("the Refresh button fetches live data for the portfolio's own debt asset, not a hardcoded default (USDT Support milestone)", async () => {
     const created = usePortfolioStore
       .getState()
       .create(validInput({ debt: { asset: 'USDT', balance: 20000 } }));

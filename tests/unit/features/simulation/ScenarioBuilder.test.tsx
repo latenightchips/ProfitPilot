@@ -599,7 +599,10 @@ describe('ScenarioBuilder — PT-12 follow-up: interest scenario survives BTC Pr
     await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
     const percentInput = screen.getByLabelText('Percentage Change (%)');
     await user.type(percentInput, '-70');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      107.069169,
+      3,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Reset Scenario' }));
 
@@ -631,7 +634,10 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     render(<ScenarioBuilder portfolio={DEBT_PORTFOLIO} portfolioId="portfolio-1" />);
 
     await user.selectOptions(screen.getByLabelText('Holding Period'), '30');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      107.069169,
+      3,
+    );
 
     await user.type(screen.getByLabelText('Percentage Change (%)'), '-70');
 
@@ -695,10 +701,16 @@ describe('ScenarioBuilder — PT-12 follow-up: interaction order (Holding Period
     expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(1300, 2);
 
     await user.selectOptions(holdingPeriodSelect, '30');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(107.069169, 3);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      107.069169,
+      3,
+    );
 
     await user.selectOptions(holdingPeriodSelect, '90');
-    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(322.532046, 3);
+    expect(useSimulationStore.getState().currentResult?.scenario.debtCost).toBeCloseTo(
+      322.532046,
+      3,
+    );
 
     // Another price edit while an interest scenario is active must keep
     // the current Holding Period (90 days) rather than reverting.

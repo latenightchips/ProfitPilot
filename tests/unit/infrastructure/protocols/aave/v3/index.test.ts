@@ -46,8 +46,10 @@ function buildClient(overrides?: {
         (candidate) => candidate.address.toLowerCase() === String(address).toLowerCase(),
       );
       if (asset === undefined) throw new Error(`Unexpected decimals() address in test: ${address}`);
-      return overrides?.decimals?.[asset.symbol as keyof typeof AAVE_V3_ETHEREUM_ASSETS] ??
-        asset.decimals;
+      return (
+        overrides?.decimals?.[asset.symbol as keyof typeof AAVE_V3_ETHEREUM_ASSETS] ??
+        asset.decimals
+      );
     }
     throw new Error(`Unexpected functionName in test: ${functionName}`);
   });

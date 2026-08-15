@@ -76,7 +76,9 @@ export const useAaveLiveDataStore = create<AaveLiveDataState>((set) => ({
 
     let body: AaveReserveApiResponse;
     try {
-      const response = await fetch(`/api/aave/reserve?borrowAsset=${encodeURIComponent(borrowAsset)}`);
+      const response = await fetch(
+        `/api/aave/reserve?borrowAsset=${encodeURIComponent(borrowAsset)}`,
+      );
       body = (await response.json()) as AaveReserveApiResponse;
     } catch {
       if (requestId !== latestRequestId) return;

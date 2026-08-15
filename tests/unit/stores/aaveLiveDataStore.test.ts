@@ -107,7 +107,9 @@ describe('useAaveLiveDataStore — success', () => {
 
 describe('useAaveLiveDataStore — borrowAsset forwarding (USDT Support milestone)', () => {
   it('includes the requested borrow asset in the fetch URL', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(successBody({ borrowSymbol: 'USDT' })));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(successBody({ borrowSymbol: 'USDT' })));
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await useAaveLiveDataStore.getState().fetchLiveAaveData('USDT');
@@ -211,7 +213,7 @@ describe('useAaveLiveDataStore — failure / fallback (never erases prior good d
     expect(useAaveLiveDataStore.getState().errorMessage).toBe('Live Aave data is not configured.');
   });
 
-  it('surfaces AAVE_UNSUPPORTED_BORROW_ASSET (e.g. DAI) as an error, without ever substituting another asset\'s data', async () => {
+  it("surfaces AAVE_UNSUPPORTED_BORROW_ASSET (e.g. DAI) as an error, without ever substituting another asset's data", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       jsonResponse({
         ok: false,
