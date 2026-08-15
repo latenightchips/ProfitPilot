@@ -126,6 +126,34 @@ export const portfolioSettingsSchema = z.object({
   safetyTargets: portfolioSafetyTargetsSchema.optional(),
 });
 
+/**
+ * Aave V4 live-position identity — Stage 4A (V4 Readiness Audit §12).
+ * Validates `services/portfolio/models.ts`'s `AaveV4PositionIdentity`
+ * shape (see that file's own header comment for why the field is kept
+ * separate from `debt`/`collateral`/`protocol`/`market` and unrelated to
+ * auth identity). Standalone — not yet added to `portfolioInputSchema`
+ * below, mirroring `protocolVersion`'s own current state: no Store action
+ * or form submits either field yet, so there is nothing for the top-level
+ * input schema to validate. Exported so it can be validated directly once
+ * a real caller exists, and so it is independently testable now.
+ *
+ * Deliberately unchecksummed (`^0x[0-9a-fA-F]{40}$`, case-insensitive) —
+ * the only existing address-shape check anywhere in this repo
+ * (`scripts/verifyAaveV4Snapshot.ts`) uses the same plain hex-length
+ * pattern; no EIP-55 checksum or network-specific validation convention
+ * exists elsewhere to mirror instead, and requiring one here would be a
+ * new, unrequested rule.
+ */
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
+export const aaveV4PositionIdentitySchema = z.object({
+  userAddress: z
+    .string({ error: 'Enter a valid wallet address.' })
+    .regex(EVM_ADDRESS_PATTERN, 'Enter a valid wallet address.'),
+});
+
+export type AaveV4PositionIdentityInput = z.infer<typeof aaveV4PositionIdentitySchema>;
+
 export const portfolioInputSchema = z.object({
   name: z
     .string()

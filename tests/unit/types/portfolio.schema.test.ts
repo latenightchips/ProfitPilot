@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aaveV4PositionIdentitySchema,
   collateralManagementSchema,
   collateralPositionSchema,
   debtManagementSchema,
@@ -182,6 +183,80 @@ describe('protocolParametersSchema — percentages (M4-002)', () => {
       supplyApr: 0.02,
     });
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * `aaveV4PositionIdentitySchema` — Stage 4A (V4 Readiness Audit §12).
+ * Standalone, not yet wired into `portfolioInputSchema` — see
+ * `portfolio.schema.ts`'s own header comment on this schema for why
+ * (mirrors `protocolVersion`'s own current, unwired state).
+ */
+describe('aaveV4PositionIdentitySchema (Stage 4A)', () => {
+  it('accepts a well-formed 40-hex-character address', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an all-lowercase address (no checksum requirement)', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a missing 0x prefix', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: 'd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a too-short address', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({ userAddress: '0xd8dA6BF2' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a too-long address', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045FF',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-hex characters', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xzzzz6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({ userAddress: '' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-string value', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({ userAddress: 12345 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a missing userAddress field entirely', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('portfolioInputSchema — V3/backward compatibility (Stage 4A)', () => {
+  it('validates a portfolio input with no protocolVersion or v4Position present (V3 behavior unchanged)', () => {
+    const input = validInput();
+    const result = portfolioInputSchema.safeParse(input);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect('protocolVersion' in result.data).toBe(false);
+    expect('v4Position' in result.data).toBe(false);
   });
 });
 
