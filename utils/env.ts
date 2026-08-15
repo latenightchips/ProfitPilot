@@ -55,6 +55,19 @@ import { z } from 'zod';
  * Falls back to a public default endpoint when unset, so Manual Mode's
  * "must run with no external services configured" guarantee is
  * preserved without requiring configuration.
+ *
+ * **`AAVE_V4_RPC_URL` (V4 Readiness Audit §12 Stage 4B) — same shape and
+ * same "server-side only" reasoning as `AAVE_RPC_URL` above, kept as its
+ * own separate variable rather than reusing `AAVE_RPC_URL` for both
+ * protocol versions: a deployer may legitimately want V3 and V4 reads
+ * pointed at different RPC providers (e.g. different rate limits), and
+ * the two adapters already have their own separate default endpoints
+ * (`infrastructure/protocols/aave/v3/addresses.ts`'s
+ * `AAVE_V3_DEFAULT_RPC_URL` vs. `.../v4/addresses.ts`'s
+ * `AAVE_V4_DEFAULT_RPC_URL`). Read only inside
+ * `app/api/aave/v4-position/route.ts`. Falls back to the V4 adapter's own
+ * public default endpoint when unset, preserving the same
+ * no-configuration-required guarantee as `AAVE_RPC_URL`.
  */
 const envSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('ProfitPilot'),
@@ -65,6 +78,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional().or(z.literal('')),
   AAVE_RPC_URL: z.string().url().optional().or(z.literal('')),
+  AAVE_V4_RPC_URL: z.string().url().optional().or(z.literal('')),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -79,6 +93,7 @@ function loadEnv(): Env {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     AAVE_RPC_URL: process.env.AAVE_RPC_URL,
+    AAVE_V4_RPC_URL: process.env.AAVE_V4_RPC_URL,
   });
 
   if (!result.success) {
