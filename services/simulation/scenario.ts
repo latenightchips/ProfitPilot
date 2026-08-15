@@ -50,19 +50,30 @@
  * simple-interest semantics for any other caller.
  *
  * **`projectProtocolDebt` — protocol/version dispatch (V4 Readiness Audit
- * §12 Stage 1).** This file previously imported `projectVariableDebt`
- * from `engine/protocols/aaveV3` directly — a hardcoded V3 assumption
- * with no version boundary, the exact architectural gap the audit
- * identified. Both `projectVariableDebt` call sites below now go through
- * `projectProtocolDebt(protocolVersion, ...)` instead, resolving
- * `protocolVersion` from `portfolio.protocolVersion ?? 'v3'` once per
- * call to `simulateScenario`. For `'v3'` (every portfolio today —
+ * §12).** This file previously imported `projectVariableDebt` from
+ * `engine/protocols/aaveV3` directly — a hardcoded V3 assumption with no
+ * version boundary, the exact architectural gap the audit identified.
+ * Both `projectVariableDebt` call sites below now go through
+ * `projectProtocolDebt({ protocolVersion, ... })` instead, resolving
+ * `protocolVersion` from `portfolio.protocolVersion ?? 'v3'` once per call
+ * to `simulateScenario`. For `'v3'` (every portfolio today —
  * `protocolVersion` is not settable anywhere yet), the dispatcher forwards
  * to the exact same, unmodified V3 projector: identical inputs, identical
- * outputs, identical `FormulaResult` metadata. A portfolio explicitly
- * marked `'v4'` (test-only this stage; no UI sets it) fails closed with a
- * structured `AAVE_V4_PROJECTION_NOT_IMPLEMENTED` error instead of
- * silently reusing V3's math or a placeholder number.
+ * outputs, identical `FormulaResult` metadata.
+ *
+ * **V4 has real Engine math now (Stage 2), but Simulation still can't call
+ * it.** `engine/protocols/aaveV4`'s `projectAaveV4Debt` needs `drawnDebt`,
+ * `premiumDebt`, and a resolved `riskPremium` fraction — none of which
+ * `ApplicationPortfolio`/`PortfolioInput` represent (this Service's
+ * single-collateral, single `debt.balance` model has no concept of
+ * separate drawn/premium streams or a Risk Premium value). Rather than
+ * inventing placeholder values for fields Simulation has no real source
+ * for, a portfolio marked `'v4'` fails closed here, at the Service layer,
+ * with a distinct `AAVE_V4_SIMULATION_UNSUPPORTED` error (see the
+ * `protocolVersion !== 'v3'` guard below) — different from the Engine's
+ * own `PROTOCOL_VERSION_UNSUPPORTED`/Stage 1's now-removed
+ * `AAVE_V4_PROJECTION_NOT_IMPLEMENTED`, because the reason is specific to
+ * this Service's data model, not to the Engine lacking an implementation.
  *
  * **Interest Cost comparison semantics (PT-12 follow-up round 3,
  * preserved and updated for compounding)**: the baseline `debtCost` set
@@ -115,8 +126,14 @@ import {
 import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
+import { createApplicationError } from '../shared/errors';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
-import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
+import {
+  createServiceFailure,
+  createServiceSuccess,
+  type ServiceResult,
+  type ServiceWarning,
+} from '../shared/result';
 
 export type SimulationScenario =
   | { type: 'price'; priceScenario: PriceScenarioInput }
@@ -262,6 +279,19 @@ export function simulateScenario(
     return finalize(baselineSummary, scenarioSummary, tracked, warnings, scenario, sourceStatus);
   }
 
+  // Interest-scenario debt projection needs `projectProtocolDebt` — see
+  // this file's header comment for why a `'v4'` portfolio fails closed
+  // here rather than calling the Engine's now-real V4 math with invented
+  // drawn/premium/riskPremium values this Service has no source for.
+  if (protocolVersion !== 'v3') {
+    const error = createApplicationError(
+      'calculation',
+      'AAVE_V4_SIMULATION_UNSUPPORTED',
+      'Simulation does not yet support Aave V4 debt projection for interest scenarios — it requires drawn/premium debt and risk-premium inputs Simulation does not have access to yet.',
+    );
+    return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
+  }
+
   const scenarioPriceStep = formulaStep(
     resolveScenarioPrice(engineInput.market.btcPriceUsd, scenario.priceScenario),
     tracked,
@@ -285,12 +315,12 @@ export function simulateScenario(
   // comment. Not `simulateInterestScenario`/`calculateProratedInterest`
   // (simple interest), which remain unchanged for any other caller.
   const projectedDebtStep = formulaStep(
-    projectProtocolDebt(
+    projectProtocolDebt({
       protocolVersion,
-      engineInput.debt.balance,
-      scenario.borrowApr,
-      scenario.timeHorizonDays,
-    ),
+      currentDebt: engineInput.debt.balance,
+      borrowApr: scenario.borrowApr,
+      elapsedDays: scenario.timeHorizonDays,
+    }),
     tracked,
     sourceStatus,
   );
@@ -334,12 +364,12 @@ export function simulateScenario(
   // Holding Period, using the portfolio's own real current debt/rate
   // rather than the scenario's own (possibly stress-tested) borrowApr.
   const baselineProjectedDebtStep = formulaStep(
-    projectProtocolDebt(
+    projectProtocolDebt({
       protocolVersion,
-      baselineResult.data.debtValue,
-      engineInput.protocol.borrowApr,
-      scenario.timeHorizonDays,
-    ),
+      currentDebt: baselineResult.data.debtValue,
+      borrowApr: engineInput.protocol.borrowApr,
+      elapsedDays: scenario.timeHorizonDays,
+    }),
     tracked,
     sourceStatus,
   );

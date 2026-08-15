@@ -364,16 +364,20 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
 });
 
 /**
- * Protocol/version dispatch — V4 Readiness Audit §12 Stage 1.
- * `simulateScenario` no longer imports `projectVariableDebt` from
- * `engine/protocols/aaveV3` directly; it resolves
- * `portfolio.protocolVersion ?? 'v3'` and calls `projectProtocolDebt`.
- * These tests prove that refactor is behavior-preserving for V3 (with and
- * without the field explicitly set — the "old persisted record" case has
- * no such field at all) and that a V4 portfolio fails closed rather than
- * silently reusing V3's math.
+ * Protocol/version dispatch — V4 Readiness Audit §12. `simulateScenario`
+ * no longer imports `projectVariableDebt` from `engine/protocols/aaveV3`
+ * directly; it resolves `portfolio.protocolVersion ?? 'v3'` and calls
+ * `projectProtocolDebt`. These tests prove that refactor is
+ * behavior-preserving for V3 (with and without the field explicitly set —
+ * the "old persisted record" case has no such field at all) and that a V4
+ * portfolio still fails closed rather than silently reusing V3's math or
+ * computing with invented drawn/premium/riskPremium values — now via a
+ * Service-level `AAVE_V4_SIMULATION_UNSUPPORTED` guard (Stage 2), since
+ * the Engine's own V4 math (`engine/protocols/aaveV4`) is real but needs
+ * inputs (`drawnDebt`, `premiumDebt`, `riskPremium`) this Service's
+ * portfolio model doesn't have a source for.
  */
-describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §12 Stage 1)', () => {
+describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §12)', () => {
   function debtPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
     return {
       collateral: { asset: 'BTC', quantity: 2 },
@@ -483,7 +487,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
     });
   });
 
-  describe('V4 — fails closed, never silently falls back to V3 (unsupported this stage)', () => {
+  describe('V4 — fails closed at the Service layer, never silently falls back to V3 or fabricates inputs', () => {
     it('an interest scenario on a protocolVersion: "v4" portfolio fails rather than returning a value', () => {
       const result = simulateScenario(
         debtPortfolio({ protocolVersion: 'v4' }),
@@ -493,7 +497,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_PROJECTION_NOT_IMPLEMENTED' });
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_SIMULATION_UNSUPPORTED' });
     });
 
     it('does not have a data field on the V4 failure result (no partial/placeholder result leaks through)', () => {
@@ -523,8 +527,8 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       expect(v4Result.ok).toBe(false);
       expect(invalidV3Result.ok).toBe(false);
       if (v4Result.ok || invalidV3Result.ok) return;
-      expect(v4Result.errors[0]?.code).toBe('AAVE_V4_PROJECTION_NOT_IMPLEMENTED');
-      expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_PROJECTION_NOT_IMPLEMENTED');
+      expect(v4Result.errors[0]?.code).toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
+      expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
     });
   });
 });

@@ -1,48 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectVariableDebt } from '@/engine/protocols/aaveV4';
+import { projectAaveV4Debt as barrelProjectAaveV4Debt } from '@/engine/protocols/aaveV4';
+import { projectAaveV4Debt } from '@/engine/protocols/aaveV4/projectAaveV4Debt';
 
 /**
- * Aave V4 debt projection — V4 Readiness Audit §12 Stage 1 ("protocol
- * boundary scaffolding only"). This module must never compute a real
- * financial value: every call fails closed with a structured,
- * non-retryable-by-implication error, regardless of input.
+ * Aave V4 barrel — V4 Readiness Audit §12 Stage 2. Stage 1's stub tests
+ * (asserting every call failed closed with `AAVE_V4_PROJECTION_NOT_IMPLEMENTED`)
+ * are obsolete now that this module has real math; `math.test.ts` and
+ * `projectAaveV4Debt.test.ts` cover that math directly. This file only
+ * proves the barrel re-exports the real implementation unchanged.
  */
-describe('Aave V4 projectVariableDebt — explicit unsupported boundary (Stage 1)', () => {
-  it('fails closed with AAVE_V4_PROJECTION_NOT_IMPLEMENTED for realistic inputs', () => {
-    const result = projectVariableDebt(20000, 0.05, 365);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('AAVE_V4_PROJECTION_NOT_IMPLEMENTED');
-    expect(result.error.message.length).toBeGreaterThan(0);
+describe('Aave V4 barrel — re-exports the real projectAaveV4Debt (Stage 2)', () => {
+  it('the barrel export is reference-identical to the module it wraps', () => {
+    expect(barrelProjectAaveV4Debt).toBe(projectAaveV4Debt);
   });
 
-  it('never returns a success result, for any input including zero/edge values', () => {
-    const cases: Array<[number, number, number]> = [
-      [0, 0, 0],
-      [20000, 0.05, 365],
-      [1_000_000, 1, 3650],
-    ];
-    for (const [currentDebt, borrowApr, elapsedDays] of cases) {
-      const result = projectVariableDebt(currentDebt, borrowApr, elapsedDays);
-      expect(result.ok).toBe(false);
-    }
-  });
-
-  it('reports the inputs it was called with, for diagnostic transparency', () => {
-    const result = projectVariableDebt(26000, 0.1, 30);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.metadata.inputsUsed).toEqual({
-      currentDebt: 26000,
-      borrowApr: 0.1,
-      elapsedDays: 30,
+  it('produces a real computed value, never the Stage 1 unsupported-boundary error', () => {
+    const result = barrelProjectAaveV4Debt({
+      drawnDebt: 20000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+      elapsedDays: 365,
     });
-  });
-
-  it('does not import or reference Aave V3 math (structurally isolated module)', async () => {
-    const v4Module = await import('@/engine/protocols/aaveV4');
-    const v3Module = await import('@/engine/protocols/aaveV3');
-    expect(v4Module.projectVariableDebt).not.toBe(v3Module.projectVariableDebt);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.totalDebt).toBeGreaterThan(20000);
   });
 });

@@ -1,70 +1,80 @@
 import { createFailure, type FormulaResult } from '../shared/result';
 import { projectVariableDebt as projectAaveV3Debt } from './aaveV3';
-import { projectVariableDebt as projectAaveV4Debt } from './aaveV4';
-import type { AaveProtocolVersion } from './types';
+import { projectAaveV4Debt } from './aaveV4';
+import type {
+  AaveV3DebtProjectionRequest,
+  AaveV4DebtProjection,
+  AaveV4DebtProjectionRequest,
+  ProtocolDebtProjectionRequest,
+} from './types';
 
-export type { AaveProtocolVersion } from './types';
-
-/**
- * Centralized protocol/version dispatch for debt projection — V4
- * Readiness Audit §12 Stage 1. This is the one place that resolves "which
- * protocol-version's math to run" from an explicit `AaveProtocolVersion`.
- * `services/simulation/scenario.ts` previously imported
- * `projectVariableDebt` from `./aaveV3` directly, bypassing any version
- * boundary — the exact architectural gap this dispatcher closes. Adding a
- * protocol/version means adding one registry entry here; no existing
- * consumer changes.
- *
- * A `Record<AaveProtocolVersion, DebtProjector>` (not an `if`/`else if`
- * chain) makes it structurally impossible to silently fall through an
- * unhandled version into V3's entry — every key must be explicitly
- * populated, and TypeScript enforces that at the registry's own
- * declaration site, not at each call site.
- */
-type DebtProjector = (
-  currentDebt: number,
-  borrowApr: number,
-  elapsedDays: number,
-) => FormulaResult<number>;
-
-const AAVE_DEBT_PROJECTORS: Record<AaveProtocolVersion, DebtProjector> = {
-  v3: projectAaveV3Debt,
-  v4: projectAaveV4Debt,
-};
+export type {
+  AaveProtocolVersion,
+  AaveV3DebtProjectionRequest,
+  AaveV4DebtProjection,
+  AaveV4DebtProjectionRequest,
+  ProtocolDebtProjectionRequest,
+} from './types';
 
 /**
- * Projects debt forward under the given Aave protocol version's own
- * accrual semantics. For `'v3'`, this forwards to the exact, unmodified
- * `projectVariableDebt` (`./aaveV3`) — same inputs, same outputs, same
- * `FormulaResult` (including its `formulaId`/`formulaVersion`/
- * `inputsUsed`), untouched. For `'v4'`, this forwards to `./aaveV4`'s
- * explicit not-implemented failure — never V3's math, never a placeholder
- * number.
+ * Centralized protocol/version dispatch for debt projection — V4 Readiness
+ * Audit §12. Stage 1 built this as the one place that resolves "which
+ * protocol-version's math to run" from an explicit `AaveProtocolVersion`,
+ * closing the gap where `services/simulation/scenario.ts` previously
+ * imported `projectVariableDebt` from `./aaveV3` directly. Stage 2 keeps
+ * that same single dispatch point — no scattered version checks were added
+ * anywhere else — while giving V4 a real, richer request/response shape
+ * instead of forcing it through V3's 3-field `(currentDebt, borrowApr,
+ * elapsedDays)` signature (`./types.ts`'s own doc comments explain why V3
+ * and V4 need genuinely different shapes).
  *
- * A `protocolVersion` outside the known registry (reachable only from
- * unvalidated/legacy data bypassing the `AaveProtocolVersion` type, e.g.
- * `as unknown as AaveProtocolVersion` in a test) fails closed with its own
- * structured error rather than throwing.
+ * A `Record<AaveProtocolVersion, DebtProjector>` (Stage 1's approach) no
+ * longer type-checks once V3 and V4 have different input/output shapes —
+ * a uniform function type can't describe both. Two overload signatures
+ * plus a discriminated-union runtime implementation achieve the same
+ * "every version is explicitly handled, TypeScript enforces it" property:
+ * a caller passing an `AaveV3DebtProjectionRequest` still gets back
+ * `FormulaResult<number>`, byte-identical to every call before Stage 2; a
+ * caller passing an `AaveV4DebtProjectionRequest` gets
+ * `FormulaResult<AaveV4DebtProjection>`. `protocolVersion` is the
+ * discriminant on both the input union and each overload.
+ *
+ * A third, union-typed overload is declared below the two literal-typed
+ * ones purely for callers that only statically know
+ * `ProtocolDebtProjectionRequest` (e.g. a value narrowed at runtime from
+ * unvalidated/legacy data via `as unknown as ProtocolDebtProjectionRequest`
+ * in a test) — TypeScript does not automatically let a union-typed
+ * argument satisfy a set of overloads declared only for its individual
+ * members. Real call sites with a literal `protocolVersion` (every
+ * production caller) still resolve to one of the two specific overloads
+ * above it, in declaration order.
  */
+export function projectProtocolDebt(request: AaveV3DebtProjectionRequest): FormulaResult<number>;
 export function projectProtocolDebt(
-  protocolVersion: AaveProtocolVersion,
-  currentDebt: number,
-  borrowApr: number,
-  elapsedDays: number,
-): FormulaResult<number> {
-  const projector = AAVE_DEBT_PROJECTORS[protocolVersion];
-  if (projector === undefined) {
-    return createFailure(
-      {
-        code: 'PROTOCOL_VERSION_UNSUPPORTED',
-        message: `No debt-projection implementation is registered for Aave protocol version "${String(protocolVersion)}".`,
-      },
-      {
-        formulaId: 'AAVE-PROTOCOL-DISPATCH',
-        formulaVersion: '1.0',
-        inputsUsed: { protocolVersion, currentDebt, borrowApr, elapsedDays },
-      },
-    );
+  request: AaveV4DebtProjectionRequest,
+): FormulaResult<AaveV4DebtProjection>;
+export function projectProtocolDebt(
+  request: ProtocolDebtProjectionRequest,
+): FormulaResult<number> | FormulaResult<AaveV4DebtProjection>;
+export function projectProtocolDebt(
+  request: ProtocolDebtProjectionRequest,
+): FormulaResult<number> | FormulaResult<AaveV4DebtProjection> {
+  if (request.protocolVersion === 'v3') {
+    return projectAaveV3Debt(request.currentDebt, request.borrowApr, request.elapsedDays);
   }
-  return projector(currentDebt, borrowApr, elapsedDays);
+  if (request.protocolVersion === 'v4') {
+    return projectAaveV4Debt(request);
+  }
+  const unrecognizedRequest = request as Record<string, unknown>;
+  return createFailure(
+    {
+      code: 'PROTOCOL_VERSION_UNSUPPORTED',
+      message: `No debt-projection implementation is registered for Aave protocol version "${String(unrecognizedRequest.protocolVersion)}".`,
+    },
+    {
+      formulaId: 'AAVE-PROTOCOL-DISPATCH',
+      formulaVersion: '1.0',
+      inputsUsed: { ...unrecognizedRequest },
+    },
+  );
 }
