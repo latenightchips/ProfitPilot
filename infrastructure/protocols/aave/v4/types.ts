@@ -1,3 +1,5 @@
+import type { AaveV4DebtProjectionRequest } from '@/engine';
+
 import type { Reserve, UserDebt, UserReserveStatus } from './client';
 
 /**
@@ -58,13 +60,26 @@ export interface RawAaveV4Snapshot {
  * `../v3/mapAaveV3Snapshot.ts`'s own "no financial calculation" discipline
  * (04_BUILD_GUIDE.md "Keep financial calculations out of infrastructure
  * code").
+ *
+ * Stage 3 completion audit (contract-drift finding, Medium): this used to
+ * be an independently-declared interface with the same 4 fields
+ * duplicated by hand — structurally compatible with the Engine's own
+ * `AaveV4DebtProjectionRequest` (`engine/protocols/types.ts`) but not
+ * type-linked, so a future Engine field change would silently drift
+ * rather than fail to compile here. Derived via `Omit` from
+ * `AaveV4DebtProjectionRequest` instead — a type-only import from the
+ * Engine's already-public `@/engine` barrel (`AaveV4DebtProjectionRequest`
+ * is exported there today), so this introduces no runtime dependency and
+ * preserves the Engine's own "zero external dependencies" rule (only
+ * Infrastructure depends on Engine types, never the reverse — the same
+ * direction the Service layer already uses). `protocolVersion` is also
+ * omitted: that discriminant belongs to the dispatcher-level request
+ * shape, not to this adapter's per-field engine-input layer.
  */
-export interface AaveV4EngineDebtInputs {
-  drawnDebt: number;
-  premiumDebt: number;
-  baseDrawnApr: number;
-  riskPremium: number;
-}
+export type AaveV4EngineDebtInputs = Omit<
+  AaveV4DebtProjectionRequest,
+  'protocolVersion' | 'elapsedDays'
+>;
 
 /** Layer 3 — human-readable/display metadata, not consumed by the Engine. */
 export interface AaveV4SnapshotDisplay {
