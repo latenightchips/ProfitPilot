@@ -131,11 +131,14 @@ export const portfolioSettingsSchema = z.object({
  * Validates `services/portfolio/models.ts`'s `AaveV4PositionIdentity`
  * shape (see that file's own header comment for why the field is kept
  * separate from `debt`/`collateral`/`protocol`/`market` and unrelated to
- * auth identity). Standalone — not yet added to `portfolioInputSchema`
- * below, mirroring `protocolVersion`'s own current state: no Store action
- * or form submits either field yet, so there is nothing for the top-level
- * input schema to validate. Exported so it can be validated directly once
- * a real caller exists, and so it is independently testable now.
+ * auth identity). Standalone — still not added to `portfolioInputSchema`
+ * below as of Stage 5: `stores/portfolioStore.ts`'s `setAaveV4Position`
+ * (V4 Readiness Audit §12 Stage 5) validates against this schema
+ * directly, the "real caller" this file's own comment anticipated, but
+ * deliberately bypasses `portfolioInputSchema`/`create`/`update` entirely
+ * — the same way live-synced `market`/`protocol` values never go through
+ * the main creation form either. There is still no UI form for either
+ * field (Stage 5's own non-goal).
  *
  * Deliberately unchecksummed (`^0x[0-9a-fA-F]{40}$`, case-insensitive) —
  * the only existing address-shape check anywhere in this repo
@@ -153,6 +156,24 @@ export const aaveV4PositionIdentitySchema = z.object({
 });
 
 export type AaveV4PositionIdentityInput = z.infer<typeof aaveV4PositionIdentitySchema>;
+
+/**
+ * Aave protocol version — Stage 5 (V4 Readiness Audit §12). The first Zod
+ * counterpart to `engine/protocols/types.ts`'s `AaveProtocolVersion`
+ * (`'v3' | 'v4'`, Stage 1) — that union has never had a schema since
+ * nothing validated a runtime value against it before
+ * `stores/portfolioStore.ts`'s `setProtocolVersion` (Stage 5) needed one.
+ * The literal values are written out rather than derived from the TS
+ * type (Zod cannot read a `type` alias at runtime), so if
+ * `AaveProtocolVersion` ever gains a third version, this must be updated
+ * to match by hand — the same relationship `debtPositionSchema`'s
+ * `z.enum(SUPPORTED_DEBT_ASSETS)` already has with its own TS type, just
+ * without a shared `as const` array to import here since
+ * `AaveProtocolVersion` is a plain union, not derived from one.
+ */
+export const protocolVersionSchema = z.enum(['v3', 'v4']);
+
+export type ProtocolVersionInput = z.infer<typeof protocolVersionSchema>;
 
 export const portfolioInputSchema = z.object({
   name: z

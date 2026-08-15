@@ -10,6 +10,7 @@ import {
   portfolioInputSchema,
   portfolioInputUpdateSchema,
   protocolParametersSchema,
+  protocolVersionSchema,
 } from '@/types/portfolio.schema';
 
 /**
@@ -246,6 +247,33 @@ describe('aaveV4PositionIdentitySchema (Stage 4A)', () => {
   it('rejects a missing userAddress field entirely', () => {
     const result = aaveV4PositionIdentitySchema.safeParse({});
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * `protocolVersionSchema` — Stage 5 (V4 Readiness Audit §12). The Zod
+ * counterpart to `engine/protocols/types.ts`'s `AaveProtocolVersion`
+ * union, first needed by `stores/portfolioStore.ts`'s `setProtocolVersion`.
+ */
+describe('protocolVersionSchema (Stage 5)', () => {
+  it('accepts "v3"', () => {
+    expect(protocolVersionSchema.safeParse('v3').success).toBe(true);
+  });
+
+  it('accepts "v4"', () => {
+    expect(protocolVersionSchema.safeParse('v4').success).toBe(true);
+  });
+
+  it('rejects any other string', () => {
+    expect(protocolVersionSchema.safeParse('v5').success).toBe(false);
+  });
+
+  it('rejects a non-string value', () => {
+    expect(protocolVersionSchema.safeParse(4).success).toBe(false);
+  });
+
+  it('rejects undefined (the schema itself is required; optionality is applied by callers)', () => {
+    expect(protocolVersionSchema.safeParse(undefined).success).toBe(false);
   });
 });
 

@@ -14,6 +14,16 @@
  * Milestone 7 Batch 2 to support M7-011's "BTC exposure" Display item
  * for the current (pre-strategy) portfolio state — see that file's own
  * header comment.
+ *
+ * **`AaveProtocolVersion`/`AaveV4PositionIdentity` (V4 Readiness Audit
+ * §12 Stage 5)** — re-exported here, not previously part of this barrel,
+ * because `stores/portfolioStore.ts` is now their first Store-layer
+ * consumer (`setProtocolVersion`/`setAaveV4Position`) and Stores only
+ * import from this public entry point, never by reaching into
+ * `./models.ts` or `@/engine` directly — the same boundary
+ * `types/portfolio.ts`'s own `Portfolio extends ApplicationPortfolio`
+ * already respects. Both are re-exports of Stage 1's/Stage 4A's existing
+ * types, not new models.
  */
 export {
   type PortfolioAction,
@@ -30,6 +40,7 @@ export {
   type MappingSuccess,
 } from './mapping';
 export type {
+  AaveV4PositionIdentity,
   ApplicationPortfolio,
   PersistenceCollateralPosition,
   PersistenceDebtPosition,
@@ -42,3 +53,4 @@ export {
   type PortfolioLiquidationSummary,
   type PortfolioSummary,
 } from './summary';
+export type { AaveProtocolVersion } from '@/engine';

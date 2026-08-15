@@ -169,11 +169,45 @@
  * the failure automatically once applied) does that. Does not touch
  * `saveStatus`: nothing is being saved, only re-derived from data that
  * was already saved.
+ *
+ * **`setProtocolVersion`/`setAaveV4Position` (V4 Readiness Audit §12
+ * Stage 5)** — the Store mutations `services/portfolio/models.ts`'s own
+ * `protocolVersion`/`v4Position` doc comments deferred to "whichever
+ * later stage adds the actual Store mutation." Deliberately separate
+ * from `create`/`update`/`portfolioInputSchema`, the same way live-synced
+ * `market`/`protocol` bypass the main input form: neither field is
+ * user-entered through the Portfolio creation/edit form (there is still
+ * no UI for either — Stage 5's own non-goal), so there is nothing for
+ * `portfolioInputSchema` to validate them against.
+ *
+ * `setAaveV4Position` returns `MappingResult<Portfolio>` like
+ * `create`/`update`, because it runs real, failable validation
+ * (`aaveV4PositionIdentitySchema` — Stage 4A's existing schema, reused
+ * unchanged) against a value that could genuinely be malformed once a
+ * real caller supplies one. `setProtocolVersion` returns `void` like
+ * `archive`/`unarchive`, because `AaveProtocolVersion` is a closed TS
+ * union with nothing Zod-parseable to fail on beyond the portfolio itself
+ * not existing — the same distinction this file already draws between
+ * `create`/`update` (return `MappingResult`) and `archive`/`unarchive`/
+ * `delete`/`select` (return `void`, only ever failing on "not found").
+ *
+ * **Deliberately no cross-inference between the two fields.** Setting
+ * `v4Position` does not set `protocolVersion` to `'v4'`, and setting
+ * `protocolVersion` does not require or clear `v4Position` — whether a
+ * portfolio actually *uses* a V4 identity for debt-math dispatch
+ * (`services/simulation/scenario.ts`'s own `protocolVersion` read) is a
+ * product/UX decision for whichever stage builds the real selector UI,
+ * not a rule to bake silently into Store plumbing now. A portfolio can
+ * therefore legally hold `v4Position` set while `protocolVersion` stays
+ * `'v3'`/unset, or vice versa — both actions accept `undefined` to clear
+ * their own field independently, with no side effect on the other.
  */
 import type { ZodError } from 'zod';
 import { create } from 'zustand';
 
 import {
+  type AaveProtocolVersion,
+  type AaveV4PositionIdentity,
   type ApplicationError,
   autoSaveCoordinator,
   calculatePortfolioSummary,
@@ -187,6 +221,7 @@ import {
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import {
+  aaveV4PositionIdentitySchema,
   type PortfolioInput,
   portfolioInputSchema,
   type PortfolioInputUpdate,
@@ -222,6 +257,11 @@ export interface PortfolioStoreActions {
   unarchive: (id: string) => void;
   delete: (id: string) => void;
   recomputeSummary: (id: string) => void;
+  setProtocolVersion: (id: string, version: AaveProtocolVersion | undefined) => void;
+  setAaveV4Position: (
+    id: string,
+    v4Position: AaveV4PositionIdentity | undefined,
+  ) => MappingResult<Portfolio>;
 }
 
 export type PortfolioStore = PortfolioStoreState & PortfolioStoreActions;
@@ -563,6 +603,69 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       },
       errors: [],
     }));
+  },
+
+  setProtocolVersion: (id, version) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      set({ errors: [notFoundError(id)], saveStatus: 'error' });
+      return;
+    }
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      protocolVersion: version,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+    }));
+    schedulePortfolioSave(portfolio);
+  },
+
+  setAaveV4Position: (id, v4Position) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    let validated: AaveV4PositionIdentity | undefined;
+    if (v4Position !== undefined) {
+      const parsed = aaveV4PositionIdentitySchema.safeParse(v4Position);
+      if (!parsed.success) {
+        const errors = zodErrorToErrors(parsed.error);
+        set({ errors, saveStatus: 'error' });
+        return { ok: false, errors };
+      }
+      validated = {
+        // Schema-validated against `^0x[0-9a-fA-F]{40}$` above, so this is
+        // a safe narrowing, not an unchecked cast — same convention as
+        // `services/aave/v4LivePosition.ts`.
+        userAddress: parsed.data.userAddress as `0x${string}`,
+      };
+    }
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      v4Position: validated,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+    }));
+    schedulePortfolioSave(portfolio);
+
+    return { ok: true, data: portfolio };
   },
 }));
 

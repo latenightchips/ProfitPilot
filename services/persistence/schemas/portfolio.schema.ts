@@ -21,16 +21,36 @@
  * `services/shared/sanitizeText.ts`'s own header comment for what this
  * does and doesn't defend against. This is the write/import choke point
  * both a normal `create`/`update` and an imported portfolio pass through.
+ *
+ * **`protocolVersion`/`v4Position` (V4 Readiness Audit §12 Stage 5)** —
+ * both optional, matching `ApplicationPortfolio`'s own optionality
+ * (`services/portfolio/models.ts`) and `Portfolio`'s inherited fields
+ * (`types/portfolio.ts`). Their absence here before Stage 5 was the
+ * actual bug this stage closes, not a deliberate omission like the ones
+ * documented above: `autoSaveCoordinator`/`persistenceService` validate
+ * every portfolio write against this exact schema
+ * (`../validate.ts`/`./index.ts`'s `PAYLOAD_SCHEMAS_BY_RECORD_TYPE`), and
+ * Zod's `z.object()` silently strips any key not listed here on
+ * `.parse()` — so before this change, a portfolio carrying either field
+ * in memory would have had it discarded on the very next autosave, even
+ * though `types/portfolio.ts`'s `Portfolio extends ApplicationPortfolio`
+ * already made both fields structurally legal. Reuses
+ * `protocolVersionSchema`/`aaveV4PositionIdentitySchema` directly (the
+ * same schemas `stores/portfolioStore.ts`'s new `setProtocolVersion`/
+ * `setAaveV4Position` actions validate against) rather than redefining
+ * either shape here.
  */
 import { z } from 'zod';
 
 import { sanitizedOptionalTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
 import {
+  aaveV4PositionIdentitySchema,
   collateralPositionSchema,
   debtPositionSchema,
   marketPricesSchema,
   portfolioSettingsSchema,
   protocolParametersSchema,
+  protocolVersionSchema,
 } from '@/types/portfolio.schema';
 
 export const persistedPortfolioPayloadSchema = z.object({
@@ -43,6 +63,8 @@ export const persistedPortfolioPayloadSchema = z.object({
   market: marketPricesSchema,
   protocol: protocolParametersSchema,
   settings: portfolioSettingsSchema,
+  protocolVersion: protocolVersionSchema.optional(),
+  v4Position: aaveV4PositionIdentitySchema.optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

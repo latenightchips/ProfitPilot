@@ -634,3 +634,267 @@ describe('usePortfolioStore.recomputeSummary (M4-017)', () => {
     expect(usePortfolioStore.getState().saveStatus).toBe('idle');
   });
 });
+
+/**
+ * `setProtocolVersion`/`setAaveV4Position` — V4 Readiness Audit §12
+ * Stage 5.
+ */
+const VALID_V4_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+
+function createValidPortfolio() {
+  const result = usePortfolioStore.getState().create(validInput());
+  if (!result.ok) throw new Error('setup failed');
+  return result.data;
+}
+
+describe('usePortfolioStore.setProtocolVersion (Stage 5)', () => {
+  it('sets protocolVersion on the target portfolio', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.protocolVersion).toBe(
+      'v4',
+    );
+  });
+
+  it('clears protocolVersion back to undefined', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore.getState().setProtocolVersion(created.id, undefined);
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.protocolVersion,
+    ).toBeUndefined();
+  });
+
+  it('does not set or require v4Position as a side effect (no cross-inference)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position,
+    ).toBeUndefined();
+  });
+
+  it('leaves every other field untouched', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    const updated = usePortfolioStore.getState().portfolios[created.id].portfolio;
+
+    expect(updated.name).toBe(created.name);
+    expect(updated.collateral).toEqual(created.collateral);
+    expect(updated.debt).toEqual(created.debt);
+    expect(updated.market).toEqual(created.market);
+    expect(updated.protocol).toEqual(created.protocol);
+    expect(updated.archivedAt).toBe(created.archivedAt);
+    expect(updated.createdAt).toBe(created.createdAt);
+  });
+
+  it('reports a not-found error for an unknown id and does not throw', () => {
+    usePortfolioStore.getState().setProtocolVersion('missing-id', 'v4');
+    expect(usePortfolioStore.getState().errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+
+  it('schedules a save (saveStatus reaches "saved")', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+});
+
+describe('usePortfolioStore.setAaveV4Position (Stage 5)', () => {
+  it('sets a well-formed v4Position on the target portfolio', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position).toEqual({
+      userAddress: VALID_V4_ADDRESS,
+    });
+  });
+
+  it('rejects a malformed address, leaving the portfolio unchanged', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: 'not-an-address' as `0x${string}` });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every((error) => error.category === 'validation')).toBe(true);
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position,
+    ).toBeUndefined();
+    expect(usePortfolioStore.getState().errors).toEqual(result.errors);
+  });
+
+  it('clears v4Position back to undefined', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    const cleared = usePortfolioStore.getState().setAaveV4Position(created.id, undefined);
+
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.data.v4Position).toBeUndefined();
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position,
+    ).toBeUndefined();
+  });
+
+  it('does not set or require protocolVersion as a side effect (no cross-inference)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.protocolVersion,
+    ).toBeUndefined();
+  });
+
+  it('reports a not-found error for an unknown id and does not throw', () => {
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4Position('missing-id', { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+
+  it('schedules a save (saveStatus reaches "saved") on a successful set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+
+  it('does not schedule a save on a rejected (invalid-address) set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: 'nope' as `0x${string}` });
+    await autoSaveCoordinator.flushAll();
+
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+});
+
+describe('Portfolio identity persistence — real write/reload round trip (Stage 5)', () => {
+  it('protocolVersion and v4Position both survive a genuine local storage round trip, surviving a simulated refresh', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    await autoSaveCoordinator.flushAll();
+
+    // Simulates a page refresh: wipe in-memory state, then hydrate purely
+    // from whatever `persistenceService`/local storage actually has —
+    // before Stage 5, `persistedPortfolioPayloadSchema` silently stripped
+    // both fields here (Zod drops unrecognized keys on `.parse()`).
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.protocolVersion).toBe('v4');
+    expect(record.portfolio.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+  });
+
+  it('clearing v4Position also survives the round trip (does not resurrect on reload)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setAaveV4Position(created.id, undefined);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position,
+    ).toBeUndefined();
+  });
+});
+
+describe('Backward compatibility — existing V3 create/update/duplicate behavior is unaffected (Stage 5)', () => {
+  it('create leaves protocolVersion and v4Position undefined for an ordinary portfolio', () => {
+    const created = createValidPortfolio();
+    expect(created.protocolVersion).toBeUndefined();
+    expect(created.v4Position).toBeUndefined();
+  });
+
+  it('update (name-only) does not introduce either field', () => {
+    const created = createValidPortfolio();
+    const updated = usePortfolioStore.getState().update(created.id, { name: 'Renamed' });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.data.protocolVersion).toBeUndefined();
+    expect(updated.data.v4Position).toBeUndefined();
+  });
+
+  it('duplicate does not introduce either field on the copy', () => {
+    const created = createValidPortfolio();
+    const duplicated = usePortfolioStore.getState().duplicate(created.id);
+    expect(duplicated.ok).toBe(true);
+    if (!duplicated.ok) return;
+    expect(duplicated.data.protocolVersion).toBeUndefined();
+    expect(duplicated.data.v4Position).toBeUndefined();
+  });
+
+  it('duplicate carries an existing v4Position/protocolVersion through unchanged (not stripped, not reset)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+
+    const duplicated = usePortfolioStore.getState().duplicate(created.id);
+    expect(duplicated.ok).toBe(true);
+    if (!duplicated.ok) return;
+    expect(duplicated.data.protocolVersion).toBe('v4');
+    expect(duplicated.data.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+  });
+
+  it('a plain V3 portfolio (neither field ever set) still survives a full write/reload round trip', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.protocolVersion).toBeUndefined();
+    expect(record.portfolio.v4Position).toBeUndefined();
+    expect(record.portfolio.name).toBe(created.name);
+  });
+
+  it('archive/unarchive on a V4-identified portfolio does not touch protocolVersion/v4Position', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+
+    usePortfolioStore.getState().archive(created.id);
+    usePortfolioStore.getState().unarchive(created.id);
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.protocolVersion).toBe('v4');
+    expect(record.portfolio.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+  });
+});
