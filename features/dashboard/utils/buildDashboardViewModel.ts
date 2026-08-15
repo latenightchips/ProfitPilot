@@ -57,6 +57,16 @@
  * `useAaveLiveSync`'s own equality-gated `update()`) remain the only
  * source of truth for the actual calculated numbers; `liveAave` only
  * affects how the freshness/origin *label* is reported.
+ *
+ * **Mismatch guard (USDT Support milestone).** `liveQuote.borrowAsset` is
+ * compared against `portfolio.debt.asset` before ever reporting protocol
+ * data as `'live'` (case 2 above) — a live quote fetched for a different
+ * asset (e.g. stale USDC data still in the store right after the active
+ * portfolio switched to USDT) falls through to case 3 (`'cache'`) instead,
+ * exactly as if no live quote had been supplied at all. This protects
+ * Dashboard freshness/live-state presentation the same way
+ * `hooks/useAaveLiveSync.ts`'s own mismatch guard protects portfolio live
+ * synchronization.
  */
 import {
   normalizeMarketQuote,
@@ -167,7 +177,12 @@ function buildProtocolFreshness(
   liveAave: AaveLiveSnapshot | undefined,
 ): DashboardFreshness['protocol'] {
   const liveQuote = liveAave?.protocolQuote;
-  if (liveQuote !== null && liveQuote !== undefined && liveQuote.available) {
+  if (
+    liveQuote !== null &&
+    liveQuote !== undefined &&
+    liveQuote.available &&
+    liveQuote.borrowAsset === portfolio.debt.asset
+  ) {
     return {
       origin: liveQuote.origin,
       updatedAt: liveQuote.timestamp,

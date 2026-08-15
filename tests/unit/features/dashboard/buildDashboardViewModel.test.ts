@@ -275,6 +275,59 @@ describe('buildDashboardViewModel — live Aave snapshot (Dashboard Live-State C
     // never off the live quote's own price directly.
     expect(viewModel.metrics.totalCollateral.rawValue).toBe(100000);
   });
+
+  it('does not label mismatched protocol data "live" — a USDT live quote is never applied to a USDC-debt portfolio (USDT Support milestone)', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDC', balance: 20000 } });
+
+    const viewModel = buildDashboardViewModel(
+      portfolio,
+      usePortfolioStore.getState().portfolios[portfolio.id].summary,
+      {
+        marketQuote: liveMarketQuote(),
+        protocolQuote: liveProtocolQuote({ borrowAsset: 'USDT' }),
+      },
+    );
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    // Falls through to the existing stored-value fallback, never "live".
+    expect(viewModel.freshness.protocol?.origin).not.toBe('live');
+    expect(viewModel.freshness.protocol?.origin).toBe('cache');
+  });
+
+  it('does not label mismatched protocol data "live" — a USDC live quote is never applied to a USDT-debt portfolio (USDT Support milestone)', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDT', balance: 20000 } });
+
+    const viewModel = buildDashboardViewModel(
+      portfolio,
+      usePortfolioStore.getState().portfolios[portfolio.id].summary,
+      {
+        marketQuote: liveMarketQuote(),
+        protocolQuote: liveProtocolQuote({ borrowAsset: 'USDC' }),
+      },
+    );
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    expect(viewModel.freshness.protocol?.origin).not.toBe('live');
+  });
+
+  it('does label protocol data "live" once the live quote\'s borrowAsset matches the portfolio\'s own debt asset (positive control)', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDT', balance: 20000 } });
+
+    const viewModel = buildDashboardViewModel(
+      portfolio,
+      usePortfolioStore.getState().portfolios[portfolio.id].summary,
+      {
+        marketQuote: liveMarketQuote(),
+        protocolQuote: liveProtocolQuote({ borrowAsset: 'USDT' }),
+      },
+    );
+
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+    expect(viewModel.freshness.protocol?.origin).toBe('live');
+  });
 });
 
 describe('buildDashboardViewModel — portfolio description (M5-004)', () => {

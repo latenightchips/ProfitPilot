@@ -41,6 +41,8 @@ import {
  * still-manual/never-synced — exactly as they were. Nothing is ever
  * blanked or zeroed.
  */
+const DEFAULT_BORROW_ASSET = 'USDC';
+
 export function useAaveLiveSync(portfolioId: string | null): void {
   const status = useAaveLiveDataStore((state) => state.status);
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
@@ -51,15 +53,24 @@ export function useAaveLiveSync(portfolioId: string | null): void {
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
 
+  const borrowAsset = portfolio?.debt.asset ?? DEFAULT_BORROW_ASSET;
+
   useEffect(() => {
-    void fetchLiveAaveData();
-  }, [fetchLiveAaveData]);
+    void fetchLiveAaveData(borrowAsset);
+  }, [fetchLiveAaveData, borrowAsset]);
 
   useEffect(() => {
     if (portfolioId === null || portfolio === undefined) return;
     if (status !== 'ready') return;
     if (marketQuote === null || marketQuote.freshness === 'unavailable') return;
     if (protocolQuote === null || !protocolQuote.available) return;
+    // Mismatch guard (USDT Support milestone) — a live quote fetched for a
+    // different asset than this portfolio's own `debt.asset` must never be
+    // synced in, even if it happens to arrive while this portfolio is
+    // active (e.g. right after an asset switch, before the new fetch
+    // lands). See `stores/aaveLiveDataStore.ts`'s own request-id guard for
+    // the complementary protection against a stale in-flight response.
+    if (protocolQuote.borrowAsset !== portfolio.debt.asset) return;
 
     const nextMarket = { btcPriceUsd: marketQuote.price };
     const nextProtocol = protocolQuote.parameters;

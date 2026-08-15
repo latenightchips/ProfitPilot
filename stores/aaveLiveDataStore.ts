@@ -22,6 +22,19 @@ import type { ProtocolQuote } from '@/services/protocol/quote';
  * same guarantee to leave a portfolio's stored `market`/`protocol` values
  * untouched (never blanked/zeroed) whenever a refresh fails.
  *
+ * **`borrowAsset` parameter + asset-switch race guard (USDT Support
+ * milestone).** `fetchLiveAaveData` now takes the borrow asset to fetch
+ * (the active portfolio's own `debt.asset` — see `useAaveLiveSync`) and
+ * forwards it as `?borrowAsset=`. If the active portfolio's debt asset
+ * changes while a fetch for the *previous* asset is still in flight (e.g.
+ * a USDC request in flight, then the active portfolio switches to a USDT
+ * one before it resolves), that stale response must never become
+ * authoritative state for the new asset. Guarded with a module-level
+ * monotonic request id: each call captures its own id, and every `set()`
+ * call site checks the id is still the latest before writing — a stale
+ * resolution (success or failure) is discarded entirely rather than
+ * applied on top of newer, already-landed state.
+ *
  * **`source` (Portfolio Live-State Cleanup batch)** — the adapter's
  * `AaveSourceMetadata` (protocol/version/network/method/blockNumber),
  * surfaced for the Developer-Mode-gated "Technical details" block. Not
@@ -41,10 +54,12 @@ export interface AaveLiveDataState {
   borrowSymbol: string | null;
   source: AaveSourceMetadata | null;
   errorMessage: string | null;
-  fetchLiveAaveData: () => Promise<void>;
+  fetchLiveAaveData: (borrowAsset: string) => Promise<void>;
 }
 
 const GENERIC_ERROR_MESSAGE = 'Live Aave data is temporarily unavailable.';
+
+let latestRequestId = 0;
 
 export const useAaveLiveDataStore = create<AaveLiveDataState>((set) => ({
   status: 'idle',
@@ -55,17 +70,21 @@ export const useAaveLiveDataStore = create<AaveLiveDataState>((set) => ({
   source: null,
   errorMessage: null,
 
-  fetchLiveAaveData: async () => {
+  fetchLiveAaveData: async (borrowAsset: string) => {
+    const requestId = ++latestRequestId;
     set({ status: 'loading' });
 
     let body: AaveReserveApiResponse;
     try {
-      const response = await fetch('/api/aave/reserve');
+      const response = await fetch(`/api/aave/reserve?borrowAsset=${encodeURIComponent(borrowAsset)}`);
       body = (await response.json()) as AaveReserveApiResponse;
     } catch {
+      if (requestId !== latestRequestId) return;
       set({ status: 'error', errorMessage: GENERIC_ERROR_MESSAGE });
       return;
     }
+
+    if (requestId !== latestRequestId) return;
 
     if (!body.ok || body.data === undefined) {
       set({ status: 'error', errorMessage: body.error?.userMessage ?? GENERIC_ERROR_MESSAGE });

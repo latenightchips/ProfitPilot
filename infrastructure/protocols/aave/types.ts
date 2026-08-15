@@ -40,5 +40,5 @@ export type AaveAdapterResult =
 
 export interface AaveAdapter {
   version: AaveProtocolVersion;
-  fetchReserveSnapshot(): Promise<AaveAdapterResult>;
+  fetchReserveSnapshot(borrowAssetSymbol: string): Promise<AaveAdapterResult>;
 }

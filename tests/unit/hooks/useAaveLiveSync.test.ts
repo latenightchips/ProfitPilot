@@ -217,3 +217,128 @@ describe('useAaveLiveSync — never overwrites collateral quantity, debt asset, 
     expect(after.debt.balance).toBe(20000);
   });
 });
+
+describe("useAaveLiveSync — fetches for the portfolio's own debt asset (USDT Support milestone)", () => {
+  it('fetches USDC for a USDC-debt portfolio', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDC', balance: 20000 } });
+    renderHook(() => useAaveLiveSync(portfolio.id));
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDC');
+  });
+
+  it('fetches USDT for a USDT-debt portfolio', () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDT', balance: 20000 } });
+    renderHook(() => useAaveLiveSync(portfolio.id));
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDT');
+  });
+
+  it('switching the active portfolio from a USDC-debt one to a USDT-debt one triggers a new fetch for USDT', () => {
+    const usdcPortfolio = createPortfolio({ debt: { asset: 'USDC', balance: 20000 } });
+    const usdtResult = usePortfolioStore.getState().create({
+      name: 'USDT Portfolio',
+      baseCurrency: 'USD',
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDT', balance: 10000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      settings: {},
+    });
+    if (!usdtResult.ok) throw new Error('setup failed');
+
+    const { rerender } = renderHook(({ id }) => useAaveLiveSync(id), {
+      initialProps: { id: usdcPortfolio.id },
+    });
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDC');
+
+    rerender({ id: usdtResult.data.id });
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDT');
+  });
+});
+
+describe('useAaveLiveSync — mismatch guard: a live quote for a different asset is never applied (USDT Support milestone)', () => {
+  it('does not sync a USDT live quote into a USDC-debt portfolio', async () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDC', balance: 20000 } });
+    const updatedAtBefore =
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.updatedAt;
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(
+      readyState({
+        protocolQuote: {
+          available: true as const,
+          collateralAsset: 'WBTC',
+          borrowAsset: 'USDT',
+          parameters: {
+            maxLoanToValue: 0.73,
+            liquidationThreshold: 0.78,
+            borrowApr: 0.09,
+            supplyApr: 0.005,
+          },
+          origin: 'live' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.updatedAt).toBe(updatedAtBefore);
+    expect(after.protocol.borrowApr).toBe(0.05);
+  });
+
+  it('does not sync a USDC live quote into a USDT-debt portfolio', async () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDT', balance: 20000 } });
+    const updatedAtBefore =
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.updatedAt;
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.updatedAt).toBe(updatedAtBefore);
+    expect(after.protocol.borrowApr).toBe(0.05);
+  });
+
+  it('syncs correctly once the live store catches up to a matching asset', async () => {
+    const portfolio = createPortfolio({ debt: { asset: 'USDT', balance: 20000 } });
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    // First, a mismatched USDC quote lands — must be ignored.
+    useAaveLiveDataStore.setState(readyState());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.protocol.borrowApr).toBe(
+      0.05,
+    );
+
+    // Then a matching USDT quote lands — must sync.
+    useAaveLiveDataStore.setState(
+      readyState({
+        protocolQuote: {
+          available: true as const,
+          collateralAsset: 'WBTC',
+          borrowAsset: 'USDT',
+          parameters: {
+            maxLoanToValue: 0.73,
+            liquidationThreshold: 0.78,
+            borrowApr: 0.09,
+            supplyApr: 0.005,
+          },
+          origin: 'live' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.protocol.borrowApr).toBe(0.09);
+    });
+  });
+});

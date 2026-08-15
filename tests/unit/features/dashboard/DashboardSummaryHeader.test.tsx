@@ -124,6 +124,34 @@ describe('DashboardSummaryHeader — actions (Dashboard Live-State Cleanup batch
     expect(afterRecord.summary.ok).toBe(true);
   });
 
+  it('the Refresh button fetches live data for the portfolio\'s own debt asset, not a hardcoded default (USDT Support milestone)', async () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ debt: { asset: 'USDT', balance: 20000 } }));
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+
+    render(<DashboardSummaryHeader viewModel={viewModel} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDT');
+  });
+
+  it('the Refresh button still fetches USDC for a USDC-debt portfolio (unchanged behavior)', async () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+
+    render(<DashboardSummaryHeader viewModel={viewModel} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDC');
+  });
+
   it('the Edit Portfolio link points to the single Portfolio detail route', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');

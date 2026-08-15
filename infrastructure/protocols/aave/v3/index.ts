@@ -1,5 +1,9 @@
 import type { AaveAdapter, AaveAdapterResult } from '../types';
-import { AAVE_V3_ETHEREUM_MARKET } from './addresses';
+import {
+  AAVE_V3_ETHEREUM_BORROW_ASSETS,
+  AAVE_V3_ETHEREUM_MARKET,
+  type AaveV3LiveBorrowAssetSymbol,
+} from './addresses';
 import {
   type AaveV3RpcClient,
   createAaveV3RpcClient,
@@ -17,17 +21,48 @@ export interface CreateAaveV3AdapterParams {
 }
 
 /**
+ * Table-driven guard (USDT Support milestone): true exactly when `symbol`
+ * is a key of the `AAVE_V3_ETHEREUM_BORROW_ASSETS` registry. Used to fail
+ * closed — before any RPC call — for any asset this milestone doesn't
+ * carry live data for (e.g. DAI), rather than falling through to a branch
+ * that would substitute another asset's reserve.
+ */
+export function isLiveBorrowAsset(symbol: string): symbol is AaveV3LiveBorrowAssetSymbol {
+  return symbol in AAVE_V3_ETHEREUM_BORROW_ASSETS;
+}
+
+/**
  * Fetches one internally-consistent reserve snapshot: every read (reserve
  * config, reserve data, price, and both assets' live ERC20 decimals) is
  * pinned to the same block number, fetched once up front. Decimals are
  * cross-checked against the hardcoded `AAVE_V3_ETHEREUM_ASSETS` registry
  * and fail closed on any mismatch, rather than silently proceeding with a
  * possibly-wrong scale.
+ *
+ * **`borrowAssetSymbol` (USDT Support milestone)** — looked up against the
+ * `AAVE_V3_ETHEREUM_BORROW_ASSETS` registry via `isLiveBorrowAsset` before
+ * any RPC call is attempted; an unrecognized symbol (e.g. DAI) fails
+ * closed with `AAVE_UNSUPPORTED_BORROW_ASSET` rather than silently
+ * fetching USDC's reserve instead.
  */
 export async function fetchAaveV3ReserveSnapshot(
   client: AaveV3RpcClient,
+  borrowAssetSymbol: string,
 ): Promise<AaveAdapterResult> {
-  const { collateralAsset, borrowAsset, network } = AAVE_V3_ETHEREUM_MARKET;
+  if (!isLiveBorrowAsset(borrowAssetSymbol)) {
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_UNSUPPORTED_BORROW_ASSET',
+        message: `No live Aave V3 borrow reserve is configured for "${borrowAssetSymbol}".`,
+        userMessage: `Live Aave V3 data is not yet available for ${borrowAssetSymbol}.`,
+        retryable: false,
+      },
+    };
+  }
+
+  const { collateralAsset, network } = AAVE_V3_ETHEREUM_MARKET;
+  const borrowAsset = AAVE_V3_ETHEREUM_BORROW_ASSETS[borrowAssetSymbol];
 
   const blockNumberResult = await fetchBlockNumber(client);
   if (!blockNumberResult.ok) {
@@ -105,6 +140,7 @@ export function createAaveV3Adapter(params: CreateAaveV3AdapterParams): AaveAdap
   const client = createAaveV3RpcClient(params.rpcUrl);
   return {
     version: 'v3',
-    fetchReserveSnapshot: () => fetchAaveV3ReserveSnapshot(client),
+    fetchReserveSnapshot: (borrowAssetSymbol: string) =>
+      fetchAaveV3ReserveSnapshot(client, borrowAssetSymbol),
   };
 }

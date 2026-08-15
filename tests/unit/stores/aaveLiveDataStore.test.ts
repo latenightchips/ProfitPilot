@@ -24,7 +24,7 @@ const INITIAL_STATE = {
   errorMessage: null,
 };
 
-function successBody() {
+function successBody(overrides?: { borrowSymbol?: string; borrowApr?: number }) {
   return {
     ok: true,
     data: {
@@ -35,12 +35,12 @@ function successBody() {
         parameters: {
           maxLoanToValue: 0.73,
           liquidationThreshold: 0.78,
-          borrowApr: 0.05,
+          borrowApr: overrides?.borrowApr ?? 0.05,
           supplyApr: 0.005,
         },
       },
       collateralSymbol: 'WBTC',
-      borrowSymbol: 'USDC',
+      borrowSymbol: overrides?.borrowSymbol ?? 'USDC',
       source: {
         protocol: 'aave',
         version: 'v3',
@@ -66,7 +66,7 @@ describe('useAaveLiveDataStore — success', () => {
       .fn()
       .mockResolvedValue(jsonResponse(successBody())) as unknown as typeof fetch;
 
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     const state = useAaveLiveDataStore.getState();
     expect(state.status).toBe('ready');
@@ -97,11 +97,87 @@ describe('useAaveLiveDataStore — success', () => {
       () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
     ) as unknown as typeof fetch;
 
-    const promise = useAaveLiveDataStore.getState().fetchLiveAaveData();
+    const promise = useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
     expect(useAaveLiveDataStore.getState().status).toBe('loading');
 
     resolveFetch(jsonResponse(successBody()));
     return promise;
+  });
+});
+
+describe('useAaveLiveDataStore — borrowAsset forwarding (USDT Support milestone)', () => {
+  it('includes the requested borrow asset in the fetch URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(successBody({ borrowSymbol: 'USDT' })));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDT');
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('borrowAsset=USDT'));
+  });
+
+  it('includes USDC in the fetch URL when requested explicitly', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(successBody()));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('borrowAsset=USDC'));
+  });
+});
+
+describe('useAaveLiveDataStore — asset-switch race protection (USDT Support milestone)', () => {
+  it('a stale in-flight USDC response cannot overwrite a newer USDT response that resolves first', async () => {
+    const resolvers: Array<(value: Response) => void> = [];
+    global.fetch = vi.fn(
+      () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+    ) as unknown as typeof fetch;
+
+    const usdcPromise = useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
+    const usdtPromise = useAaveLiveDataStore.getState().fetchLiveAaveData('USDT');
+    expect(resolvers).toHaveLength(2);
+
+    // The newer (USDT) request resolves first.
+    resolvers[1](jsonResponse(successBody({ borrowSymbol: 'USDT', borrowApr: 0.06 })));
+    await usdtPromise;
+    expect(useAaveLiveDataStore.getState().borrowSymbol).toBe('USDT');
+
+    // The stale (USDC) request resolves after — must be discarded entirely,
+    // not applied on top of the already-landed, newer USDT state.
+    resolvers[0](jsonResponse(successBody({ borrowSymbol: 'USDC', borrowApr: 0.05 })));
+    await usdcPromise;
+
+    const state = useAaveLiveDataStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.borrowSymbol).toBe('USDT');
+    expect(state.protocolQuote).toMatchObject({ parameters: { borrowApr: 0.06 } });
+  });
+
+  it('a stale in-flight USDC failure cannot overwrite a newer USDT success that resolves first', async () => {
+    const resolvers: Array<(value: Response) => void> = [];
+    const rejecters: Array<(reason: unknown) => void> = [];
+    global.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve, reject) => {
+          resolvers.push(resolve);
+          rejecters.push(reject);
+        }),
+    ) as unknown as typeof fetch;
+
+    const usdcPromise = useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
+    const usdtPromise = useAaveLiveDataStore.getState().fetchLiveAaveData('USDT');
+
+    resolvers[1](jsonResponse(successBody({ borrowSymbol: 'USDT' })));
+    await usdtPromise;
+    expect(useAaveLiveDataStore.getState().status).toBe('ready');
+
+    // The stale USDC request fails after USDT already succeeded — must not
+    // flip the (already correct, newer) 'ready' state back to 'error'.
+    rejecters[0](new TypeError('Failed to fetch'));
+    await usdcPromise;
+
+    const state = useAaveLiveDataStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.borrowSymbol).toBe('USDT');
   });
 });
 
@@ -111,7 +187,7 @@ describe('useAaveLiveDataStore — failure / fallback (never erases prior good d
       .fn()
       .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
 
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     const state = useAaveLiveDataStore.getState();
     expect(state.status).toBe('error');
@@ -130,23 +206,44 @@ describe('useAaveLiveDataStore — failure / fallback (never erases prior good d
       }),
     ) as unknown as typeof fetch;
 
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     expect(useAaveLiveDataStore.getState().errorMessage).toBe('Live Aave data is not configured.');
+  });
+
+  it('surfaces AAVE_UNSUPPORTED_BORROW_ASSET (e.g. DAI) as an error, without ever substituting another asset\'s data', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        ok: false,
+        error: {
+          code: 'AAVE_UNSUPPORTED_BORROW_ASSET',
+          userMessage: 'Live Aave V3 data is not yet available for DAI.',
+          retryable: false,
+        },
+      }),
+    ) as unknown as typeof fetch;
+
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('DAI');
+
+    const state = useAaveLiveDataStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errorMessage).toBe('Live Aave V3 data is not yet available for DAI.');
+    expect(state.protocolQuote).toBeNull();
+    expect(state.borrowSymbol).toBeNull();
   });
 
   it('does not erase a previously successful quote when a later refresh fails', async () => {
     global.fetch = vi
       .fn()
       .mockResolvedValue(jsonResponse(successBody())) as unknown as typeof fetch;
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
     expect(useAaveLiveDataStore.getState().status).toBe('ready');
     const previousQuote = useAaveLiveDataStore.getState().marketQuote;
 
     global.fetch = vi
       .fn()
       .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     const state = useAaveLiveDataStore.getState();
     expect(state.status).toBe('error');
@@ -162,7 +259,7 @@ describe('useAaveLiveDataStore — failure / fallback (never erases prior good d
       .fn()
       .mockResolvedValue(new Response('not json', { status: 200 })) as unknown as typeof fetch;
 
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     expect(useAaveLiveDataStore.getState().status).toBe('error');
   });
@@ -175,7 +272,7 @@ describe('useAaveLiveDataStore — freshness classification (reuses normalizeMar
     body.data.priceCandidate.timestamp = staleTimestamp;
     global.fetch = vi.fn().mockResolvedValue(jsonResponse(body)) as unknown as typeof fetch;
 
-    await useAaveLiveDataStore.getState().fetchLiveAaveData();
+    await useAaveLiveDataStore.getState().fetchLiveAaveData('USDC');
 
     expect(useAaveLiveDataStore.getState().marketQuote).toMatchObject({ freshness: 'stale' });
   });

@@ -53,6 +53,9 @@ export function DashboardSummaryHeader({ viewModel }: { viewModel: DashboardView
   const saveStatus = usePortfolioStore((state) => state.saveStatus);
   const recomputeSummary = usePortfolioStore((state) => state.recomputeSummary);
   const fetchLiveAaveData = useAaveLiveDataStore((state) => state.fetchLiveAaveData);
+  const debtAsset = usePortfolioStore(
+    (state) => state.portfolios[viewModel.portfolioId]?.portfolio.debt.asset,
+  );
 
   return (
     <div className="flex flex-col gap-2 border-b border-border pb-4">
@@ -67,7 +70,7 @@ export function DashboardSummaryHeader({ viewModel }: { viewModel: DashboardView
           <button
             type="button"
             onClick={() => {
-              void fetchLiveAaveData();
+              void fetchLiveAaveData(debtAsset ?? 'USDC');
               recomputeSummary(viewModel.portfolioId);
             }}
             className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"

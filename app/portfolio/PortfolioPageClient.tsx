@@ -1036,7 +1036,17 @@ function DebtPositionForm({
   });
 
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
-  const aaveStatusLabel = formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
+  const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
+  // Mismatch guard (USDT Support milestone): a live protocol quote fetched
+  // for a different asset than this portfolio's own `debt.asset` must
+  // never be shown as "Aave V3 · Live" here — same protection as
+  // `useAaveLiveSync`'s sync guard and `buildDashboardViewModel`'s
+  // Dashboard freshness guard, applied to this page's own status badge.
+  const protocolMatchesDebtAsset =
+    protocolQuote !== null && protocolQuote.borrowAsset === portfolio.debt.asset;
+  const aaveStatusLabel = protocolMatchesDebtAsset
+    ? formatAaveDataStatus(deriveAaveDataStatus(marketQuote))
+    : formatAaveDataStatus('unavailable');
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
