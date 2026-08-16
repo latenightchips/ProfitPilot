@@ -40,10 +40,24 @@
  * already calls for price/interest scenarios — using collateral value
  * as "Current Value"/"Initial Investment", the same definition
  * `scenario.ts` established, not a new one invented here.
+ *
+ * **V4 debt-delta state (V4 Readiness Audit §12 Stage 11)** — `afterPortfolio`
+ * below spreads `...portfolio`, so a V4 portfolio's `v4DebtState`
+ * previously carried over completely UNCHANGED regardless of
+ * `input.debtDelta`: since `mapApplicationPortfolioToEngineInput` reads
+ * canonical V4 debt from `v4DebtState`, not `debt.balance`, a Borrow or
+ * Repay action's effect on debt was silently invisible to the "after"
+ * summary for any V4 portfolio. Fixed via
+ * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`, Stage
+ * 11) — see that function's own doc comment for exactly which cases it
+ * resolves (a zero-delta no-op, or a repayment to exactly $0) versus
+ * which it deliberately leaves undefined (any borrow, or a partial
+ * repayment) rather than inventing a drawn/premium allocation policy.
  */
 import { calculatePortfolioGain } from '@/engine';
 import type { ApplicationPortfolio, PortfolioActionPreview } from '@/services';
 import { calculatePortfolioSummary } from '@/services';
+import { deriveV4DebtStateAfterDelta } from '@/services/portfolio/mapping';
 import {
   formulaStep,
   optionsFromTracked,
@@ -82,6 +96,10 @@ export function simulatePortfolioAction(
       quantity: portfolio.collateral.quantity + input.collateralDelta,
     },
     debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
+    ...(portfolio.protocolVersion === 'v4' &&
+      portfolio.v4DebtState !== undefined && {
+        v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, input.debtDelta),
+      }),
   };
   const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);
   if (!afterResult.ok) return afterResult;

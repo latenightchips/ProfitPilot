@@ -196,3 +196,64 @@ describe('previewPortfolioAction (M3-006)', () => {
     expect('data' in result).toBe(false);
   });
 });
+
+/**
+ * V4 borrow/repay state — V4 Readiness Audit §12 Stage 11. The `'borrow'`/
+ * `'repay'` cases in `applyAction` previously spread `...portfolio`,
+ * silently carrying a V4 portfolio's `v4DebtState` forward UNCHANGED
+ * regardless of `action.amount` — since canonical V4 debt is read from
+ * `v4DebtState`, not `debt.balance`, these two actions' effect on debt was
+ * invisible to the "after" summary for any V4 portfolio. These tests
+ * prove the fix, mirroring `simulatePortfolioAction`'s own Stage 11 tests.
+ */
+describe('previewPortfolioAction — V4 borrow/repay state (Stage 11)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return {
+      ...basePortfolio(),
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+  }
+
+  it('a full repay (amount === total V4 debt) produces a real zero-debt "after" state', () => {
+    const action: PortfolioAction = { type: 'repay', amount: 20000 };
+    const result = previewPortfolioAction(v4Portfolio(), action, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.healthFactor).toBe(Infinity);
+  });
+
+  it('a partial repay on a V4 portfolio fails closed rather than silently ignoring the repayment', () => {
+    const action: PortfolioAction = { type: 'repay', amount: 5000 };
+    const result = previewPortfolioAction(v4Portfolio(), action, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('a borrow on a V4 portfolio fails closed rather than silently ignoring the new debt', () => {
+    const action: PortfolioAction = { type: 'borrow', amount: 10000 };
+    const result = previewPortfolioAction(v4Portfolio(), action, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('addCollateral on a V4 portfolio is unaffected — v4DebtState carries forward unchanged since debt never changes', () => {
+    const action: PortfolioAction = { type: 'addCollateral', quantity: 1 };
+    const result = previewPortfolioAction(v4Portfolio(), action, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(20000);
+  });
+
+  it('is unaffected for a "v3" portfolio, even with a real repay/borrow amount', () => {
+    const portfolio: ApplicationPortfolio = { ...basePortfolio(), protocolVersion: 'v3' };
+    const action: PortfolioAction = { type: 'repay', amount: 5000 };
+    const result = previewPortfolioAction(portfolio, action, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(15000);
+  });
+});

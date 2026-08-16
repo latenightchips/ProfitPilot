@@ -170,3 +170,94 @@ describe('simulatePortfolioAction — does not mutate the original portfolio', (
     expect(portfolio.debt.balance).toBe(20000);
   });
 });
+
+/**
+ * V4 debt-delta state — V4 Readiness Audit §12 Stage 11. Before this
+ * stage, `afterPortfolio` spread `...portfolio`, so a V4 portfolio's
+ * `v4DebtState` carried over completely UNCHANGED regardless of
+ * `debtDelta` — since canonical V4 debt is read from `v4DebtState`, not
+ * `debt.balance`, a Borrow/Repay action's effect on debt was silently
+ * invisible to the "after" summary for any V4 portfolio. These tests
+ * prove the fix: a repayment to exactly $0 total debt (the one
+ * unambiguous case) now correctly reflects zero V4 debt in "after";
+ * every other debt-changing delta (a borrow, or a partial repay) is
+ * genuinely ambiguous for the drawn/premium split and fails closed
+ * instead of silently ignoring the delta.
+ */
+describe('simulatePortfolioAction — V4 debt-delta state (Stage 11)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      ...overrides,
+    });
+  }
+
+  it('a repayment to exactly $0 total V4 debt produces a real zero-debt "after" state, not a silently-unchanged one', () => {
+    const result = simulatePortfolioAction(
+      v4Portfolio(),
+      { collateralDelta: 0, debtDelta: -20000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.before.debtValue).toBe(20000);
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.healthFactor).toBe(Infinity);
+  });
+
+  it('a nonzero Borrow on a V4 portfolio fails closed rather than silently ignoring the delta (previously: after.debtValue stayed at 20000)', () => {
+    const result = simulatePortfolioAction(
+      v4Portfolio(),
+      { collateralDelta: 0, debtDelta: 10000 },
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('a partial Repay on a V4 portfolio fails closed rather than silently ignoring the delta', () => {
+    const result = simulatePortfolioAction(
+      v4Portfolio(),
+      { collateralDelta: 0, debtDelta: -5000 },
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('a zero debtDelta on a V4 portfolio is a genuine no-op — before and after match exactly', () => {
+    const result = simulatePortfolioAction(
+      v4Portfolio(),
+      { collateralDelta: 1, debtDelta: 0 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(20000);
+  });
+
+  it('fails closed for a "v4" portfolio with no synced v4DebtState at all, same as before Stage 11', () => {
+    const result = simulatePortfolioAction(
+      basePortfolio({ protocolVersion: 'v4' }),
+      { collateralDelta: 0, debtDelta: -1000 },
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('is unaffected for a "v3" (or unset) portfolio, even with a nonzero debtDelta', () => {
+    const result = simulatePortfolioAction(
+      basePortfolio(),
+      { collateralDelta: 0, debtDelta: 10000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(30000);
+  });
+});

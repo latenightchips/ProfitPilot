@@ -161,8 +161,8 @@ describe('planExit — V4 fail-closed guard, inherited via calculatePortfolioSum
     expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
   });
 
-  it('succeeds once v4DebtState is synced, using the canonical debt total for the "before" summary', () => {
-    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+  it('succeeds for a full exit (the one repayment amount whose post-state is unambiguous) once v4DebtState is synced', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
     const result = planExit(
       {
         ...basePortfolio(),
@@ -187,6 +187,88 @@ describe('planExit — V4 fail-closed guard, inherited via calculatePortfolioSum
       target,
       'live',
     );
+    expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * V4 post-exit state — V4 Readiness Audit §12 Stage 11.
+ * `services/exit/plan.ts`'s own header comment documents the exact
+ * ambiguity: repaying a V4 portfolio's debt down to exactly $0 is the one
+ * case where the post-exit `drawnDebt`/`premiumDebt` split is a
+ * mathematical certainty (both must be $0), so a full V4 exit now carries
+ * real post-exit V4 state forward — proving the exit "remains V4" rather
+ * than silently becoming a bare V3-shaped record. A PARTIAL V4 exit's
+ * split is genuinely undefined in this codebase's own documented model
+ * (no repayment-allocation policy exists anywhere in `engine/protocols/aaveV4`
+ * or `docs/overview.md`), so it fails closed via the existing
+ * `AAVE_V4_DEBT_STATE_MISSING` guard rather than guessing.
+ */
+describe('planExit — V4 post-exit state (Stage 11)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return {
+      ...basePortfolio(),
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+  }
+
+  it('a full exit (targetDebt: 0) carries real post-exit V4 state forward — the exit does not silently become V3', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(v4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    // "After" is computed from a real protocolVersion: 'v4' portfolio with
+    // v4DebtState: {drawnDebt: 0, premiumDebt: 0, ...} — not a V3-shaped
+    // fallback — and correctly reports zero debt / infinite Health Factor.
+    expect(result.data.after?.debtValue).toBe(0);
+    expect(result.data.after?.healthFactor).toBe(Infinity);
+  });
+
+  it('a partial V4 exit fails closed with AAVE_V4_DEBT_STATE_MISSING — the drawn/premium split for a partial repayment is genuinely undefined, not guessed', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit(v4Portfolio(), target, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('a partial V4 exit does not silently fall back to V3 math either — it fails rather than reporting a wrong "after" state', () => {
+    // Before Stage 11, this same call SUCCEEDED with a V3-shaped "after"
+    // portfolio (protocolVersion/v4DebtState both dropped) — i.e. it
+    // silently became V3. Stage 11 changes this to a real failure instead
+    // of a silently-wrong success.
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit(v4Portfolio(), target, 'live');
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('a full exit still succeeds for a "v3" portfolio, unaffected by the V4-only post-exit state logic', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit({ ...basePortfolio(), protocolVersion: 'v3' }, target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after?.debtValue).toBe(0);
+  });
+
+  it('a full exit still succeeds when protocolVersion is unset, unaffected by the V4-only post-exit state logic', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(basePortfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after?.debtValue).toBe(0);
+  });
+
+  it('preserves v4Position identity on the "after" portfolio for a full V4 exit', () => {
+    // Indirect proof: v4Position affects nothing calculatePortfolioSummary
+    // reads, so the strongest available check is that carrying it forward
+    // doesn't break anything — the direct guarantee is exercised at the
+    // mapping-level unit tests for this same portfolio construction.
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(v4Portfolio(), target, 'live');
     expect(result.ok).toBe(true);
   });
 });

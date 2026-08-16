@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkAaveV4DebtStateAvailable,
+  deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
   projectAaveV4AnnualInterestCost,
+  projectAaveV4InterestCost,
 } from '@/services/portfolio/mapping';
-import type { ApplicationPortfolio, PersistencePortfolio } from '@/services/portfolio/models';
+import type {
+  AaveV4DebtState,
+  ApplicationPortfolio,
+  PersistencePortfolio,
+} from '@/services/portfolio/models';
 
 /**
  * Portfolio Mapping Utilities — 06_TASKS.md M3-004.
@@ -455,5 +461,114 @@ describe('projectAaveV4AnnualInterestCost (Stage 10)', () => {
       riskPremium: 0.01,
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * V4 interest cost over an arbitrary holding period — V4 Readiness Audit
+ * §12 Stage 11 (generalizes Stage 10's `projectAaveV4AnnualInterestCost`,
+ * which now delegates here with `elapsedDays: 365`).
+ */
+describe('projectAaveV4InterestCost (Stage 11)', () => {
+  const v4DebtState: AaveV4DebtState = {
+    drawnDebt: 15000,
+    premiumDebt: 500,
+    baseDrawnApr: 0.05,
+    riskPremium: 0.01,
+  };
+
+  it('projects the real 1-day and 30-day V4 accrual, matching independently-derived Engine values', () => {
+    // Independently computed via projectAaveV4Debt directly (same Engine
+    // dispatch this function calls).
+    const daily = projectAaveV4InterestCost(v4DebtState, 1);
+    const monthly = projectAaveV4InterestCost(v4DebtState, 30);
+    expect(daily.ok).toBe(true);
+    expect(monthly.ok).toBe(true);
+    if (!daily.ok || !monthly.ok) return;
+    expect(daily.value).toBeCloseTo(2.0753424657541473, 9);
+    expect(monthly.value).toBeCloseTo(62.26027397260259, 9);
+  });
+
+  it('elapsedDays: 365 matches projectAaveV4AnnualInterestCost exactly (same underlying delegation)', () => {
+    const viaGeneral = projectAaveV4InterestCost(v4DebtState, 365);
+    const viaAnnual = projectAaveV4AnnualInterestCost(v4DebtState);
+    expect(viaGeneral.ok).toBe(true);
+    expect(viaAnnual.ok).toBe(true);
+    if (!viaGeneral.ok || !viaAnnual.ok) return;
+    expect(viaGeneral.value).toBe(viaAnnual.value);
+  });
+
+  it('a longer elapsedDays always projects a strictly larger cost for a nonzero rate', () => {
+    const daily = projectAaveV4InterestCost(v4DebtState, 1);
+    const monthly = projectAaveV4InterestCost(v4DebtState, 30);
+    const annual = projectAaveV4InterestCost(v4DebtState, 365);
+    expect(daily.ok && monthly.ok && annual.ok).toBe(true);
+    if (!daily.ok || !monthly.ok || !annual.ok) return;
+    expect(daily.value).toBeLessThan(monthly.value);
+    expect(monthly.value).toBeLessThan(annual.value);
+  });
+
+  it('propagates a genuine Engine failure (negative elapsedDays) rather than throwing', () => {
+    const result = projectAaveV4InterestCost(v4DebtState, -1);
+    expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * V4 post-change debt state — V4 Readiness Audit §12 Stage 11. Resolves
+ * only the two non-ambiguous cases (a zero-delta no-op, and a repayment
+ * to exactly $0 total debt) and returns `undefined` for every genuinely
+ * ambiguous case (any borrow, or a partial repayment) rather than
+ * inventing a drawn/premium allocation policy — see this function's own
+ * doc comment in `services/portfolio/mapping.ts` for the exact reasoning.
+ */
+describe('deriveV4DebtStateAfterDelta (Stage 11)', () => {
+  const v4DebtState: AaveV4DebtState = {
+    drawnDebt: 15000,
+    premiumDebt: 5000,
+    baseDrawnApr: 0.05,
+    riskPremium: 0.01,
+  };
+
+  it('returns the state unchanged for a zero delta (a genuine no-op, not a guess)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, 0);
+    expect(result).toBe(v4DebtState);
+  });
+
+  it('zeroes both drawnDebt and premiumDebt when the delta repays the exact total (a mathematical certainty)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000);
+    expect(result).toEqual({ drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 });
+  });
+
+  it('preserves baseDrawnApr/riskPremium unchanged in the full-repayment case (rates are position parameters, not affected by balance)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000);
+    expect(result?.baseDrawnApr).toBe(0.05);
+    expect(result?.riskPremium).toBe(0.01);
+  });
+
+  it('returns undefined for a partial repayment (the drawn/premium split is genuinely ambiguous)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -5000);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined for any nonzero borrow (a Risk Premium refresh can change premiumDebt too, with no defined formula for it)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, 10000);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined for an over-repayment past the total debt, rather than a negative balance', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -25000);
+    expect(result).toBeUndefined();
+  });
+
+  it('zeroes correctly even when drawnDebt or premiumDebt alone is already 0', () => {
+    const drawnOnly: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const result = deriveV4DebtStateAfterDelta(drawnOnly, -15000);
+    expect(result).toEqual({ drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 });
   });
 });

@@ -26,11 +26,26 @@
  * `ServiceFailure` when the "after" summary is computed — duplicating
  * that check here would be inventing a second copy of validation the
  * Engine already owns.
+ *
+ * **V4 borrow/repay state (V4 Readiness Audit §12 Stage 11)** — the
+ * `'borrow'`/`'repay'` cases below spread `...portfolio`, so a V4
+ * portfolio's `v4DebtState` previously carried over completely UNCHANGED
+ * regardless of `action.amount`: `mapApplicationPortfolioToEngineInput`
+ * reads canonical V4 debt from `v4DebtState`, not `debt.balance`, so
+ * these two actions' effect on debt was silently invisible to the
+ * "after" summary for any V4 portfolio. Fixed via
+ * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`, Stage
+ * 11) — see that function's own doc comment for exactly which cases it
+ * resolves versus deliberately leaves undefined (never inventing a
+ * drawn/premium allocation policy). The other four action types don't
+ * touch `debt` at all, so `v4DebtState` staying unchanged via the spread
+ * is already correct for them — no change needed there.
  */
 import type { ProtocolParameters } from '@/engine';
 
 import type { ServiceResult } from '../shared/result';
 import { createServiceSuccess } from '../shared/result';
+import { deriveV4DebtStateAfterDelta } from './mapping';
 import type { ApplicationPortfolio } from './models';
 import { calculatePortfolioSummary, type PortfolioSummary } from './summary';
 
@@ -72,11 +87,19 @@ function applyAction(
       return {
         ...portfolio,
         debt: { ...portfolio.debt, balance: portfolio.debt.balance + action.amount },
+        ...(portfolio.protocolVersion === 'v4' &&
+          portfolio.v4DebtState !== undefined && {
+            v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, action.amount),
+          }),
       };
     case 'repay':
       return {
         ...portfolio,
         debt: { ...portfolio.debt, balance: portfolio.debt.balance - action.amount },
+        ...(portfolio.protocolVersion === 'v4' &&
+          portfolio.v4DebtState !== undefined && {
+            v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, -action.amount),
+          }),
       };
     case 'changeMarketPrice':
       return { ...portfolio, market: { btcPriceUsd: action.btcPriceUsd } };

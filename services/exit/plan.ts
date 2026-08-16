@@ -40,10 +40,33 @@
  * (`swapFees`/`slippage`/`gasEstimate` — conflict #8's same pattern,
  * revisited and still not inventable). Passed through unchanged, not
  * dropped or fabricated.
+ *
+ * **V4 post-exit state (V4 Readiness Audit §12 Stage 11)** — `afterPortfolio`
+ * below previously dropped `protocolVersion`/`v4Position`/`v4DebtState`
+ * entirely, constructing a bare V3-shaped record even for a V4 exit; the
+ * "after" summary then silently used V3 math instead of failing or
+ * reporting real V4 state. Fixed by preserving `protocolVersion`/
+ * `v4Position` unconditionally (real identity, not invented — the on-chain
+ * position doesn't change protocol version or wallet address just because
+ * a repayment happened) and deriving the post-repayment `v4DebtState` via
+ * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`, Stage
+ * 11) — which resolves the loop-through-a-full-exit case (repaying to
+ * exactly $0 forces both `drawnDebt`/`premiumDebt` to $0, a certainty, not
+ * a policy choice) and deliberately returns `undefined` for a genuinely
+ * ambiguous PARTIAL V4 exit (see that function's own doc comment for the
+ * exact ambiguity and why it isn't resolved here). When `undefined`,
+ * `afterPortfolio` ends up `protocolVersion: 'v4'` with no `v4DebtState` —
+ * which `calculatePortfolioSummary`'s existing Stage 9/10 guard already
+ * turns into a `ServiceFailure` (`AAVE_V4_DEBT_STATE_MISSING`) below,
+ * rather than this Service silently reporting a V3-shaped "after" state it
+ * cannot actually justify.
  */
 import { calculateTargetExit, type ExitTarget, type UnavailableExitCost } from '@/engine';
 
-import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
+import {
+  deriveV4DebtStateAfterDelta,
+  mapApplicationPortfolioToEngineInput,
+} from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
@@ -120,6 +143,12 @@ export function planExit(
     debt: { asset: portfolio.debt.asset, balance: targetExit.exit.remainingDebt },
     market: { btcPriceUsd: resolvedPrice },
     protocol: portfolio.protocol,
+    ...(portfolio.protocolVersion !== undefined && { protocolVersion: portfolio.protocolVersion }),
+    ...(portfolio.v4Position !== undefined && { v4Position: portfolio.v4Position }),
+    ...(portfolio.protocolVersion === 'v4' &&
+      portfolio.v4DebtState !== undefined && {
+        v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, -targetExit.exit.repayment),
+      }),
   };
 
   const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);

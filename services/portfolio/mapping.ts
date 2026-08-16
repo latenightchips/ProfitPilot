@@ -308,24 +308,31 @@ export function checkAaveV4DebtStateAvailable(
 }
 
 /**
- * V4 Annual Interest via the real V4 accrual engine (V4 Readiness Audit
- * §12 Stage 10) — replaces a legacy `calculateAnnualInterest(debtValue,
- * protocol.borrowApr)` call for a V4 portfolio with live `v4DebtState`.
- * `protocol.borrowApr` was always rate-questionable for V4 (see this
- * file's own header comment): it is a single V3-shaped scalar with no
- * defined relationship to V4's real two-parameter rate model
- * (`baseDrawnApr` + `riskPremium`, which compound differently — see
- * `AaveV4DebtState`'s own doc comment in `./models.ts`). This projects the
- * portfolio's real, currently-effective V4 rates forward 365 days through
- * the same `projectProtocolDebt` V4 dispatch every other V4 projection in
- * this codebase already uses (Stage 8/9), and reports the difference
- * between the projected and current total debt as the annual cost — not a
- * new formula, just the Engine's own already-validated accrual math read
- * back a second time (`AaveV4DebtProjection.totalDebt` is Engine-computed,
- * never manually summed here).
+ * V4 interest cost via the real V4 accrual engine, over an arbitrary
+ * holding period (V4 Readiness Audit §12 Stage 10, generalized at Stage
+ * 11) — replaces a legacy `calculateDailyInterest`/`calculateMonthlyInterest`/
+ * `calculateAnnualInterest(debtValue, protocol.borrowApr)` call for a V4
+ * portfolio with live `v4DebtState`. `protocol.borrowApr` was always
+ * rate-questionable for V4 (see this file's own header comment): it is a
+ * single V3-shaped scalar with no defined relationship to V4's real
+ * two-parameter rate model (`baseDrawnApr` + `riskPremium`, which compound
+ * differently — see `AaveV4DebtState`'s own doc comment in `./models.ts`).
+ * This projects the portfolio's real, currently-effective V4 rates forward
+ * `elapsedDays` through the same `projectProtocolDebt` V4 dispatch every
+ * other V4 projection in this codebase already uses (Stage 8/9), and
+ * reports the difference between the projected and current total debt as
+ * the cost over that period — not a new formula, just the Engine's own
+ * already-validated accrual math read back a second time
+ * (`AaveV4DebtProjection.totalDebt` is Engine-computed, never manually
+ * summed here). `services/portfolio/interestBreakdown.ts` (Stage 11) calls
+ * this with `elapsedDays: 1`/`30` for Daily/Monthly, the same real
+ * `elapsedDays`-driven projection rather than a hand-derived
+ * daily-figure-times-30 scaling — matching this file's own "not a
+ * re-derivation of any accrual formula" discipline.
  */
-export function projectAaveV4AnnualInterestCost(
+export function projectAaveV4InterestCost(
   v4DebtState: AaveV4DebtState,
+  elapsedDays: number,
 ): FormulaResult<number> {
   const projection = projectProtocolDebt({
     protocolVersion: 'v4',
@@ -333,10 +340,81 @@ export function projectAaveV4AnnualInterestCost(
     premiumDebt: v4DebtState.premiumDebt,
     baseDrawnApr: v4DebtState.baseDrawnApr,
     riskPremium: v4DebtState.riskPremium,
-    elapsedDays: 365,
+    elapsedDays,
   });
   if (!projection.ok) return projection;
 
   const currentTotalDebt = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
   return { ...projection, value: projection.value.totalDebt - currentTotalDebt };
+}
+
+/**
+ * The Stage 10 entry point, unchanged — a thin `elapsedDays: 365`
+ * specialization of `projectAaveV4InterestCost` above. Kept as its own
+ * named export so `services/portfolio/summary.ts`'s `interestCost` and
+ * `services/simulation/scenario.ts`'s price-branch `debtCost` (both
+ * Stage 10) don't need to change.
+ */
+export function projectAaveV4AnnualInterestCost(
+  v4DebtState: AaveV4DebtState,
+): FormulaResult<number> {
+  return projectAaveV4InterestCost(v4DebtState, 365);
+}
+
+/**
+ * Derives a V4 portfolio's post-change `v4DebtState` for a debt-altering
+ * action (borrow or repay) — V4 Readiness Audit §12 Stage 11. Deliberately
+ * resolves only the one case that is a mathematical certainty rather than
+ * a protocol policy choice, and returns `undefined` (never a guess) for
+ * every other case:
+ *
+ *   - `debtDelta === 0`: no debt change at all — `v4DebtState` is returned
+ *     unchanged.
+ *   - The change brings total debt to exactly `0`: since `drawnDebt` and
+ *     `premiumDebt` are both always non-negative and must sum to `0`, they
+ *     are both individually `0` — true by definition of the two streams,
+ *     not an allocation policy.
+ *   - Every other case (any borrow/increase, or a repayment that does not
+ *     fully clear the position) is genuinely ambiguous in this codebase's
+ *     own documented V4 model and is NOT resolved here. A `borrow` (or any
+ *     action that changes `drawnDebt`) triggers an on-chain Risk Premium
+ *     refresh (`infrastructure/protocols/aave/v4/abi.ts`'s own
+ *     `spokeGetUserLastRiskPremiumAbi` doc comment: `_notifyRiskPremiumUpdate`
+ *     — called from `borrow`, `withdraw`, `liquidationCall`,
+ *     `setUsingAsCollateral`, `updateUserRiskPremium`,
+ *     `updateUserDynamicConfig`, never `supply`/`repay` — "ATOMICALLY...
+ *     refreshes every borrowed reserve's `premiumShares`/`premiumOffsetRay`
+ *     to match"), which can change the MONETARY `premiumDebt` value this
+ *     `AaveV4DebtState` holds too, not just `drawnDebt` — and no formula
+ *     anywhere in `engine/protocols/aaveV4` or `docs/overview.md` defines
+ *     that refresh's exact effect on `premiumDebt` (only the on-chain
+ *     share-level mechanics are documented, not a monetary-amount
+ *     projection of them). A partial repayment has the same unresolved
+ *     "which stream absorbs it" question. Callers pass `undefined` through
+ *     unchanged (never fabricating a `v4DebtState`), which the existing
+ *     Stage 9/10 `checkAaveV4DebtStateAvailable` fail-closed guard already
+ *     turns into an explicit `AAVE_V4_DEBT_STATE_MISSING` failure rather
+ *     than a silently wrong "after" summary — see
+ *     `services/exit/plan.ts`/`services/simulation/portfolioAction.ts`/
+ *     `services/portfolio/actionPreview.ts`'s own Stage 11 doc comments for
+ *     where this is wired in, and PROJECT_STATUS.md's Stage 11 write-up for
+ *     the full reasoning and concrete alternatives considered.
+ */
+export function deriveV4DebtStateAfterDelta(
+  v4DebtState: AaveV4DebtState,
+  debtDelta: number,
+): AaveV4DebtState | undefined {
+  if (debtDelta === 0) return v4DebtState;
+
+  const currentTotalDebt = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
+  if (currentTotalDebt + debtDelta === 0) {
+    return {
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: v4DebtState.baseDrawnApr,
+      riskPremium: v4DebtState.riskPremium,
+    };
+  }
+
+  return undefined;
 }
