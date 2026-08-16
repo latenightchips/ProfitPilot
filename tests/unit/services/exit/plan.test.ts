@@ -192,19 +192,17 @@ describe('planExit — V4 fail-closed guard, inherited via calculatePortfolioSum
 });
 
 /**
- * V4 post-exit state — V4 Readiness Audit §12 Stage 11.
- * `services/exit/plan.ts`'s own header comment documents the exact
- * ambiguity: repaying a V4 portfolio's debt down to exactly $0 is the one
- * case where the post-exit `drawnDebt`/`premiumDebt` split is a
- * mathematical certainty (both must be $0), so a full V4 exit now carries
- * real post-exit V4 state forward — proving the exit "remains V4" rather
- * than silently becoming a bare V3-shaped record. A PARTIAL V4 exit's
- * split is genuinely undefined in this codebase's own documented model
- * (no repayment-allocation policy exists anywhere in `engine/protocols/aaveV4`
- * or `docs/overview.md`), so it fails closed via the existing
- * `AAVE_V4_DEBT_STATE_MISSING` guard rather than guessing.
+ * V4 post-exit state — V4 Readiness Audit §12 Stage 11, resolved for ANY
+ * repayment amount (partial or full) with a real protocol-backed rule at
+ * Stage 12. `services/exit/plan.ts`'s own header comment documents the
+ * authoritative source: `aave/aave-v4`'s `calculateRestoreAmount` repays
+ * premium debt FIRST, then drawn debt with the remainder — a fully
+ * deterministic split for any repayment amount, so both a full AND a
+ * partial V4 exit now carry real post-exit V4 state forward, proving the
+ * exit "remains V4" rather than silently becoming a bare V3-shaped
+ * record or failing closed unnecessarily.
  */
-describe('planExit — V4 post-exit state (Stage 11)', () => {
+describe('planExit — V4 post-exit state (Stage 11, resolved for partial exits at Stage 12)', () => {
   function v4Portfolio(): ApplicationPortfolio {
     return {
       ...basePortfolio(),
@@ -227,23 +225,44 @@ describe('planExit — V4 post-exit state (Stage 11)', () => {
     expect(result.data.after?.healthFactor).toBe(Infinity);
   });
 
-  it('a partial V4 exit fails closed with AAVE_V4_DEBT_STATE_MISSING — the drawn/premium split for a partial repayment is genuinely undefined, not guessed', () => {
+  it('a partial V4 exit now succeeds, carrying a real post-exit v4DebtState forward via the premium-first allocation rule', () => {
+    // Total debt $20,000 (drawnDebt 15000 / premiumDebt 5000), target
+    // $10,000 -> repayment $10,000. Premium-first: premiumDebt fully
+    // cleared ($5,000), remainder ($5,000) reduces drawnDebt to $10,000.
     const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
     const result = planExit(v4Portfolio(), target, 'live');
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.after?.debtValue).toBe(10000);
+    // Collateral: 2 BTC @ $50,000 = $100,000; btcSold to raise $10,000
+    // repayment at $50,000/BTC = 0.2 BTC, btcRetained = 1.8 BTC -> $90,000.
+    expect(result.data.after?.collateralValue).toBe(90000);
+    expect(result.data.after?.netEquity).toBe(80000);
+    expect(result.data.after?.healthFactor).toBeCloseTo((90000 * 0.8) / 10000, 9);
   });
 
-  it('a partial V4 exit does not silently fall back to V3 math either — it fails rather than reporting a wrong "after" state', () => {
-    // Before Stage 11, this same call SUCCEEDED with a V3-shaped "after"
-    // portfolio (protocolVersion/v4DebtState both dropped) — i.e. it
-    // silently became V3. Stage 11 changes this to a real failure instead
-    // of a silently-wrong success.
+  it('a partial V4 exit does not silently fall back to V3 math — it reports real V4-derived numbers, not a V3-shaped approximation', () => {
+    // Before Stage 11, this same call silently dropped protocolVersion/
+    // v4DebtState (became V3-shaped). Before Stage 12, it failed closed
+    // (the split was genuinely undefined). Now it succeeds with the real,
+    // protocol-backed post-repayment V4 state.
     const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
     const result = planExit(v4Portfolio(), target, 'live');
-    expect(result.ok).toBe(false);
-    expect('data' in result).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect('errors' in result).toBe(false);
+  });
+
+  it('a V4 exit that repays only part of the premium (repayment smaller than premiumDebt) reduces ONLY premiumDebt, leaving drawnDebt untouched', () => {
+    // Total debt $20,000, target $18,000 -> repayment $2,000 (less than
+    // the $5,000 premiumDebt). Premium-first: premiumDebt reduces to
+    // $3,000; drawnDebt stays at $15,000.
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 18000 };
+    const result = planExit(v4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after?.debtValue).toBe(18000);
   });
 
   it('a full exit still succeeds for a "v3" portfolio, unaffected by the V4-only post-exit state logic', () => {

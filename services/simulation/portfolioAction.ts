@@ -41,29 +41,42 @@
  * as "Current Value"/"Initial Investment", the same definition
  * `scenario.ts` established, not a new one invented here.
  *
- * **V4 debt-delta state (V4 Readiness Audit §12 Stage 11)** — `afterPortfolio`
- * below spreads `...portfolio`, so a V4 portfolio's `v4DebtState`
- * previously carried over completely UNCHANGED regardless of
- * `input.debtDelta`: since `mapApplicationPortfolioToEngineInput` reads
- * canonical V4 debt from `v4DebtState`, not `debt.balance`, a Borrow or
- * Repay action's effect on debt was silently invisible to the "after"
- * summary for any V4 portfolio. Fixed via
- * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`, Stage
- * 11) — see that function's own doc comment for exactly which cases it
- * resolves (a zero-delta no-op, or a repayment to exactly $0) versus
- * which it deliberately leaves undefined (any borrow, or a partial
- * repayment) rather than inventing a drawn/premium allocation policy.
+ * **V4 debt-delta state (V4 Readiness Audit §12 Stage 11, resolved with a
+ * real protocol-backed rule at Stage 12)** — `afterPortfolio` below
+ * spreads `...portfolio`, so a V4 portfolio's `v4DebtState` previously
+ * carried over completely UNCHANGED regardless of `input.debtDelta`:
+ * since `mapApplicationPortfolioToEngineInput` reads canonical V4 debt
+ * from `v4DebtState`, not `debt.balance`, a Borrow or Repay action's
+ * effect on debt was silently invisible to the "after" summary for any
+ * V4 portfolio. Fixed via `deriveV4DebtStateAfterDelta`
+ * (`services/portfolio/mapping.ts`) — which now calls the real Engine
+ * formula (`engine/protocols/aaveV4/deriveDebtAfterRepayment.ts`, Stage
+ * 12) for ANY repay (partial or full), deterministically splitting the
+ * amount between `drawnDebt`/`premiumDebt` (premium first, then drawn —
+ * ported directly from `aave/aave-v4`'s own `calculateRestoreAmount`),
+ * and returns a `FormulaStep` this file now composes exactly like every
+ * other Engine call, propagating a failure instead of silently ignoring
+ * it. A Borrow remains genuinely ambiguous (see that function's own doc
+ * comment: it requires the user's full multi-collateral Risk Premium
+ * recomputation, data this codebase's domain model has never captured)
+ * and still fails closed via the existing Stage 9/10
+ * `AAVE_V4_DEBT_STATE_MISSING` guard.
  */
 import { calculatePortfolioGain } from '@/engine';
 import type { ApplicationPortfolio, PortfolioActionPreview } from '@/services';
 import { calculatePortfolioSummary } from '@/services';
 import { deriveV4DebtStateAfterDelta } from '@/services/portfolio/mapping';
+import type { AaveV4DebtState } from '@/services/portfolio/models';
 import {
   formulaStep,
   optionsFromTracked,
   type TrackedFormulaVersion,
 } from '@/services/shared/formulaStep';
-import { createServiceSuccess, type ServiceResult } from '@/services/shared/result';
+import {
+  createServiceSuccess,
+  type ServiceResult,
+  type ServiceWarning,
+} from '@/services/shared/result';
 
 export interface PortfolioActionSimulationInput {
   collateralDelta: number;
@@ -89,6 +102,23 @@ export function simulatePortfolioAction(
   const beforeResult = calculatePortfolioSummary(portfolio, sourceStatus);
   if (!beforeResult.ok) return beforeResult;
 
+  const warnings: ServiceWarning[] = [...beforeResult.warnings];
+  let afterV4DebtState: AaveV4DebtState | undefined;
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
+    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
+      portfolio.v4DebtState,
+      input.debtDelta,
+      {
+        engineVersion: beforeResult.metadata.engineVersion,
+        formulaVersion: beforeResult.metadata.formulaVersion,
+      },
+      sourceStatus,
+    );
+    if (!v4DebtStateStep.ok) return v4DebtStateStep.failure;
+    warnings.push(...v4DebtStateStep.warnings);
+    afterV4DebtState = v4DebtStateStep.value;
+  }
+
   const afterPortfolio: ApplicationPortfolio = {
     ...portfolio,
     collateral: {
@@ -97,9 +127,7 @@ export function simulatePortfolioAction(
     },
     debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
     ...(portfolio.protocolVersion === 'v4' &&
-      portfolio.v4DebtState !== undefined && {
-        v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, input.debtDelta),
-      }),
+      portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
   };
   const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);
   if (!afterResult.ok) return afterResult;
@@ -119,6 +147,6 @@ export function simulatePortfolioAction(
   return createServiceSuccess(
     { before: beforeResult.data, after: afterResult.data, profitOrLoss: gainStep.value },
     optionsFromTracked(sourceStatus, gainStep.tracked),
-    [...beforeResult.warnings, ...afterResult.warnings, ...gainStep.warnings],
+    [...warnings, ...afterResult.warnings, ...gainStep.warnings],
   );
 }

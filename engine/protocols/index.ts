@@ -17,6 +17,15 @@ export type {
 } from './types';
 
 /**
+ * V4 repayment allocation (Stage 12) — re-exported here alongside the
+ * dispatcher for the same reason `projectVariableDebt` (V3) is re-exported
+ * from `../index.ts`: no V3 equivalent exists (V3 has no premium stream
+ * to allocate a repayment against), so there is nothing to dispatch on.
+ * See `./aaveV4/deriveDebtAfterRepayment.ts` for the full reasoning.
+ */
+export { type AaveV4RepaymentInput, deriveAaveV4DebtAfterRepayment } from './aaveV4';
+
+/**
  * Centralized protocol/version dispatch for debt projection — V4 Readiness
  * Audit §12. Stage 1 built this as the one place that resolves "which
  * protocol-version's math to run" from an explicit `AaveProtocolVersion`,

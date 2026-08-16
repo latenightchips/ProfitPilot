@@ -125,12 +125,26 @@ export {
  * (`MathUtils.calculateCompoundedInterest`), isolated from the generic
  * Simple Interest formulas above (F-030–F-032, unchanged). Still exported
  * directly for callers/tests that intentionally want V3's math by name.
- * Aave V4's own implementation (`./protocols/aaveV4`) is deliberately NOT
- * exported here by name, even now that its math is real (Stage 2) — reach
- * it only through `projectProtocolDebt`, never directly, so the dispatcher
- * stays the one place version selection happens.
+ * Aave V4's own TIME-PROJECTION implementation (`./protocols/aaveV4`'s
+ * `projectAaveV4Debt`) is deliberately NOT exported here by name, even now
+ * that its math is real (Stage 2) — reach it only through
+ * `projectProtocolDebt`, never directly, so the dispatcher stays the one
+ * place version selection happens.
  */
 export { projectVariableDebt } from './protocols/aaveV3';
+
+/**
+ * Aave V4 repayment allocation — V4 Readiness Audit §12 Stage 12. A
+ * genuinely different operation from `projectAaveV4Debt` above (instant
+ * repayment allocation, not forward time-projection) with no V3
+ * equivalent to dispatch against — V3 has no premium stream, so a V3
+ * repayment is just a direct balance subtraction with no Engine formula
+ * needed. Exported directly by name, the same "no dispatcher to go
+ * through" precedent `projectVariableDebt` above already sets for V3. See
+ * `./protocols/aaveV4/deriveDebtAfterRepayment.ts` for the full
+ * `aave/aave-v4` source citations behind this formula.
+ */
+export { type AaveV4RepaymentInput, deriveAaveV4DebtAfterRepayment } from './protocols';
 
 /** Portfolio Metrics — F-001–F-004, F-006, F-010, F-011, F-020; M2-006–M2-008. */
 export {

@@ -35,10 +35,20 @@
  * anticipated). Re-exported here unchanged so nothing importing it from
  * this module's public API needs to change.
  */
-import { type FormulaResult, type PortfolioInput, projectProtocolDebt } from '@/engine';
+import {
+  deriveAaveV4DebtAfterRepayment,
+  type FormulaResult,
+  type PortfolioInput,
+  projectProtocolDebt,
+} from '@/engine';
 
 import { type ApplicationError, createApplicationError } from '../shared/errors';
-import { optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
+import {
+  type FormulaStep,
+  formulaStep,
+  optionsFromTracked,
+  type TrackedFormulaVersion,
+} from '../shared/formulaStep';
 import type { MappingResult } from '../shared/mappingResult';
 import { createServiceFailure, type ServiceFailure } from '../shared/result';
 import type {
@@ -363,58 +373,90 @@ export function projectAaveV4AnnualInterestCost(
 
 /**
  * Derives a V4 portfolio's post-change `v4DebtState` for a debt-altering
- * action (borrow or repay) — V4 Readiness Audit §12 Stage 11. Deliberately
- * resolves only the one case that is a mathematical certainty rather than
- * a protocol policy choice, and returns `undefined` (never a guess) for
- * every other case:
+ * action (borrow or repay) — V4 Readiness Audit §12 Stage 11, resolved
+ * with the real protocol-backed repayment rule at Stage 12.
  *
- *   - `debtDelta === 0`: no debt change at all — `v4DebtState` is returned
- *     unchanged.
- *   - The change brings total debt to exactly `0`: since `drawnDebt` and
- *     `premiumDebt` are both always non-negative and must sum to `0`, they
- *     are both individually `0` — true by definition of the two streams,
- *     not an allocation policy.
- *   - Every other case (any borrow/increase, or a repayment that does not
- *     fully clear the position) is genuinely ambiguous in this codebase's
- *     own documented V4 model and is NOT resolved here. A `borrow` (or any
- *     action that changes `drawnDebt`) triggers an on-chain Risk Premium
- *     refresh (`infrastructure/protocols/aave/v4/abi.ts`'s own
- *     `spokeGetUserLastRiskPremiumAbi` doc comment: `_notifyRiskPremiumUpdate`
- *     — called from `borrow`, `withdraw`, `liquidationCall`,
- *     `setUsingAsCollateral`, `updateUserRiskPremium`,
- *     `updateUserDynamicConfig`, never `supply`/`repay` — "ATOMICALLY...
- *     refreshes every borrowed reserve's `premiumShares`/`premiumOffsetRay`
- *     to match"), which can change the MONETARY `premiumDebt` value this
- *     `AaveV4DebtState` holds too, not just `drawnDebt` — and no formula
- *     anywhere in `engine/protocols/aaveV4` or `docs/overview.md` defines
- *     that refresh's exact effect on `premiumDebt` (only the on-chain
- *     share-level mechanics are documented, not a monetary-amount
- *     projection of them). A partial repayment has the same unresolved
- *     "which stream absorbs it" question. Callers pass `undefined` through
- *     unchanged (never fabricating a `v4DebtState`), which the existing
- *     Stage 9/10 `checkAaveV4DebtStateAvailable` fail-closed guard already
- *     turns into an explicit `AAVE_V4_DEBT_STATE_MISSING` failure rather
- *     than a silently wrong "after" summary — see
- *     `services/exit/plan.ts`/`services/simulation/portfolioAction.ts`/
- *     `services/portfolio/actionPreview.ts`'s own Stage 11 doc comments for
- *     where this is wired in, and PROJECT_STATUS.md's Stage 11 write-up for
- *     the full reasoning and concrete alternatives considered.
+ * **Stage 12 authoritative protocol audit (read directly from
+ * `aave/aave-v4`'s public source, current as of 2026-08-16) answered the
+ * question Stage 11 could not:**
+ *
+ *   - **Repay (partial or full) — fully deterministic, not ambiguous.**
+ *     `src/spoke/Spoke.sol`'s `repay` never calls `_notifyRiskPremiumUpdate`
+ *     (confirmed by reading the function body directly — only `borrow`/
+ *     `withdraw`/`liquidationCall`/`setUsingAsCollateral`/
+ *     `updateUserRiskPremium`/`updateUserDynamicConfig` do), so
+ *     `riskPremium` is UNCHANGED by a repayment. `baseDrawnApr` is a
+ *     Hub-level asset parameter no user action ever changes. The only
+ *     question — how the dollar amount splits between `drawnDebt` and
+ *     `premiumDebt` — is answered exactly by
+ *     `UserPositionUtils.sol`'s `calculateRestoreAmount`: **premium debt
+ *     first, then drawn debt with the remainder** (see
+ *     `engine/protocols/aaveV4/deriveDebtAfterRepayment.ts`'s own header
+ *     comment for the verbatim Solidity and the full derivation). Delegated
+ *     to that real, tested Engine formula below — not re-implemented here.
+ *   - **Borrow — genuinely NOT locally derivable, still fail-closed.**
+ *     `Spoke.sol`'s `borrow` DOES call `_notifyRiskPremiumUpdate`, driven
+ *     by a freshly-recomputed Risk Premium from
+ *     `_refreshAndValidateUserAccountData`. `docs/overview.md`'s "Risk
+ *     Premium Algorithm" requires the user's ENTIRE collateral set
+ *     (`RP_u = Σ(CR_i·C_i·P_i) / Σ(C_i·P_i)`, sorted by Collateral Risk) —
+ *     data this codebase's single-BTC-collateral domain model has never
+ *     captured, not a persistence gap that could be closed by extending
+ *     `AaveV4DebtState` with one more field (the preferred-hierarchy
+ *     option B this stage's own instructions describe does not apply
+ *     here: the missing input is a WHOLE portfolio's worth of
+ *     multi-collateral data, not "raw state we already have but did not
+ *     persist"). A post-borrow `riskPremium` — and therefore
+ *     `premiumDebt` — is not knowable from this codebase's persisted
+ *     state alone, so it is not guessed. This is hierarchy option D:
+ *     "keep it fail-closed and report that as the correct product
+ *     limitation," not a lower-confidence shortcut.
+ *
+ * Returns a `FormulaStep`-compatible result (`services/shared/formulaStep.ts`)
+ * so the three consumers (`services/exit/plan.ts`,
+ * `services/simulation/portfolioAction.ts`,
+ * `services/portfolio/actionPreview.ts`) can compose the repay path's real
+ * Engine call into their own tracked `ServiceResult` exactly like every
+ * other Engine call in this codebase — `value: v4DebtState` for a no-op
+ * (`debtDelta === 0`) and `value: undefined` for an ambiguous borrow both
+ * pass the caller's own `tracked` straight through unchanged (no new
+ * Engine call happened in either case, so nothing new to track or fail).
  */
 export function deriveV4DebtStateAfterDelta(
   v4DebtState: AaveV4DebtState,
   debtDelta: number,
-): AaveV4DebtState | undefined {
-  if (debtDelta === 0) return v4DebtState;
-
-  const currentTotalDebt = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
-  if (currentTotalDebt + debtDelta === 0) {
-    return {
-      drawnDebt: 0,
-      premiumDebt: 0,
-      baseDrawnApr: v4DebtState.baseDrawnApr,
-      riskPremium: v4DebtState.riskPremium,
-    };
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+): FormulaStep<AaveV4DebtState | undefined> {
+  if (debtDelta === 0) {
+    return { ok: true, value: v4DebtState, tracked, warnings: [] };
   }
 
-  return undefined;
+  if (debtDelta > 0) {
+    // Borrow — genuinely ambiguous, see this function's own doc comment.
+    return { ok: true, value: undefined, tracked, warnings: [] };
+  }
+
+  const repaymentStep = formulaStep(
+    deriveAaveV4DebtAfterRepayment({
+      drawnDebt: v4DebtState.drawnDebt,
+      premiumDebt: v4DebtState.premiumDebt,
+      repaymentAmount: -debtDelta,
+    }),
+    tracked,
+    sourceStatus,
+  );
+  if (!repaymentStep.ok) return repaymentStep;
+
+  return {
+    ok: true,
+    value: {
+      drawnDebt: repaymentStep.value.drawnDebt,
+      premiumDebt: repaymentStep.value.premiumDebt,
+      baseDrawnApr: v4DebtState.baseDrawnApr,
+      riskPremium: v4DebtState.riskPremium,
+    },
+    tracked: repaymentStep.tracked,
+    warnings: repaymentStep.warnings,
+  };
 }

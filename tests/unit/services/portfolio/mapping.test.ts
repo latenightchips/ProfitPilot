@@ -515,50 +515,87 @@ describe('projectAaveV4InterestCost (Stage 11)', () => {
 });
 
 /**
- * V4 post-change debt state — V4 Readiness Audit §12 Stage 11. Resolves
- * only the two non-ambiguous cases (a zero-delta no-op, and a repayment
- * to exactly $0 total debt) and returns `undefined` for every genuinely
- * ambiguous case (any borrow, or a partial repayment) rather than
- * inventing a drawn/premium allocation policy — see this function's own
- * doc comment in `services/portfolio/mapping.ts` for the exact reasoning.
+ * V4 post-change debt state — V4 Readiness Audit §12 Stage 11, resolved
+ * with a real protocol-backed rule at Stage 12. ANY repayment (partial or
+ * full) is now fully deterministic, delegated to the real Engine formula
+ * (`deriveAaveV4DebtAfterRepayment`, premium-first allocation). A borrow
+ * remains genuinely ambiguous (Risk Premium refresh requires the user's
+ * full multi-collateral configuration, data this codebase never
+ * captures) and still returns `undefined` — see this function's own doc
+ * comment in `services/portfolio/mapping.ts` for the full Stage 12
+ * protocol-audit reasoning.
  */
-describe('deriveV4DebtStateAfterDelta (Stage 11)', () => {
+describe('deriveV4DebtStateAfterDelta (Stage 11, resolved for repay at Stage 12)', () => {
   const v4DebtState: AaveV4DebtState = {
     drawnDebt: 15000,
     premiumDebt: 5000,
     baseDrawnApr: 0.05,
     riskPremium: 0.01,
   };
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
 
-  it('returns the state unchanged for a zero delta (a genuine no-op, not a guess)', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, 0);
-    expect(result).toBe(v4DebtState);
+  it('returns the state unchanged (reference-identical) for a zero delta (a genuine no-op, not a guess, no Engine call)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, 0, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBe(v4DebtState);
+    expect(result.tracked).toBe(tracked);
   });
 
-  it('zeroes both drawnDebt and premiumDebt when the delta repays the exact total (a mathematical certainty)', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000);
-    expect(result).toEqual({ drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 });
+  it('zeroes both drawnDebt and premiumDebt when the delta repays the exact total (premium-first allocation, both streams reach exactly $0)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
   });
 
-  it('preserves baseDrawnApr/riskPremium unchanged in the full-repayment case (rates are position parameters, not affected by balance)', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000);
-    expect(result?.baseDrawnApr).toBe(0.05);
-    expect(result?.riskPremium).toBe(0.01);
+  it('preserves baseDrawnApr/riskPremium unchanged after a repayment (rates are position parameters, never touched by repay on-chain)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -20000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value?.baseDrawnApr).toBe(0.05);
+    expect(result.value?.riskPremium).toBe(0.01);
   });
 
-  it('returns undefined for a partial repayment (the drawn/premium split is genuinely ambiguous)', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, -5000);
-    expect(result).toBeUndefined();
+  it('a partial repayment smaller than premiumDebt reduces ONLY premiumDebt (premium-first allocation, now resolved deterministically)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -2000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 3000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
   });
 
-  it('returns undefined for any nonzero borrow (a Risk Premium refresh can change premiumDebt too, with no defined formula for it)', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, 10000);
-    expect(result).toBeUndefined();
+  it('a partial repayment larger than premiumDebt clears premium and reduces drawnDebt with the remainder', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -12000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 8000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
   });
 
-  it('returns undefined for an over-repayment past the total debt, rather than a negative balance', () => {
-    const result = deriveV4DebtStateAfterDelta(v4DebtState, -25000);
-    expect(result).toBeUndefined();
+  it('an over-repayment past the total debt is capped — both streams reach exactly $0, not a negative balance', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -25000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
   });
 
   it('zeroes correctly even when drawnDebt or premiumDebt alone is already 0', () => {
@@ -568,7 +605,39 @@ describe('deriveV4DebtStateAfterDelta (Stage 11)', () => {
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
     };
-    const result = deriveV4DebtStateAfterDelta(drawnOnly, -15000);
-    expect(result).toEqual({ drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 });
+    const result = deriveV4DebtStateAfterDelta(drawnOnly, -15000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('returns undefined for any nonzero borrow — genuinely ambiguous (Risk Premium refresh requires full collateral data this codebase never captures)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, 10000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeUndefined();
+  });
+
+  it('threads real Engine metadata through for a repayment (a genuine Engine call happened)', () => {
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -2000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tracked.formulaVersion).toBe('1.0');
+  });
+
+  it('propagates a genuine Engine failure rather than throwing (negative drawnDebt reaching the repayment formula)', () => {
+    const invalidState: AaveV4DebtState = {
+      drawnDebt: -1,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const result = deriveV4DebtStateAfterDelta(invalidState, -100, tracked, 'live');
+    expect(result.ok).toBe(false);
   });
 });

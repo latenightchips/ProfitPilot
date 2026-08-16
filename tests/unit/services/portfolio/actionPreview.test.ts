@@ -198,15 +198,17 @@ describe('previewPortfolioAction (M3-006)', () => {
 });
 
 /**
- * V4 borrow/repay state — V4 Readiness Audit §12 Stage 11. The `'borrow'`/
- * `'repay'` cases in `applyAction` previously spread `...portfolio`,
- * silently carrying a V4 portfolio's `v4DebtState` forward UNCHANGED
- * regardless of `action.amount` — since canonical V4 debt is read from
- * `v4DebtState`, not `debt.balance`, these two actions' effect on debt was
- * invisible to the "after" summary for any V4 portfolio. These tests
- * prove the fix, mirroring `simulatePortfolioAction`'s own Stage 11 tests.
+ * V4 borrow/repay state — V4 Readiness Audit §12 Stage 11, resolved for
+ * ANY repay amount with a real protocol-backed rule at Stage 12. The
+ * `'borrow'`/`'repay'` cases in `applyAction` previously spread
+ * `...portfolio`, silently carrying a V4 portfolio's `v4DebtState`
+ * forward UNCHANGED regardless of `action.amount` — since canonical V4
+ * debt is read from `v4DebtState`, not `debt.balance`, these two actions'
+ * effect on debt was invisible to the "after" summary for any V4
+ * portfolio. These tests prove the fix, mirroring
+ * `simulatePortfolioAction`'s own Stage 11/12 tests.
  */
-describe('previewPortfolioAction — V4 borrow/repay state (Stage 11)', () => {
+describe('previewPortfolioAction — V4 borrow/repay state (Stage 11, resolved for repay at Stage 12)', () => {
   function v4Portfolio(): ApplicationPortfolio {
     return {
       ...basePortfolio(),
@@ -224,12 +226,14 @@ describe('previewPortfolioAction — V4 borrow/repay state (Stage 11)', () => {
     expect(result.data.after.healthFactor).toBe(Infinity);
   });
 
-  it('a partial repay on a V4 portfolio fails closed rather than silently ignoring the repayment', () => {
+  it('a partial repay on a V4 portfolio now succeeds, applying the repayment to premiumDebt first (premium-first allocation)', () => {
+    // drawnDebt 15000 / premiumDebt 5000 (total 20000); repaying 5000
+    // exactly clears premiumDebt, leaving drawnDebt untouched at 15000.
     const action: PortfolioAction = { type: 'repay', amount: 5000 };
     const result = previewPortfolioAction(v4Portfolio(), action, 'live');
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(15000);
   });
 
   it('a borrow on a V4 portfolio fails closed rather than silently ignoring the new debt', () => {

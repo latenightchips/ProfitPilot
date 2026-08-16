@@ -172,19 +172,20 @@ describe('simulatePortfolioAction — does not mutate the original portfolio', (
 });
 
 /**
- * V4 debt-delta state — V4 Readiness Audit §12 Stage 11. Before this
- * stage, `afterPortfolio` spread `...portfolio`, so a V4 portfolio's
+ * V4 debt-delta state — V4 Readiness Audit §12 Stage 11, resolved for ANY
+ * repay amount with a real protocol-backed rule at Stage 12. Before
+ * Stage 11, `afterPortfolio` spread `...portfolio`, so a V4 portfolio's
  * `v4DebtState` carried over completely UNCHANGED regardless of
  * `debtDelta` — since canonical V4 debt is read from `v4DebtState`, not
  * `debt.balance`, a Borrow/Repay action's effect on debt was silently
  * invisible to the "after" summary for any V4 portfolio. These tests
- * prove the fix: a repayment to exactly $0 total debt (the one
- * unambiguous case) now correctly reflects zero V4 debt in "after";
- * every other debt-changing delta (a borrow, or a partial repay) is
- * genuinely ambiguous for the drawn/premium split and fails closed
- * instead of silently ignoring the delta.
+ * prove: a repayment (partial or full) now correctly reflects the real,
+ * protocol-backed post-repayment V4 debt state (premium debt first, then
+ * drawn debt with the remainder); a Borrow remains genuinely ambiguous
+ * (Risk Premium refresh requires data this codebase never captures) and
+ * still fails closed instead of silently ignoring the delta.
  */
-describe('simulatePortfolioAction — V4 debt-delta state (Stage 11)', () => {
+describe('simulatePortfolioAction — V4 debt-delta state (Stage 11, resolved for repay at Stage 12)', () => {
   function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
     return basePortfolio({
       protocolVersion: 'v4',
@@ -217,15 +218,44 @@ describe('simulatePortfolioAction — V4 debt-delta state (Stage 11)', () => {
     expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
   });
 
-  it('a partial Repay on a V4 portfolio fails closed rather than silently ignoring the delta', () => {
+  it('a partial Repay on a V4 portfolio now succeeds, applying the repayment to premiumDebt first (premium-first allocation)', () => {
+    // drawnDebt 15000 / premiumDebt 5000 (total 20000); repaying 5000
+    // exactly clears premiumDebt, leaving drawnDebt untouched at 15000.
     const result = simulatePortfolioAction(
       v4Portfolio(),
       { collateralDelta: 0, debtDelta: -5000 },
       'live',
     );
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(15000);
+  });
+
+  it('a partial Repay smaller than premiumDebt reduces only premiumDebt (drawnDebt untouched)', () => {
+    const result = simulatePortfolioAction(
+      v4Portfolio(),
+      { collateralDelta: 0, debtDelta: -2000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(18000);
+  });
+
+  it('uses the v4DebtState-derived split, never the legacy debt.balance field, even when they deliberately disagree', () => {
+    // debt.balance is deliberately left at a wildly different value than
+    // v4DebtState's own 20000 total, to prove the post-repayment split
+    // comes entirely from v4DebtState, not debt.balance + debtDelta.
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 999999 } });
+    const result = simulatePortfolioAction(
+      portfolio,
+      { collateralDelta: 0, debtDelta: -5000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(15000);
+    expect(result.data.after.debtValue).not.toBe(999999 - 5000);
   });
 
   it('a zero debtDelta on a V4 portfolio is a genuine no-op — before and after match exactly', () => {

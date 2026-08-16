@@ -41,25 +41,28 @@
  * revisited and still not inventable). Passed through unchanged, not
  * dropped or fabricated.
  *
- * **V4 post-exit state (V4 Readiness Audit §12 Stage 11)** — `afterPortfolio`
- * below previously dropped `protocolVersion`/`v4Position`/`v4DebtState`
+ * **V4 post-exit state (V4 Readiness Audit §12 Stage 11, resolved with a
+ * real protocol-backed rule at Stage 12)** — `afterPortfolio` below
+ * previously dropped `protocolVersion`/`v4Position`/`v4DebtState`
  * entirely, constructing a bare V3-shaped record even for a V4 exit; the
  * "after" summary then silently used V3 math instead of failing or
  * reporting real V4 state. Fixed by preserving `protocolVersion`/
  * `v4Position` unconditionally (real identity, not invented — the on-chain
  * position doesn't change protocol version or wallet address just because
  * a repayment happened) and deriving the post-repayment `v4DebtState` via
- * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`, Stage
- * 11) — which resolves the loop-through-a-full-exit case (repaying to
- * exactly $0 forces both `drawnDebt`/`premiumDebt` to $0, a certainty, not
- * a policy choice) and deliberately returns `undefined` for a genuinely
- * ambiguous PARTIAL V4 exit (see that function's own doc comment for the
- * exact ambiguity and why it isn't resolved here). When `undefined`,
- * `afterPortfolio` ends up `protocolVersion: 'v4'` with no `v4DebtState` —
- * which `calculatePortfolioSummary`'s existing Stage 9/10 guard already
- * turns into a `ServiceFailure` (`AAVE_V4_DEBT_STATE_MISSING`) below,
- * rather than this Service silently reporting a V3-shaped "after" state it
- * cannot actually justify.
+ * `deriveV4DebtStateAfterDelta` (`services/portfolio/mapping.ts`) — which
+ * now calls the real Engine formula
+ * (`engine/protocols/aaveV4/deriveDebtAfterRepayment.ts`, Stage 12) ported
+ * directly from `aave/aave-v4`'s own `calculateRestoreAmount`: premium
+ * debt is repaid first, then drawn debt with the remainder, a fully
+ * deterministic split for ANY repayment amount (partial or full), not
+ * just the full-exit case Stage 11 could resolve on its own. A V4
+ * *borrow* remains genuinely ambiguous (see that function's own doc
+ * comment) and still returns `undefined`, which
+ * `calculatePortfolioSummary`'s existing Stage 9/10 guard turns into a
+ * `ServiceFailure` (`AAVE_V4_DEBT_STATE_MISSING`) below — Exit Plan never
+ * borrows, so this only matters if a future caller ever does, and even
+ * then this Service still fails closed rather than guessing.
  */
 import { calculateTargetExit, type ExitTarget, type UnavailableExitCost } from '@/engine';
 
@@ -67,7 +70,7 @@ import {
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
 } from '../portfolio/mapping';
-import type { ApplicationPortfolio } from '../portfolio/models';
+import type { AaveV4DebtState, ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
@@ -137,6 +140,20 @@ export function planExit(
     );
   }
 
+  let afterV4DebtState: AaveV4DebtState | undefined;
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
+    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
+      portfolio.v4DebtState,
+      -targetExit.exit.repayment,
+      tracked,
+      sourceStatus,
+    );
+    if (!v4DebtStateStep.ok) return v4DebtStateStep.failure;
+    tracked = v4DebtStateStep.tracked;
+    warnings.push(...v4DebtStateStep.warnings);
+    afterV4DebtState = v4DebtStateStep.value;
+  }
+
   const resolvedPrice = scenarioBtcPriceUsd ?? portfolio.market.btcPriceUsd;
   const afterPortfolio: ApplicationPortfolio = {
     collateral: { asset: portfolio.collateral.asset, quantity: targetExit.exit.btcRetained },
@@ -145,10 +162,7 @@ export function planExit(
     protocol: portfolio.protocol,
     ...(portfolio.protocolVersion !== undefined && { protocolVersion: portfolio.protocolVersion }),
     ...(portfolio.v4Position !== undefined && { v4Position: portfolio.v4Position }),
-    ...(portfolio.protocolVersion === 'v4' &&
-      portfolio.v4DebtState !== undefined && {
-        v4DebtState: deriveV4DebtStateAfterDelta(portfolio.v4DebtState, -targetExit.exit.repayment),
-      }),
+    ...(afterV4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
   };
 
   const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);
