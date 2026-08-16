@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { RecommendationRuleConfig } from '@/engine';
+import type { Recommendation, RecommendationRuleConfig } from '@/engine';
+import { deriveAaveV4EffectiveBorrowRate } from '@/services/portfolio/mapping';
 import type { ApplicationPortfolio } from '@/services/portfolio/models';
 import { generateRecommendationSet } from '@/services/recommendation/recommendations';
 
@@ -187,5 +188,78 @@ describe('generateRecommendationSet — V4 fail-closed guard (Stage 10)', () => 
       'live',
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * V4 effective borrow rate for the loop recommendation — V4 Readiness
+ * Audit §12 Stage 15. `calculateLoopRecommendation`'s own
+ * `relevantValues.annualInterestCost` reads `portfolio.protocol.borrowApr`
+ * — the "succeeds once v4DebtState is synced" test above only ever proved
+ * that call didn't fail, never what rate it actually used. `borrowedAmount`
+ * (the value that rate gets multiplied by) is itself rate-independent
+ * (`calculateLoopStep` derives it purely from collateral/debt/maxLoanToValue),
+ * so an equivalent V3 portfolio at the exact same canonical debt and an
+ * explicit `protocol.borrowApr` equal to the real derived V4 rate must
+ * produce an IDENTICAL `annualInterestCost` if the fix reaches the actual
+ * calculation — this is checked directly, not inferred from `ok: true`.
+ */
+describe('generateRecommendationSet — V4 effective borrow rate for the loop recommendation (Stage 15)', () => {
+  const v4DebtState = { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 };
+
+  function findLoopRecommendation(recommendations: Recommendation[]): Recommendation {
+    const loop = recommendations.find((r) => r.category === 'leverage');
+    if (loop === undefined) throw new Error('expected a leverage (loop) recommendation');
+    return loop;
+  }
+
+  it('matches an equivalent V3 portfolio at the exact same derived rate, and differs from the legacy protocol.borrowApr result', () => {
+    const rateStep = deriveAaveV4EffectiveBorrowRate(v4DebtState, null, 'live');
+    expect(rateStep.ok).toBe(true);
+    if (!rateStep.ok) return;
+    // Same Stage 10 regression vector: annualCost 1100 / totalDebt 20500
+    // ≈ 5.37%, not the legacy portfolio.protocol.borrowApr (5%).
+    expect(rateStep.value).toBeCloseTo(0.05365853658536585, 10);
+
+    const v4Result = generateRecommendationSet(
+      { ...basePortfolio(), protocolVersion: 'v4', v4DebtState },
+      baseRules(),
+      'live',
+    );
+    expect(v4Result.ok).toBe(true);
+    if (!v4Result.ok) return;
+    const v4Loop = findLoopRecommendation(v4Result.data.recommendations);
+
+    const v3EquivalentResult = generateRecommendationSet(
+      {
+        ...basePortfolio(),
+        debt: { asset: 'USDC', balance: 20500 },
+        protocol: { ...basePortfolio().protocol, borrowApr: rateStep.value },
+      },
+      baseRules(),
+      'live',
+    );
+    expect(v3EquivalentResult.ok).toBe(true);
+    if (!v3EquivalentResult.ok) return;
+    const v3EquivalentLoop = findLoopRecommendation(v3EquivalentResult.data.recommendations);
+
+    expect(v4Loop.relevantValues.annualInterestCost).toBeCloseTo(
+      v3EquivalentLoop.relevantValues.annualInterestCost,
+      6,
+    );
+
+    const legacyRateResult = generateRecommendationSet(
+      { ...basePortfolio(), debt: { asset: 'USDC', balance: 20500 } },
+      baseRules(),
+      'live',
+    );
+    expect(legacyRateResult.ok).toBe(true);
+    if (!legacyRateResult.ok) return;
+    const legacyLoop = findLoopRecommendation(legacyRateResult.data.recommendations);
+
+    expect(v4Loop.relevantValues.annualInterestCost).not.toBeCloseTo(
+      legacyLoop.relevantValues.annualInterestCost,
+      2,
+    );
   });
 });

@@ -1106,6 +1106,42 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
 });
 
 /**
+ * Debt form "Borrow rate" stat — V4 Readiness Audit §12 Stage 15.
+ * Previously always `formatPercent(portfolio.protocol.borrowApr)`,
+ * showing a legacy V3 scalar for a V4 portfolio regardless of its real
+ * synced `v4DebtState`.
+ */
+describe('PortfolioPage — Debt form Borrow rate stat (Stage 15)', () => {
+  it('derives the real V4 rate from synced v4DebtState, not the legacy protocol.borrowApr', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    // Same Stage 10 regression vector: annualCost 1100 / totalDebt 20500 ≈ 5.37%.
+    expect(section.getByText('5.37%')).toBeInTheDocument();
+    expect(section.queryByText('5%')).not.toBeInTheDocument();
+  });
+
+  it('shows "—" (never a stale/fabricated number) when v4DebtState has not synced yet', () => {
+    createAndSelectV4();
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Borrow rate').nextElementSibling?.textContent).toBe('—');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still reads protocol.borrowApr directly', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('5%')).toBeInTheDocument();
+  });
+});
+
+/**
  * V4 borrow/repay action UI — V4 Readiness Audit §12 Stage 13, building
  * on Stage 12's real premium-first repayment allocation.
  */

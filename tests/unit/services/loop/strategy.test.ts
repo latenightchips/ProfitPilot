@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LoopStrategySettings } from '@/services/loop/strategy';
 import { planLoopStrategy } from '@/services/loop/strategy';
+import { deriveAaveV4EffectiveBorrowRate } from '@/services/portfolio/mapping';
 import type { ApplicationPortfolio } from '@/services/portfolio/models';
 
 /**
@@ -323,6 +324,75 @@ describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.viable).toBe(true);
+  });
+
+  /**
+   * V4 Readiness Audit §12 Stage 15 — the guard above only ever proved
+   * "does not fail." It never checked what `calculateLoopCosts`/
+   * `calculateMonthlyInterest` actually computed, and prior to this
+   * stage they silently used `engineInput.protocol.borrowApr` (the
+   * legacy V3 scalar) even once the guard passed. Every assertion below
+   * cross-checks against an independently-computed
+   * `deriveAaveV4EffectiveBorrowRate` call, proving the real derived V4
+   * rate reaches the actual cost math, not a hand-picked constant.
+   */
+  it('uses the real derived V4 effective rate for cost/monthly-interest — not the legacy protocol.borrowApr', () => {
+    const v4DebtState = {
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    };
+    const v4Portfolio: ApplicationPortfolio = {
+      ...healthyPortfolio(),
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4DebtState,
+    };
+    const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    const rateStep = deriveAaveV4EffectiveBorrowRate(v4DebtState, null, 'live');
+    expect(rateStep.ok).toBe(true);
+    if (!rateStep.ok) return;
+    // Same Stage 10 regression vector: annualCost 1100 / totalDebt 20500
+    // ≈ 5.37%, not the legacy portfolio.protocol.borrowApr (5%).
+    expect(rateStep.value).toBeCloseTo(0.05365853658536585, 10);
+
+    const expectedInterest = result.data.strategy.finalDebt * rateStep.value;
+    expect(result.data.costs?.borrowingInterest).toBeCloseTo(expectedInterest, 5);
+    expect(result.data.costs?.borrowingInterest).not.toBeCloseTo(
+      result.data.strategy.finalDebt * 0.05,
+      5,
+    );
+
+    const expectedMonthly = result.data.strategy.finalDebt * rateStep.value * (30 / 365);
+    expect(result.data.monthlyInterestCost).toBeCloseTo(expectedMonthly, 5);
+  });
+
+  it('an explicit borrowAprOverride still wins over the derived V4 rate (a deliberate planning override)', () => {
+    const v4DebtState = {
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    };
+    const v4Portfolio: ApplicationPortfolio = {
+      ...healthyPortfolio(),
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4DebtState,
+    };
+    const result = planLoopStrategy(
+      v4Portfolio,
+      { ...healthySettings(), borrowAprOverride: 0.3 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    const expectedInterest = result.data.strategy.finalDebt * 0.3;
+    expect(result.data.costs?.borrowingInterest).toBeCloseTo(expectedInterest, 5);
   });
 
   it('never fails or substitutes for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {

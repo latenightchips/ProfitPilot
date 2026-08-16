@@ -34,6 +34,13 @@
  * handler" pattern this file's own `calculatePortfolioSummary` already
  * uses there), rather than the UI reimplementing Stage 11/12's
  * premium-first repayment-allocation logic a second time.
+ *
+ * **`deriveAaveV4EffectiveBorrowRate` (V4 Readiness Audit §12 Stage 15)**
+ * — re-exported for the same reason: every consumer that previously read
+ * the legacy `protocol.borrowApr` scalar for a V4 portfolio
+ * (`buildDebtAndInterestPanel`/`buildPortfolioComposition` on the
+ * Dashboard, `PortfolioPageClient`'s Debt form, `services/loop/strategy.ts`,
+ * `services/recommendation/recommendations.ts`) now calls this instead.
  */
 export {
   type PortfolioAction,
@@ -44,6 +51,7 @@ export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
   checkAaveV4DebtStateAvailable,
+  deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,

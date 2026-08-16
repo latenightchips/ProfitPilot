@@ -11,6 +11,7 @@ import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
 import {
   type AaveV4DebtState,
   calculatePortfolioSummary,
+  deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
   type PortfolioSummary,
   type ServiceResult,
@@ -451,6 +452,39 @@ function formatPercent(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 2 }).format(
     value,
   );
+}
+
+/**
+ * Debt form "Borrow rate" stat — V4 Readiness Audit §12 Stage 15.
+ * `portfolio.protocol.borrowApr` is a legacy V3-shaped scalar with no
+ * defined relationship to a V4 position's real two-parameter rate
+ * (`baseDrawnApr` + `riskPremium`) — see
+ * `services/portfolio/mapping.ts`'s `deriveAaveV4EffectiveBorrowRate` for
+ * the full reasoning. For a V4 portfolio, derives the real rate from
+ * synced `v4DebtState` instead, using `beforeSummary`'s own already-real
+ * tracked metadata as the anchor (same "call a Service function straight
+ * from a UI component" pattern this file already uses for the Debt form's
+ * own repayment preview). `'—'` (never a fabricated or stale V3 number)
+ * when `v4DebtState` is absent, `beforeSummary` itself failed (no real
+ * Engine metadata to source `tracked` from), or the derivation fails.
+ */
+function formatDebtFormBorrowRate(
+  portfolio: Portfolio,
+  beforeSummary: ServiceResult<PortfolioSummary>,
+): string {
+  if (portfolio.protocolVersion !== 'v4') {
+    return formatPercent(portfolio.protocol.borrowApr);
+  }
+  if (portfolio.v4DebtState === undefined || !beforeSummary.ok) return '—';
+  const rateStep = deriveAaveV4EffectiveBorrowRate(
+    portfolio.v4DebtState,
+    {
+      engineVersion: beforeSummary.metadata.engineVersion,
+      formulaVersion: beforeSummary.metadata.formulaVersion,
+    },
+    'manual',
+  );
+  return rateStep.ok ? formatPercent(rateStep.value) : '—';
 }
 
 /**
@@ -1158,6 +1192,7 @@ function DebtPositionForm({
     aaveV4Status,
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);
+  const formattedBorrowRate = formatDebtFormBorrowRate(portfolio, beforeSummary);
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
@@ -1205,9 +1240,7 @@ function DebtPositionForm({
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted-foreground">Borrow rate</dt>
-            <dd className="text-sm font-medium text-foreground">
-              {formatPercent(portfolio.protocol.borrowApr)}
-            </dd>
+            <dd className="text-sm font-medium text-foreground">{formattedBorrowRate}</dd>
           </div>
         </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

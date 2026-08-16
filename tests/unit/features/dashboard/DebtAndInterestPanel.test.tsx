@@ -51,6 +51,10 @@ function buildPanel() {
     record.portfolio,
     record.summary.data,
     viewModel.freshness.protocol,
+    {
+      engineVersion: record.summary.metadata.engineVersion,
+      formulaVersion: record.summary.metadata.formulaVersion,
+    },
   );
 }
 
@@ -128,6 +132,10 @@ describe('DebtAndInterestPanel — zero debt (M5-025, Batch 15)', () => {
       record.portfolio,
       record.summary.data,
       viewModel.freshness.protocol,
+      {
+        engineVersion: record.summary.metadata.engineVersion,
+        formulaVersion: record.summary.metadata.formulaVersion,
+      },
     );
 
     render(<DebtAndInterestPanel panel={panel} />);

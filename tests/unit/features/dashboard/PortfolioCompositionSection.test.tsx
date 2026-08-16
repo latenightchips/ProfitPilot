@@ -52,6 +52,10 @@ function buildComposition() {
     record.portfolio,
     record.summary.data,
     viewModel.freshness.market,
+    {
+      engineVersion: record.summary.metadata.engineVersion,
+      formulaVersion: record.summary.metadata.formulaVersion,
+    },
   );
 }
 

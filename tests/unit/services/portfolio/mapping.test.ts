@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkAaveV4DebtStateAvailable,
+  deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
@@ -511,6 +512,93 @@ describe('projectAaveV4InterestCost (Stage 11)', () => {
   it('propagates a genuine Engine failure (negative elapsedDays) rather than throwing', () => {
     const result = projectAaveV4InterestCost(v4DebtState, -1);
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * V4 effective borrow rate — V4 Readiness Audit §12 Stage 15. Every
+ * assertion below cross-checks against an independently-computed
+ * `projectAaveV4AnnualInterestCost` call rather than a hand-derived
+ * constant, proving this reads the blend back out of the already-trusted
+ * cost projection instead of a parallel formula.
+ */
+describe('deriveAaveV4EffectiveBorrowRate (Stage 15)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  it('derives the exact rate implied by the real annual-cost projection (annualCost / currentTotalDebt), not a fabricated blend', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    };
+    const costResult = projectAaveV4AnnualInterestCost(v4DebtState);
+    expect(costResult.ok).toBe(true);
+    if (!costResult.ok) return;
+
+    const result = deriveAaveV4EffectiveBorrowRate(v4DebtState, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Same Stage 10 regression vector: annualCost 1100 / totalDebt 20500.
+    expect(result.value).toBe(costResult.value / 20500);
+    expect(result.value).toBeCloseTo(0.05365853658536585, 10);
+    // Never the naive/legacy baseDrawnApr-only reading — the risk-premium
+    // markup genuinely changes the blended rate.
+    expect(result.value).not.toBeCloseTo(0.05, 3);
+  });
+
+  it('matches an independently-computed annualCost/totalDebt exactly for a drawn-only position (no premium)', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 10000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.06,
+      riskPremium: 0,
+    };
+    const costResult = projectAaveV4AnnualInterestCost(v4DebtState);
+    expect(costResult.ok).toBe(true);
+    if (!costResult.ok) return;
+
+    const result = deriveAaveV4EffectiveBorrowRate(v4DebtState, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBe(costResult.value / 10000);
+    expect(result.value).toBeCloseTo(0.06, 4);
+  });
+
+  it('falls back to baseDrawnApr (never protocol.borrowApr, never NaN/Infinity) when current total debt is exactly zero', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.07,
+      riskPremium: 0.2,
+    };
+    const result = deriveAaveV4EffectiveBorrowRate(v4DebtState, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBe(0.07);
+    expect(Number.isFinite(result.value)).toBe(true);
+  });
+
+  it('propagates a genuine Engine failure (negative drawnDebt) rather than throwing or fabricating a rate', () => {
+    const result = deriveAaveV4EffectiveBorrowRate(
+      { drawnDebt: -1, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('threads the caller-supplied tracked metadata through unchanged on success', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 10000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const result = deriveAaveV4EffectiveBorrowRate(v4DebtState, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tracked).toEqual(tracked);
   });
 });
 

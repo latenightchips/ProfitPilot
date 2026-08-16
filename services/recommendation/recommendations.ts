@@ -55,6 +55,7 @@ import {
 
 import {
   checkAaveV4DebtStateAvailable,
+  deriveAaveV4EffectiveBorrowRate,
   mapApplicationPortfolioToEngineInput,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
@@ -90,7 +91,30 @@ export function generateRecommendationSet(
   rules: RecommendationRuleConfig,
   sourceStatus: string,
 ): ServiceResult<RecommendationResult> {
-  const engineInput = mapApplicationPortfolioToEngineInput(portfolio);
+  let engineInput = mapApplicationPortfolioToEngineInput(portfolio);
+
+  // V4 Readiness Audit §12 Stage 15 — `generateRecommendations` below
+  // internally calls `calculateLoopRecommendation`, which reads
+  // `engineInput.protocol.borrowApr` for its "how much more could you
+  // loop" cost estimate. That legacy V3 scalar is not the real V4 rate
+  // for a V4 portfolio with synced `v4DebtState`; substitute the real,
+  // derived effective rate BEFORE the Engine call runs (there is no
+  // Engine formula here that patches one field of an already-computed
+  // aggregate result afterward). `tracked: null` — this is genuinely the
+  // first Engine call in this function, so there is no prior tracked
+  // version to require yet (see `deriveAaveV4EffectiveBorrowRate`'s own
+  // doc comment). A portfolio with no synced `v4DebtState` yet is left
+  // untouched here — the existing post-call guard below still fails it
+  // closed exactly as before.
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
+    const rateStep = deriveAaveV4EffectiveBorrowRate(portfolio.v4DebtState, null, sourceStatus);
+    if (!rateStep.ok) return rateStep.failure;
+    engineInput = {
+      ...engineInput,
+      protocol: { ...engineInput.protocol, borrowApr: rateStep.value },
+    };
+  }
+
   const result = generateRecommendations({ portfolio: engineInput, rules });
 
   if (!result.ok) {

@@ -96,6 +96,7 @@ import {
 
 import {
   checkAaveV4DebtStateAvailable,
+  deriveAaveV4EffectiveBorrowRate,
   mapApplicationPortfolioToEngineInput,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
@@ -198,12 +199,32 @@ export function planLoopStrategy(
   tracked = exposureStep.tracked;
   warnings.push(...exposureStep.warnings);
 
+  // V4 Readiness Audit §12 Stage 15 — `calculateLoopCosts`/
+  // `calculateMonthlyInterest` below need a borrow rate.
+  // `engineInput.protocol.borrowApr` is either the portfolio's real V3
+  // rate or `settings.borrowAprOverride` when the caller explicitly
+  // supplied one (an explicit "what if this rate were different" planning
+  // override, which still wins here — the same precedence
+  // `maxLoanToValueOverride`/`borrowAprOverride` already have over every
+  // other portfolio-derived value in this Service). Neither is the real
+  // V4 rate for a V4 portfolio. `v4GuardFailure` above already confirmed
+  // `v4DebtState` is present whenever `protocolVersion === 'v4'` reaches
+  // this point, so deriving from it is always safe here.
+  let effectiveBorrowApr = engineInput.protocol.borrowApr;
+  if (
+    portfolio.protocolVersion === 'v4' &&
+    portfolio.v4DebtState !== undefined &&
+    settings.borrowAprOverride === undefined
+  ) {
+    const rateStep = deriveAaveV4EffectiveBorrowRate(portfolio.v4DebtState, tracked, sourceStatus);
+    if (!rateStep.ok) return rateStep.failure;
+    tracked = rateStep.tracked;
+    warnings.push(...rateStep.warnings);
+    effectiveBorrowApr = rateStep.value;
+  }
+
   const costsStep = formulaStep(
-    calculateLoopCosts(
-      safety.strategy.finalDebt,
-      engineInput.protocol.borrowApr,
-      exposureStep.value,
-    ),
+    calculateLoopCosts(safety.strategy.finalDebt, effectiveBorrowApr, exposureStep.value),
     tracked,
     sourceStatus,
   );
@@ -225,7 +246,7 @@ export function planLoopStrategy(
   warnings.push(...capacityStep.warnings);
 
   const monthlyInterestStep = formulaStep(
-    calculateMonthlyInterest(safety.strategy.finalDebt, engineInput.protocol.borrowApr),
+    calculateMonthlyInterest(safety.strategy.finalDebt, effectiveBorrowApr),
     tracked,
     sourceStatus,
   );

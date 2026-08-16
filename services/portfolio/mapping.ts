@@ -372,6 +372,82 @@ export function projectAaveV4AnnualInterestCost(
 }
 
 /**
+ * V4 effective borrow rate (V4 Readiness Audit §12 Stage 15) — the single
+ * canonical rate every V4 consumer that currently reads the legacy V3
+ * scalar `portfolio.protocol.borrowApr` (Dashboard's "Current Borrow
+ * Rate"/"Borrow APR", the Portfolio page's Debt form "Borrow rate" stat,
+ * Loop Builder's cost/monthly-interest projections, Recommendation
+ * Center's loop recommendation) must use instead for a V4 portfolio.
+ *
+ * **Deliberately NOT new rate math** — `AaveV4DebtState`'s two real rate
+ * components (`baseDrawnApr` applied to drawn debt, `riskPremium` applied
+ * only as a markup on newly-accrued drawn interest — see
+ * `projectAaveV4Debt`'s own header comment) never collapse into one
+ * blended scalar anywhere in the Engine, by design (`AaveV4DebtProjection`'s
+ * own doc comment: "No single normalized debt output" — the same
+ * reasoning extends to rate). Rather than inventing a parallel blending
+ * formula, this reads the blend back out of `projectAaveV4AnnualInterestCost`
+ * (Stage 10/11's own already-validated, already-used annual-cost
+ * projection): the constant simple annual rate that would produce the
+ * exact same real dollar cost this Engine call already reports is, by
+ * definition, `annualCost / currentTotalDebt` — reusing trusted output,
+ * not re-deriving trusted input.
+ *
+ * **Zero current debt is handled explicitly, not divided by.** When
+ * `drawnDebt + premiumDebt === 0`, `projectAaveV4Debt`'s own accrual
+ * model guarantees `drawnInterestAccrued` (and therefore all premium
+ * growth, which is driven entirely off it) is exactly zero regardless of
+ * the rate parameters — so `annualCost` is always `0` here too, making
+ * `annualCost / totalDebt` an undefined `0/0`, not a meaningful blend.
+ * `baseDrawnApr` alone is returned instead: it is still a real,
+ * currently-effective V4 rate component read straight from the synced
+ * `v4DebtState` (never `protocol.borrowApr`), and is the correct
+ * "rate a marginal new borrow would start accruing at" value — premium
+ * only ever builds on top of drawn interest that has not accrued yet.
+ * This keeps Loop Builder usable for a V4 portfolio starting a fresh
+ * loop from zero debt, the same "current, real, just not blended" input
+ * every other zero-debt case in this codebase already prefers over
+ * failing closed on a legitimate starting state.
+ *
+ * **Still fails closed exactly like every other V4 rate/cost path** —
+ * `projectAaveV4AnnualInterestCost`'s own validation (negative balances,
+ * invalid rates) propagates through `formulaStep` unchanged; this
+ * function adds no new failure modes and swallows none.
+ *
+ * **`tracked` accepts `null`**, same as `formulaStep` itself — most
+ * callers already have a real prior Engine call's tracked version to
+ * pass (e.g. `beforeSummary.metadata`), but `services/recommendation/recommendations.ts`
+ * needs to derive this rate *before* its own first Engine call (to build
+ * a corrected `engineInput.protocol.borrowApr` ahead of time), so `null`
+ * lets this be that first call instead of requiring a fabricated one.
+ */
+export function deriveAaveV4EffectiveBorrowRate(
+  v4DebtState: AaveV4DebtState,
+  tracked: TrackedFormulaVersion | null,
+  sourceStatus: string,
+): FormulaStep<number> {
+  const costStep = formulaStep(projectAaveV4AnnualInterestCost(v4DebtState), tracked, sourceStatus);
+  if (!costStep.ok) return costStep;
+
+  const totalDebt = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
+  if (totalDebt === 0) {
+    return {
+      ok: true,
+      value: v4DebtState.baseDrawnApr,
+      tracked: costStep.tracked,
+      warnings: costStep.warnings,
+    };
+  }
+
+  return {
+    ok: true,
+    value: costStep.value / totalDebt,
+    tracked: costStep.tracked,
+    warnings: costStep.warnings,
+  };
+}
+
+/**
  * Derives a V4 portfolio's post-change `v4DebtState` for a debt-altering
  * action (borrow or repay) — V4 Readiness Audit §12 Stage 11, resolved
  * with the real protocol-backed repayment rule at Stage 12.

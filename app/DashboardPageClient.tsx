@@ -204,6 +204,18 @@ export function DashboardPageClient() {
       : null;
 
   const summary = record !== undefined && record.summary.ok ? record.summary.data : null;
+  // V4 Readiness Audit §12 Stage 15 — real Engine metadata for
+  // `deriveAaveV4EffectiveBorrowRate` to thread through `formulaStep`,
+  // sourced from this same already-computed, already-real summary
+  // (never fabricated) exactly like `PortfolioPageClient.tsx`'s own
+  // `beforeSummary.metadata` reuse for the identical purpose.
+  const summaryTracked =
+    record !== undefined && record.summary.ok
+      ? {
+          engineVersion: record.summary.metadata.engineVersion,
+          formulaVersion: record.summary.metadata.formulaVersion,
+        }
+      : null;
   const healthFactorStatus =
     record !== undefined && summary !== null
       ? buildHealthFactorStatus(record.portfolio, summary)
@@ -213,12 +225,22 @@ export function DashboardPageClient() {
       ? buildRiskWarnings(healthFactorStatus, viewModel.freshness, viewModel.warnings)
       : [];
   const portfolioComposition =
-    record !== undefined && summary !== null && viewModel !== null
-      ? buildPortfolioComposition(record.portfolio, summary, viewModel.freshness.market)
+    record !== undefined && summary !== null && summaryTracked !== null && viewModel !== null
+      ? buildPortfolioComposition(
+          record.portfolio,
+          summary,
+          viewModel.freshness.market,
+          summaryTracked,
+        )
       : null;
   const debtAndInterestPanel =
-    record !== undefined && summary !== null && viewModel !== null
-      ? buildDebtAndInterestPanel(record.portfolio, summary, viewModel.freshness.protocol)
+    record !== undefined && summary !== null && summaryTracked !== null && viewModel !== null
+      ? buildDebtAndInterestPanel(
+          record.portfolio,
+          summary,
+          viewModel.freshness.protocol,
+          summaryTracked,
+        )
       : null;
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
   const dataFreshnessIndicators =
