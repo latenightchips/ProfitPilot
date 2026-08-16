@@ -211,3 +211,78 @@ describe('calculatePortfolioSummary — canonical V4 debt (Stage 9)', () => {
     expect(result.data.healthFactor).toBe(4);
   });
 });
+
+/**
+ * V4 rate semantics hardening — V4 Readiness Audit §12 Stage 10.
+ * `interestCost` for a V4 portfolio with synced `v4DebtState` now comes
+ * from the real V4 accrual engine (`projectAaveV4AnnualInterestCost`),
+ * not `calculateAnnualInterest(debtValue, protocol.borrowApr)` — the
+ * legacy formula was amount-correct but rate-questionable for V4 (see
+ * this file's own header comment).
+ */
+describe('calculatePortfolioSummary — V4 interestCost via the real accrual engine (Stage 10)', () => {
+  it('uses the real V4 365-day projection, not debtValue * protocol.borrowApr', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Same regression vector as the Engine/Simulation layers: drawnDebt
+    // 20000, premiumDebt 500, baseDrawnApr 0.05, riskPremium 0.1 over 365
+    // days -> totalDebt 21600, so interestCost = 21600 - 20500 = 1100.
+    // The legacy `debtValue * protocol.borrowApr` formula would instead
+    // give 20500 * 0.05 = 1025 — a genuinely different, wrong-for-V4 answer.
+    expect(result.data.interestCost).toBeCloseTo(1100, 6);
+    expect(result.data.interestCost).not.toBeCloseTo(1025, 6);
+  });
+
+  it('ignores protocol.borrowApr entirely for a V4 portfolio with synced v4DebtState', () => {
+    const withLowLegacyRate = calculatePortfolioSummary(
+      basePortfolio({
+        protocol: {
+          maxLoanToValue: 0.75,
+          liquidationThreshold: 0.8,
+          borrowApr: 0.01,
+          supplyApr: 0.02,
+        },
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      }),
+      'live',
+    );
+    const withHighLegacyRate = calculatePortfolioSummary(
+      basePortfolio({
+        protocol: {
+          maxLoanToValue: 0.75,
+          liquidationThreshold: 0.8,
+          borrowApr: 0.99,
+          supplyApr: 0.02,
+        },
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      }),
+      'live',
+    );
+    expect(withLowLegacyRate.ok).toBe(true);
+    expect(withHighLegacyRate.ok).toBe(true);
+    if (!withLowLegacyRate.ok || !withHighLegacyRate.ok) return;
+    expect(withLowLegacyRate.data.interestCost).toBe(withHighLegacyRate.data.interestCost);
+  });
+
+  it('still uses the legacy calculateAnnualInterest formula for a "v3" portfolio (unaffected by Stage 10)', () => {
+    const result = calculatePortfolioSummary(basePortfolio({ protocolVersion: 'v3' }), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // $20,000 debt @ 5% APR = $1,000 (calculateAnnualInterest, unchanged).
+    expect(result.data.interestCost).toBe(1000);
+  });
+
+  it('still uses the legacy calculateAnnualInterest formula when protocolVersion is unset (unaffected by Stage 10)', () => {
+    const result = calculatePortfolioSummary(basePortfolio(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.interestCost).toBe(1000);
+  });
+});

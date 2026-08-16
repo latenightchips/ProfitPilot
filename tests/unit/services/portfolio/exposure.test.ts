@@ -46,3 +46,24 @@ describe('calculatePortfolioExposure (Milestone 7 Batch 2)', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+/**
+ * V4 fail-closed guard — deliberately NOT applied here (V4 Readiness
+ * Audit §12 Stage 10 audit finding). `calculateExposure` only reads
+ * `collateral`/`market`, never `debt` — this Service has no stale-debt
+ * risk to guard against, unlike Loop Strategy/Interest Breakdown/
+ * Recommendations. Pinning this as a passing test, not just a doc
+ * comment, so a future change that accidentally makes this Service
+ * debt-sensitive gets caught by a real assertion.
+ */
+describe('calculatePortfolioExposure — no V4 guard needed (Stage 10 audit)', () => {
+  it('succeeds for a "v4" portfolio even with no synced v4DebtState (Exposure never reads debt)', () => {
+    const result = calculatePortfolioExposure(
+      { ...basePortfolio(), protocolVersion: 'v4' },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toBe(100000);
+  });
+});

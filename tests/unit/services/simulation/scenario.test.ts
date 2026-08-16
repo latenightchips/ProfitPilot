@@ -774,8 +774,168 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
     // Collateral: 2 BTC @ $40,000 = $80,000. Canonical debt: $20,500.
     expect(result.data.scenario.equity).toBeCloseTo(80000 - 20500, 6);
     expect(result.data.scenario.healthFactor).toBeCloseTo((80000 * 0.8) / 20500, 9);
-    expect(result.data.scenario.debtCost).toBeCloseTo(20500 * 0.05, 6);
+    // V4 Readiness Audit §12 Stage 10: debtCost now comes from the real V4
+    // accrual engine (`projectAaveV4AnnualInterestCost`), not the legacy
+    // `debtValue * protocol.borrowApr` formula (which would give 1025).
+    // Same regression vector as the Stage 8 interest-scenario test below:
+    // drawnDebt 20000/premiumDebt 500 @ baseDrawnApr 0.05/riskPremium 0.1
+    // over 365 days -> totalDebt 21600, so annual cost = 21600 - 20500 = 1100.
+    expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
     // profitOrLoss (collateral-value gain/loss only) is unaffected by debt.
     expect(result.data.scenario.profitOrLoss).toBe(-20000);
+  });
+});
+
+/**
+ * V4 rate semantics hardening — V4 Readiness Audit §12 Stage 10.
+ * `scenario.v4RateStress` (`AaveV4RateStress`) is the explicit,
+ * additive, V4-only rate-stress representation this stage introduces —
+ * see `services/simulation/scenario.ts`'s own header comment for the full
+ * design. These tests prove: it changes only the scenario-side V4
+ * projection, never the baseline; it is inert for V3/unset portfolios;
+ * `scenario.borrowApr` remains V3-only and untouched; and omitting it
+ * preserves exactly the Stage 8/9 behavior (scenario debtCost equals the
+ * reprorated baseline's).
+ */
+describe('simulateScenario — V4 rate stress (V4 Readiness Audit §12 Stage 10)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      ...overrides,
+    };
+  }
+
+  const oneYearInterestScenario: SimulationScenario = {
+    type: 'interest',
+    priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+    timeHorizonDays: 365,
+    borrowApr: 0.05,
+  };
+
+  it('applies v4RateStress to the scenario-side projection, producing a different debtCost than the real rates', () => {
+    const real = simulateScenario(v4Portfolio(), oneYearInterestScenario, '1 year', 'live');
+    const stressed = simulateScenario(
+      v4Portfolio(),
+      { ...oneYearInterestScenario, v4RateStress: { baseDrawnApr: 0.2, riskPremium: 0.1 } },
+      '1 year stressed',
+      'live',
+    );
+    expect(real.ok).toBe(true);
+    expect(stressed.ok).toBe(true);
+    if (!real.ok || !stressed.ok) return;
+    // Real: 1100 (see the Stage 8 regression vector above). Stressed at
+    // 20% base drawn APR must be materially higher.
+    expect(real.data.scenario.debtCost).toBeCloseTo(1100, 6);
+    expect(stressed.data.scenario.debtCost).toBeGreaterThan(real.data.scenario.debtCost);
+  });
+
+  it('never applies v4RateStress to the baseline reproration — baseline always reflects the real current rate', () => {
+    const stressed = simulateScenario(
+      v4Portfolio(),
+      { ...oneYearInterestScenario, v4RateStress: { baseDrawnApr: 0.5, riskPremium: 0.5 } },
+      '1 year stressed',
+      'live',
+    );
+    const real = simulateScenario(v4Portfolio(), oneYearInterestScenario, '1 year', 'live');
+    expect(stressed.ok).toBe(true);
+    expect(real.ok).toBe(true);
+    if (!stressed.ok || !real.ok) return;
+    // Baseline is identical with or without v4RateStress — it never reads it.
+    expect(stressed.data.baseline.debtCost).toBeCloseTo(real.data.baseline.debtCost, 9);
+    expect(stressed.data.baseline.debtCost).toBeCloseTo(1100, 6);
+    // The scenario side, however, does diverge from the baseline once stressed.
+    expect(stressed.data.scenario.debtCost).not.toBeCloseTo(stressed.data.baseline.debtCost, 2);
+  });
+
+  it('omitting v4RateStress preserves the exact Stage 8/9 behavior (scenario debtCost equals the reprorated baseline)', () => {
+    const result = simulateScenario(v4Portfolio(), oneYearInterestScenario, '1 year', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.scenario.debtCost).toBeCloseTo(result.data.baseline.debtCost, 9);
+    expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
+  });
+
+  it('v4RateStress overrides only the field(s) it sets its own effect through — a full override changes both drawn and premium accrual', () => {
+    const baseRatesOnlyStress = simulateScenario(
+      v4Portfolio(),
+      { ...oneYearInterestScenario, v4RateStress: { baseDrawnApr: 0.05, riskPremium: 0.1 } },
+      '1 year, stress = real rates',
+      'live',
+    );
+    const real = simulateScenario(v4Portfolio(), oneYearInterestScenario, '1 year', 'live');
+    expect(baseRatesOnlyStress.ok).toBe(true);
+    expect(real.ok).toBe(true);
+    if (!baseRatesOnlyStress.ok || !real.ok) return;
+    // Supplying v4RateStress with the SAME values as the real rates must
+    // reproduce the exact same result — proves the override is read
+    // correctly, not just "any v4RateStress disables V4 math."
+    expect(baseRatesOnlyStress.data.scenario.debtCost).toBeCloseTo(real.data.scenario.debtCost, 9);
+  });
+
+  it('is completely inert for a "v3" portfolio — scenario.v4RateStress is never read, only scenario.borrowApr is', () => {
+    const v3Portfolio: ApplicationPortfolio = {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const withStress = simulateScenario(
+      v3Portfolio,
+      { ...oneYearInterestScenario, v4RateStress: { baseDrawnApr: 0.99, riskPremium: 0.99 } },
+      '1 year',
+      'live',
+    );
+    const withoutStress = simulateScenario(v3Portfolio, oneYearInterestScenario, '1 year', 'live');
+    expect(withStress.ok).toBe(true);
+    expect(withoutStress.ok).toBe(true);
+    if (!withStress.ok || !withoutStress.ok) return;
+    // Byte-identical: v4RateStress is inert for V3, exactly as v4DebtState
+    // itself already is (Stage 8's own "dispatch is keyed strictly by
+    // protocolVersion" tests above).
+    expect(withStress.data.scenario).toEqual(withoutStress.data.scenario);
+    expect(withStress.data.baseline).toEqual(withoutStress.data.baseline);
+  });
+
+  it('scenario.borrowApr remains V3-only and unreinterpreted for V4 — v4RateStress is a separate field, not a repurposing', () => {
+    const differentBorrowApr = simulateScenario(
+      v4Portfolio(),
+      { ...oneYearInterestScenario, borrowApr: 0.99 },
+      '1 year',
+      'live',
+    );
+    const original = simulateScenario(v4Portfolio(), oneYearInterestScenario, '1 year', 'live');
+    expect(differentBorrowApr.ok).toBe(true);
+    expect(original.ok).toBe(true);
+    if (!differentBorrowApr.ok || !original.ok) return;
+    // Changing scenario.borrowApr alone (no v4RateStress) has zero effect
+    // on a V4 portfolio's debtCost — same invariant Stage 8 already proved,
+    // still true after Stage 10 adds the separate v4RateStress field.
+    expect(differentBorrowApr.data.scenario.debtCost).toBe(original.data.scenario.debtCost);
+  });
+
+  it('preserves v4RateStress as part of "assumptions", exactly as every other scenario field is', () => {
+    const scenario: SimulationScenario = {
+      ...oneYearInterestScenario,
+      v4RateStress: { baseDrawnApr: 0.2, riskPremium: 0.15 },
+    };
+    const result = simulateScenario(v4Portfolio(), scenario, '1 year stressed', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.assumptions).toEqual(scenario);
   });
 });

@@ -58,3 +58,47 @@ describe('calculateTargetHealthFactorActions (Batch 4)', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. Both
+ * recommendations read debt (via `engineInput`), so a V4 portfolio with
+ * no synced `v4DebtState` must fail closed rather than silently
+ * recommending an amount computed from stale legacy `debt.balance`.
+ */
+describe('calculateTargetHealthFactorActions — V4 fail-closed guard (Stage 10)', () => {
+  it('fails with AAVE_V4_DEBT_STATE_MISSING for a "v4" portfolio with no synced v4DebtState', () => {
+    const result = calculateTargetHealthFactorActions(
+      { ...basePortfolio(), protocolVersion: 'v4' },
+      5,
+      'manual',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('succeeds once v4DebtState is synced', () => {
+    const result = calculateTargetHealthFactorActions(
+      {
+        ...basePortfolio(),
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      5,
+      'manual',
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('never fails for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const result = calculateTargetHealthFactorActions(
+      {
+        ...basePortfolio(),
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      5,
+      'manual',
+    );
+    expect(result.ok).toBe(true);
+  });
+});

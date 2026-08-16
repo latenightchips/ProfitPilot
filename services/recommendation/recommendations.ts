@@ -53,7 +53,10 @@ import {
   type UnavailableRecommendationCategory,
 } from '@/engine';
 
-import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
+import {
+  checkAaveV4DebtStateAvailable,
+  mapApplicationPortfolioToEngineInput,
+} from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { type ApplicationError, createApplicationError } from '../shared/errors';
 import { createServiceFailure, createServiceSuccess, type ServiceResult } from '../shared/result';
@@ -102,6 +105,22 @@ export function generateRecommendationSet(
       formulaVersion: result.metadata.formulaVersion,
     });
   }
+
+  // V4 Readiness Audit §12 Stage 10 — `generateRecommendations` above
+  // already ran against `engineInput`, which silently falls back to
+  // legacy `debt.balance` for a V4 portfolio with no synced `v4DebtState`
+  // (`mapApplicationPortfolioToEngineInput`'s own documented gap). Fail
+  // closed here, discarding that result, rather than returning
+  // recommendations computed from stale debt.
+  const v4GuardFailure = checkAaveV4DebtStateAvailable(
+    portfolio,
+    {
+      engineVersion: result.metadata.engineVersion,
+      formulaVersion: result.metadata.formulaVersion,
+    },
+    sourceStatus,
+  );
+  if (v4GuardFailure !== null) return v4GuardFailure;
 
   const ranked: RankedRecommendation[] = [...result.value.recommendations]
     .sort(

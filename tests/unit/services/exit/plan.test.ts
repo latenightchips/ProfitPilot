@@ -141,3 +141,52 @@ describe('planExit — full exit and conflict #20 interaction (M3-011)', () => {
     expect(result.data.after?.netEquity).toBe(80000);
   });
 });
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. `planExit`
+ * needs no guard of its own: both its "before" and "after" summaries
+ * already go through `calculatePortfolioSummary`, which fails closed for
+ * "v4" with no synced `v4DebtState` (Stage 9) — `planExit`'s own
+ * baseline call inherits that for free, and the "after" summary is never
+ * reached once the baseline has already failed. These tests prove the
+ * inheritance actually holds after Stage 10's changes, not just assert it
+ * by reading the source.
+ */
+describe('planExit — V4 fail-closed guard, inherited via calculatePortfolioSummary (Stage 10)', () => {
+  it('fails with AAVE_V4_DEBT_STATE_MISSING for a "v4" portfolio with no synced v4DebtState', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit({ ...basePortfolio(), protocolVersion: 'v4' }, target, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('succeeds once v4DebtState is synced, using the canonical debt total for the "before" summary', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit(
+      {
+        ...basePortfolio(),
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      target,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.before.debtValue).toBe(20000);
+  });
+
+  it('never fails for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit(
+      {
+        ...basePortfolio(),
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      target,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+  });
+});

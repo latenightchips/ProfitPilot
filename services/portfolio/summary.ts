@@ -105,6 +105,17 @@
  * `services/simulation/scenario.ts`'s baseline for both `price` and
  * `interest` scenarios — inherits this guard for free, with no separate
  * fix needed at each call site.
+ *
+ * **V4 rate semantics hardening (V4 Readiness Audit §12 Stage 10)** — the
+ * guard above is now `services/portfolio/mapping.ts`'s shared
+ * `checkAaveV4DebtStateAvailable` (previously an inline check local to
+ * this file), and `interestCost` below no longer reads the V3-shaped
+ * `engineInput.protocol.borrowApr` for a V4 portfolio with synced
+ * `v4DebtState` — it uses `projectAaveV4AnnualInterestCost` instead,
+ * which projects the portfolio's own real V4 rates through the same
+ * validated Engine accrual math `services/simulation/scenario.ts` already
+ * uses for V4 debt projection. See that file's own header comment for the
+ * full V4 rate-stress design this stage also introduces.
  */
 import {
   calculateAnnualInterest,
@@ -119,16 +130,14 @@ import {
   calculateNetWorth,
 } from '@/engine';
 
-import { createApplicationError } from '../shared/errors';
 import type { TrackedFormulaVersion } from '../shared/formulaStep';
 import { formulaStep as step, optionsFromTracked as optionsFrom } from '../shared/formulaStep';
+import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 import {
-  createServiceFailure,
-  createServiceSuccess,
-  type ServiceResult,
-  type ServiceWarning,
-} from '../shared/result';
-import { mapApplicationPortfolioToEngineInput } from './mapping';
+  checkAaveV4DebtStateAvailable,
+  mapApplicationPortfolioToEngineInput,
+  projectAaveV4AnnualInterestCost,
+} from './mapping';
 import type { ApplicationPortfolio } from './models';
 
 export interface PortfolioLiquidationSummary {
@@ -174,14 +183,15 @@ export function calculatePortfolioSummary(
 
   // V4 Readiness Audit §12 Stage 9 — fail closed rather than summarizing
   // from stale V3-shaped debt.balance. See this file's own header comment.
-  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState === undefined) {
-    const error = createApplicationError(
-      'calculation',
-      'AAVE_V4_DEBT_STATE_MISSING',
-      'This summary requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
-    );
-    return createServiceFailure([error], optionsFrom(sourceStatus, collateralValueStep.tracked));
-  }
+  // Promoted to a shared helper at Stage 10 (`services/portfolio/mapping.ts`)
+  // so `loop/strategy.ts`/`recommendation/*`/`interestBreakdown.ts` can
+  // enforce the identical rule instead of duplicating or omitting it.
+  const v4GuardFailure = checkAaveV4DebtStateAvailable(
+    portfolio,
+    collateralValueStep.tracked,
+    sourceStatus,
+  );
+  if (v4GuardFailure !== null) return v4GuardFailure;
 
   const debtValueStep = step(calculateDebtValue(engineInput.debt), tracked, sourceStatus);
   if (!debtValueStep.ok) return debtValueStep.failure;
@@ -276,19 +286,24 @@ export function calculatePortfolioSummary(
     };
   }
 
-  // NOTE (V4 Readiness Audit §12 Stage 9, reported not resolved): `debtValue`
-  // above is now the canonical V4 amount when applicable, but
-  // `engineInput.protocol.borrowApr` remains the legacy V3-shaped scalar
-  // rate — V4's real rate model (`baseDrawnApr` + `riskPremium`) has no
-  // defined mapping onto a single "Annual Interest" rate yet (the same
-  // open question `services/simulation/scenario.ts`'s own header comment
-  // documents for `scenario.borrowApr`). `interestCost` below is therefore
-  // still amount-correct but rate-questionable for a V4 portfolio.
-  const interestCostStep = step(
-    calculateAnnualInterest(debtValue, engineInput.protocol.borrowApr),
-    tracked,
-    sourceStatus,
-  );
+  // V4 Readiness Audit §12 Stage 10 (resolves the Stage 9 NOTE previously
+  // here): `engineInput.protocol.borrowApr` is a V3-shaped scalar with no
+  // defined relationship to V4's real two-parameter rate model
+  // (`baseDrawnApr` + `riskPremium`) — using it for a V4 portfolio would be
+  // amount-correct but rate-questionable. When the guard above has already
+  // confirmed `v4DebtState` is present for a V4 portfolio, `interestCost`
+  // instead comes from `projectAaveV4AnnualInterestCost`, which projects
+  // that same real, currently-effective V4 rate state forward through the
+  // Engine's own validated V4 accrual math (`services/portfolio/mapping.ts`)
+  // rather than reading a rate that was never V4's own.
+  const interestCostStep =
+    portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
+      ? step(projectAaveV4AnnualInterestCost(portfolio.v4DebtState), tracked, sourceStatus)
+      : step(
+          calculateAnnualInterest(debtValue, engineInput.protocol.borrowApr),
+          tracked,
+          sourceStatus,
+        );
   if (!interestCostStep.ok) return interestCostStep.failure;
   tracked = interestCostStep.tracked;
   warnings.push(...interestCostStep.warnings);

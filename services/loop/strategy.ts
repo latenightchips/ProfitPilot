@@ -94,7 +94,10 @@ import {
   validateLoopStrategySafety,
 } from '@/engine';
 
-import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
+import {
+  checkAaveV4DebtStateAvailable,
+  mapApplicationPortfolioToEngineInput,
+} from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
@@ -160,6 +163,15 @@ export function planLoopStrategy(
   let tracked: TrackedFormulaVersion = safetyStep.tracked;
   warnings.push(...safetyStep.warnings);
   const safety = safetyStep.value;
+
+  // V4 Readiness Audit §12 Stage 10 — this Service reads debt (via
+  // `mappedInput`/`engineInput` above) and `protocol.borrowApr` throughout
+  // (`calculateLoopCosts`, `calculateMonthlyInterest`), so a V4 portfolio
+  // with no synced `v4DebtState` must fail closed here rather than
+  // silently planning a loop strategy against stale legacy `debt.balance`.
+  // See `services/portfolio/mapping.ts`'s `checkAaveV4DebtStateAvailable`.
+  const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4GuardFailure !== null) return v4GuardFailure;
 
   if (safety.strategy === null) {
     return createServiceSuccess(

@@ -23,7 +23,7 @@ import {
   type TrackedFormulaVersion,
 } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
-import { mapApplicationPortfolioToEngineInput } from './mapping';
+import { checkAaveV4DebtStateAvailable, mapApplicationPortfolioToEngineInput } from './mapping';
 import type { ApplicationPortfolio } from './models';
 
 export interface DebtInterestBreakdown {
@@ -50,6 +50,18 @@ export function calculateDebtInterestBreakdown(
   tracked = debtValueStep.tracked;
   warnings.push(...debtValueStep.warnings);
   const debtValue = debtValueStep.value;
+
+  // V4 Readiness Audit §12 Stage 10 — `debtValue` above already reads
+  // canonical V4 debt when available (Stage 9's `mapApplicationPortfolioToEngineInput`),
+  // but a V4 portfolio with no synced `v4DebtState` would otherwise
+  // silently fall back to legacy `debt.balance`. Fail closed instead. Rate
+  // fix (V4's own `baseDrawnApr`/`riskPremium` vs. legacy `protocol.borrowApr`
+  // below) remains open for this file, same as before Stage 10 — only
+  // `calculatePortfolioSummary.interestCost` and `simulateScenario`'s
+  // `debtCost` were named for that fix (see PROJECT_STATUS.md's Stage 10
+  // write-up).
+  const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4GuardFailure !== null) return v4GuardFailure;
 
   const dailyStep = step(
     calculateDailyInterest(debtValue, engineInput.protocol.borrowApr),

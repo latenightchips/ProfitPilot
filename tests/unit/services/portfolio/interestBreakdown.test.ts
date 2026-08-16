@@ -53,3 +53,51 @@ describe('calculateDebtInterestBreakdown (Batch 6)', () => {
     expect(result.data.monthly).toBe(0);
   });
 });
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. This Service
+ * reads debt/`protocol.borrowApr` directly, so a V4 portfolio with no
+ * synced `v4DebtState` must fail closed rather than silently computing a
+ * daily/monthly breakdown from stale legacy `debt.balance`.
+ */
+describe('calculateDebtInterestBreakdown — V4 fail-closed guard (Stage 10)', () => {
+  it('fails with AAVE_V4_DEBT_STATE_MISSING for a "v4" portfolio with no synced v4DebtState', () => {
+    const result = calculateDebtInterestBreakdown(
+      { ...basePortfolio(), protocolVersion: 'v4' },
+      'manual',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('succeeds once v4DebtState is synced, using the canonical drawnDebt + premiumDebt total', () => {
+    const result = calculateDebtInterestBreakdown(
+      {
+        ...basePortfolio(),
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      'manual',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Daily = 15500 * 0.05 / 365 (still the legacy protocol.borrowApr rate
+    // for this Service — Stage 10 only named interestCost/debtCost for the
+    // rate fix; this Service's own rate remains open, same as before).
+    expect(result.data.daily).toBeCloseTo((15500 * 0.05) / 365, 5);
+  });
+
+  it('never fails or substitutes for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const result = calculateDebtInterestBreakdown(
+      {
+        ...basePortfolio(),
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      'manual',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.daily).toBeCloseTo(2.739726, 5);
+  });
+});

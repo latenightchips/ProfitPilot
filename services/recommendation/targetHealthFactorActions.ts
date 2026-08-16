@@ -39,7 +39,10 @@ import {
   type Recommendation,
 } from '@/engine';
 
-import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
+import {
+  checkAaveV4DebtStateAvailable,
+  mapApplicationPortfolioToEngineInput,
+} from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import {
   formulaStep as step,
@@ -79,6 +82,13 @@ export function calculateTargetHealthFactorActions(
   if (!repaymentStep.ok) return repaymentStep.failure;
   tracked = repaymentStep.tracked;
   warnings.push(...repaymentStep.warnings);
+
+  // V4 Readiness Audit §12 Stage 10 — both recommendations above/below
+  // read debt (via `engineInput`), so a V4 portfolio with no synced
+  // `v4DebtState` must fail closed rather than silently recommending a
+  // repayment/collateral amount computed from stale legacy `debt.balance`.
+  const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4GuardFailure !== null) return v4GuardFailure;
 
   const additionalCollateralStep = step(
     calculateAdditionalCollateralRecommendation({ portfolio: engineInput, targetHealthFactor }),

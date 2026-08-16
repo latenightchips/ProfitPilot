@@ -289,3 +289,48 @@ describe('planLoopStrategy — remainingBorrowCapacity/monthlyInterestCost (M7-0
     expect(result.data.monthlyInterestCost).toBeNull();
   });
 });
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. This Service
+ * reads debt/`protocol.borrowApr` throughout (`calculateLoopCosts`,
+ * `calculateMonthlyInterest`), so a V4 portfolio with no synced
+ * `v4DebtState` must fail closed rather than silently planning a loop
+ * strategy against stale legacy `debt.balance`.
+ */
+describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
+  it('fails with AAVE_V4_DEBT_STATE_MISSING for a "v4" portfolio with no synced v4DebtState', () => {
+    const v4Portfolio: ApplicationPortfolio = { ...healthyPortfolio(), protocolVersion: 'v4' };
+    const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('does not have a data field on the missing-state failure (no partial/placeholder result leaks through)', () => {
+    const v4Portfolio: ApplicationPortfolio = { ...healthyPortfolio(), protocolVersion: 'v4' };
+    const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('succeeds normally for a "v4" portfolio once v4DebtState is synced', () => {
+    const v4Portfolio: ApplicationPortfolio = {
+      ...healthyPortfolio(),
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+    const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.viable).toBe(true);
+  });
+
+  it('never fails or substitutes for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const portfolioWithStrayV4State: ApplicationPortfolio = {
+      ...healthyPortfolio(),
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+    const result = planLoopStrategy(portfolioWithStrayV4State, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+  });
+});

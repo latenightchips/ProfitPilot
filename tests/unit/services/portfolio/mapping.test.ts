@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  checkAaveV4DebtStateAvailable,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
+  projectAaveV4AnnualInterestCost,
 } from '@/services/portfolio/mapping';
 import type { ApplicationPortfolio, PersistencePortfolio } from '@/services/portfolio/models';
 
@@ -331,5 +333,127 @@ describe('mapApplicationPortfolioToEngineInput — canonical V4 debt (Stage 9)',
         supplyApr: 0.02,
       },
     });
+  });
+});
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. Promoted from
+ * `services/portfolio/summary.ts`'s own original Stage 9 inline check so
+ * `services/loop/strategy.ts`/`services/portfolio/interestBreakdown.ts`/
+ * `services/recommendation/*` can enforce the identical rule. See each of
+ * those Services' own test files for the integrated (not just unit-level)
+ * proof that the guard is actually wired in.
+ */
+describe('checkAaveV4DebtStateAvailable (Stage 10)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns null (no failure) for a "v4" portfolio with v4DebtState present', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(checkAaveV4DebtStateAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns an AAVE_V4_DEBT_STATE_MISSING failure for a "v4" portfolio with no v4DebtState', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    const failure = checkAaveV4DebtStateAvailable(application, tracked, 'live');
+    expect(failure).not.toBeNull();
+    expect(failure?.ok).toBe(false);
+    expect(failure?.errors[0]).toMatchObject({
+      category: 'calculation',
+      code: 'AAVE_V4_DEBT_STATE_MISSING',
+    });
+  });
+
+  it('threads sourceStatus and the caller-supplied tracked metadata through, never fabricating it', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    const failure = checkAaveV4DebtStateAvailable(
+      application,
+      { engineVersion: '9.9.9', formulaVersion: '2.0' },
+      'manual',
+    );
+    expect(failure?.metadata.sourceStatus).toBe('manual');
+    expect(failure?.metadata.engineVersion).toBe('9.9.9');
+    expect(failure?.metadata.formulaVersion).toBe('2.0');
+  });
+
+  it('returns null for a "v3" portfolio even when v4DebtState happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      protocolVersion: 'v3',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(checkAaveV4DebtStateAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns null when protocolVersion is unset, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(checkAaveV4DebtStateAvailable(application, tracked, 'live')).toBeNull();
+  });
+});
+
+/**
+ * V4 Annual Interest via the real V4 accrual engine — V4 Readiness Audit
+ * §12 Stage 10. Replaces `calculateAnnualInterest(debtValue, protocol.borrowApr)`
+ * for a V4 portfolio, which was rate-questionable (a V3-shaped scalar with
+ * no defined relationship to V4's real `baseDrawnApr`/`riskPremium` pair).
+ */
+describe('projectAaveV4AnnualInterestCost (Stage 10)', () => {
+  it('computes the real 365-day V4 projected accrual, not a simple rate*balance multiplication', () => {
+    // Same regression vector as the Stage 8 Engine-integration tests
+    // (tests/unit/engine/protocols/aaveV4/projectAaveV4Debt.test.ts):
+    // drawnDebt 20000, premiumDebt 500, baseDrawnApr 0.05, riskPremium 0.1,
+    // elapsedDays 365 -> totalDebt 21600.
+    const result = projectAaveV4AnnualInterestCost({
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 21600 - 20500 = 1100, not the legacy V3-shaped formula's answer
+    // (20500 * 0.05 = 1025).
+    expect(result.value).toBeCloseTo(1100, 6);
+    expect(result.value).not.toBeCloseTo(1025, 6);
+  });
+
+  it('returns 0 when both baseDrawnApr and riskPremium are 0 (no accrual)', () => {
+    const result = projectAaveV4AnnualInterestCost({
+      drawnDebt: 10000,
+      premiumDebt: 0,
+      baseDrawnApr: 0,
+      riskPremium: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBe(0);
+  });
+
+  it('propagates a genuine Engine failure (negative drawnDebt) rather than throwing', () => {
+    const result = projectAaveV4AnnualInterestCost({
+      drawnDebt: -1,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    expect(result.ok).toBe(false);
   });
 });

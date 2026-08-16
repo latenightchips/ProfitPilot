@@ -35,11 +35,14 @@
  * anticipated). Re-exported here unchanged so nothing importing it from
  * this module's public API needs to change.
  */
-import type { PortfolioInput } from '@/engine';
+import { type FormulaResult, type PortfolioInput, projectProtocolDebt } from '@/engine';
 
 import { type ApplicationError, createApplicationError } from '../shared/errors';
+import { optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import type { MappingResult } from '../shared/mappingResult';
+import { createServiceFailure, type ServiceFailure } from '../shared/result';
 import type {
+  AaveV4DebtState,
   ApplicationPortfolio,
   PersistenceCollateralPosition,
   PersistenceDebtPosition,
@@ -242,13 +245,20 @@ export function mapPersistencePortfolioToApplicationPortfolio(
  * `debt.balance` unchanged rather than failing. The explicit "fail
  * closed instead of silently using V3 debt semantics" requirement is
  * enforced by callers that have real `ServiceResult` failure metadata to
- * report from: `services/portfolio/summary.ts`'s `calculatePortfolioSummary`
- * gained that guard this stage (covering the Portfolio Store's own
- * displayed summary, and — since `simulateScenario` calls it first for
- * its baseline, for every scenario type — both Simulation branches too).
- * `services/loop/strategy.ts`/`services/exit/plan.ts`/
- * `services/recommendation/*` do not yet enforce it independently; see
- * PROJECT_STATUS.md's Stage 9 write-up for that explicitly-scoped gap.
+ * report from, via the shared `checkAaveV4DebtStateAvailable` guard below
+ * (promoted at Stage 10 from `services/portfolio/summary.ts`'s own
+ * original Stage 9 inline check): `calculatePortfolioSummary` (covering
+ * the Portfolio Store's own displayed summary, and — since
+ * `simulateScenario` calls it first for its baseline, for every scenario
+ * type — both Simulation branches too), `services/loop/strategy.ts`,
+ * `services/portfolio/interestBreakdown.ts`,
+ * `services/recommendation/targetHealthFactorActions.ts`, and
+ * `services/recommendation/recommendations.ts` all now call it directly.
+ * `services/exit/plan.ts` needs no separate call — both its "before" and
+ * "after" summaries already go through `calculatePortfolioSummary`, so it
+ * inherits the guard transitively. `services/portfolio/exposure.ts` needs
+ * no guard at all — `calculateExposure` only reads `collateral`/`market`,
+ * never `debt`.
  */
 export function mapApplicationPortfolioToEngineInput(
   application: ApplicationPortfolio,
@@ -264,4 +274,69 @@ export function mapApplicationPortfolioToEngineInput(
     market: application.market,
     protocol: application.protocol,
   };
+}
+
+/**
+ * V4 fail-closed guard (V4 Readiness Audit §12 Stage 10) — the same check
+ * `services/portfolio/summary.ts` originated inline at Stage 9, now shared
+ * so every other debt/rate-sensitive Service can enforce the identical
+ * "no synced V4 state, no calculation" rule instead of duplicating it (or,
+ * worse, omitting it and silently inheriting `mapApplicationPortfolioToEngineInput`'s
+ * own legacy `debt.balance` fallback — see that function's own doc comment
+ * on why it deliberately stays infallible). Requires a `tracked` value
+ * from the caller's own first successful Engine call — `ServiceMetadata.engineVersion`
+ * must always come from a real Engine call (`services/shared/result.ts`'s
+ * own doc comment), never a fabricated constant — so this is always called
+ * after that first call succeeds, mirroring `calculatePortfolioSummary`'s
+ * own original placement (right after Collateral Value, the one step that
+ * never reads `debt` at all).
+ */
+export function checkAaveV4DebtStateAvailable(
+  application: ApplicationPortfolio,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+): ServiceFailure | null {
+  if (application.protocolVersion !== 'v4' || application.v4DebtState !== undefined) {
+    return null;
+  }
+  const error: ApplicationError = createApplicationError(
+    'calculation',
+    'AAVE_V4_DEBT_STATE_MISSING',
+    'This calculation requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
+  );
+  return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
+}
+
+/**
+ * V4 Annual Interest via the real V4 accrual engine (V4 Readiness Audit
+ * §12 Stage 10) — replaces a legacy `calculateAnnualInterest(debtValue,
+ * protocol.borrowApr)` call for a V4 portfolio with live `v4DebtState`.
+ * `protocol.borrowApr` was always rate-questionable for V4 (see this
+ * file's own header comment): it is a single V3-shaped scalar with no
+ * defined relationship to V4's real two-parameter rate model
+ * (`baseDrawnApr` + `riskPremium`, which compound differently — see
+ * `AaveV4DebtState`'s own doc comment in `./models.ts`). This projects the
+ * portfolio's real, currently-effective V4 rates forward 365 days through
+ * the same `projectProtocolDebt` V4 dispatch every other V4 projection in
+ * this codebase already uses (Stage 8/9), and reports the difference
+ * between the projected and current total debt as the annual cost — not a
+ * new formula, just the Engine's own already-validated accrual math read
+ * back a second time (`AaveV4DebtProjection.totalDebt` is Engine-computed,
+ * never manually summed here).
+ */
+export function projectAaveV4AnnualInterestCost(
+  v4DebtState: AaveV4DebtState,
+): FormulaResult<number> {
+  const projection = projectProtocolDebt({
+    protocolVersion: 'v4',
+    drawnDebt: v4DebtState.drawnDebt,
+    premiumDebt: v4DebtState.premiumDebt,
+    baseDrawnApr: v4DebtState.baseDrawnApr,
+    riskPremium: v4DebtState.riskPremium,
+    elapsedDays: 365,
+  });
+  if (!projection.ok) return projection;
+
+  const currentTotalDebt = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
+  return { ...projection, value: projection.value.totalDebt - currentTotalDebt };
 }

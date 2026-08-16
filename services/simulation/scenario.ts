@@ -78,25 +78,31 @@
  * missing *data source* on this specific portfolio, not a missing Engine
  * implementation (there is one, and it runs whenever real data exists).
  *
- * **Known boundary limitation, reported rather than silently resolved:
- * a V4 interest scenario's `scenario.borrowApr` is not applied.**
- * `SimulationScenario`'s `type: 'interest'` shape carries one scalar
- * `borrowApr` field — a stress-tested rate a V3 caller substitutes for
- * the portfolio's own real `protocol.borrowApr`. V4's real accrual model
- * is genuinely two-parameter (`baseDrawnApr` and `riskPremium`, which
- * compound differently — premium accrues proportional to *drawn*
- * interest, not as a second flat rate), and no audit finding or task
- * defines how a single stress-tested scalar should map onto that pair.
- * Rather than invent a mapping unilaterally, both the scenario-side and
- * baseline-reproration-side V4 projections below use `v4DebtState`'s own
- * real, currently-effective `baseDrawnApr`/`riskPremium` unconditionally
- * — meaning a V4 interest scenario's own `debtCost` is identical to its
- * reprorated baseline's (both project the same real state forward by the
- * same `timeHorizonDays`); only `equity`/`healthFactor`/`liquidationDistance`
- * still respond to the scenario's price movement, which remains fully
- * wired. This is a real, incomplete corner — a genuine "rate stress test"
- * for V4 needs a product decision this stage does not make — not a bug
- * masked by a placeholder value.
+ * **V4 rate stress — resolved at Stage 10 (V4 Readiness Audit §12),
+ * previously an open boundary limitation.** `SimulationScenario`'s
+ * `type: 'interest'` shape carries one scalar `borrowApr` field — a
+ * stress-tested rate a V3 caller substitutes for the portfolio's own real
+ * `protocol.borrowApr`. V4's real accrual model is genuinely two-parameter
+ * (`baseDrawnApr` and `riskPremium`, which compound differently — premium
+ * accrues proportional to *drawn* interest, not as a second flat rate), so
+ * `scenario.borrowApr` was never reinterpreted for V4 — no audit finding
+ * or task ever defined how a single V3 scalar should map onto that pair,
+ * and Stage 10 does not invent one either. Instead, Stage 10 adds a
+ * separate, explicit, optional `scenario.v4RateStress: { baseDrawnApr,
+ * riskPremium }` field (`AaveV4RateStress`, defined just above
+ * `SimulationScenario` below) that overrides `v4DebtState`'s own real
+ * rates for the scenario-side V4 projection only. When omitted (every
+ * caller before Stage 10, and any caller that still doesn't pass it), the
+ * V4 branch behaves exactly as it did before this stage — both the
+ * scenario-side and baseline-reproration-side projections use
+ * `v4DebtState`'s own real, currently-effective `baseDrawnApr`/
+ * `riskPremium` unconditionally, so `debtCost` again equals the reprorated
+ * baseline's. When `v4RateStress` is supplied, only the scenario side
+ * responds to it — the baseline reproration always uses the portfolio's
+ * real current rates, the same "baseline never uses the scenario's own
+ * stress rate" rule V3's own `borrowApr` already followed — so a V4
+ * "rate stress test" now produces a real, non-degenerate baseline/scenario
+ * `debtCost` gap, exactly like a V3 interest scenario always could.
  *
  * **Canonical V4 debt reconciliation (V4 Readiness Audit §12 Stage 9).**
  * Before this stage, `calculatePortfolioSummary`'s baseline — and
@@ -168,11 +174,43 @@ import {
   simulatePriceScenario,
 } from '@/engine';
 
-import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
+import {
+  mapApplicationPortfolioToEngineInput,
+  projectAaveV4AnnualInterestCost,
+} from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
+
+/**
+ * V4-only rate stress override for an interest scenario (V4 Readiness
+ * Audit §12 Stage 10) — the resolution to the "V4 interest-scenario
+ * `scenario.borrowApr` is not applied" boundary this file's own header
+ * comment previously documented as unresolved. `scenario.borrowApr`
+ * itself is deliberately left untouched and unreinterpreted for V4: it
+ * remains exactly what it always was, a V3-only stress rate substituted
+ * for `protocol.borrowApr` (see `simulateScenario`'s V3 branch below,
+ * unchanged). A V4 portfolio's real accrual model is genuinely
+ * two-parameter (`baseDrawnApr` + `riskPremium`, which compound
+ * differently — `AaveV4DebtState`'s own doc comment), so a V4 rate stress
+ * needs its own two-field shape rather than overloading the V3 scalar.
+ * Optional and additive: omitted, the V4 branch behaves exactly as before
+ * Stage 10, projecting the portfolio's own real, currently-effective
+ * `v4DebtState.baseDrawnApr`/`riskPremium` unchanged. When supplied, it
+ * overrides those two rates for the scenario-side projection only — never
+ * the baseline reproration, which must keep representing the portfolio's
+ * real current cost for the comparison to mean anything (the same "the
+ * baseline never uses the scenario's own stress rate" rule V3's own
+ * `borrowApr` already follows). Ignored entirely for a `'v3'`/unset
+ * portfolio, or a `'v4'` portfolio with no synced `v4DebtState` (which
+ * fails closed before either scenario branch runs — see this file's
+ * header comment).
+ */
+export interface AaveV4RateStress {
+  baseDrawnApr: number;
+  riskPremium: number;
+}
 
 export type SimulationScenario =
   | { type: 'price'; priceScenario: PriceScenarioInput }
@@ -181,6 +219,7 @@ export type SimulationScenario =
       priceScenario: PriceScenarioInput;
       timeHorizonDays: number;
       borrowApr: number;
+      v4RateStress?: AaveV4RateStress;
     };
 
 export interface SimulationResult {
@@ -313,20 +352,23 @@ export function simulateScenario(
     tracked = leverageStep.tracked;
     warnings.push(...leverageStep.warnings);
 
-    // NOTE (V4 Readiness Audit §12 Stage 9, reported not resolved):
-    // `priceResult.debtValue` is canonical for V4 (derived from `engineInput`,
-    // which Stage 9's `mapApplicationPortfolioToEngineInput` already
-    // resolved), but `engineInput.protocol.borrowApr` remains the legacy
-    // V3-shaped scalar rate — same open rate-semantics question as
-    // `calculatePortfolioSummary`'s own `interestCost` and this file's
-    // interest-scenario `scenario.borrowApr` (see this file's header
-    // comment). `debtCost` below is amount-correct but rate-questionable
-    // for a V4 portfolio.
-    const debtCostStep = formulaStep(
-      calculateAnnualInterest(priceResult.debtValue, engineInput.protocol.borrowApr),
-      tracked,
-      sourceStatus,
-    );
+    // V4 Readiness Audit §12 Stage 10 (resolves the Stage 9 NOTE previously
+    // here): a price scenario never moves debt, so `priceResult.debtValue`
+    // is the same canonical current total `engineInput.debt.balance`
+    // already is. For a V4 portfolio with synced `v4DebtState`, `debtCost`
+    // now comes from `projectAaveV4AnnualInterestCost` — the real V4 rate
+    // model projected through the Engine's own validated accrual math —
+    // instead of the V3-shaped `engineInput.protocol.borrowApr`, which was
+    // amount-correct but rate-questionable for V4 (same fix as
+    // `calculatePortfolioSummary`'s own `interestCost`).
+    const debtCostStep =
+      protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
+        ? formulaStep(projectAaveV4AnnualInterestCost(portfolio.v4DebtState), tracked, sourceStatus)
+        : formulaStep(
+            calculateAnnualInterest(priceResult.debtValue, engineInput.protocol.borrowApr),
+            tracked,
+            sourceStatus,
+          );
     if (!debtCostStep.ok) return debtCostStep.failure;
     tracked = debtCostStep.tracked;
     warnings.push(...debtCostStep.warnings);
@@ -386,6 +428,12 @@ export function simulateScenario(
   // duplicates that sum itself).
   const currentTotalDebt = engineInput.debt.balance;
 
+  // V4 Readiness Audit §12 Stage 10 — `scenario.v4RateStress`, when
+  // supplied, overrides `v4DebtState`'s own real rates for THIS
+  // scenario-side projection only (see `AaveV4RateStress`'s own doc
+  // comment above `SimulationScenario`). `scenario.borrowApr` remains V3-
+  // only and is never read here, matching the V3 branch's own unchanged
+  // behavior below.
   const projectedDebtStep =
     protocolVersion === 'v4' && v4DebtState !== undefined
       ? formulaStep(
@@ -393,8 +441,8 @@ export function simulateScenario(
             protocolVersion: 'v4',
             drawnDebt: v4DebtState.drawnDebt,
             premiumDebt: v4DebtState.premiumDebt,
-            baseDrawnApr: v4DebtState.baseDrawnApr,
-            riskPremium: v4DebtState.riskPremium,
+            baseDrawnApr: scenario.v4RateStress?.baseDrawnApr ?? v4DebtState.baseDrawnApr,
+            riskPremium: scenario.v4RateStress?.riskPremium ?? v4DebtState.riskPremium,
             elapsedDays: scenario.timeHorizonDays,
           }),
           tracked,
@@ -454,7 +502,11 @@ export function simulateScenario(
   // side above, not `baselineResult.data.debtValue` (which is
   // `debt.balance`-derived and may not reflect the live-synced V4 state)
   // — see this file's header comment for why `v4DebtState`'s own real
-  // `baseDrawnApr`/`riskPremium` are used unconditionally on both sides.
+  // `baseDrawnApr`/`riskPremium` are used unconditionally here (Stage 10's
+  // `scenario.v4RateStress`, unlike the scenario side above, is NEVER read
+  // on the baseline side — the baseline must keep representing the
+  // portfolio's real current cost, or the comparison stops meaning
+  // anything).
   const baselineProjectedDebtStep =
     protocolVersion === 'v4' && v4DebtState !== undefined
       ? formulaStep(

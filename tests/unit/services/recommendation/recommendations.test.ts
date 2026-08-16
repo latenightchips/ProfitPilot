@@ -133,3 +133,59 @@ describe('generateRecommendationSet (M3-012)', () => {
     expect(result.errors[0].category).toBe('calculation');
   });
 });
+
+/**
+ * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10.
+ * `generateRecommendations` reads debt throughout, so a V4 portfolio with
+ * no synced `v4DebtState` must fail closed rather than silently returning
+ * recommendations computed from stale legacy `debt.balance`.
+ */
+describe('generateRecommendationSet — V4 fail-closed guard (Stage 10)', () => {
+  it('fails with AAVE_V4_DEBT_STATE_MISSING for a "v4" portfolio with no synced v4DebtState', () => {
+    const result = generateRecommendationSet(
+      { ...basePortfolio(), protocolVersion: 'v4' },
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+  });
+
+  it('does not have a data field on the missing-state failure (no partial/placeholder result leaks through)', () => {
+    const result = generateRecommendationSet(
+      { ...basePortfolio(), protocolVersion: 'v4' },
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('succeeds once v4DebtState is synced', () => {
+    const result = generateRecommendationSet(
+      {
+        ...basePortfolio(),
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.recommendations).toHaveLength(4);
+  });
+
+  it('never fails for a "v3" (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const result = generateRecommendationSet(
+      {
+        ...basePortfolio(),
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      },
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(true);
+  });
+});
