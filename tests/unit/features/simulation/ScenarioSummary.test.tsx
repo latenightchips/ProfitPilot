@@ -161,6 +161,35 @@ describe('ScenarioSummary — calculation failure (Batch 25, M6-026)', () => {
   });
 });
 
+/**
+ * V4 Readiness Audit §12 Stage 13 — "if no v4DebtState exists, show a
+ * clear disabled/fail-closed state rather than allowing a broken
+ * simulation." No new Simulation UI code was needed for this: the
+ * existing generic error banner (M6-026, tested above for a different
+ * failure reason) already surfaces `AAVE_V4_DEBT_STATE_MISSING`'s own
+ * clear, human-readable message and error code — this test proves that
+ * coverage extends to the V4 case specifically, rather than assuming it.
+ */
+describe('ScenarioSummary — V4 missing debt state fails closed with a clear message (Stage 13)', () => {
+  it('shows the real AAVE_V4_DEBT_STATE_MISSING message and code, not a blank or broken simulation', () => {
+    const v4PortfolioMissingState: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      protocolVersion: 'v4',
+    };
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(v4PortfolioMissingState);
+
+    render(<ScenarioSummary />);
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/requires live Aave V4 debt data/)).toBeInTheDocument();
+    expect(screen.getByText('Error code: AAVE_V4_DEBT_STATE_MISSING')).toBeInTheDocument();
+  });
+});
+
 describe('ScenarioSummary — warnings', () => {
   it('renders no Warnings section when there are none', () => {
     useSimulationStore.getState().setCurrentScenario({

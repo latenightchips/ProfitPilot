@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardPage from '@/app/page';
 import { autoSaveCoordinator } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -82,6 +83,14 @@ beforeEach(() => {
   usePortfolioStore.setState({ ...INITIAL_STATE, load: async () => {} });
   useDeveloperModeStore.setState({ enabled: false });
   useAaveLiveDataStore.setState(matchingAaveLiveState());
+  useAaveV4LiveDataStore.setState({
+    status: 'idle',
+    engineInputs: null,
+    userAddress: null,
+    debtAsset: null,
+    errorMessage: null,
+    fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+  });
   window.localStorage.clear();
 });
 
@@ -579,5 +588,92 @@ describe('DashboardPage — Developer Mode Toggle (M5-022, Batch 14)', () => {
 
     expect(screen.getByText(/Formula ID: F-004/)).toBeInTheDocument();
     expect(screen.getByText(/Raw value: 80000/)).toBeInTheDocument();
+  });
+});
+
+const V4_ADDRESS = '0x1234567890123456789012345678901234567890';
+
+/**
+ * Protocol version labeling — V4 Readiness Audit §12 Stage 13. Mirrors
+ * `app/portfolio/page.test.tsx`'s own badge coverage for the Portfolio
+ * page's Debt section, at the Dashboard's own single summary badge.
+ */
+describe('DashboardPage — Aave protocol version labeling (Stage 13)', () => {
+  it('shows the unchanged V3 label for a portfolio with protocolVersion unset', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Aave V3 · Live')).toBeInTheDocument();
+  });
+
+  it('shows "Aave V4 · Waiting for address" for a V4 portfolio with no address set', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Aave V4 · Waiting for address')).toBeInTheDocument();
+  });
+
+  it('shows "Aave V4 · Live" once an address is set, the live fetch is ready, and v4DebtState is present', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.data.id, { userAddress: V4_ADDRESS });
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    useAaveV4LiveDataStore.setState({ status: 'ready' });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Aave V4 · Live')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Refresh route isolation — V4 Readiness Audit §12 Stage 13's own
+ * instruction: "V3 Refresh never calls the V4 route" / "V4 Refresh never
+ * calls the V3 route." `useAaveLiveSync`/`useAaveV4LiveSync` are two
+ * structurally separate hooks calling two separate Store fetch
+ * functions to two separate API routes — this test proves the *gating*
+ * half of that guarantee holds at the page level (the route URLs
+ * themselves are already covered by each Store's own unit tests).
+ */
+describe('DashboardPage — V3/V4 live-sync route isolation (Stage 13)', () => {
+  it('never calls the V4 fetch function for a V3/unset portfolio (no address to fetch)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(useAaveV4LiveDataStore.getState().fetchAaveV4LiveData).not.toHaveBeenCalled();
+  });
+
+  it('calls the V4 fetch function (never the V3 one with V4 parameters) once a V4 address is set, while V3’s own fetch still runs independently', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.data.id, { userAddress: V4_ADDRESS });
+
+    render(<DashboardPage />);
+
+    expect(useAaveV4LiveDataStore.getState().fetchAaveV4LiveData).toHaveBeenCalledWith(
+      V4_ADDRESS,
+      'USDC',
+    );
+    // V3's own unconditional fetch is unaffected by the portfolio being V4.
+    expect(useAaveLiveDataStore.getState().fetchLiveAaveData).toHaveBeenCalledWith('USDC');
   });
 });

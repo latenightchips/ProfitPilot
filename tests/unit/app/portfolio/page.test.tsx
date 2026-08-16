@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PortfolioPage from '@/app/portfolio/page';
 import { autoSaveCoordinator } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -80,9 +81,31 @@ function matchingAaveLiveState(
   };
 }
 
+/**
+ * V4 Readiness Audit §12 Stage 13 — mirrors `matchingAaveLiveState`'s own
+ * "stub the fetch function so mounting `useAaveV4LiveSync` never makes a
+ * real, unmocked network call" role, for the V4 live-data store. Defaults
+ * to `'idle'`/no address — a strict no-op for every test that never
+ * opts a portfolio into V4, exactly like Stage 7 intended.
+ */
+function matchingAaveV4LiveState(
+  overrides: Partial<ReturnType<typeof useAaveV4LiveDataStore.getState>> = {},
+) {
+  return {
+    status: 'idle' as const,
+    engineInputs: null,
+    userAddress: null,
+    debtAsset: null,
+    errorMessage: null,
+    fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
   useAaveLiveDataStore.setState(matchingAaveLiveState());
+  useAaveV4LiveDataStore.setState(matchingAaveV4LiveState());
   window.localStorage.clear();
 });
 
@@ -109,6 +132,35 @@ function createAndSelect(overrides: Record<string, unknown> = {}) {
   if (!result.ok) throw new Error('setup failed');
   usePortfolioStore.getState().select(result.data.id);
   return result.data;
+}
+
+const V4_ADDRESS = '0x1234567890123456789012345678901234567890';
+
+/**
+ * V4 Readiness Audit §12 Stage 13 — mirrors how a real user opts a
+ * portfolio into V4: create it exactly like every other portfolio (still
+ * V3-shaped, `protocolVersion` unset), then use the same two Store
+ * actions `AaveProtocolVersionForm` itself calls
+ * (`setProtocolVersion`/`setAaveV4Position`). `v4DebtState` is set via
+ * the third existing action, `setAaveV4DebtState`, only when a test
+ * explicitly needs one (mirroring a live sync having already landed).
+ */
+function createAndSelectV4(
+  overrides: Record<string, unknown> = {},
+  v4DebtState?: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  },
+) {
+  const created = createAndSelect(overrides);
+  usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+  usePortfolioStore.getState().setAaveV4Position(created.id, { userAddress: V4_ADDRESS });
+  if (v4DebtState !== undefined) {
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, v4DebtState);
+  }
+  return usePortfolioStore.getState().portfolios[created.id].portfolio;
 }
 
 describe('PortfolioPage — no active portfolio (M4-006)', () => {
@@ -861,5 +913,325 @@ describe('PortfolioPage — UX-02/UX-03 validation feedback (functional, not cos
     render(<PortfolioPage />);
     const remountedSection = within(screen.getByRole('group', { name: 'Debt' }));
     expect(remountedSection.getByLabelText('Debt amount', { exact: false })).toHaveValue(15000);
+  });
+});
+
+/**
+ * Aave Protocol Version selector — V4 Readiness Audit §12 Stage 13.
+ */
+describe('PortfolioPage — Aave protocol version selector (Stage 13)', () => {
+  it('defaults to Aave V3 selected for a portfolio with protocolVersion unset', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+    expect(section.getByRole('radio', { name: 'Aave V3' })).toBeChecked();
+    expect(section.getByRole('radio', { name: 'Aave V4' })).not.toBeChecked();
+    expect(section.queryByLabelText('On-chain address', { exact: false })).not.toBeInTheDocument();
+  });
+
+  it('selecting Aave V4 reveals the on-chain address field, labeled clearly as position identity, not sign-in identity', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.protocolVersion).toBe(
+      'v4',
+    );
+    expect(section.getByLabelText('On-chain address', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/not your sign-in identity/)).toBeInTheDocument();
+  });
+
+  it('rejects an invalid address and does not persist it', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+    await user.type(section.getByLabelText('On-chain address', { exact: false }), 'not-an-address');
+    await user.click(section.getByRole('button', { name: 'Save address' }));
+
+    expect(screen.getByText('Enter a valid wallet address.')).toBeInTheDocument();
+    const activeId = usePortfolioStore.getState().activePortfolioId!;
+    expect(usePortfolioStore.getState().portfolios[activeId].portfolio.v4Position).toBeUndefined();
+  });
+
+  it('accepts a valid address, persists it via setAaveV4Position, and survives a remount (Stage 4A schema reused)', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    const { unmount } = render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+    await user.type(section.getByLabelText('On-chain address', { exact: false }), V4_ADDRESS);
+    await user.click(section.getByRole('button', { name: 'Save address' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position).toEqual({
+      userAddress: V4_ADDRESS,
+    });
+
+    unmount();
+    render(<PortfolioPage />);
+    const remountedSection = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+    expect(remountedSection.getByRole('radio', { name: 'Aave V4' })).toBeChecked();
+    expect(remountedSection.getByLabelText('On-chain address', { exact: false })).toHaveValue(
+      V4_ADDRESS,
+    );
+  });
+
+  it('switching V3 -> V4 -> V3 preserves the already-saved v4Position rather than deleting it (hide, not destroy)', async () => {
+    const created = createAndSelectV4();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+
+    await user.click(section.getByRole('radio', { name: 'Aave V3' }));
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.protocolVersion).toBe(
+      'v3',
+    );
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4Position).toEqual({
+      userAddress: V4_ADDRESS,
+    });
+    expect(section.queryByLabelText('On-chain address', { exact: false })).not.toBeInTheDocument();
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+    expect(section.getByLabelText('On-chain address', { exact: false })).toHaveValue(V4_ADDRESS);
+  });
+
+  it('switching V3 -> V4 -> V3 does not alter collateral/debt/market/protocol values', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+    const before = usePortfolioStore.getState().portfolios[created.id].portfolio;
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+    await user.click(section.getByRole('radio', { name: 'Aave V3' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.collateral).toEqual(before.collateral);
+    expect(after.debt).toEqual(before.debt);
+    expect(after.market).toEqual(before.market);
+    expect(after.protocol).toEqual(before.protocol);
+  });
+
+  it('one portfolio can be V4 while another stays V3, with no cross-contamination', () => {
+    const v4Portfolio = createAndSelectV4();
+    const v3Portfolio = createAndSelect({ name: 'Second Portfolio' });
+    expect(usePortfolioStore.getState().portfolios[v4Portfolio.id].portfolio.protocolVersion).toBe(
+      'v4',
+    );
+    expect(
+      usePortfolioStore.getState().portfolios[v3Portfolio.id].portfolio.protocolVersion,
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * V4 status badges — V4 Readiness Audit §12 Stage 13. Rendered inside
+ * the Debt section (mirrors the pre-existing V3 "Aave V3 · Live" badge
+ * location and wording convention).
+ */
+describe('PortfolioPage — V4 status badges (Stage 13)', () => {
+  it('shows "Waiting for address" for a V4 portfolio with no address set yet', () => {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V4 · Waiting for address')).toBeInTheDocument();
+  });
+
+  it('shows "Loading" while a fetch for a known address is in flight', () => {
+    createAndSelectV4();
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'loading' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V4 · Loading')).toBeInTheDocument();
+  });
+
+  it('shows "Provider error" when the last fetch failed, without blanking any last-known data', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    );
+    useAaveV4LiveDataStore.setState(
+      matchingAaveV4LiveState({
+        status: 'error',
+        errorMessage: 'Live Aave V4 data is temporarily unavailable.',
+      }),
+    );
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(
+      section.getByText('Aave V4 · Provider error (showing last known value)'),
+    ).toBeInTheDocument();
+    // The portfolio's own last-known v4DebtState is untouched by a failed refresh.
+    const activeId = usePortfolioStore.getState().activePortfolioId!;
+    expect(usePortfolioStore.getState().portfolios[activeId].portfolio.v4DebtState).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('shows "Missing debt state" when the fetch is ready but v4DebtState has not synced onto the portfolio yet', () => {
+    createAndSelectV4();
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V4 · Missing debt state')).toBeInTheDocument();
+  });
+
+  it('shows "Live" once an address is set, the fetch is ready, and v4DebtState is present', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V4 · Live')).toBeInTheDocument();
+  });
+
+  it('a V3 (or unset) portfolio keeps showing the unchanged V3 badge, never a V4 one', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V3 · Live')).toBeInTheDocument();
+  });
+});
+
+/**
+ * V4 borrow/repay action UI — V4 Readiness Audit §12 Stage 13, building
+ * on Stage 12's real premium-first repayment allocation.
+ */
+describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
+  function v4DebtStateFixture() {
+    return { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 };
+  }
+
+  it('blocks a debt increase (a borrow) with a clear, non-fabricated explanation, without ever calling Apply on a broken preview', async () => {
+    createAndSelectV4({ debt: { asset: 'USDC', balance: 20000 } }, v4DebtStateFixture());
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '25000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(
+      screen.getByText(/Borrowing preview and apply are not available yet/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/risk premium can change/)).toBeInTheDocument();
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).toBeDisabled();
+
+    const activeId = usePortfolioStore.getState().activePortfolioId!;
+    const before = usePortfolioStore.getState().portfolios[activeId].portfolio;
+    expect(before.debt.balance).toBe(20000);
+    expect(before.v4DebtState).toEqual(v4DebtStateFixture());
+  });
+
+  it('a partial V4 repay previews and applies correctly, updating v4DebtState via the real premium-first allocation rule', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 20000 } },
+      v4DebtStateFixture(),
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    // Repay $5,000 — exactly clears the $5,000 premiumDebt (premium-first).
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '15000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(
+      screen.queryByText(/Borrowing preview and apply are not available yet/),
+    ).not.toBeInTheDocument();
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).not.toBeDisabled();
+
+    await user.click(applyButton);
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.debt.balance).toBe(15000);
+    expect(after.v4DebtState).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('a full V4 repay to exactly $0 previews and applies a real zero-debt v4DebtState, not a silently-stale one', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 20000 } },
+      v4DebtStateFixture(),
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '0');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.debt.balance).toBe(0);
+    expect(after.v4DebtState).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('leaving the debt amount unchanged (zero delta) is a genuine no-op — Apply does not touch v4DebtState at all', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 20000 } },
+      v4DebtStateFixture(),
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4DebtState).toEqual(v4DebtStateFixture());
+  });
+
+  it('V3 debt editing (borrow and repay) remains completely unchanged by this stage', async () => {
+    const created = createAndSelect({ debt: { asset: 'USDC', balance: 20000 } });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '30000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    // A V3 borrow is NOT blocked by any V4-only messaging (it may still
+    // require the pre-existing PT-10 risk-acknowledgment checkbox below,
+    // which is unrelated to this stage and unchanged).
+    expect(
+      screen.queryByText(/Borrowing preview and apply are not available yet/),
+    ).not.toBeInTheDocument();
+    await user.click(section.getByRole('checkbox'));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(30000);
   });
 });

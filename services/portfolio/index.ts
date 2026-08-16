@@ -25,6 +25,15 @@
  * already respects. Both are re-exports of Stage 1's/Stage 4A's existing
  * types, not new models. `AaveV4DebtState` (Stage 6) joins them for the
  * same reason: `setAaveV4DebtState` is its first Store-layer consumer.
+ *
+ * **`checkAaveV4DebtStateAvailable`/`deriveV4DebtStateAfterDelta` (V4
+ * Readiness Audit §12 Stage 13)** — re-exported so
+ * `app/portfolio/PortfolioPageClient.tsx`'s `DebtPositionForm` can compute
+ * a real, protocol-backed V4 repayment preview directly (the same
+ * "call a Service function straight from a UI component's Preview
+ * handler" pattern this file's own `calculatePortfolioSummary` already
+ * uses there), rather than the UI reimplementing Stage 11/12's
+ * premium-first repayment-allocation logic a second time.
  */
 export {
   type PortfolioAction,
@@ -34,6 +43,8 @@ export {
 export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
+  checkAaveV4DebtStateAvailable,
+  deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
   type MappingFailure,

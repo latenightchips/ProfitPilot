@@ -8,8 +8,15 @@ import type { z } from 'zod';
 
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
-import { calculatePortfolioSummary, type PortfolioSummary, type ServiceResult } from '@/services';
+import {
+  type AaveV4DebtState,
+  calculatePortfolioSummary,
+  deriveV4DebtStateAfterDelta,
+  type PortfolioSummary,
+  type ServiceResult,
+} from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { type PortfolioSaveStatus, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import {
@@ -22,7 +29,9 @@ import {
 } from '@/types/portfolio.schema';
 import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
 import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
+import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStatus';
 
+import { AaveProtocolVersionForm } from './AaveProtocolVersionForm';
 import { AaveTechnicalDetails } from './AaveTechnicalDetails';
 
 /**
@@ -977,6 +986,42 @@ function CollateralPositionForm({
 
 type DebtManagementFormValues = z.input<typeof debtManagementSchema>;
 
+/**
+ * V4 borrow/repay handling (V4 Readiness Audit §12 Stage 13) — `update()`
+ * alone cannot correctly change debt for a `protocolVersion: 'v4'`
+ * portfolio: it never touches `v4DebtState`, so a naive apply would leave
+ * it stale, exactly the bug Stage 11/12 already fixed at the Service
+ * layer for `services/exit/plan.ts`/`services/simulation/portfolioAction.ts`/
+ * `services/portfolio/actionPreview.ts` — this form is a fourth call site
+ * for the same underlying problem, now fixed the same way.
+ *
+ * **Repay (any partial amount, or a full repay to $0) is fully
+ * supported** — `onPreview` below calls `deriveV4DebtStateAfterDelta`
+ * directly (the same real, protocol-backed Engine formula those three
+ * Services already use), then previews against a portfolio object that
+ * actually carries the derived `v4DebtState`, and `onApply` persists it
+ * via `setAaveV4DebtState` alongside the ordinary `update()` call for
+ * `debt.balance`/`debt.asset`.
+ *
+ * **Borrow remains genuinely unsupported.** A post-borrow `riskPremium`
+ * is not locally derivable (`deriveV4DebtStateAfterDelta`'s own doc
+ * comment — the Risk Premium Algorithm needs the user's full
+ * multi-collateral configuration, data this codebase has never
+ * captured), so a debt INCREASE on a V4 portfolio is blocked before ever
+ * computing a preview — no fabricated numbers, no broken "Apply" path.
+ * `debtDelta` is read purely from `data.debt.balance -
+ * portfolio.debt.balance`, independent of any simultaneous `debt.asset`
+ * change (V4's `AaveV4DebtState` has no asset dimension at all — the
+ * asset field is a display label `update()` still handles exactly as
+ * before).
+ *
+ * **V3/unset behavior is completely untouched** — the `protocolVersion
+ * !== 'v4'` branch below is byte-identical to this form's pre-Stage-13
+ * code.
+ */
+const V4_BORROW_UNSUPPORTED_MESSAGE =
+  'Borrowing preview and apply are not available yet for Aave V4 — a fresh on-chain position refresh is required after borrowing because the risk premium can change. Repayments (partial or full) are fully supported.';
+
 function DebtPositionForm({
   portfolioId,
   portfolio,
@@ -987,8 +1032,13 @@ function DebtPositionForm({
   beforeSummary: ServiceResult<PortfolioSummary>;
 }) {
   const update = usePortfolioStore((state) => state.update);
+  const setAaveV4DebtState = usePortfolioStore((state) => state.setAaveV4DebtState);
   const [preview, setPreview] = useState<ServiceResult<PortfolioSummary> | null>(null);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+  const [v4BorrowBlocked, setV4BorrowBlocked] = useState(false);
+  const [v4DerivedDebtState, setV4DerivedDebtState] = useState<AaveV4DebtState | undefined>(
+    undefined,
+  );
 
   const {
     register,
@@ -1008,6 +1058,8 @@ function DebtPositionForm({
     const subscription = watch(() => {
       setPreview(null);
       setRiskAcknowledged(false);
+      setV4BorrowBlocked(false);
+      setV4DerivedDebtState(undefined);
     });
     return () => subscription.unsubscribe();
   }, [watch]);
@@ -1020,34 +1072,92 @@ function DebtPositionForm({
   useEffect(() => {
     setPreview(null);
     setRiskAcknowledged(false);
+    setV4BorrowBlocked(false);
+    setV4DerivedDebtState(undefined);
   }, [portfolio.updatedAt]);
 
   const onPreview = handleSubmit((data) => {
+    if (portfolio.protocolVersion === 'v4') {
+      const debtDelta = data.debt.balance - portfolio.debt.balance;
+
+      if (debtDelta > 0) {
+        setV4BorrowBlocked(true);
+        setPreview(null);
+        return;
+      }
+      setV4BorrowBlocked(false);
+
+      if (portfolio.v4DebtState === undefined || !beforeSummary.ok) {
+        // No real V4 state to derive from — the page-level
+        // CalculationErrorBanner already surfaces AAVE_V4_DEBT_STATE_MISSING
+        // for this portfolio; nothing meaningful to preview here.
+        setPreview(null);
+        return;
+      }
+
+      const step = deriveV4DebtStateAfterDelta(
+        portfolio.v4DebtState,
+        debtDelta,
+        {
+          engineVersion: beforeSummary.metadata.engineVersion,
+          formulaVersion: beforeSummary.metadata.formulaVersion,
+        },
+        'manual',
+      );
+      if (!step.ok) {
+        setPreview(step.failure);
+        return;
+      }
+
+      setV4DerivedDebtState(step.value);
+      setPreview(
+        calculatePortfolioSummary(
+          { ...portfolio, debt: data.debt, v4DebtState: step.value },
+          'manual',
+        ),
+      );
+      return;
+    }
+
     setPreview(calculatePortfolioSummary({ ...portfolio, ...data }, 'manual'));
   });
 
   const onApply = handleSubmit((data) => {
+    if (v4BorrowBlocked) return;
     if (!canApply(preview, beforeSummary, riskAcknowledged)) return;
     const result = update(portfolioId, data);
     if (result.ok) {
+      if (portfolio.protocolVersion === 'v4' && v4DerivedDebtState !== undefined) {
+        setAaveV4DebtState(portfolioId, v4DerivedDebtState);
+      }
       setPreview(null);
       setRiskAcknowledged(false);
+      setV4BorrowBlocked(false);
+      setV4DerivedDebtState(undefined);
       reset({ debt: data.debt });
     }
   });
 
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
-  // Mismatch guard (USDT Support milestone): a live protocol quote fetched
-  // for a different asset than this portfolio's own `debt.asset` must
-  // never be shown as "Aave V3 · Live" here — same protection as
+  const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  // Mismatch guard (USDT Support milestone): a live V3 protocol quote
+  // fetched for a different asset than this portfolio's own `debt.asset`
+  // must never be shown as "Aave V3 · Live" here — same protection as
   // `useAaveLiveSync`'s sync guard and `buildDashboardViewModel`'s
   // Dashboard freshness guard, applied to this page's own status badge.
+  // Only reachable for a V3/unset portfolio — `deriveProtocolStatus`
+  // ignores `aaveMarketQuote` entirely for a V4 one.
   const protocolMatchesDebtAsset =
     protocolQuote !== null && protocolQuote.borrowAsset === portfolio.debt.asset;
-  const aaveStatusLabel = protocolMatchesDebtAsset
-    ? formatAaveDataStatus(deriveAaveDataStatus(marketQuote))
-    : formatAaveDataStatus('unavailable');
+  const protocolStatus = deriveProtocolStatus({
+    protocolVersion: portfolio.protocolVersion,
+    v4PositionSet: portfolio.v4Position !== undefined,
+    v4DebtStateSet: portfolio.v4DebtState !== undefined,
+    aaveMarketQuote: protocolMatchesDebtAsset ? marketQuote : null,
+    aaveV4Status,
+  });
+  const aaveStatusLabel = formatProtocolStatus(protocolStatus);
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
@@ -1105,6 +1215,13 @@ function DebtPositionForm({
         </div>
       </fieldset>
 
+      {portfolio.protocolVersion === 'v4' && (
+        <p className="text-xs text-muted-foreground">
+          Aave V4: repayments use the protocol&rsquo;s real premium-first repayment rule. Borrowing
+          is not previewable here yet — see the note below if you increase the debt amount.
+        </p>
+      )}
+
       <div className="flex gap-2">
         <button
           type="button"
@@ -1116,11 +1233,13 @@ function DebtPositionForm({
         <button
           type="button"
           onClick={onApply}
-          disabled={!canApply(preview, beforeSummary, riskAcknowledged)}
+          disabled={v4BorrowBlocked || !canApply(preview, beforeSummary, riskAcknowledged)}
           aria-describedby={
-            blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
-              ? 'debt-apply-blocked-hint'
-              : undefined
+            v4BorrowBlocked
+              ? 'debt-v4-borrow-blocked-hint'
+              : blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
+                ? 'debt-apply-blocked-hint'
+                : undefined
           }
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
@@ -1128,11 +1247,18 @@ function DebtPositionForm({
         </button>
       </div>
 
-      {blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged) && (
-        <p id="debt-apply-blocked-hint" className="text-xs text-destructive">
-          Apply Changes is disabled until you check the risk acknowledgment box below.
+      {v4BorrowBlocked && (
+        <p id="debt-v4-borrow-blocked-hint" className="text-xs text-destructive">
+          {V4_BORROW_UNSUPPORTED_MESSAGE}
         </p>
       )}
+
+      {!v4BorrowBlocked &&
+        blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged) && (
+          <p id="debt-apply-blocked-hint" className="text-xs text-destructive">
+            Apply Changes is disabled until you check the risk acknowledgment box below.
+          </p>
+        )}
 
       {preview && (
         <PreviewDiff
@@ -1190,6 +1316,7 @@ export function PortfolioPageClient() {
             summary={record.summary}
           />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
+          <AaveProtocolVersionForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <CollateralPositionForm
             portfolioId={activePortfolioId}
             portfolio={record.portfolio}

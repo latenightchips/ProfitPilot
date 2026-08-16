@@ -33,9 +33,10 @@ import {
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
-import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
+import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStatus';
 
 /**
  * Dashboard Route — 06_TASKS.md M5-001 ("Create Dashboard Route").
@@ -171,16 +172,18 @@ export function DashboardPageClient() {
   const developerMode = useDeveloperModeStore((state) => state.enabled);
   const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const aaveProtocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
+  const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
 
   // Portfolio Live-State Cleanup batch — fetches and syncs live Aave V3
   // data independently of the Portfolio page, so a user landing directly
   // on the Dashboard (never having visited /portfolio this session) still
   // sees current on-chain values rather than a stale/never-synced record.
   useAaveLiveSync(activePortfolioId);
-  // V4 Readiness Audit §12 Stage 7 — same independence as above, for V4
-  // debt-state sync. A strict no-op for every portfolio today (neither
-  // `protocolVersion: 'v4'` nor `v4Position` is settable from any UI yet)
-  // — see that hook's own header comment.
+  // V4 Readiness Audit §12 Stage 7, wired to a real UI at Stage 13 — same
+  // independence as above, for V4 debt-state sync. Still a strict no-op
+  // for any portfolio that hasn't opted into V4 via
+  // `AaveProtocolVersionForm` (`app/portfolio/PortfolioPageClient.tsx`)
+  // — see that hook's own header comment for the exact gating condition.
   useAaveV4LiveSync(activePortfolioId);
 
   useEffect(() => {
@@ -244,7 +247,15 @@ export function DashboardPageClient() {
           <DashboardSummaryHeader viewModel={viewModel} />
           <p className="text-xs text-muted-foreground">
             <span className="rounded-full bg-muted px-2 py-0.5">
-              {formatAaveDataStatus(deriveAaveDataStatus(aaveMarketQuote))}
+              {formatProtocolStatus(
+                deriveProtocolStatus({
+                  protocolVersion: record.portfolio.protocolVersion,
+                  v4PositionSet: record.portfolio.v4Position !== undefined,
+                  v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
+                  aaveMarketQuote,
+                  aaveV4Status,
+                }),
+              )}
             </span>
           </p>
           {dataFreshnessIndicators !== null && (
