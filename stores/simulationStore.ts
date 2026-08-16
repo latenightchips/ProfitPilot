@@ -11,6 +11,7 @@ import {
   type ServiceMetadata,
   type ServiceWarning,
   simulatePortfolioAction,
+  simulatePortfolioTransition,
   simulateScenario,
   type SimulationResult,
   type SimulationScenario,
@@ -90,6 +91,22 @@ import {
  * shares the same `status`/`errors` fields as `runSimulation` — both
  * represent "is a calculation currently in flight or failed," regardless
  * of which kind.
+ *
+ * **`runPortfolioTransitionSimulation` (V4 Readiness Audit §12 Stage
+ * 18)** — a second entry point into the exact same `portfolioActionPreview`/
+ * `status`/`errors`/`warnings`/`lastMetadata` fields, calling
+ * `simulatePortfolioTransition` instead of `simulatePortfolioAction`.
+ * Both return the identical `PortfolioActionSimulationResult` shape, so
+ * no new state field or display component is needed — only the input
+ * differs: an already-fully-built "after" `ApplicationPortfolio` instead
+ * of a `{collateralDelta, debtDelta}` pair. `ApplyLoopAsSimulation.tsx`
+ * is this action's one caller, for a V4 loop result specifically — see
+ * that component's own header comment. `runPortfolioActionSimulation`
+ * itself is untouched, still the only entry point for every other
+ * caller (`ScenarioBuilder`'s Combined Actions, `RecommendationDetailPanel`,
+ * `ApplyExitPlanAsSimulation`, and a V3 loop result), so a generic,
+ * hand-entered debt change still goes through `deriveV4DebtStateAfterDelta`'s
+ * own ambiguous-borrow fail-closed rule exactly as before.
  *
  * **`warnings` (Batch 9, M6-009)**: both `simulateScenario` and
  * `simulatePortfolioAction` already return `ServiceWarning[]` on success
@@ -272,6 +289,10 @@ export interface SimulationStoreActions {
     portfolio: ApplicationPortfolio,
     input: PortfolioActionSimulationInput,
   ) => void;
+  runPortfolioTransitionSimulation: (
+    before: ApplicationPortfolio,
+    after: ApplicationPortfolio,
+  ) => void;
   runTimelineProjection: (portfolio: ApplicationPortfolio) => void;
   saveCurrentScenario: (input: SaveSimulationInput) => string | null;
   loadSavedScenario: (id: string) => void;
@@ -380,6 +401,31 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
       set({ status: 'calculating' });
 
       const result = simulatePortfolioAction(portfolio, input, SOURCE_STATUS);
+
+      if (!result.ok) {
+        set({
+          status: 'error',
+          errors: result.errors,
+          warnings: [],
+          portfolioActionPreview: null,
+          lastMetadata: null,
+        });
+        return;
+      }
+
+      set({
+        status: 'idle',
+        errors: [],
+        warnings: result.warnings,
+        portfolioActionPreview: result.data,
+        lastMetadata: result.metadata,
+      });
+    },
+
+    runPortfolioTransitionSimulation: (before, after) => {
+      set({ status: 'calculating' });
+
+      const result = simulatePortfolioTransition(before, after, SOURCE_STATUS);
 
       if (!result.ok) {
         set({

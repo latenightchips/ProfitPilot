@@ -35,6 +35,7 @@ export {
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
   simulatePortfolioAction,
+  simulatePortfolioTransition,
 } from './portfolioAction';
 export {
   type AaveV4RateStress,

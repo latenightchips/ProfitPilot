@@ -61,9 +61,31 @@
  * recomputation, data this codebase's domain model has never captured)
  * and still fails closed via the existing Stage 9/10
  * `AAVE_V4_DEBT_STATE_MISSING` guard.
+ *
+ * **`simulatePortfolioTransition` (V4 Readiness Audit §12 Stage 18)** —
+ * extracted, unchanged in behavior, from what `simulatePortfolioAction`
+ * already did after building its own `afterPortfolio`: snapshot both
+ * sides, diff. Exported so a caller that already has a complete,
+ * correctly-built "after" `ApplicationPortfolio` in hand — the Loop
+ * Builder's `buildFinalLoopPortfolio` (`services/loop/finalPortfolio.ts`),
+ * which for a V4 portfolio already carries a real, structured
+ * post-borrow `v4DebtState` forward, not a bare scalar — can reach the
+ * same before/after/profitOrLoss comparison directly, without ever
+ * reducing that structured state down to a `debtDelta` and back up
+ * through `deriveV4DebtStateAfterDelta`'s deliberately ambiguous-borrow
+ * fail-closed rule above. This function itself contains no
+ * protocol-version branching at all: `calculatePortfolioSummary` (called
+ * on each side) already dispatches V3 vs. V4 internally, exactly as it
+ * always has — nothing here reinterprets a V3 field for V4 or vice
+ * versa. `simulatePortfolioAction` itself is unchanged in every
+ * observable way; this is a pure extraction, not a new behavior on the
+ * existing delta-based path — see
+ * `features/loop-builder/components/ApplyLoopAsSimulation.tsx`'s own
+ * header comment for why the delta-based path stays V3's own unmodified
+ * route while a V4 loop result now uses this one instead.
  */
 import { calculatePortfolioGain } from '@/engine';
-import type { ApplicationPortfolio, PortfolioActionPreview } from '@/services';
+import type { ApplicationPortfolio, PortfolioActionPreview, PortfolioSummary } from '@/services';
 import { calculatePortfolioSummary } from '@/services';
 import { deriveV4DebtStateAfterDelta } from '@/services/portfolio/mapping';
 import type { AaveV4DebtState } from '@/services/portfolio/models';
@@ -75,6 +97,7 @@ import {
 import {
   createServiceSuccess,
   type ServiceResult,
+  type ServiceSuccess,
   type ServiceWarning,
 } from '@/services/shared/result';
 
@@ -85,6 +108,65 @@ export interface PortfolioActionSimulationInput {
 
 export interface PortfolioActionSimulationResult extends PortfolioActionPreview {
   profitOrLoss: number;
+}
+
+/**
+ * Computes the "after" summary against an already-computed "before"
+ * result and diffs them. Not exported: callers always start from either
+ * a portfolio (`simulatePortfolioTransition`) or one they already had to
+ * compute anyway for other reasons (`simulatePortfolioAction`'s own
+ * `tracked` metadata for its V4 delta step) — sharing this inner half
+ * avoids computing `calculatePortfolioSummary` on the same "before"
+ * portfolio twice (and double-counting its warnings) without forcing
+ * every caller through the same public entry point.
+ */
+function compareAgainstBefore(
+  beforeResult: ServiceSuccess<PortfolioSummary>,
+  afterPortfolio: ApplicationPortfolio,
+  sourceStatus: string,
+): ServiceResult<PortfolioActionSimulationResult> {
+  const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);
+  if (!afterResult.ok) return afterResult;
+
+  const tracked: TrackedFormulaVersion = {
+    engineVersion: afterResult.metadata.engineVersion,
+    formulaVersion: afterResult.metadata.formulaVersion,
+  };
+
+  const gainStep = formulaStep(
+    calculatePortfolioGain(afterResult.data.collateralValue, beforeResult.data.collateralValue),
+    tracked,
+    sourceStatus,
+  );
+  if (!gainStep.ok) return gainStep.failure;
+
+  return createServiceSuccess(
+    { before: beforeResult.data, after: afterResult.data, profitOrLoss: gainStep.value },
+    optionsFromTracked(sourceStatus, gainStep.tracked),
+    [...afterResult.warnings, ...gainStep.warnings],
+  );
+}
+
+/**
+ * Compares two already-fully-built portfolio snapshots — "before" and
+ * "after" — and returns their summaries plus the resulting profit or
+ * loss. V4 Readiness Audit §12 Stage 18: extracted from
+ * `simulatePortfolioAction`'s own tail end, which now calls the shared
+ * `compareAgainstBefore` half directly. No protocol-version branching
+ * lives here — see this file's own header comment.
+ */
+export function simulatePortfolioTransition(
+  before: ApplicationPortfolio,
+  after: ApplicationPortfolio,
+  sourceStatus: string,
+): ServiceResult<PortfolioActionSimulationResult> {
+  const beforeResult = calculatePortfolioSummary(before, sourceStatus);
+  if (!beforeResult.ok) return beforeResult;
+
+  const result = compareAgainstBefore(beforeResult, after, sourceStatus);
+  if (!result.ok) return result;
+
+  return { ...result, warnings: [...beforeResult.warnings, ...result.warnings] };
 }
 
 /**
@@ -129,24 +211,9 @@ export function simulatePortfolioAction(
     ...(portfolio.protocolVersion === 'v4' &&
       portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
   };
-  const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);
-  if (!afterResult.ok) return afterResult;
 
-  const tracked: TrackedFormulaVersion = {
-    engineVersion: afterResult.metadata.engineVersion,
-    formulaVersion: afterResult.metadata.formulaVersion,
-  };
+  const result = compareAgainstBefore(beforeResult, afterPortfolio, sourceStatus);
+  if (!result.ok) return result;
 
-  const gainStep = formulaStep(
-    calculatePortfolioGain(afterResult.data.collateralValue, beforeResult.data.collateralValue),
-    tracked,
-    sourceStatus,
-  );
-  if (!gainStep.ok) return gainStep.failure;
-
-  return createServiceSuccess(
-    { before: beforeResult.data, after: afterResult.data, profitOrLoss: gainStep.value },
-    optionsFromTracked(sourceStatus, gainStep.tracked),
-    [...warnings, ...afterResult.warnings, ...gainStep.warnings],
-  );
+  return { ...result, warnings: [...warnings, ...result.warnings] };
 }

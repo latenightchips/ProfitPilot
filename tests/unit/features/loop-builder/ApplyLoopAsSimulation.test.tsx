@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApplyLoopAsSimulation } from '@/features/loop-builder';
 import type { ApplicationPortfolio } from '@/services';
+import { buildFinalLoopPortfolio } from '@/services/loop/finalPortfolio';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -114,31 +115,50 @@ describe('ApplyLoopAsSimulation — applying', () => {
 });
 
 /**
- * `debtDelta` computation for a V4 portfolio — V4 Readiness Audit §12
- * Stage 16. `debt.balance` deliberately disagrees with the real synced
- * `v4DebtState` below, proving `debtDelta` is computed against the
- * canonical current total (`resolveCanonicalDebtBalance`), not the stale
- * legacy field — the exact bug this stage fixed: mixing a canonical
- * `strategy.finalDebt` (Stage 9/15) with a stale legacy base would
- * silently misallocate the resulting Simulation.
+ * V4 structured Loop → Simulation handoff — V4 Readiness Audit §12 Stage
+ * 18. Before this stage, `handleApply` reduced the loop's final state to
+ * a scalar `debtDelta` for EVERY portfolio, including V4 — and since a
+ * viable loop always borrows more (a positive delta), routing that
+ * through `runPortfolioActionSimulation` always hit
+ * `deriveV4DebtStateAfterDelta`'s deliberate "genuinely ambiguous, fail
+ * closed" rule for any positive V4 delta (`services/portfolio/mapping.ts`).
+ * That meant clicking "Apply Loop as Simulation" on any real V4 loop
+ * always produced an error — a real, shipped, user-reachable bug, not a
+ * hypothetical. `handleApply` now builds the final portfolio directly via
+ * `buildFinalLoopPortfolio` (Stage 17, already carries a real structured
+ * `v4DebtState` forward) and calls `runPortfolioTransitionSimulation`
+ * instead, which never reduces that structured state to a delta.
  */
-describe('ApplyLoopAsSimulation — V4 canonical debtDelta (Stage 16)', () => {
-  it('computes debtDelta as finalDebt minus the canonical total (15500), not the deliberately-disagreeing legacy debt.balance (999999)', () => {
-    const portfolio = validPortfolio({
+describe('ApplyLoopAsSimulation — V4 structured Loop → Simulation handoff (Stage 18)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
       debt: { asset: 'USDC', balance: 999999 },
       protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
     });
+  }
+
+  function runViableV4Strategy(portfolio: ApplicationPortfolio) {
     useLoopBuilderStore
       .getState()
-      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.2 });
     useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+  }
+
+  it('requirement 1 — preserves the canonical structured V4 debt state, calling runPortfolioTransitionSimulation with the exact buildFinalLoopPortfolio output, not a scalar delta', () => {
+    const portfolio = v4Portfolio();
+    runViableV4Strategy(portfolio);
     const { currentResult } = useLoopBuilderStore.getState();
     if (currentResult?.strategy === null || currentResult === null) {
       throw new Error('setup failed: expected a viable strategy');
     }
-    const expectedDebtDelta = currentResult.strategy.finalDebt - 15500;
+    const expectedAfter = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
 
+    const runPortfolioTransitionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioTransitionSimulation')
+      .mockImplementation(() => {});
     const runPortfolioActionSimulation = vi
       .spyOn(useSimulationStore.getState(), 'runPortfolioActionSimulation')
       .mockImplementation(() => {});
@@ -146,17 +166,55 @@ describe('ApplyLoopAsSimulation — V4 canonical debtDelta (Stage 16)', () => {
     render(<ApplyLoopAsSimulation portfolio={portfolio} />);
     screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
 
-    expect(runPortfolioActionSimulation).toHaveBeenCalledTimes(1);
-    const [, input] = runPortfolioActionSimulation.mock.calls[0]!;
-    expect(input.debtDelta).toBe(expectedDebtDelta);
-    // If the stale 999999 were used instead, the delta would be a wildly
-    // different (and far more negative) number.
-    expect(input.debtDelta).not.toBe(currentResult.strategy.finalDebt - 999999);
+    expect(runPortfolioTransitionSimulation).toHaveBeenCalledTimes(1);
+    const [before, after] = runPortfolioTransitionSimulation.mock.calls[0]!;
+    expect(before).toBe(portfolio);
+    expect(after).toEqual(expectedAfter);
+    expect(after.v4DebtState).toBeDefined();
+    // The genuinely ambiguous delta-based path must never be reached for V4.
+    expect(runPortfolioActionSimulation).not.toHaveBeenCalled();
 
+    runPortfolioTransitionSimulation.mockRestore();
     runPortfolioActionSimulation.mockRestore();
   });
 
-  it('a V3 (or unset) portfolio is completely unaffected — still computes debtDelta from the real legacy debt.balance', () => {
+  it('requirement 2 — the resulting preview uses real V4 rate/debt semantics, not the legacy debt.balance/protocol.borrowApr fields', () => {
+    const portfolio = v4Portfolio();
+    runViableV4Strategy(portfolio);
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
+
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    expect(preview).not.toBeNull();
+    if (preview === null) return;
+    // Canonical total (15500) must drive debtValue, never the deliberately
+    // disagreeing legacy debt.balance (999999).
+    expect(preview.before.debtValue).toBe(15500);
+    expect(preview.after.debtValue).not.toBe(preview.before.debtValue);
+    expect(preview.after.debtValue).toBeLessThan(999999);
+  });
+
+  it('does not apply for a V3 (or unset) portfolio — that path is untouched (requirement 4/5)', () => {
+    const portfolio = validPortfolio();
+    runViableV4Strategy(portfolio);
+
+    const runPortfolioTransitionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioTransitionSimulation')
+      .mockImplementation(() => {});
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
+
+    expect(runPortfolioTransitionSimulation).not.toHaveBeenCalled();
+    expect(useSimulationStore.getState().portfolioActionPreview).not.toBeNull();
+
+    runPortfolioTransitionSimulation.mockRestore();
+  });
+});
+
+describe('ApplyLoopAsSimulation — V3 debtDelta computation unchanged (Stage 16, reconfirmed at Stage 18)', () => {
+  it('a V3 (or unset) portfolio still computes debtDelta from the real legacy debt.balance and calls runPortfolioActionSimulation, byte-for-byte as before', () => {
     const portfolio = validPortfolio();
     useLoopBuilderStore
       .getState()
@@ -175,6 +233,7 @@ describe('ApplyLoopAsSimulation — V4 canonical debtDelta (Stage 16)', () => {
     render(<ApplyLoopAsSimulation portfolio={portfolio} />);
     screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
 
+    expect(runPortfolioActionSimulation).toHaveBeenCalledTimes(1);
     const [, input] = runPortfolioActionSimulation.mock.calls[0]!;
     expect(input.debtDelta).toBe(expectedDebtDelta);
 

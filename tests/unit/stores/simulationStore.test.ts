@@ -192,6 +192,86 @@ describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
   });
 });
 
+/**
+ * `runPortfolioTransitionSimulation` — V4 Readiness Audit §12 Stage 18.
+ * A second entry point into the same `portfolioActionPreview`/`status`/
+ * `errors`/`warnings`/`lastMetadata` fields as `runPortfolioActionSimulation`,
+ * calling `simulatePortfolioTransition` with an already-built "after"
+ * portfolio instead of a `{collateralDelta, debtDelta}` pair.
+ * `ApplyLoopAsSimulation.tsx` is its one real caller (for a V4 loop
+ * result) — these tests exercise the Store action directly.
+ */
+describe('useSimulationStore — runPortfolioTransitionSimulation (Stage 18)', () => {
+  it('populates portfolioActionPreview from the real Service on success, matching what an equivalent runPortfolioActionSimulation call would produce', () => {
+    const before = validPortfolio();
+    const after = validPortfolio({
+      collateral: { asset: 'BTC', quantity: 3 },
+      debt: { asset: 'USDC', balance: 30000 },
+    });
+    useSimulationStore.getState().runPortfolioTransitionSimulation(before, after);
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    expect(state.errors).toEqual([]);
+    expect(state.portfolioActionPreview).not.toBeNull();
+    expect(state.portfolioActionPreview?.after.collateralValue).toBe(150000);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
+    expect(state.portfolioActionPreview?.before.collateralValue).toBe(100000);
+    expect(state.portfolioActionPreview?.profitOrLoss).toBe(50000);
+  });
+
+  it('sets status to error and clears portfolioActionPreview when the underlying calculation fails', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioTransitionSimulation(
+        validPortfolio(),
+        validPortfolio({ collateral: { asset: 'BTC', quantity: -5 } }),
+      );
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
+    expect(state.portfolioActionPreview).toBeNull();
+  });
+
+  it('does not touch currentScenario or currentResult', () => {
+    useSimulationStore.getState().setCurrentScenario(PRICE_SCENARIO);
+    useSimulationStore.getState().runSimulation(validPortfolio());
+
+    useSimulationStore
+      .getState()
+      .runPortfolioTransitionSimulation(
+        validPortfolio(),
+        validPortfolio({ collateral: { asset: 'BTC', quantity: 3 } }),
+      );
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toEqual(PRICE_SCENARIO);
+    expect(state.currentResult?.scenario.equity).toBe(100000);
+    expect(state.portfolioActionPreview).not.toBeNull();
+  });
+
+  it('succeeds for a V4 "after" portfolio carrying a real structured v4DebtState — the case runPortfolioActionSimulation cannot handle for a positive delta', () => {
+    const before: ApplicationPortfolio = validPortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const after: ApplicationPortfolio = {
+      ...before,
+      collateral: { asset: 'BTC', quantity: 3 },
+      debt: { asset: 'USDC', balance: 25500 },
+      v4DebtState: { drawnDebt: 25000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    };
+
+    useSimulationStore.getState().runPortfolioTransitionSimulation(before, after);
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    expect(state.errors).toEqual([]);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(25500);
+  });
+});
+
 describe('useSimulationStore — runTimelineProjection (M6-012, Batch 11)', () => {
   it('does nothing (leaves timelineProjection null) when no scenario is set', () => {
     useSimulationStore.getState().runTimelineProjection(validPortfolio());

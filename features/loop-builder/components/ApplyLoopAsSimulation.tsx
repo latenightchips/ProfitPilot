@@ -3,7 +3,11 @@
 import Link from 'next/link';
 
 import { formatHealthFactor } from '@/components/strategy/format';
-import { type ApplicationPortfolio, resolveCanonicalDebtBalance } from '@/services';
+import {
+  type ApplicationPortfolio,
+  buildFinalLoopPortfolio,
+  resolveCanonicalDebtBalance,
+} from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -59,12 +63,53 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * importing both `useLoopBuilderStore` and `usePortfolioStore`. This
  * component is UI, not Store code, and its entire purpose (per its own
  * task name) is bridging the two features.
+ *
+ * **V4 dispatches to a structured path instead — V4 Readiness Audit §12
+ * Stage 18, a real bug found and fixed, not a hypothetical.** The
+ * `debtDelta`-based flow above always produced a POSITIVE delta for any
+ * loop that actually adds leverage (the entire point of a loop), and
+ * `services/simulation/portfolioAction.ts`'s own `deriveV4DebtStateAfterDelta`
+ * call deliberately treats any positive V4 delta as "genuinely ambiguous"
+ * and fails closed (Stage 11/12's own protocol-audited reasoning: a real
+ * borrow triggers an on-chain Risk Premium refresh this codebase's
+ * single-collateral domain model cannot recompute) — so `handleApply`
+ * unconditionally failed for every real V4 loop, with no protocol-version
+ * gating on the button to prevent a V4 user from hitting it.
+ *
+ * `currentResult.strategy` already has everything needed to build the
+ * correct, structured "after" state directly — `buildFinalLoopPortfolio`
+ * (`services/loop/finalPortfolio.ts`, Stage 17) already carries a real,
+ * structured post-loop `v4DebtState` forward for a V4 portfolio (never a
+ * bare scalar). For a V4 portfolio, `handleApply` now builds that final
+ * portfolio directly and hands it to `runPortfolioTransitionSimulation`
+ * (`stores/simulationStore.ts`, Stage 18) — which calls
+ * `simulatePortfolioTransition`, comparing two already-known portfolio
+ * snapshots without ever reducing the structured V4 state down to an
+ * ambiguous scalar delta. **This does not weaken the fail-closed rule
+ * for a generic, hand-entered V4 debt change** — `deriveV4DebtStateAfterDelta`
+ * and `simulatePortfolioAction` are completely untouched, so
+ * `ScenarioBuilder`'s own Debt Change field, `RecommendationDetailPanel`,
+ * and `ApplyExitPlanAsSimulation` all still fail closed on a genuinely
+ * ambiguous positive V4 delta exactly as before; only THIS component,
+ * which already has the real structured state in hand rather than a bare
+ * number, takes the other path.
+ *
+ * **V3 (or unset) is completely unchanged — a deliberate, explicit
+ * dispatch, not a fallback.** `handleApply` branches on
+ * `portfolio.protocolVersion === 'v4'` before doing anything; a V3
+ * portfolio still computes `collateralDelta`/`debtDelta` and calls
+ * `runPortfolioActionSimulation` exactly as it always has, on the exact
+ * same code path, byte-for-byte — Stage 18 adds a new path for V4, it
+ * does not touch V3's own.
  */
 export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
   const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
   const runPortfolioActionSimulation = useSimulationStore(
     (state) => state.runPortfolioActionSimulation,
+  );
+  const runPortfolioTransitionSimulation = useSimulationStore(
+    (state) => state.runPortfolioTransitionSimulation,
   );
 
   if (currentResult === null || currentResult.strategy === null) {
@@ -79,6 +124,13 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
 
   function handleApply() {
     if (currentResult === null || currentResult.strategy === null) return;
+
+    if (portfolio.protocolVersion === 'v4') {
+      const afterPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
+      runPortfolioTransitionSimulation(portfolio, afterPortfolio);
+      return;
+    }
+
     const collateralDelta =
       currentResult.strategy.finalCollateral.quantity - portfolio.collateral.quantity;
     const debtDelta = currentResult.strategy.finalDebt - resolveCanonicalDebtBalance(portfolio);
