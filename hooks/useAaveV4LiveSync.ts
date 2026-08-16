@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
+import type { AaveV4EngineDebtInputsData } from '@/stores/aaveV4LiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -67,6 +68,25 @@ import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore
  * Simulation) — a portfolio can now have a real, live-synced
  * `v4DebtState` and still fail closed with
  * `AAVE_V4_SIMULATION_UNSUPPORTED`, unchanged from Stage 6.
+ *
+ * **Never re-applies an already-consumed fetch result (V4 Readiness
+ * Audit §12 Stage 14 fix).** The write effect below lists `portfolio` as
+ * a dependency (needed so it re-evaluates after a *fetch* lands, since
+ * `portfolio.v4DebtState` is part of the equality check), which means it
+ * also re-runs after ANY OTHER portfolio update — including a Debt-form
+ * Apply that locally derives a new `v4DebtState` from a real Stage-12
+ * repayment. Previously, that re-run would find `engineInputs` (still
+ * the same value from the last successful fetch, since nothing new was
+ * fetched) no longer equal to the just-updated `v4DebtState`, and
+ * "correct" it by writing the stale fetched value straight back over
+ * the newer local one — silently discarding a correct repay result.
+ * `lastAppliedEngineInputs` tracks the specific `engineInputs` object
+ * this hook has already synced onto the portfolio; the write effect now
+ * only acts on a genuinely NEW one (the store creates a fresh object on
+ * every successful fetch, so identity alone distinguishes "already
+ * handled this result" from "a new live read landed"). A real new fetch
+ * — the only way `engineInputs` actually changes — still always wins,
+ * exactly as before.
  */
 export function useAaveV4LiveSync(portfolioId: string | null): void {
   const status = useAaveV4LiveDataStore((state) => state.status);
@@ -83,6 +103,8 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     portfolio?.protocolVersion === 'v4' ? portfolio.v4Position?.userAddress : undefined;
   const debtAsset = portfolio?.debt.asset;
 
+  const lastAppliedEngineInputs = useRef<AaveV4EngineDebtInputsData | null>(null);
+
   useEffect(() => {
     if (userAddress === undefined || debtAsset === undefined) return;
     void fetchAaveV4LiveData(userAddress, debtAsset);
@@ -93,8 +115,14 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     if (userAddress === undefined || debtAsset === undefined) return;
     if (status !== 'ready' || engineInputs === null) return;
     if (fetchedUserAddress !== userAddress || fetchedDebtAsset !== debtAsset) return;
-    if (aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)) return;
+    if (lastAppliedEngineInputs.current === engineInputs) return;
 
+    if (aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)) {
+      lastAppliedEngineInputs.current = engineInputs;
+      return;
+    }
+
+    lastAppliedEngineInputs.current = engineInputs;
     setAaveV4DebtState(portfolioId, engineInputs);
   }, [
     portfolioId,

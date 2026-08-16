@@ -160,6 +160,70 @@ describe('useAaveV4LiveSync — successful sync for an opted-in V4 portfolio', (
   });
 });
 
+/**
+ * V4 Readiness Audit §12 Stage 14 — regression coverage for a real bug
+ * this stage's own integration test (`tests/integration/portfolio/aaveV4LiveFlow.test.tsx`)
+ * caught: the write effect below depends on the whole `portfolio` object
+ * (needed so it re-checks after a fetch lands), so it used to re-run —
+ * and needlessly re-apply the OLD `engineInputs` — after ANY portfolio
+ * update, including one where the portfolio's own `v4DebtState` had
+ * since been intentionally changed locally (e.g. a Stage-12 repay
+ * Apply) without any new fetch. `lastAppliedEngineInputs` now makes the
+ * effect a strict one-shot per distinct fetch result.
+ */
+describe('useAaveV4LiveSync — a later local v4DebtState edit is never clobbered by a stale, already-applied fetch (Stage 14 fix)', () => {
+  it('does not re-apply the same engineInputs after an unrelated portfolio update once it has already synced once', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        VALID_ENGINE_INPUTS,
+      );
+    });
+
+    // A local edit changes v4DebtState WITHOUT any new fetch landing —
+    // e.g. a Stage-12 repayment Apply. This is itself a portfolio update,
+    // which re-triggers the write effect's dependency array.
+    const locallyRepaid = { ...VALID_ENGINE_INPUTS, premiumDebt: 0 };
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, locallyRepaid);
+
+    // Give the effect a turn to (incorrectly, pre-fix) re-run.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+      locallyRepaid,
+    );
+  });
+
+  it('a genuinely NEW fetch result still overrides a prior local edit (live sync is not disabled by the fix)', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        VALID_ENGINE_INPUTS,
+      );
+    });
+
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(portfolio.id, { ...VALID_ENGINE_INPUTS, premiumDebt: 0 });
+
+    // A genuinely fresh fetch (a new engineInputs value/object) lands.
+    const freshFromChain = { ...VALID_ENGINE_INPUTS, drawnDebt: 16000 };
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: freshFromChain }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        freshFromChain,
+      );
+    });
+  });
+});
+
 describe('useAaveV4LiveSync — identical data causes no portfolio update (equality gate)', () => {
   it('does not bump updatedAt when the fetched engineInputs already match the stored v4DebtState', async () => {
     const portfolio = createV4Portfolio();
