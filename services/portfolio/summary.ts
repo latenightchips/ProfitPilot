@@ -89,6 +89,22 @@
  * layer up. The existing `NO_DEBT` warning already produced by the
  * Health Factor step (line below) carries the explanation; no duplicate
  * warning is invented here. See PROJECT_STATUS.md conflict #20.
+ *
+ * **V4 fail-closed guard (V4 Readiness Audit §12 Stage 9)** — computed
+ * right after Collateral Value (the one metric here that never reads
+ * `debt` at all), before Debt Value or anything downstream of it. A
+ * portfolio with `protocolVersion: 'v4'` and no synced `v4DebtState`
+ * (Stage 6/7) has no real current debt figure to summarize —
+ * `mapApplicationPortfolioToEngineInput` (Stage 9) deliberately still
+ * returns the legacy, possibly-stale `debt.balance` for exactly this
+ * case (see that function's own doc comment for why it stays
+ * infallible), so THIS is the one place that turns "no real V4 data yet"
+ * into an explicit `ServiceFailure` instead of a summary quietly built
+ * on stale V3-shaped debt. Every caller of this function — the Portfolio
+ * Store's own `create`/`update`/`duplicate`/`recomputeSummary`, and
+ * `services/simulation/scenario.ts`'s baseline for both `price` and
+ * `interest` scenarios — inherits this guard for free, with no separate
+ * fix needed at each call site.
  */
 import {
   calculateAnnualInterest,
@@ -103,9 +119,15 @@ import {
   calculateNetWorth,
 } from '@/engine';
 
+import { createApplicationError } from '../shared/errors';
 import type { TrackedFormulaVersion } from '../shared/formulaStep';
 import { formulaStep as step, optionsFromTracked as optionsFrom } from '../shared/formulaStep';
-import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
+import {
+  createServiceFailure,
+  createServiceSuccess,
+  type ServiceResult,
+  type ServiceWarning,
+} from '../shared/result';
 import { mapApplicationPortfolioToEngineInput } from './mapping';
 import type { ApplicationPortfolio } from './models';
 
@@ -149,6 +171,17 @@ export function calculatePortfolioSummary(
   tracked = collateralValueStep.tracked;
   warnings.push(...collateralValueStep.warnings);
   const collateralValue = collateralValueStep.value;
+
+  // V4 Readiness Audit §12 Stage 9 — fail closed rather than summarizing
+  // from stale V3-shaped debt.balance. See this file's own header comment.
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState === undefined) {
+    const error = createApplicationError(
+      'calculation',
+      'AAVE_V4_DEBT_STATE_MISSING',
+      'This summary requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
+    );
+    return createServiceFailure([error], optionsFrom(sourceStatus, collateralValueStep.tracked));
+  }
 
   const debtValueStep = step(calculateDebtValue(engineInput.debt), tracked, sourceStatus);
   if (!debtValueStep.ok) return debtValueStep.failure;
@@ -243,6 +276,14 @@ export function calculatePortfolioSummary(
     };
   }
 
+  // NOTE (V4 Readiness Audit §12 Stage 9, reported not resolved): `debtValue`
+  // above is now the canonical V4 amount when applicable, but
+  // `engineInput.protocol.borrowApr` remains the legacy V3-shaped scalar
+  // rate — V4's real rate model (`baseDrawnApr` + `riskPremium`) has no
+  // defined mapping onto a single "Annual Interest" rate yet (the same
+  // open question `services/simulation/scenario.ts`'s own header comment
+  // documents for `scenario.borrowApr`). `interestCost` below is therefore
+  // still amount-correct but rate-questionable for a V4 portfolio.
   const interestCostStep = step(
     calculateAnnualInterest(debtValue, engineInput.protocol.borrowApr),
     tracked,

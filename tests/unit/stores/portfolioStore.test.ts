@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { autoSaveCoordinator } from '@/services';
+import { autoSaveCoordinator, calculatePortfolioSummary } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -1092,5 +1092,96 @@ describe('Backward compatibility — v4DebtState absence does not affect existin
     const record = usePortfolioStore.getState().portfolios[created.id];
     expect(record).toBeDefined();
     expect(record.portfolio.v4DebtState).toBeUndefined();
+  });
+});
+
+/**
+ * Persistence + canonical debt reconciliation integration — V4 Readiness
+ * Audit §12 Stage 9. Ties Stage 5/6 (persistence), Stage 7 (live sync's
+ * own eventual `setAaveV4DebtState` caller), and Stage 9 (canonical debt)
+ * together: a V4 portfolio's `v4DebtState`, once persisted and reloaded
+ * exactly as a real page refresh would produce it, still drives
+ * `calculatePortfolioSummary`'s canonical debt — proving the
+ * reconciliation isn't something that only works on the in-memory object
+ * that was just mutated, but on genuinely-reloaded, disk-round-tripped
+ * data too.
+ */
+describe('Portfolio identity persistence + canonical debt reconciliation (Stage 9)', () => {
+  it("a reloaded V4 portfolio's summary uses the persisted v4DebtState total, not legacy debt.balance", async () => {
+    const created = usePortfolioStore.getState().create({
+      name: 'V4 Portfolio',
+      baseCurrency: 'USD',
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 999999 }, // deliberately stale/disagreeing.
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      settings: {},
+    });
+    if (!created.ok) throw new Error('setup failed');
+
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    await autoSaveCoordinator.flushAll();
+
+    // Simulate a page refresh: wipe in-memory state, hydrate purely from
+    // local storage.
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const reloaded = usePortfolioStore.getState().portfolios[created.data.id].portfolio;
+    expect(reloaded.v4DebtState).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+
+    const summary = calculatePortfolioSummary(reloaded, 'live');
+    expect(summary.ok).toBe(true);
+    if (!summary.ok) return;
+    expect(summary.data.debtValue).toBe(15500);
+    expect(summary.data.debtValue).not.toBe(999999);
+  });
+
+  it('a reloaded V4 portfolio with no synced v4DebtState still fails closed after reload (not silently readable via stale debt.balance)', async () => {
+    const created = usePortfolioStore.getState().create({
+      name: 'V4 Portfolio (unsynced)',
+      baseCurrency: 'USD',
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      settings: {},
+    });
+    if (!created.ok) throw new Error('setup failed');
+
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const reloaded = usePortfolioStore.getState().portfolios[created.data.id].portfolio;
+    expect(reloaded.v4DebtState).toBeUndefined();
+
+    const summary = calculatePortfolioSummary(reloaded, 'live');
+    expect(summary.ok).toBe(false);
+    if (summary.ok) return;
+    expect(summary.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
   });
 });

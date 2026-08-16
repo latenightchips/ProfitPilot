@@ -98,6 +98,27 @@
  * for V4 needs a product decision this stage does not make — not a bug
  * masked by a placeholder value.
  *
+ * **Canonical V4 debt reconciliation (V4 Readiness Audit §12 Stage 9).**
+ * Before this stage, `calculatePortfolioSummary`'s baseline — and
+ * therefore this file's own `baselineSummary`, `type: 'price'` scenarios
+ * (which never touch `projectProtocolDebt` at all), and Health Factor/
+ * Net Worth/Liquidation everywhere they're computed from `engineInput` —
+ * all silently read the legacy `ApplicationPortfolio.debt.balance` field
+ * even for a `protocolVersion: 'v4'` portfolio, which Stage 6/7's live
+ * sync never writes to and which can freely disagree with real synced
+ * `v4DebtState`. `services/portfolio/mapping.ts`'s
+ * `mapApplicationPortfolioToEngineInput` now resolves ONE canonical debt
+ * balance (`v4DebtState.drawnDebt + v4DebtState.premiumDebt` for V4-with-
+ * state, the legacy field otherwise) — this file's own `engineInput`,
+ * `currentTotalDebt`, and `calculatePortfolioSummary`'s `baselineResult`
+ * all derive from that single chokepoint, so no separate reconciliation
+ * logic lives here. `calculatePortfolioSummary` also gained the
+ * fail-closed guard for "v4 with no synced state" (see that file's own
+ * header comment) — computed first, before either scenario-type branch
+ * below runs, which is why this file's own interest-scenario branch no
+ * longer needs its own copy of that guard (Stage 8 had one; removed this
+ * stage as now-unreachable, not as a behavior change).
+ *
  * **Interest Cost comparison semantics (PT-12 follow-up round 3,
  * preserved and updated for compounding)**: the baseline `debtCost` set
  * up above (`toScenarioSummary`, via `calculatePortfolioSummary`'s own
@@ -150,14 +171,8 @@ import {
 import { mapApplicationPortfolioToEngineInput } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
-import { createApplicationError } from '../shared/errors';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
-import {
-  createServiceFailure,
-  createServiceSuccess,
-  type ServiceResult,
-  type ServiceWarning,
-} from '../shared/result';
+import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 
 export type SimulationScenario =
   | { type: 'price'; priceScenario: PriceScenarioInput }
@@ -298,6 +313,15 @@ export function simulateScenario(
     tracked = leverageStep.tracked;
     warnings.push(...leverageStep.warnings);
 
+    // NOTE (V4 Readiness Audit §12 Stage 9, reported not resolved):
+    // `priceResult.debtValue` is canonical for V4 (derived from `engineInput`,
+    // which Stage 9's `mapApplicationPortfolioToEngineInput` already
+    // resolved), but `engineInput.protocol.borrowApr` remains the legacy
+    // V3-shaped scalar rate — same open rate-semantics question as
+    // `calculatePortfolioSummary`'s own `interestCost` and this file's
+    // interest-scenario `scenario.borrowApr` (see this file's header
+    // comment). `debtCost` below is amount-correct but rate-questionable
+    // for a V4 portfolio.
     const debtCostStep = formulaStep(
       calculateAnnualInterest(priceResult.debtValue, engineInput.protocol.borrowApr),
       tracked,
@@ -322,18 +346,14 @@ export function simulateScenario(
 
   // Interest-scenario debt projection needs `projectProtocolDebt` — see
   // this file's header comment (Stage 8). A `'v4'` portfolio with no
-  // synced `v4DebtState` (Stage 6/7) still fails closed here — there is
-  // no drawn/premium/rate/riskPremium data to project from, and this
-  // Service never invents one.
+  // synced `v4DebtState` (Stage 6/7) already failed closed above, at
+  // `calculatePortfolioSummary`'s own guard (V4 Readiness Audit §12 Stage
+  // 9 — `baselineResult` is computed from this same `portfolio` before
+  // either scenario-type branch runs, so this Service never reaches this
+  // line with `protocolVersion: 'v4'` and `v4DebtState` both true and
+  // missing at once). `v4DebtState` is guaranteed defined below whenever
+  // `protocolVersion === 'v4'`.
   const v4DebtState = portfolio.v4DebtState;
-  if (protocolVersion === 'v4' && v4DebtState === undefined) {
-    const error = createApplicationError(
-      'calculation',
-      'AAVE_V4_DEBT_STATE_MISSING',
-      'Simulation requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
-    );
-    return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
-  }
 
   const scenarioPriceStep = formulaStep(
     resolveScenarioPrice(engineInput.market.btcPriceUsd, scenario.priceScenario),
@@ -359,14 +379,12 @@ export function simulateScenario(
   // `calculateProratedInterest` (simple interest), which remain unchanged
   // for any other caller. `currentTotalDebt` is the value both this call
   // and the baseline reproration below start from: `engineInput.debt.balance`
-  // for V3 (byte-identical to every call before Stage 8), or the
-  // portfolio's own live-synced `v4DebtState.drawnDebt + v4DebtState.premiumDebt`
-  // for V4 — the exact two already-known current-state numbers Stage 6/7
-  // populated, not a re-derivation of any accrual formula.
-  const currentTotalDebt =
-    protocolVersion === 'v4' && v4DebtState !== undefined
-      ? v4DebtState.drawnDebt + v4DebtState.premiumDebt
-      : engineInput.debt.balance;
+  // — byte-identical to every V3 call before Stage 8, and, since Stage 9,
+  // already the canonical `v4DebtState.drawnDebt + v4DebtState.premiumDebt`
+  // sum for V4 too (`mapApplicationPortfolioToEngineInput` resolves it once,
+  // centrally — see that function's own doc comment; this file no longer
+  // duplicates that sum itself).
+  const currentTotalDebt = engineInput.debt.balance;
 
   const projectedDebtStep =
     protocolVersion === 'v4' && v4DebtState !== undefined

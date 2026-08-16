@@ -468,22 +468,48 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       expect(result.data.scenario.debtCost).toBeCloseTo(107.069169, 3);
     });
 
-    it('a "price" scenario is unaffected by protocol version (does not call debt projection at all)', () => {
+    it('a "price" scenario is byte-identical for a portfolio with no protocolVersion/v4DebtState at all (V3, unaffected by the Stage 9 reconciliation)', () => {
       const scenario: SimulationScenario = {
         type: 'price',
         priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
       };
-      const v3Result = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
-      const v4Result = simulateScenario(
+      const withoutField = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
+      const withV3Field = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v3' }),
+        scenario,
+        'Price drop',
+        'live',
+      );
+      expect(withoutField.ok).toBe(true);
+      expect(withV3Field.ok).toBe(true);
+      if (!withoutField.ok || !withV3Field.ok) return;
+      expect(withV3Field.data.scenario).toEqual(withoutField.data.scenario);
+    });
+
+    /**
+     * V4 Readiness Audit §12 Stage 9 — a "price" scenario never even
+     * calls `projectProtocolDebt`, so before this stage it silently used
+     * the legacy `debt.balance` for a `protocolVersion: 'v4'` portfolio
+     * even with no synced `v4DebtState` at all. `calculatePortfolioSummary`'s
+     * new fail-closed guard (computed once, before either scenario-type
+     * branch, since `simulateScenario` calls it for its own baseline
+     * first) now closes that gap for price scenarios too, not just
+     * interest ones.
+     */
+    it('a "price" scenario on a "v4" portfolio with no v4DebtState now fails closed too (previously silently used debt.balance)', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const result = simulateScenario(
         debtPortfolio({ protocolVersion: 'v4' }),
         scenario,
         'Price drop',
         'live',
       );
-      expect(v3Result.ok).toBe(true);
-      expect(v4Result.ok).toBe(true);
-      if (!v3Result.ok || !v4Result.ok) return;
-      expect(v4Result.data.scenario).toEqual(v3Result.data.scenario);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
     });
   });
 
@@ -716,14 +742,26 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
     });
   });
 
-  it('a "price" scenario remains unaffected by protocol version even when a real v4DebtState is present (still never calls debt projection at all)', () => {
+  /**
+   * V4 Readiness Audit §12 Stage 9 — a "price" scenario never calls
+   * `projectProtocolDebt`, but it still needs a *current* debt amount
+   * (for collateral value / net equity / health factor / liquidation
+   * distance at the scenario's hypothetical price), and that amount must
+   * now be the canonical `v4DebtState`-derived total
+   * (20000 + 500 = 20500), not the legacy `debt.balance` (20000) — even
+   * though this specific portfolio's `debt.balance` is deliberately left
+   * at the V3 default to prove the legacy field is never read for V4.
+   */
+  it('a "price" scenario on a "v4" portfolio uses the canonical v4DebtState total, not legacy debt.balance, even though the two deliberately disagree', () => {
     const scenario: SimulationScenario = {
       type: 'price',
       priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
     };
-    const v3Result = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
-    const v4Result = simulateScenario(
+    const result = simulateScenario(
       debtPortfolio({
+        // debt.balance stays 20000 (the default) — deliberately disagreeing
+        // with v4DebtState's own 20500 total, to prove the canonical value
+        // wins, not the legacy field.
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
       }),
@@ -731,9 +769,13 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       'Price drop',
       'live',
     );
-    expect(v3Result.ok).toBe(true);
-    expect(v4Result.ok).toBe(true);
-    if (!v3Result.ok || !v4Result.ok) return;
-    expect(v4Result.data.scenario).toEqual(v3Result.data.scenario);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Collateral: 2 BTC @ $40,000 = $80,000. Canonical debt: $20,500.
+    expect(result.data.scenario.equity).toBeCloseTo(80000 - 20500, 6);
+    expect(result.data.scenario.healthFactor).toBeCloseTo((80000 * 0.8) / 20500, 9);
+    expect(result.data.scenario.debtCost).toBeCloseTo(20500 * 0.05, 6);
+    // profitOrLoss (collateral-value gain/loss only) is unaffected by debt.
+    expect(result.data.scenario.profitOrLoss).toBe(-20000);
   });
 });

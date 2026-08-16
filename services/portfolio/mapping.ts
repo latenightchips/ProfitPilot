@@ -217,13 +217,50 @@ export function mapPersistencePortfolioToApplicationPortfolio(
  * M4-001 extends `ApplicationPortfolio` with identity/description/
  * currency/settings/timestamp fields, this is what keeps those fields
  * from leaking into the Engine (M3-004's own DoD), by construction.
+ *
+ * **Canonical V4 debt balance (V4 Readiness Audit §12 Stage 9).** Every
+ * caller of this function (`calculatePortfolioSummary`, `simulateScenario`,
+ * and every other Service that reads `PortfolioInput.debt.balance` —
+ * `services/loop/strategy.ts`, `services/exit/plan.ts`,
+ * `services/recommendation/*`, `services/portfolio/exposure.ts`,
+ * `services/portfolio/interestBreakdown.ts`) was, before this stage,
+ * silently reading the legacy `ApplicationPortfolio.debt.balance` field
+ * even for a `protocolVersion: 'v4'` portfolio — a field Stage 6/7's live
+ * sync never writes to, so it can freely disagree with the portfolio's
+ * real on-chain V4 debt. When `protocolVersion === 'v4'` AND a real
+ * `v4DebtState` (Stage 6/7) is present, `debt.balance` below is instead
+ * `v4DebtState.drawnDebt + v4DebtState.premiumDebt` — the portfolio's
+ * actual current total V4 debt. This is a plain sum of two already-known
+ * current-state numbers, not a re-derivation of any accrual formula —
+ * the same "not V4 math, just reading real inputs" discipline
+ * `services/simulation/scenario.ts`'s own `currentTotalDebt` (Stage 8)
+ * already established (that file's own duplicate of this same sum was
+ * removed this stage now that it's centralized here).
+ *
+ * **Still infallible by design** — when `protocolVersion === 'v4'` but
+ * `v4DebtState` is `undefined`, this function returns the legacy
+ * `debt.balance` unchanged rather than failing. The explicit "fail
+ * closed instead of silently using V3 debt semantics" requirement is
+ * enforced by callers that have real `ServiceResult` failure metadata to
+ * report from: `services/portfolio/summary.ts`'s `calculatePortfolioSummary`
+ * gained that guard this stage (covering the Portfolio Store's own
+ * displayed summary, and — since `simulateScenario` calls it first for
+ * its baseline, for every scenario type — both Simulation branches too).
+ * `services/loop/strategy.ts`/`services/exit/plan.ts`/
+ * `services/recommendation/*` do not yet enforce it independently; see
+ * PROJECT_STATUS.md's Stage 9 write-up for that explicitly-scoped gap.
  */
 export function mapApplicationPortfolioToEngineInput(
   application: ApplicationPortfolio,
 ): PortfolioInput {
+  const canonicalDebtBalance =
+    application.protocolVersion === 'v4' && application.v4DebtState !== undefined
+      ? application.v4DebtState.drawnDebt + application.v4DebtState.premiumDebt
+      : application.debt.balance;
+
   return {
     collateral: application.collateral,
-    debt: application.debt,
+    debt: { asset: application.debt.asset, balance: canonicalDebtBalance },
     market: application.market,
     protocol: application.protocol,
   };

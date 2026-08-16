@@ -241,3 +241,95 @@ describe('mapApplicationPortfolioToEngineInput (M3-004)', () => {
     expect(Object.keys(engineInput).sort()).toEqual(['collateral', 'debt', 'market', 'protocol']);
   });
 });
+
+/**
+ * Canonical V4 debt balance — V4 Readiness Audit §12 Stage 9. See
+ * `mapApplicationPortfolioToEngineInput`'s own doc comment for the full
+ * reasoning: this is the one shared chokepoint every debt-consuming
+ * Service reads through, so fixing it here fixes all of them at once.
+ */
+describe('mapApplicationPortfolioToEngineInput — canonical V4 debt (Stage 9)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('uses drawnDebt + premiumDebt from v4DebtState when protocolVersion is "v4" and v4DebtState is present', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.balance).toBe(15500);
+  });
+
+  it('uses the canonical total even when it deliberately disagrees with the legacy debt.balance field', () => {
+    const application = v4Application({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.balance).toBe(15500);
+    expect(engineInput.debt.balance).not.toBe(999999);
+  });
+
+  it('preserves debt.asset unchanged alongside the canonical balance', () => {
+    const application = v4Application({
+      debt: { asset: 'USDT', balance: 20000 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.asset).toBe('USDT');
+  });
+
+  it('still returns the legacy debt.balance (infallible, no substitution) when protocolVersion is "v4" but v4DebtState is undefined', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.balance).toBe(20000);
+  });
+
+  it('never substitutes for a "v3" portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      protocolVersion: 'v3',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.balance).toBe(20000);
+  });
+
+  it('never substitutes when protocolVersion is unset, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput.debt.balance).toBe(20000);
+  });
+
+  it('a plain V3 portfolio (neither field ever set) is byte-identical to before Stage 9', () => {
+    const application = v4Application();
+    const engineInput = mapApplicationPortfolioToEngineInput(application);
+    expect(engineInput).toEqual({
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+  });
+});

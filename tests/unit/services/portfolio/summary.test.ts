@@ -126,3 +126,88 @@ describe('calculatePortfolioSummary (M3-005)', () => {
     expect(result.data.liquidation).toBeNull();
   });
 });
+
+/**
+ * Canonical V4 debt reconciliation — V4 Readiness Audit §12 Stage 9.
+ * `calculatePortfolioSummary` is the Portfolio Store's own displayed
+ * summary AND `simulateScenario`'s baseline for every scenario type, so
+ * fixing it here covers both at once (see this file's own header
+ * comment).
+ */
+describe('calculatePortfolioSummary — canonical V4 debt (Stage 9)', () => {
+  it('computes every debt-derived field from the canonical v4DebtState total, not legacy debt.balance', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Collateral: 2 BTC @ $50,000 = $100,000. Canonical debt: $15,500.
+    expect(result.data.debtValue).toBe(15500);
+    expect(result.data.netEquity).toBe(84500);
+    expect(result.data.loanToValue).toBeCloseTo(0.155, 9);
+    expect(result.data.healthFactor).toBeCloseTo((100000 * 0.8) / 15500, 9);
+    expect(result.data.liquidation).not.toBeNull();
+  });
+
+  it('uses the canonical total even when it deliberately disagrees with the legacy debt.balance field', () => {
+    const portfolio = basePortfolio({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(15500);
+  });
+
+  it('fails closed with AAVE_V4_DEBT_STATE_MISSING when protocolVersion is "v4" but v4DebtState is undefined, rather than falling back to debt.balance', () => {
+    const portfolio = basePortfolio({ protocolVersion: 'v4' });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({
+      category: 'calculation',
+      code: 'AAVE_V4_DEBT_STATE_MISSING',
+    });
+  });
+
+  it('does not have a data field on the missing-state failure (no partial/placeholder result leaks through)', () => {
+    const portfolio = basePortfolio({ protocolVersion: 'v4' });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('never fails or substitutes for a "v3" portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v3',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(20000);
+  });
+
+  it('never fails or substitutes when protocolVersion is unset, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const portfolio = basePortfolio({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(20000);
+  });
+
+  it('a plain V3 portfolio (neither field ever set) is byte-identical to before Stage 9', () => {
+    const result = calculatePortfolioSummary(basePortfolio(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(20000);
+    expect(result.data.netEquity).toBe(80000);
+    expect(result.data.healthFactor).toBe(4);
+  });
+});
