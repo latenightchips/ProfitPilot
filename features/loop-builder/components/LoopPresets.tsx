@@ -31,6 +31,20 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * hypothetical.** See `LoopStrategyControls.tsx`'s own header comment
  * for the fix (a resync `useEffect` there, driven by this component
  * calling `setSettings` directly).
+ *
+ * **`borrowRateAssumption` — V4 Readiness Audit §12 Stage 17 audit
+ * finding, no code change needed in this file itself.** This component
+ * never reads `portfolio.protocol.borrowApr` directly — `presetSettings`
+ * bakes whatever `borrowRateAssumption` its caller supplies straight into
+ * `borrowAprOverride`, unconditionally (correct for a preset: unlike
+ * `LoopStrategyControls.tsx`'s own incremental field edits, a preset
+ * click always sets a complete, concrete `LoopStrategySettings`, so there
+ * is no partial-edit "was this ever established" question to preserve
+ * here). The actual fix — using the canonical V4 effective borrow rate
+ * instead of the raw legacy scalar for a V4 portfolio — lives entirely at
+ * the one place that computes this prop's value:
+ * `app/loop-builder/LoopBuilderPageClient.tsx`'s own `resolveBorrowRateAssumption`
+ * call.
  */
 export interface LoopPreset {
   name: string;

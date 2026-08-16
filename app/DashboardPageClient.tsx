@@ -173,6 +173,7 @@ export function DashboardPageClient() {
   const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const aaveProtocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
 
   // Portfolio Live-State Cleanup batch — fetches and syncs live Aave V3
   // data independently of the Portfolio page, so a user landing directly
@@ -276,6 +277,8 @@ export function DashboardPageClient() {
                   v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
                   aaveMarketQuote,
                   aaveV4Status,
+                  aaveV4LastFetchedAt,
+                  now: new Date().toISOString(),
                 }),
               )}
             </span>

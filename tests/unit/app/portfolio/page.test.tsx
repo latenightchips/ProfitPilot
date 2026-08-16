@@ -97,6 +97,11 @@ function matchingAaveV4LiveState(
     userAddress: null,
     debtAsset: null,
     errorMessage: null,
+    // V4 Readiness Audit §12 Stage 17 — defaults to "just fetched" so
+    // every pre-existing `{ status: 'ready' }` override here still reads
+    // as fresh/live, not stale, without needing to touch every call
+    // site. Staleness tests below override this explicitly.
+    lastFetchedAt: new Date().toISOString(),
     fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -1095,6 +1100,29 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
     expect(section.getByText('Aave V4 · Live')).toBeInTheDocument();
+  });
+
+  /**
+   * "Stale" — V4 Readiness Audit §12 Stage 17. Before this stage, this
+   * exact state (ready + synced, just an old fetch) rendered "Aave V4 ·
+   * Live" indefinitely — the UI had no way to tell the last successful
+   * fetch was old.
+   */
+  it('shows "Stale" (not "Live") once the last successful fetch is older than the 5-minute freshness window', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    );
+    useAaveV4LiveDataStore.setState(
+      matchingAaveV4LiveState({
+        status: 'ready',
+        lastFetchedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      }),
+    );
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(section.getByText('Aave V4 · Stale')).toBeInTheDocument();
+    expect(section.queryByText('Aave V4 · Live')).not.toBeInTheDocument();
   });
 
   it('a V3 (or unset) portfolio keeps showing the unchanged V3 badge, never a V4 one', () => {

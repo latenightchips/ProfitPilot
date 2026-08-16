@@ -22,6 +22,7 @@ const INITIAL_STATE = {
   userAddress: null,
   debtAsset: null,
   errorMessage: null,
+  lastFetchedAt: null,
 };
 
 function successBody(overrides?: { drawnDebt?: number }) {
@@ -67,6 +68,23 @@ describe('useAaveV4LiveDataStore — success', () => {
     expect(state.userAddress).toBe(VALID_ADDRESS);
     expect(state.debtAsset).toBe('USDC');
     expect(state.errorMessage).toBeNull();
+  });
+
+  it('records lastFetchedAt (V4 Readiness Audit §12 Stage 17) as a real, current ISO timestamp on a successful fetch', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(successBody())) as unknown as typeof fetch;
+
+    const before = Date.now();
+    await useAaveV4LiveDataStore.getState().fetchAaveV4LiveData(VALID_ADDRESS, 'USDC');
+    const after = Date.now();
+
+    const lastFetchedAt = useAaveV4LiveDataStore.getState().lastFetchedAt;
+    expect(lastFetchedAt).not.toBeNull();
+    if (lastFetchedAt === null) return;
+    const fetchedAtMs = Date.parse(lastFetchedAt);
+    expect(fetchedAtMs).toBeGreaterThanOrEqual(before);
+    expect(fetchedAtMs).toBeLessThanOrEqual(after);
   });
 
   it('sets status to loading while the fetch is in flight', () => {
@@ -228,6 +246,23 @@ describe('useAaveV4LiveDataStore — failure / fallback (never erases prior good
     expect(state.status).toBe('error');
     expect(state.engineInputs).toEqual(previous);
     expect(state.userAddress).toBe(VALID_ADDRESS);
+  });
+
+  it('does not erase a previously recorded lastFetchedAt when a later refresh fails (V4 Readiness Audit §12 Stage 17)', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(successBody())) as unknown as typeof fetch;
+    await useAaveV4LiveDataStore.getState().fetchAaveV4LiveData(VALID_ADDRESS, 'USDC');
+    const previousLastFetchedAt = useAaveV4LiveDataStore.getState().lastFetchedAt;
+    expect(previousLastFetchedAt).not.toBeNull();
+
+    global.fetch = vi
+      .fn()
+      .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
+    await useAaveV4LiveDataStore.getState().fetchAaveV4LiveData(VALID_ADDRESS, 'USDC');
+
+    expect(useAaveV4LiveDataStore.getState().status).toBe('error');
+    expect(useAaveV4LiveDataStore.getState().lastFetchedAt).toBe(previousLastFetchedAt);
   });
 
   it('does not crash on a malformed (non-JSON) API response', async () => {

@@ -3,7 +3,11 @@
 import { useState } from 'react';
 
 import { formatCurrency, formatHealthFactor, formatPercent } from '@/components/strategy/format';
-import { type ApplicationPortfolio, type SimulationScenario } from '@/services';
+import {
+  type AaveV4RateStress,
+  type ApplicationPortfolio,
+  type SimulationScenario,
+} from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
@@ -41,6 +45,20 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * **`overflow-x-auto` + `tabIndex={0}` wrapper (M7-039/M7-040, Batch
  * 7)** — the same fix, and the same reasoning, as
  * `ExitPriceSensitivity.tsx`'s own header comment documents.
+ *
+ * **Borrow-Rate Increase / Combined Stress now affect a V4 portfolio's
+ * result (V4 Readiness Audit §12 Stage 17, Part 3) — a real bug, not a
+ * hypothetical.** Both presets previously stressed only
+ * `scenario.borrowApr`, a V3-only field
+ * `services/simulation/scenario.ts`'s V4 branch never reads (it always
+ * used `v4DebtState`'s own real, unstressed rates instead), so for any
+ * V4 portfolio "Borrow-Rate Increase" silently executed as a no-op —
+ * `sensitivityResult.scenario.debtCost` came back identical to the
+ * baseline. `v4RateStress()` (above) now also stresses
+ * `scenario.v4RateStress.baseDrawnApr` for a V4 portfolio, which that
+ * file's own V4 branch does read. `scenario.borrowApr` is still sent
+ * unconditionally (`SimulationScenario`'s own type requires it) but
+ * remains harmlessly ignored for V4, exactly as before.
  */
 type PresetId = 'priceDecline' | 'rateIncrease' | 'combined' | 'custom';
 
@@ -69,6 +87,27 @@ export function LoopScenarioSensitivity({ portfolio }: { portfolio: ApplicationP
 
   const effectiveBorrowApr = settings.borrowAprOverride ?? portfolio.protocol.borrowApr;
 
+  // V4 Readiness Audit §12 Stage 17 (Part 3) — `scenario.borrowApr` is
+  // V3-only; `services/simulation/scenario.ts`'s V4 branch never reads
+  // it (see that file's own header comment), so for a V4 portfolio it
+  // must keep being sent (the field is required by `SimulationScenario`'s
+  // own type) but stressing it alone was a silent no-op. `v4RateStress`
+  // stresses `baseDrawnApr` by the same `RATE_INCREASE_DELTA`, leaving
+  // `riskPremium` at its real current value — a rate increase, not a
+  // risk-premium increase, mirroring "Borrow-Rate Increase" by name.
+  // `undefined` for a V3/unset portfolio, or a V4 one with no synced
+  // `v4DebtState` (unreachable here in practice — `currentResult.strategy`
+  // above already implies a successful, fail-closed-guarded V4 run).
+  function v4RateStress(): AaveV4RateStress | undefined {
+    if (portfolio.protocolVersion !== 'v4' || portfolio.v4DebtState === undefined) {
+      return undefined;
+    }
+    return {
+      baseDrawnApr: portfolio.v4DebtState.baseDrawnApr + RATE_INCREASE_DELTA,
+      riskPremium: portfolio.v4DebtState.riskPremium,
+    };
+  }
+
   function runPreset(preset: PresetId) {
     setActivePreset(preset);
     if (preset === 'priceDecline') {
@@ -82,6 +121,7 @@ export function LoopScenarioSensitivity({ portfolio }: { portfolio: ApplicationP
         priceScenario: { type: 'percentageChange', percentageChange: 0 },
         timeHorizonDays: HORIZON_DAYS,
         borrowApr: effectiveBorrowApr + RATE_INCREASE_DELTA,
+        v4RateStress: v4RateStress(),
       });
     } else if (preset === 'combined') {
       runSensitivityScenario(portfolio, {
@@ -89,6 +129,7 @@ export function LoopScenarioSensitivity({ portfolio }: { portfolio: ApplicationP
         priceScenario: { type: 'percentageChange', percentageChange: PRICE_DECLINE_PERCENT },
         timeHorizonDays: HORIZON_DAYS,
         borrowApr: effectiveBorrowApr + RATE_INCREASE_DELTA,
+        v4RateStress: v4RateStress(),
       });
     }
   }

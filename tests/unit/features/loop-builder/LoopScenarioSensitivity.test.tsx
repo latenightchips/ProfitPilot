@@ -129,3 +129,115 @@ describe('LoopScenarioSensitivity — presets', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });
+
+/**
+ * V4 Rate Increase / Combined Stress — V4 Readiness Audit §12 Stage 17
+ * (Part 3). Before this stage, both presets stressed only the V3-only
+ * `scenario.borrowApr` field, which `services/simulation/scenario.ts`'s
+ * V4 branch never reads — a genuinely inert preset for a V4 portfolio.
+ * Implementing the fix also surfaced a second, deeper defect:
+ * `services/loop/finalPortfolio.ts`'s `buildFinalLoopPortfolio` dropped
+ * `protocolVersion`/`v4DebtState` entirely, so even a correctly-populated
+ * `scenario.v4RateStress` could never reach the real V4 branch — fixed
+ * there (see that file's own header comment), verified together here.
+ */
+describe('LoopScenarioSensitivity — V4 Rate Increase / Combined actually stress the V4 result (Stage 17)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    });
+  }
+
+  function runViableV4Strategy(portfolio: ApplicationPortfolio) {
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.2 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+  }
+
+  it('Borrow-Rate Increase changes the V4 scenario debt cost relative to the (unstressed) baseline — not a silent no-op', () => {
+    const portfolio = v4Portfolio();
+    runViableV4Strategy(portfolio);
+    render(<LoopScenarioSensitivity portfolio={portfolio} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Borrow-Rate Increase/i }));
+
+    const result = useLoopBuilderStore.getState().sensitivityResult;
+    expect(result).not.toBeNull();
+    if (result === null) return;
+    // Before Stage 17's fix (either half of it), this was exactly equal —
+    // scenario.v4RateStress was either never set, or set but unreachable
+    // because the final portfolio had already lost its V4 identity.
+    expect(result.scenario.debtCost).not.toBeCloseTo(result.baseline.debtCost, 2);
+  });
+
+  it('Combined Stress applies both the price decline AND the rate stress — its debt cost differs from a price-decline-only run', () => {
+    const portfolio = v4Portfolio();
+    runViableV4Strategy(portfolio);
+    render(<LoopScenarioSensitivity portfolio={portfolio} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /BTC Price Decline/i }));
+    const priceOnlyDebtCost = useLoopBuilderStore.getState().sensitivityResult?.scenario.debtCost;
+
+    fireEvent.click(screen.getByRole('button', { name: /Combined Stress/i }));
+    const combinedDebtCost = useLoopBuilderStore.getState().sensitivityResult?.scenario.debtCost;
+
+    // A pure price-decline scenario never touches v4RateStress, so its
+    // debtCost equals the (unstressed) baseline — Combined must differ
+    // from it specifically because of the added rate stress, not just
+    // because of the price change (which itself does not move debtCost).
+    expect(combinedDebtCost).not.toBeCloseTo(priceOnlyDebtCost ?? NaN, 2);
+  });
+
+  it('a V4 rate-increase scenario still reports a worse (lower) Health Factor than the unstressed baseline, via the real V4 debt projection', () => {
+    const portfolio = v4Portfolio();
+    runViableV4Strategy(portfolio);
+    render(<LoopScenarioSensitivity portfolio={portfolio} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Borrow-Rate Increase/i }));
+
+    const result = useLoopBuilderStore.getState().sensitivityResult;
+    expect(result).not.toBeNull();
+    if (result === null) return;
+    expect(result.scenario.healthFactor).toBeLessThanOrEqual(result.baseline.healthFactor);
+  });
+});
+
+/**
+ * V3 unaffected — V4 Readiness Audit §12 Stage 17. Same presets, same
+ * assertions the pre-existing "LoopScenarioSensitivity — presets" describe
+ * block above already covers for a V3 portfolio; this block exists
+ * specifically to make the "no V3 regression" claim an explicit,
+ * independently-readable test rather than an inference from unrelated
+ * passing tests.
+ */
+describe('LoopScenarioSensitivity — V3 sensitivity scenarios remain unchanged (Stage 17)', () => {
+  it('Borrow-Rate Increase still stresses scenario.borrowApr for a V3 portfolio, producing a real debtCost difference from baseline', () => {
+    runViableStrategy();
+    render(<LoopScenarioSensitivity portfolio={validPortfolio()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Borrow-Rate Increase/i }));
+
+    const result = useLoopBuilderStore.getState().sensitivityResult;
+    expect(result).not.toBeNull();
+    if (result === null) return;
+    expect(result.scenario.debtCost).not.toBeCloseTo(result.baseline.debtCost, 2);
+  });
+
+  it('Combined Stress still applies both stresses for a V3 portfolio', () => {
+    runViableStrategy();
+    render(<LoopScenarioSensitivity portfolio={validPortfolio()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /BTC Price Decline/i }));
+    const priceOnlyDebtCost = useLoopBuilderStore.getState().sensitivityResult?.scenario.debtCost;
+
+    fireEvent.click(screen.getByRole('button', { name: /Combined Stress/i }));
+    const combinedDebtCost = useLoopBuilderStore.getState().sensitivityResult?.scenario.debtCost;
+
+    expect(combinedDebtCost).not.toBeCloseTo(priceOnlyDebtCost ?? NaN, 2);
+  });
+});

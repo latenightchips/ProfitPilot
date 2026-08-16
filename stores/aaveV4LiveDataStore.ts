@@ -27,8 +27,22 @@ import type { AaveV4PositionApiResponse } from '@/app/api/aave/v4-position/route
  * **"On API failure, do not erase existing data"** — identical
  * reasoning to `useAaveLiveDataStore`'s own header comment: every
  * error-path `set()` call below omits `engineInputs`/`userAddress`/
- * `debtAsset` entirely, so whatever was last successfully fetched stays
- * in state under an `'error'` status.
+ * `debtAsset`/`lastFetchedAt` entirely, so whatever was last successfully
+ * fetched (and when) stays in state under an `'error'` status.
+ *
+ * **`lastFetchedAt` (V4 Readiness Audit §12 Stage 17)** — the ISO 8601
+ * instant of the last *successful* fetch, `null` until one has ever
+ * landed. V4 has no per-field "as-of" timestamp the way a V3 price
+ * candidate does (`services/market/quote.ts`'s own `RawPriceCandidate.timestamp`,
+ * whose age is what `normalizeMarketQuote` actually classifies) — a V4
+ * position read is a single synchronous on-chain snapshot with no
+ * independent origin/timestamp of its own. So instead of reusing that
+ * machinery directly, `utils/protocolStatus.ts` applies the same
+ * `FRESHNESS_THRESHOLD_MINUTES` window to this store's own fetch time,
+ * so the "Aave V4 · Live" badge cannot keep describing an old snapshot
+ * indefinitely just because no error has occurred to change the status.
+ * No polling was added to keep this "live" in real time — the check is
+ * simply re-evaluated, correctly, on whatever render happens to occur.
  */
 export type AaveV4LiveDataStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -45,6 +59,8 @@ export interface AaveV4LiveDataState {
   userAddress: `0x${string}` | null;
   debtAsset: string | null;
   errorMessage: string | null;
+  /** ISO 8601 instant of the last successful fetch — see header comment. */
+  lastFetchedAt: string | null;
   fetchAaveV4LiveData: (userAddress: `0x${string}`, debtAsset: string) => Promise<void>;
 }
 
@@ -58,6 +74,7 @@ export const useAaveV4LiveDataStore = create<AaveV4LiveDataState>((set) => ({
   userAddress: null,
   debtAsset: null,
   errorMessage: null,
+  lastFetchedAt: null,
 
   fetchAaveV4LiveData: async (userAddress: `0x${string}`, debtAsset: string) => {
     const requestId = ++latestRequestId;
@@ -88,6 +105,7 @@ export const useAaveV4LiveDataStore = create<AaveV4LiveDataState>((set) => ({
       userAddress,
       debtAsset,
       errorMessage: null,
+      lastFetchedAt: new Date().toISOString(),
     });
   },
 }));

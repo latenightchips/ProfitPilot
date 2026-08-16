@@ -12,6 +12,7 @@ import {
   type LoopStrategyControlsFormValues,
   loopStrategyControlsSchema,
 } from '../types/loopStrategyControls';
+import { resolveBorrowRateAssumption } from '../utils/resolveBorrowRateAssumption';
 
 /**
  * Loop Strategy Controls — 06_TASKS.md M7-008 ("Implement Loop Strategy
@@ -55,11 +56,31 @@ import {
  *
  * **"Maximum LTV" and "Borrow-rate assumption" are real, wired
  * overrides**, pre-filled from the portfolio's own current
- * `protocol.maxLoanToValue`/`protocol.borrowApr` — see
+ * `protocol.maxLoanToValue` and (V3) `protocol.borrowApr` / (V4) the
+ * canonical `deriveAaveV4EffectiveBorrowRate` boundary — see
  * `services/loop/strategy.ts`'s own header comment for the Service-
  * layer substitution these two fields drive
- * (`maxLoanToValueOverride`/`borrowAprOverride`, both optional there;
- * always concretely supplied from this form).
+ * (`maxLoanToValueOverride`/`borrowAprOverride`, both optional there).
+ *
+ * **`borrowAprOverride` is submitted only once the rate field has been
+ * genuinely established — V4 Readiness Audit §12 Stage 17.** Unlike
+ * `maxLoanToValueOverride`, which `services/loop/strategy.ts` always
+ * treats as a deliberate override once this form exists at all, the rate
+ * field's *default displayed value* is not itself a user override — for
+ * a V4 portfolio it is `deriveAaveV4EffectiveBorrowRate`'s own live,
+ * canonical rate, which should keep tracking the real synced
+ * `v4DebtState` for as long as the user hasn't actually typed a rate.
+ * `rateEstablishedRef` (below) tracks exactly that: it flips to `true`
+ * only when the rate field's own `onChange` fires, or when an externally
+ * pushed `settings` object (a preset click) already carries a concrete
+ * `borrowAprOverride`. `handleFieldChange` — shared by every *other*
+ * field — omits `borrowAprOverride` from `nextSettings` entirely while
+ * the ref is still `false`, so editing, say, Maximum Number of Loops
+ * cannot silently freeze the displayed default rate into a permanent
+ * override; `services/loop/strategy.ts`'s own Stage 15 fallback
+ * (`settings.borrowAprOverride === undefined`) then keeps deriving the
+ * real V4 rate on every run, exactly as if this form had never touched
+ * the rate field at all.
  *
  * **Per-field validation errors now carry `aria-describedby`/
  * `aria-invalid` (06_TASKS.md M9-026 "Audit Form Accessibility")** —
@@ -143,7 +164,7 @@ function defaultFormValues(portfolio: ApplicationPortfolio): LoopStrategyControl
     maxLoops: 3,
     minHealthFactor: 1.5,
     maxLoanToValue: toPercentInput(portfolio.protocol.maxLoanToValue),
-    borrowRateAssumption: toPercentInput(portfolio.protocol.borrowApr),
+    borrowRateAssumption: toPercentInput(resolveBorrowRateAssumption(portfolio) ?? 0),
   };
 }
 
@@ -181,6 +202,12 @@ export function LoopStrategyControls({
   const syncActivePortfolio = useLoopBuilderStore((state) => state.syncActivePortfolio);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPushedSettingsRef = useRef<LoopStrategySettings | null>(null);
+  // V4 Readiness Audit §12 Stage 17 — see this file's own header comment
+  // ("borrowAprOverride is submitted only once...") for the full
+  // reasoning. `false` means the displayed rate is still an auto-seeded
+  // default (V3's `protocol.borrowApr`, or V4's live canonical rate),
+  // never a real user override.
+  const rateEstablishedRef = useRef(false);
 
   const {
     register,
@@ -222,6 +249,7 @@ export function LoopStrategyControls({
     }
     cancelPendingPush();
     lastPushedSettingsRef.current = settings;
+    rateEstablishedRef.current = settings.borrowAprOverride !== undefined;
     reset(toFormValues(settings));
   }, [settings, reset]);
 
@@ -238,7 +266,9 @@ export function LoopStrategyControls({
         maxLoops: parsed.data.maxLoops,
         minHealthFactor: parsed.data.minHealthFactor,
         maxLoanToValueOverride: fromPercentInput(parsed.data.maxLoanToValue),
-        borrowAprOverride: fromPercentInput(parsed.data.borrowRateAssumption),
+        ...(rateEstablishedRef.current && {
+          borrowAprOverride: fromPercentInput(parsed.data.borrowRateAssumption),
+        }),
       };
       lastPushedSettingsRef.current = nextSettings;
       setSettings(nextSettings);
@@ -246,9 +276,21 @@ export function LoopStrategyControls({
     }, DEBOUNCE_MS);
   }
 
+  // V4 Readiness Audit §12 Stage 17 — the rate field's own `onChange`,
+  // wrapping `handleFieldChange` instead of registering it directly.
+  // Establishing the ref here (before the shared debounce even starts)
+  // means the very edit that touches this field is itself included as a
+  // real override, not dropped by the `rateEstablishedRef.current`
+  // gate above.
+  function handleRateFieldChange() {
+    rateEstablishedRef.current = true;
+    handleFieldChange();
+  }
+
   function handleReset() {
     cancelPendingPush();
     lastPushedSettingsRef.current = null;
+    rateEstablishedRef.current = false;
     reset(defaultFormValues(portfolio));
     resetLoopBuilder();
   }
@@ -355,7 +397,7 @@ export function LoopStrategyControls({
           step="any"
           {...register('borrowRateAssumption', {
             valueAsNumber: true,
-            onChange: handleFieldChange,
+            onChange: handleRateFieldChange,
           })}
           aria-invalid={errors.borrowRateAssumption ? 'true' : undefined}
           aria-describedby={errors.borrowRateAssumption ? 'borrowRateAssumption-error' : undefined}

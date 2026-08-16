@@ -36,7 +36,12 @@ export {
   type PortfolioActionSimulationResult,
   simulatePortfolioAction,
 } from './portfolioAction';
-export { simulateScenario, type SimulationResult, type SimulationScenario } from './scenario';
+export {
+  type AaveV4RateStress,
+  simulateScenario,
+  type SimulationResult,
+  type SimulationScenario,
+} from './scenario';
 export type {
   PriceScenarioInput,
   ScenarioComparisonResult,

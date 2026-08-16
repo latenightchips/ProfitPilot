@@ -16,6 +16,7 @@ import {
   LoopStrategyExport,
   LoopStrategyLibrary,
   LoopStrategySummary,
+  resolveBorrowRateAssumption,
   SaveLoopStrategyForm,
 } from '@/features/loop-builder';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
@@ -160,13 +161,27 @@ export function LoopBuilderPageClient() {
               />
             </div>
             <div className="flex flex-col gap-2 border-t border-border pt-4">
+              {/*
+                V4 Readiness Audit §12 Stage 17 — `borrowRateAssumption`
+                now falls back to `resolveBorrowRateAssumption` (V3's
+                `protocol.borrowApr`, or V4's canonical
+                `deriveAaveV4EffectiveBorrowRate`) instead of the raw
+                legacy scalar, so a preset click on a V4 portfolio bakes
+                in the real rate rather than an incorrect V3-shaped one.
+                Presets always set a complete, concrete
+                `LoopStrategySettings`, so — unlike
+                `LoopStrategyControls.tsx`'s own field-level
+                "established" tracking — there is no partial-edit case
+                to preserve here; the final `?? 0` only matters before
+                any V4 live data has synced.
+              */}
               <LoopPresets
                 portfolio={record.portfolio}
                 maxLoanToValue={
                   settings?.maxLoanToValueOverride ?? record.portfolio.protocol.maxLoanToValue
                 }
                 borrowRateAssumption={
-                  settings?.borrowAprOverride ?? record.portfolio.protocol.borrowApr
+                  settings?.borrowAprOverride ?? resolveBorrowRateAssumption(record.portfolio) ?? 0
                 }
               />
             </div>

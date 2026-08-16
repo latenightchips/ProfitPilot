@@ -6,6 +6,7 @@
  * occupant.
  */
 export {
+  FRESHNESS_THRESHOLD_MINUTES,
   type MarketQuote,
   type MarketQuoteAvailable,
   type MarketQuoteUnavailable,

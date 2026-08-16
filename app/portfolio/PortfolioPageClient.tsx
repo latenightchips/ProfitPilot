@@ -1188,6 +1188,7 @@ function DebtPositionForm({
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
   // Mismatch guard (USDT Support milestone): a live V3 protocol quote
   // fetched for a different asset than this portfolio's own `debt.asset`
   // must never be shown as "Aave V3 · Live" here — same protection as
@@ -1203,6 +1204,8 @@ function DebtPositionForm({
     v4DebtStateSet: portfolio.v4DebtState !== undefined,
     aaveMarketQuote: protocolMatchesDebtAsset ? marketQuote : null,
     aaveV4Status,
+    aaveV4LastFetchedAt,
+    now: new Date().toISOString(),
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);
   const formattedBorrowRate = formatDebtFormBorrowRate(portfolio, beforeSummary);

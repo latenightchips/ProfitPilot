@@ -368,3 +368,161 @@ describe('LoopStrategyControls — UX-06 percentage-scale round-trip (no double 
     expect(useLoopBuilderStore.getState().settings?.minHealthFactor).toBe(2);
   });
 });
+
+/**
+ * V4 canonical borrow-rate default and override discipline — V4
+ * Readiness Audit §12 Stage 17 (Part 1). Before this stage,
+ * `defaultFormValues` seeded this field from the raw legacy
+ * `portfolio.protocol.borrowApr`, and `handleFieldChange` always
+ * submitted whatever the field currently displayed as a permanent
+ * `borrowAprOverride` — so editing e.g. Maximum Number of Loops on a V4
+ * portfolio silently froze the wrong V3-shaped rate into
+ * `LoopStrategySettings`, permanently defeating `services/loop/strategy.ts`'s
+ * own Stage 15 fallback (`settings.borrowAprOverride === undefined`).
+ */
+describe('LoopStrategyControls — V4 canonical borrow rate default and override discipline (Stage 17)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return {
+      ...validPortfolio(),
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    };
+  }
+
+  it('defaults the rate field to the canonical V4 effective borrow rate, not the raw legacy protocol.borrowApr', () => {
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+    const input = screen.getByLabelText('Borrow interest rate assumption (%)', {
+      exact: false,
+    }) as HTMLInputElement;
+    // Same Stage 10/15/16 regression vector reused by CsvExporter.test.ts
+    // and recommendations.test.ts: annualCost 1100 / totalDebt 20500 ≈
+    // 5.365853658536585%, never the legacy protocol.borrowApr (5%).
+    expect(Number(input.value)).toBeCloseTo(5.365853658536585, 6);
+  });
+
+  it('editing an unrelated field (Maximum Number of Loops) does not inject a legacy V3 rate override into settings', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(2);
+    expect(state.settings?.borrowAprOverride).toBeUndefined();
+  });
+
+  it('an explicit user edit to the rate field still produces a real borrowAprOverride', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const rateInput = screen.getByLabelText('Borrow interest rate assumption (%)', {
+      exact: false,
+    });
+    await user.clear(rateInput);
+    await user.type(rateInput, '8');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.borrowAprOverride).toBe(0.08);
+  });
+
+  it('once established, a later unrelated-field edit preserves the explicit rate override rather than dropping it', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const rateInput = screen.getByLabelText('Borrow interest rate assumption (%)', {
+      exact: false,
+    });
+    await user.clear(rateInput);
+    await user.type(rateInput, '8');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useLoopBuilderStore.getState().settings?.borrowAprOverride).toBe(0.08);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '4');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(4);
+    expect(state.settings?.borrowAprOverride).toBe(0.08);
+  });
+
+  it('a preset-style push (setSettings with a concrete borrowAprOverride) establishes the rate, so a later unrelated edit preserves it too', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    act(() => {
+      useLoopBuilderStore.getState().setSettings({
+        targetBorrowPercentage: 0.7,
+        maxLoops: 5,
+        minHealthFactor: 1.5,
+        maxLoanToValueOverride: 0.5,
+        borrowAprOverride: 0.09,
+      });
+    });
+    expect(
+      screen.getByLabelText('Borrow interest rate assumption (%)', { exact: false }),
+    ).toHaveValue(9);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.borrowAprOverride).toBe(0.09);
+  });
+
+  it('Reset Strategy re-derives the canonical V4 rate again (clears the established-override flag)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const rateInput = screen.getByLabelText('Borrow interest rate assumption (%)', {
+      exact: false,
+    });
+    await user.clear(rateInput);
+    await user.type(rateInput, '8');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useLoopBuilderStore.getState().settings?.borrowAprOverride).toBe(0.08);
+
+    await user.click(screen.getByRole('button', { name: 'Reset Strategy' }));
+    expect(useLoopBuilderStore.getState().settings).toBeNull();
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.borrowAprOverride).toBeUndefined();
+  });
+});
+
+/**
+ * V3 unaffected — V4 Readiness Audit §12 Stage 17. Same "editing an
+ * unrelated field" scenario as the V4 describe block above, proving the
+ * `rateEstablishedRef` gate change has no observable effect on a V3 (or
+ * unset) portfolio's own already-correct behavior: `borrowAprOverride`
+ * comes back `undefined` either way, and `services/loop/strategy.ts`'s
+ * own `engineInput.protocol.borrowApr` already falls back to the real
+ * portfolio rate when it is, so the calculated result is unchanged.
+ */
+describe('LoopStrategyControls — V3 unaffected by the V4 rate-override discipline change (Stage 17)', () => {
+  it('editing an unrelated field on a V3 portfolio still reaches the Service with the same result as before', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(2);
+    expect(state.settings?.borrowAprOverride).toBeUndefined();
+    expect(state.currentResult).not.toBeNull();
+  });
+});

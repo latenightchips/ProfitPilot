@@ -69,6 +69,7 @@ export function AaveProtocolVersionForm({
   const setProtocolVersion = usePortfolioStore((state) => state.setProtocolVersion);
   const setAaveV4Position = usePortfolioStore((state) => state.setAaveV4Position);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
 
   const version = portfolio.protocolVersion ?? 'v3';
 
@@ -91,6 +92,8 @@ export function AaveProtocolVersionForm({
     v4DebtStateSet: portfolio.v4DebtState !== undefined,
     aaveMarketQuote: null,
     aaveV4Status,
+    aaveV4LastFetchedAt,
+    now: new Date().toISOString(),
   });
 
   return (

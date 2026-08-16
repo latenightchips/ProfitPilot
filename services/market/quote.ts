@@ -75,8 +75,13 @@ import type { MappingResult } from '../shared/mappingResult';
 export type PriceOrigin = 'provider' | 'cache' | 'manual';
 export type PriceFreshness = 'fresh' | 'stale' | 'unavailable';
 
-/** `04_BUILD_GUIDE.md` "PRICE FRESHNESS": "Stale — Older than 5 minutes." */
-const FRESHNESS_THRESHOLD_MINUTES = 5;
+/**
+ * `04_BUILD_GUIDE.md` "PRICE FRESHNESS": "Stale — Older than 5 minutes."
+ * Exported (V4 Readiness Audit §12 Stage 17) so `utils/protocolStatus.ts`
+ * can apply the exact same threshold to V4's own `lastFetchedAt`-based
+ * staleness check, rather than a second, independently-chosen number.
+ */
+export const FRESHNESS_THRESHOLD_MINUTES = 5;
 
 /** `04_BUILD_GUIDE.md` "SERVICE FALLBACK ORDER": Live provider, then cache, then manual. */
 const FALLBACK_ORDER: readonly PriceOrigin[] = ['provider', 'cache', 'manual'];

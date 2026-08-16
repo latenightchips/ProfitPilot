@@ -89,6 +89,10 @@ beforeEach(() => {
     userAddress: null,
     debtAsset: null,
     errorMessage: null,
+    // V4 Readiness Audit §12 Stage 17 — defaults to "just fetched" so the
+    // existing `{ status: 'ready' }` override below still reads as
+    // fresh/live, not stale.
+    lastFetchedAt: new Date().toISOString(),
     fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
   });
   window.localStorage.clear();

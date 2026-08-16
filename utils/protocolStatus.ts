@@ -1,4 +1,4 @@
-import type { MarketQuote } from '@/services/market/quote';
+import { FRESHNESS_THRESHOLD_MINUTES, type MarketQuote } from '@/services/market/quote';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 
 import { type AaveDataStatus, deriveAaveDataStatus, formatAaveDataStatus } from './aaveDataStatus';
@@ -49,13 +49,35 @@ import { type AaveDataStatus, deriveAaveDataStatus, formatAaveDataStatus } from 
  *     badge and the calculation guard now describe the same real
  *     condition, not two independently-invented ones.
  *   - `'live'` — an address is set, the live-data store is `'ready'`,
- *     and the portfolio has a real `v4DebtState`.
+ *     the portfolio has a real `v4DebtState`, and the last successful
+ *     fetch is within `FRESHNESS_THRESHOLD_MINUTES`.
+ *   - `'stale'` — everything `'live'` requires, except the last
+ *     successful fetch (`aaveV4LastFetchedAt`) is older than
+ *     `FRESHNESS_THRESHOLD_MINUTES`, or was never recorded at all
+ *     (defensive: a `'ready'` status with no known fetch time cannot be
+ *     verified fresh, so it is never labeled `'live'`) — V4 Readiness
+ *     Audit §12 Stage 17. Reuses the same threshold V3's own
+ *     `normalizeMarketQuote` freshness rule already applies
+ *     (`services/market/quote.ts`'s `FRESHNESS_THRESHOLD_MINUTES`), just
+ *     against this store's own fetch time rather than a price
+ *     candidate's origin timestamp — see `stores/aaveV4LiveDataStore.ts`'s
+ *     own header comment for why V4 has no equivalent candidate/origin
+ *     concept to reuse the exact same code path. `'error'` already reads
+ *     "showing last known value" and is unaffected by this check — an
+ *     explicit provider error is a stronger, more specific signal than a
+ *     generic staleness label.
  */
 export type ProtocolStatusKind =
   | { version: 'v3'; status: AaveDataStatus }
   | {
       version: 'v4';
-      status: 'waiting-for-address' | 'loading' | 'live' | 'provider-error' | 'missing-debt-state';
+      status:
+        | 'waiting-for-address'
+        | 'loading'
+        | 'live'
+        | 'stale'
+        | 'provider-error'
+        | 'missing-debt-state';
     };
 
 export interface ProtocolStatusInput {
@@ -65,6 +87,16 @@ export interface ProtocolStatusInput {
   v4DebtStateSet: boolean;
   aaveMarketQuote: MarketQuote | null;
   aaveV4Status: AaveV4LiveDataStatus;
+  /** ISO 8601 instant of the V4 live-data store's last successful fetch, `null` if none has ever landed. */
+  aaveV4LastFetchedAt: string | null;
+  /** ISO 8601 instant to classify V4 freshness against — caller-supplied for determinism, mirroring `normalizeMarketQuote`'s own `now`. */
+  now: string;
+}
+
+function isV4DataStale(lastFetchedAt: string | null, now: string): boolean {
+  if (lastFetchedAt === null) return true;
+  const ageMinutes = (Date.parse(now) - Date.parse(lastFetchedAt)) / 60000;
+  return ageMinutes > FRESHNESS_THRESHOLD_MINUTES;
 }
 
 export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatusKind {
@@ -84,6 +116,9 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
   if (!input.v4DebtStateSet) {
     return { version: 'v4', status: 'missing-debt-state' };
   }
+  if (isV4DataStale(input.aaveV4LastFetchedAt, input.now)) {
+    return { version: 'v4', status: 'stale' };
+  }
   return { version: 'v4', status: 'live' };
 }
 
@@ -97,6 +132,8 @@ export function formatProtocolStatus(kind: ProtocolStatusKind): string {
       return 'Aave V4 · Loading';
     case 'live':
       return 'Aave V4 · Live';
+    case 'stale':
+      return 'Aave V4 · Stale';
     case 'provider-error':
       return 'Aave V4 · Provider error (showing last known value)';
     case 'missing-debt-state':

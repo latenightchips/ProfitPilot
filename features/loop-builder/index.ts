@@ -41,3 +41,4 @@ export { LoopStrategySummary } from './components/LoopStrategySummary';
 export { SaveLoopStrategyForm } from './components/SaveLoopStrategyForm';
 export * from './types/loopStrategyControls';
 export * from './utils/exportLoopStrategy';
+export { resolveBorrowRateAssumption } from './utils/resolveBorrowRateAssumption';
