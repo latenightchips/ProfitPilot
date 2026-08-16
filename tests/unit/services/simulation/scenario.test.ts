@@ -364,18 +364,18 @@ describe("simulateScenario — baseline Interest Cost matches the scenario's own
 });
 
 /**
- * Protocol/version dispatch — V4 Readiness Audit §12. `simulateScenario`
- * no longer imports `projectVariableDebt` from `engine/protocols/aaveV3`
- * directly; it resolves `portfolio.protocolVersion ?? 'v3'` and calls
- * `projectProtocolDebt`. These tests prove that refactor is
- * behavior-preserving for V3 (with and without the field explicitly set —
- * the "old persisted record" case has no such field at all) and that a V4
- * portfolio still fails closed rather than silently reusing V3's math or
- * computing with invented drawn/premium/riskPremium values — now via a
- * Service-level `AAVE_V4_SIMULATION_UNSUPPORTED` guard (Stage 2), since
- * the Engine's own V4 math (`engine/protocols/aaveV4`) is real but needs
- * inputs (`drawnDebt`, `premiumDebt`, `riskPremium`) this Service's
- * portfolio model doesn't have a source for.
+ * Protocol/version dispatch — V4 Readiness Audit §12, extended at Stage 8.
+ * `simulateScenario` no longer imports `projectVariableDebt` from
+ * `engine/protocols/aaveV3` directly; it resolves
+ * `portfolio.protocolVersion ?? 'v3'` and calls `projectProtocolDebt`.
+ * These tests prove that refactor is behavior-preserving for V3 (with and
+ * without the field explicitly set — the "old persisted record" case has
+ * no such field at all); that a `'v4'` portfolio with no synced
+ * `v4DebtState` (Stage 6/7) still fails closed, now with
+ * `AAVE_V4_DEBT_STATE_MISSING`; and that a `'v4'` portfolio WITH a real
+ * `v4DebtState` now genuinely dispatches to `engine/protocols/aaveV4`'s
+ * real math (Stage 8) — not a placeholder, not V3's formula reused, not
+ * an inference from `debt.balance`.
  */
 describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §12)', () => {
   function debtPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
@@ -487,8 +487,8 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
     });
   });
 
-  describe('V4 — fails closed at the Service layer, never silently falls back to V3 or fabricates inputs', () => {
-    it('an interest scenario on a protocolVersion: "v4" portfolio fails rather than returning a value', () => {
+  describe('V4 — fails closed with AAVE_V4_DEBT_STATE_MISSING when v4DebtState is absent (Stage 8)', () => {
+    it('an interest scenario on a protocolVersion: "v4" portfolio with no v4DebtState fails rather than returning a value', () => {
       const result = simulateScenario(
         debtPortfolio({ protocolVersion: 'v4' }),
         interestScenario,
@@ -497,10 +497,10 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       );
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_SIMULATION_UNSUPPORTED' });
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
     });
 
-    it('does not have a data field on the V4 failure result (no partial/placeholder result leaks through)', () => {
+    it('does not have a data field on the failure result (no partial/placeholder result leaks through)', () => {
       const result = simulateScenario(
         debtPortfolio({ protocolVersion: 'v4' }),
         interestScenario,
@@ -511,7 +511,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       expect('data' in result).toBe(false);
     });
 
-    it('the V4 failure is not the same error a genuinely invalid V3 input would produce (a real, distinct unsupported-protocol error, not a coincidental validation failure)', () => {
+    it('the missing-state failure is not the same error a genuinely invalid V3 input would produce (a real, distinct error, not a coincidental validation failure)', () => {
       const v4Result = simulateScenario(
         debtPortfolio({ protocolVersion: 'v4' }),
         interestScenario,
@@ -527,38 +527,213 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       expect(v4Result.ok).toBe(false);
       expect(invalidV3Result.ok).toBe(false);
       if (v4Result.ok || invalidV3Result.ok) return;
-      expect(v4Result.errors[0]?.code).toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
-      expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_SIMULATION_UNSUPPORTED');
+      expect(v4Result.errors[0]?.code).toBe('AAVE_V4_DEBT_STATE_MISSING');
+      expect(invalidV3Result.errors[0]?.code).not.toBe('AAVE_V4_DEBT_STATE_MISSING');
+    });
+  });
+
+  /**
+   * V4 Readiness Audit §12 Stage 8 — genuine dispatch to
+   * `engine/protocols/aaveV4`'s real math, proven with an exact
+   * regression vector already validated at the Engine layer
+   * (`tests/unit/engine/protocols/aaveV4/projectAaveV4Debt.test.ts`'s
+   * "an existing nonzero premiumDebt balance is carried forward" case:
+   * `drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05,
+   * riskPremium: 0.1, elapsedDays: 365` → `drawnDebt: 21000,
+   * premiumDebt: 600, totalDebt: 21600`), not a hand-derived
+   * approximation — so a Service-layer arithmetic mistake in wiring
+   * these fields through would show up as a precise, non-`toBeCloseTo`-
+   * forgiving mismatch.
+   */
+  describe('V4 — genuine mathematical integration with the real Engine when v4DebtState is present (Stage 8)', () => {
+    function v4DebtPortfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+      return debtPortfolio({
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        ...overrides,
+      });
+    }
+
+    const oneYearInterestScenario: SimulationScenario = {
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.09, // deliberately different from baseDrawnApr — see the "borrowApr is not applied" test below.
+    };
+
+    it('computes debtCost as exactly totalDebt(t) - (drawnDebt + premiumDebt) using the real Engine formula, not the V3 formula', () => {
+      const result = simulateScenario(v4DebtPortfolio(), oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // 21600 (projected totalDebt) - 20500 (20000 + 500 current) = 1100.
+      expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
     });
 
-    /**
-     * V4 Readiness Audit §12 Stage 6 isolation check. Stage 6 gives
-     * `ApplicationPortfolio` a real place to hold V4's live debt shape
-     * (`v4DebtState` — `services/portfolio/models.ts`) but deliberately
-     * does not wire it into this dispatch (see that type's own "Stage 6
-     * scope note"). This proves that addition alone changes nothing here
-     * — the guard below still keys only on `protocolVersion`, so a
-     * portfolio carrying real `v4DebtState` still fails exactly the same
-     * way until a later stage explicitly consumes it.
-     */
-    it('still fails closed even when v4DebtState is present — Stage 6 adds the data-model field only, Simulation dispatch wiring is a later stage', () => {
+    it('does not apply scenario.borrowApr to a V4 projection — the real baseDrawnApr/riskPremium are used unconditionally (documented boundary limitation)', () => {
+      const differentBorrowApr = simulateScenario(
+        v4DebtPortfolio(),
+        { ...oneYearInterestScenario, borrowApr: 0.99 },
+        '1 year',
+        'live',
+      );
+      const original = simulateScenario(
+        v4DebtPortfolio(),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(differentBorrowApr.ok).toBe(true);
+      expect(original.ok).toBe(true);
+      if (!differentBorrowApr.ok || !original.ok) return;
+      expect(differentBorrowApr.data.scenario.debtCost).toBe(original.data.scenario.debtCost);
+    });
+
+    it("baseline and scenario debtCost coincide for V4 (both project the same real v4DebtState forward by the same Holding Period) — only equity/healthFactor still respond to the scenario's price", () => {
+      const result = simulateScenario(v4DebtPortfolio(), oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.baseline.debtCost).toBeCloseTo(result.data.scenario.debtCost, 9);
+    });
+
+    it('projects the correct equity at the scenario price using the real projected V4 total debt', () => {
+      const result = simulateScenario(v4DebtPortfolio(), oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Collateral: 2 BTC @ $50,000 = $100,000. Projected total debt: $21,600.
+      expect(result.data.scenario.equity).toBeCloseTo(100000 - 21600, 6);
+    });
+
+    it('returns a genuine successful result, not a partial/placeholder one', () => {
+      const result = simulateScenario(v4DebtPortfolio(), oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
+      expect(result.data.comparison).toBeDefined();
+    });
+  });
+
+  describe('V4 — dispatch is keyed strictly by protocolVersion, never inferred from v4DebtState presence alone (Stage 8)', () => {
+    const V4_DEBT_STATE = {
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    };
+
+    it('a "v3" (or unset) portfolio still uses V3 math even when v4DebtState happens to be present (no accidental reuse of stale/incompatible state)', () => {
+      const withV4State = simulateScenario(
+        debtPortfolio({ v4DebtState: V4_DEBT_STATE }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      const withoutV4State = simulateScenario(debtPortfolio(), interestScenario, '1 year', 'live');
+      expect(withV4State.ok).toBe(true);
+      expect(withoutV4State.ok).toBe(true);
+      if (!withV4State.ok || !withoutV4State.ok) return;
+      // Byte-identical to the plain V3 case — v4DebtState is inert for a
+      // v3/unset portfolio, exactly as `debt.balance` is inert for a v4 one.
+      expect(withV4State.data.scenario).toEqual(withoutV4State.data.scenario);
+      expect(withV4State.data.baseline).toEqual(withoutV4State.data.baseline);
+    });
+
+    it('a "v4" portfolio never falls back to debt.balance-derived V3 math, even when debt.balance wildly disagrees with v4DebtState', () => {
       const result = simulateScenario(
         debtPortfolio({
+          debt: { asset: 'USDC', balance: 999999 },
           protocolVersion: 'v4',
-          v4DebtState: {
-            drawnDebt: 15000,
-            premiumDebt: 500,
-            baseDrawnApr: 0.05,
-            riskPremium: 0.01,
-          },
+          v4DebtState: V4_DEBT_STATE,
         }),
         interestScenario,
         '1 year',
         'live',
       );
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_SIMULATION_UNSUPPORTED' });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // If this had silently used debt.balance (999999), debtCost would be
+      // enormous and unrelated to the 1100 the real v4DebtState produces.
+      expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
     });
+
+    it('changing only protocolVersion from "v3" to "v4" on an otherwise-identical portfolio switches the dispatch (proves the key is protocolVersion, not any other field)', () => {
+      const v3Result = simulateScenario(
+        debtPortfolio({ v4DebtState: V4_DEBT_STATE }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      const v4Result = simulateScenario(
+        debtPortfolio({ protocolVersion: 'v4', v4DebtState: V4_DEBT_STATE }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(v3Result.ok).toBe(true);
+      expect(v4Result.ok).toBe(true);
+      if (!v3Result.ok || !v4Result.ok) return;
+      expect(v4Result.data.scenario.debtCost).not.toBeCloseTo(v3Result.data.scenario.debtCost, 2);
+    });
+  });
+
+  describe("V4 — portfolio identity isolation: one portfolio's v4DebtState never leaks into another's result (Stage 8)", () => {
+    it('two different v4 portfolios simulated independently each reflect only their own v4DebtState', () => {
+      const first = simulateScenario(
+        debtPortfolio({
+          protocolVersion: 'v4',
+          v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      const second = simulateScenario(
+        debtPortfolio({
+          protocolVersion: 'v4',
+          v4DebtState: { drawnDebt: 5000, premiumDebt: 0, baseDrawnApr: 0.1, riskPremium: 0 },
+        }),
+        interestScenario,
+        '1 year',
+        'live',
+      );
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(true);
+      if (!first.ok || !second.ok) return;
+      expect(first.data.scenario.debtCost).not.toBeCloseTo(second.data.scenario.debtCost, 2);
+      // second: 5000 * 1.10 = 5500 drawn, 0 premium (0% risk premium) -> debtCost 500.
+      expect(second.data.scenario.debtCost).toBeCloseTo(500, 6);
+    });
+
+    it('simulating one portfolio does not mutate the ApplicationPortfolio object passed in for another', () => {
+      const portfolioA = debtPortfolio({
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      });
+      const portfolioB = debtPortfolio({ protocolVersion: 'v3' });
+      simulateScenario(portfolioA, interestScenario, '1 year', 'live');
+      simulateScenario(portfolioB, interestScenario, '1 year', 'live');
+      expect(portfolioB.v4DebtState).toBeUndefined();
+      expect(portfolioB.protocolVersion).toBe('v3');
+    });
+  });
+
+  it('a "price" scenario remains unaffected by protocol version even when a real v4DebtState is present (still never calls debt projection at all)', () => {
+    const scenario: SimulationScenario = {
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+    };
+    const v3Result = simulateScenario(debtPortfolio(), scenario, 'Price drop', 'live');
+    const v4Result = simulateScenario(
+      debtPortfolio({
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      }),
+      scenario,
+      'Price drop',
+      'live',
+    );
+    expect(v3Result.ok).toBe(true);
+    expect(v4Result.ok).toBe(true);
+    if (!v3Result.ok || !v4Result.ok) return;
+    expect(v4Result.data.scenario).toEqual(v3Result.data.scenario);
   });
 });

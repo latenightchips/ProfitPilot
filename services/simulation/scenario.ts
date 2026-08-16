@@ -61,19 +61,42 @@
  * to the exact same, unmodified V3 projector: identical inputs, identical
  * outputs, identical `FormulaResult` metadata.
  *
- * **V4 has real Engine math now (Stage 2), but Simulation still can't call
- * it.** `engine/protocols/aaveV4`'s `projectAaveV4Debt` needs `drawnDebt`,
- * `premiumDebt`, and a resolved `riskPremium` fraction — none of which
- * `ApplicationPortfolio`/`PortfolioInput` represent (this Service's
- * single-collateral, single `debt.balance` model has no concept of
- * separate drawn/premium streams or a Risk Premium value). Rather than
- * inventing placeholder values for fields Simulation has no real source
- * for, a portfolio marked `'v4'` fails closed here, at the Service layer,
- * with a distinct `AAVE_V4_SIMULATION_UNSUPPORTED` error (see the
- * `protocolVersion !== 'v3'` guard below) — different from the Engine's
- * own `PROTOCOL_VERSION_UNSUPPORTED`/Stage 1's now-removed
- * `AAVE_V4_PROJECTION_NOT_IMPLEMENTED`, because the reason is specific to
- * this Service's data model, not to the Engine lacking an implementation.
+ * **V4 interest-scenario dispatch (V4 Readiness Audit §12 Stage 8) — real
+ * math now, not just a typed unsupported boundary.** `engine/protocols/aaveV4`'s
+ * `projectAaveV4Debt` needs `drawnDebt`, `premiumDebt`, `baseDrawnApr`, and
+ * `riskPremium` — Stage 6/7 gave `ApplicationPortfolio.v4DebtState` exactly
+ * those four fields, live-synced from real on-chain reads (never
+ * user-entered, never inferred). When `protocolVersion === 'v4'` AND
+ * `v4DebtState` is present, both `projectProtocolDebt` calls below dispatch
+ * to the V4 overload using `v4DebtState`'s own real values unchanged —
+ * still through the same single dispatcher Stage 1/2 established, no
+ * second V4 accrual implementation here. When `protocolVersion === 'v4'`
+ * but `v4DebtState` is `undefined` (no UI can set it yet, and no live
+ * sync has ever landed for this portfolio), this Service still fails
+ * closed, now with `AAVE_V4_DEBT_STATE_MISSING` — distinct from the
+ * Engine's own `PROTOCOL_VERSION_UNSUPPORTED`, because the reason is a
+ * missing *data source* on this specific portfolio, not a missing Engine
+ * implementation (there is one, and it runs whenever real data exists).
+ *
+ * **Known boundary limitation, reported rather than silently resolved:
+ * a V4 interest scenario's `scenario.borrowApr` is not applied.**
+ * `SimulationScenario`'s `type: 'interest'` shape carries one scalar
+ * `borrowApr` field — a stress-tested rate a V3 caller substitutes for
+ * the portfolio's own real `protocol.borrowApr`. V4's real accrual model
+ * is genuinely two-parameter (`baseDrawnApr` and `riskPremium`, which
+ * compound differently — premium accrues proportional to *drawn*
+ * interest, not as a second flat rate), and no audit finding or task
+ * defines how a single stress-tested scalar should map onto that pair.
+ * Rather than invent a mapping unilaterally, both the scenario-side and
+ * baseline-reproration-side V4 projections below use `v4DebtState`'s own
+ * real, currently-effective `baseDrawnApr`/`riskPremium` unconditionally
+ * — meaning a V4 interest scenario's own `debtCost` is identical to its
+ * reprorated baseline's (both project the same real state forward by the
+ * same `timeHorizonDays`); only `equity`/`healthFactor`/`liquidationDistance`
+ * still respond to the scenario's price movement, which remains fully
+ * wired. This is a real, incomplete corner — a genuine "rate stress test"
+ * for V4 needs a product decision this stage does not make — not a bug
+ * masked by a placeholder value.
  *
  * **Interest Cost comparison semantics (PT-12 follow-up round 3,
  * preserved and updated for compounding)**: the baseline `debtCost` set
@@ -107,6 +130,7 @@
  */
 import {
   type AaveProtocolVersion,
+  type AaveV4DebtProjection,
   calculateAnnualInterest,
   calculateCollateralValue,
   calculateEffectiveLeverage,
@@ -154,11 +178,11 @@ export interface SimulationResult {
 const BASELINE_LABEL = 'Current Portfolio';
 
 /**
- * Backward-compatible default (V4 Readiness Audit §12 Stage 1) —
- * `ApplicationPortfolio.protocolVersion` is not settable anywhere yet, so
- * every real portfolio resolves here. See `services/portfolio/models.ts`'s
- * own `protocolVersion` doc comment for the full backward-compatibility
- * reasoning.
+ * Backward-compatible default (V4 Readiness Audit §12 Stage 1) — every
+ * portfolio that has never had `setProtocolVersion` (Stage 5) called on
+ * it still has `protocolVersion: undefined` and resolves here. See
+ * `services/portfolio/models.ts`'s own `protocolVersion` doc comment for
+ * the full backward-compatibility reasoning.
  */
 const DEFAULT_PROTOCOL_VERSION: AaveProtocolVersion = 'v3';
 
@@ -180,6 +204,23 @@ function toScenarioSummary(
     debtCost: portfolioSummary.interestCost,
     leverage: portfolioSummary.leverage,
   };
+}
+
+/**
+ * Resolves the single "total debt" scalar the interest-scenario branch's
+ * shared downstream formulas need (`calculateNetWorth`/
+ * `calculateHealthFactor`/`calculateLiquidationDistance`/
+ * `calculatePortfolioGain`/`calculateEffectiveLeverage` all only ever
+ * wanted one number) from whichever shape `projectProtocolDebt` actually
+ * returned — V3's already-normalized `number`, or V4's
+ * `AaveV4DebtProjection`. Not a re-implementation of V4's accrual math
+ * (V4 Readiness Audit §12 Stage 8): `totalDebt` here is exactly the
+ * Engine's own already-summed field
+ * (`engine/protocols/aaveV4/projectAaveV4Debt.ts`'s own
+ * `newDrawnDebtRay + newPremiumDebtRay`), read, not recomputed.
+ */
+function projectedDebtBalance(value: number | AaveV4DebtProjection): number {
+  return typeof value === 'number' ? value : value.totalDebt;
 }
 
 function finalize(
@@ -280,14 +321,16 @@ export function simulateScenario(
   }
 
   // Interest-scenario debt projection needs `projectProtocolDebt` — see
-  // this file's header comment for why a `'v4'` portfolio fails closed
-  // here rather than calling the Engine's now-real V4 math with invented
-  // drawn/premium/riskPremium values this Service has no source for.
-  if (protocolVersion !== 'v3') {
+  // this file's header comment (Stage 8). A `'v4'` portfolio with no
+  // synced `v4DebtState` (Stage 6/7) still fails closed here — there is
+  // no drawn/premium/rate/riskPremium data to project from, and this
+  // Service never invents one.
+  const v4DebtState = portfolio.v4DebtState;
+  if (protocolVersion === 'v4' && v4DebtState === undefined) {
     const error = createApplicationError(
       'calculation',
-      'AAVE_V4_SIMULATION_UNSUPPORTED',
-      'Simulation does not yet support Aave V4 debt projection for interest scenarios — it requires drawn/premium debt and risk-premium inputs Simulation does not have access to yet.',
+      'AAVE_V4_DEBT_STATE_MISSING',
+      'Simulation requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
     );
     return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
   }
@@ -312,23 +355,48 @@ export function simulateScenario(
   warnings.push(...projectedCollateralValueStep.warnings);
 
   // Protocol/version-dispatched debt accrual — see this file's header
-  // comment. Not `simulateInterestScenario`/`calculateProratedInterest`
-  // (simple interest), which remain unchanged for any other caller.
-  const projectedDebtStep = formulaStep(
-    projectProtocolDebt({
-      protocolVersion,
-      currentDebt: engineInput.debt.balance,
-      borrowApr: scenario.borrowApr,
-      elapsedDays: scenario.timeHorizonDays,
-    }),
-    tracked,
-    sourceStatus,
-  );
+  // comment (Stage 8). Not `simulateInterestScenario`/
+  // `calculateProratedInterest` (simple interest), which remain unchanged
+  // for any other caller. `currentTotalDebt` is the value both this call
+  // and the baseline reproration below start from: `engineInput.debt.balance`
+  // for V3 (byte-identical to every call before Stage 8), or the
+  // portfolio's own live-synced `v4DebtState.drawnDebt + v4DebtState.premiumDebt`
+  // for V4 — the exact two already-known current-state numbers Stage 6/7
+  // populated, not a re-derivation of any accrual formula.
+  const currentTotalDebt =
+    protocolVersion === 'v4' && v4DebtState !== undefined
+      ? v4DebtState.drawnDebt + v4DebtState.premiumDebt
+      : engineInput.debt.balance;
+
+  const projectedDebtStep =
+    protocolVersion === 'v4' && v4DebtState !== undefined
+      ? formulaStep(
+          projectProtocolDebt({
+            protocolVersion: 'v4',
+            drawnDebt: v4DebtState.drawnDebt,
+            premiumDebt: v4DebtState.premiumDebt,
+            baseDrawnApr: v4DebtState.baseDrawnApr,
+            riskPremium: v4DebtState.riskPremium,
+            elapsedDays: scenario.timeHorizonDays,
+          }),
+          tracked,
+          sourceStatus,
+        )
+      : formulaStep(
+          projectProtocolDebt({
+            protocolVersion: 'v3',
+            currentDebt: engineInput.debt.balance,
+            borrowApr: scenario.borrowApr,
+            elapsedDays: scenario.timeHorizonDays,
+          }),
+          tracked,
+          sourceStatus,
+        );
   if (!projectedDebtStep.ok) return projectedDebtStep.failure;
   tracked = projectedDebtStep.tracked;
   warnings.push(...projectedDebtStep.warnings);
-  const projectedDebt = projectedDebtStep.value;
-  const accruedInterest = projectedDebt - engineInput.debt.balance;
+  const projectedDebt = projectedDebtBalance(projectedDebtStep.value);
+  const accruedInterest = projectedDebt - currentTotalDebt;
 
   const projectedPortfolio = {
     ...engineInput,
@@ -362,23 +430,43 @@ export function simulateScenario(
   // scenario side's own accrual formula (same protocol/version dispatch)
   // so both sides of the comparison stay apples-to-apples over the same
   // Holding Period, using the portfolio's own real current debt/rate
-  // rather than the scenario's own (possibly stress-tested) borrowApr.
-  const baselineProjectedDebtStep = formulaStep(
-    projectProtocolDebt({
-      protocolVersion,
-      currentDebt: baselineResult.data.debtValue,
-      borrowApr: engineInput.protocol.borrowApr,
-      elapsedDays: scenario.timeHorizonDays,
-    }),
-    tracked,
-    sourceStatus,
-  );
+  // rather than the scenario's own (possibly stress-tested) borrowApr. For
+  // V4 this starts from the same `currentTotalDebt`
+  // (`v4DebtState.drawnDebt + v4DebtState.premiumDebt`) as the scenario
+  // side above, not `baselineResult.data.debtValue` (which is
+  // `debt.balance`-derived and may not reflect the live-synced V4 state)
+  // — see this file's header comment for why `v4DebtState`'s own real
+  // `baseDrawnApr`/`riskPremium` are used unconditionally on both sides.
+  const baselineProjectedDebtStep =
+    protocolVersion === 'v4' && v4DebtState !== undefined
+      ? formulaStep(
+          projectProtocolDebt({
+            protocolVersion: 'v4',
+            drawnDebt: v4DebtState.drawnDebt,
+            premiumDebt: v4DebtState.premiumDebt,
+            baseDrawnApr: v4DebtState.baseDrawnApr,
+            riskPremium: v4DebtState.riskPremium,
+            elapsedDays: scenario.timeHorizonDays,
+          }),
+          tracked,
+          sourceStatus,
+        )
+      : formulaStep(
+          projectProtocolDebt({
+            protocolVersion: 'v3',
+            currentDebt: baselineResult.data.debtValue,
+            borrowApr: engineInput.protocol.borrowApr,
+            elapsedDays: scenario.timeHorizonDays,
+          }),
+          tracked,
+          sourceStatus,
+        );
   if (!baselineProjectedDebtStep.ok) return baselineProjectedDebtStep.failure;
   tracked = baselineProjectedDebtStep.tracked;
   warnings.push(...baselineProjectedDebtStep.warnings);
   const proratedBaselineSummary: ScenarioSummary = {
     ...baselineSummary,
-    debtCost: baselineProjectedDebtStep.value - baselineResult.data.debtValue,
+    debtCost: projectedDebtBalance(baselineProjectedDebtStep.value) - currentTotalDebt,
   };
 
   const liquidationDistanceStep = formulaStep(
