@@ -54,13 +54,16 @@ function buildOk(overrides: Record<string, unknown> = {}) {
 }
 
 /** See `buildDebtAndInterestPanel.test.ts`'s identical helper for the full reasoning. */
-function buildOkV4(v4DebtState?: {
-  drawnDebt: number;
-  premiumDebt: number;
-  baseDrawnApr: number;
-  riskPremium: number;
-}) {
-  const created = usePortfolioStore.getState().create(validInput());
+function buildOkV4(
+  v4DebtState?: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  },
+  overrides: Record<string, unknown> = {},
+) {
+  const created = usePortfolioStore.getState().create(validInput(overrides));
   if (!created.ok) throw new Error('setup failed');
   usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
   usePortfolioStore.getState().setAaveV4Position(created.data.id, {
@@ -162,5 +165,44 @@ describe('buildPortfolioComposition — V4 effective borrow rate (Stage 15)', ()
     const { portfolio, summary, marketFreshness, tracked } = buildOk();
     const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
     expect(composition.protocolParameters.formattedBorrowApr).toBe('5%');
+  });
+});
+
+/**
+ * Debt row "Quantity" for a V4 portfolio — V4 Readiness Audit §12 Stage
+ * 16. `debt.balance` deliberately disagrees with the real synced
+ * `v4DebtState` below, proving the displayed quantity uses the canonical
+ * total (`resolveCanonicalDebtBalance`), matching the row's own already-
+ * canonical `formattedPositionValue` sibling, not the stale legacy field.
+ */
+describe('buildPortfolioComposition — V4 canonical debt quantity (Stage 16)', () => {
+  it('derives the real canonical total from synced v4DebtState, not the deliberately-disagreeing legacy debt.balance', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOkV4(
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      { debt: { asset: 'USDC', balance: 999999 } },
+    );
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.debt.formattedQuantity).toBe('15,500');
+    expect(composition.debt.formattedQuantity).not.toBe('999,999');
+    // Matches its own sibling field, already canonical since Stage 9.
+    expect(composition.debt.formattedPositionValue).toBe('$15,500.00');
+  });
+
+  it('shows "—" (never a stale/fabricated number) when v4DebtState is absent from a V4 Portfolio/PortfolioSummary pair', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const v4PortfolioMissingState = { ...portfolio, protocolVersion: 'v4' as const };
+    const composition = buildPortfolioComposition(
+      v4PortfolioMissingState,
+      summary,
+      marketFreshness,
+      tracked,
+    );
+    expect(composition.debt.formattedQuantity).toBe('—');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still reads debt.balance directly', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.debt.formattedQuantity).toBe('20,000');
   });
 });

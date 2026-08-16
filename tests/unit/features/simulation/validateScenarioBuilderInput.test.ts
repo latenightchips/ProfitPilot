@@ -134,6 +134,58 @@ describe('validateScenarioBuilderInput — Negative Portfolio (collateral/debt d
   });
 });
 
+/**
+ * V4 canonical current debt — V4 Readiness Audit §12 Stage 16.
+ * `debt.balance` deliberately disagrees with the real synced
+ * `v4DebtState` below, proving both the repayment-limit and LTV checks
+ * use the canonical total (`resolveCanonicalDebtBalance`), not the stale
+ * legacy field.
+ */
+describe('validateScenarioBuilderInput — V4 canonical current debt (Stage 16)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return portfolio({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      ...overrides,
+    });
+  }
+
+  it('rejects a repayment that exceeds the canonical total (15500), even though it is far below the stale legacy debt.balance (999999)', () => {
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '-20000' }), v4Portfolio());
+    expect(errors.debtDelta).not.toBeNull();
+  });
+
+  it('accepts a repayment within the canonical total that a stale-999999-based check would have wrongly allowed alongside a far larger one', () => {
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '-15500' }), v4Portfolio());
+    expect(errors.debtDelta).toBeNull();
+  });
+
+  it('rejects an additional borrow that would push LTV above maxLoanToValue when computed from the canonical total', () => {
+    // 2 BTC * $50,000 = $100,000 collateral value; max LTV 0.75 → max debt $75,000.
+    // Canonical current debt $15,500 + $65,000 additional = $80,500, exceeding the $75,000 cap.
+    // A stale-999999-based check would have rejected this (and everything else) regardless.
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '65000' }), v4Portfolio());
+    expect(errors.debtDelta).not.toBeNull();
+  });
+
+  it('accepts an additional borrow that stays within the protocol limit when computed from the canonical total', () => {
+    // $15,500 + $10,000 = $25,500, well within the $75,000 cap — a
+    // stale-999999-based check would have wrongly rejected this as
+    // "exceeding" the (fictitious) current debt already past the cap.
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '10000' }), v4Portfolio());
+    expect(errors.debtDelta).toBeNull();
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still validates against the real legacy debt.balance', () => {
+    const errors = validateScenarioBuilderInput(
+      values({ debtDelta: '-25000' }),
+      portfolio({ debt: { asset: 'USDC', balance: 20000 } }),
+    );
+    expect(errors.debtDelta).not.toBeNull();
+  });
+});
+
 describe('validateScenarioBuilderInput — Borrow exceeds protocol limit', () => {
   it('rejects an additional borrow that would push LTV above maxLoanToValue', () => {
     // 2 BTC * $50,000 = $100,000 collateral value; max LTV 0.75 → max debt $75,000.

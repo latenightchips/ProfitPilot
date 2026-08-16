@@ -8,6 +8,7 @@ import {
   type ExitTarget,
   persistenceService,
   planExit,
+  resolveCanonicalDebtBalance,
   type ServiceMetadata,
 } from '@/services';
 import type { StrategyWarning } from '@/types/strategy';
@@ -266,6 +267,14 @@ const INITIAL_STATE: ExitPlannerStoreState = {
   workingPortfolioId: null,
 };
 
+/**
+ * `currentDebt` must be the portfolio's CANONICAL current total debt
+ * (`resolveCanonicalDebtBalance` — V4 Readiness Audit §12 Stage 16), not
+ * the raw legacy `debt.balance` field directly: for `'partialDebtRepayment'`
+ * below, a stale `debt.balance` that disagrees with a V4 portfolio's real
+ * synced `v4DebtState` would compute a wrong `targetDebt`, upstream of
+ * `planExit`'s own already-correct canonical math.
+ */
 function resolveExitTarget(
   exitType: ExitPlannerType,
   targetInputs: ExitPlannerTargetInputs,
@@ -358,7 +367,11 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       const { exitType, targetInputs } = get();
       if (exitType === null) return;
 
-      const target = resolveExitTarget(exitType, targetInputs ?? {}, portfolio.debt.balance);
+      const target = resolveExitTarget(
+        exitType,
+        targetInputs ?? {},
+        resolveCanonicalDebtBalance(portfolio),
+      );
       if (target === null) return;
 
       set({ status: 'calculating' });
@@ -393,7 +406,11 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       const { exitType, targetInputs } = get();
       if (exitType === null) return;
 
-      const target = resolveExitTarget(exitType, targetInputs ?? {}, portfolio.debt.balance);
+      const target = resolveExitTarget(
+        exitType,
+        targetInputs ?? {},
+        resolveCanonicalDebtBalance(portfolio),
+      );
       if (target === null) return;
 
       const currentPrice = portfolio.market.btcPriceUsd;

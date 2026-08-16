@@ -269,18 +269,41 @@ export function mapPersistencePortfolioToApplicationPortfolio(
  * inherits the guard transitively. `services/portfolio/exposure.ts` needs
  * no guard at all — `calculateExposure` only reads `collateral`/`market`,
  * never `debt`.
+ *
+ * **`resolveCanonicalDebtBalance` (V4 Readiness Audit §12 Stage 16)** —
+ * the sum below was extracted into its own named, exported function so
+ * every OTHER place in the codebase that needs "the portfolio's real
+ * current total debt" (not an Engine call, just this same plain sum) can
+ * reuse the identical, single source of truth instead of re-deriving it
+ * — Stage 16's own audit found several UI/Store consumers
+ * (`DebtPositionForm`'s edit delta, `exitPlannerStore`'s partial-repayment
+ * target, `ApplyLoopAsSimulation`'s simulation delta, Scenario Builder
+ * validation, the Portfolios list "No debt" badge, the Dashboard's debt
+ * quantity display, and CSV/exit-plan export) that had each been reading
+ * the legacy `debt.balance` field directly, independent of this function,
+ * and could therefore disagree with it. No new V4 math: this is the exact
+ * same `drawnDebt + premiumDebt` sum `mapApplicationPortfolioToEngineInput`
+ * itself already performed — moving it to its own function changes no
+ * behavior here, only makes the "current total debt" derivation reusable
+ * and impossible to duplicate incorrectly elsewhere. Stays infallible,
+ * for the same reason `mapApplicationPortfolioToEngineInput` itself does
+ * (see this comment's own "Still infallible by design" section above) —
+ * callers that need fail-closed behavior on a missing `v4DebtState` still
+ * enforce that themselves, exactly as every existing caller of this
+ * chokepoint already does.
  */
+export function resolveCanonicalDebtBalance(application: ApplicationPortfolio): number {
+  return application.protocolVersion === 'v4' && application.v4DebtState !== undefined
+    ? application.v4DebtState.drawnDebt + application.v4DebtState.premiumDebt
+    : application.debt.balance;
+}
+
 export function mapApplicationPortfolioToEngineInput(
   application: ApplicationPortfolio,
 ): PortfolioInput {
-  const canonicalDebtBalance =
-    application.protocolVersion === 'v4' && application.v4DebtState !== undefined
-      ? application.v4DebtState.drawnDebt + application.v4DebtState.premiumDebt
-      : application.debt.balance;
-
   return {
     collateral: application.collateral,
-    debt: { asset: application.debt.asset, balance: canonicalDebtBalance },
+    debt: { asset: application.debt.asset, balance: resolveCanonicalDebtBalance(application) },
     market: application.market,
     protocol: application.protocol,
   };

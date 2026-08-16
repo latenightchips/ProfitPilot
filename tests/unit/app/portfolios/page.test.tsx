@@ -121,6 +121,50 @@ describe('PortfoliosPage — with portfolios (M4-004)', () => {
     expect(screen.queryByText('No debt')).not.toBeInTheDocument();
   });
 
+  /**
+   * "No debt" badge for a V4 portfolio — V4 Readiness Audit §12 Stage
+   * 16. `debt.balance` deliberately disagrees with the real synced
+   * `v4DebtState` below, proving the badge reflects the canonical total
+   * (`resolveCanonicalDebtBalance`), not the stale legacy field.
+   */
+  it('shows "No debt" for a V4 portfolio whose canonical v4DebtState total is zero, even though the stale legacy debt.balance is not', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'V4 Zero Debt', debt: { asset: 'USDC', balance: 999999 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.data.id, {
+      userAddress: '0x1234567890123456789012345678901234567890',
+    });
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    render(<PortfoliosPage />);
+    expect(screen.getByText('No debt')).toBeInTheDocument();
+  });
+
+  it('does not show "No debt" for a V4 portfolio whose canonical v4DebtState total is nonzero, even though the stale legacy debt.balance is zero', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ name: 'V4 Nonzero Debt', debt: { asset: 'USDC', balance: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.data.id, {
+      userAddress: '0x1234567890123456789012345678901234567890',
+    });
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    render(<PortfoliosPage />);
+    expect(screen.queryByText('No debt')).not.toBeInTheDocument();
+  });
+
   it('lists more recently updated portfolios first', () => {
     const first = usePortfolioStore.getState().create(validInput({ name: 'First' }));
     const second = usePortfolioStore.getState().create(validInput({ name: 'Second' }));

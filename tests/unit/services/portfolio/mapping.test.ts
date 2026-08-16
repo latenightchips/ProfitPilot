@@ -8,6 +8,7 @@ import {
   mapPersistencePortfolioToApplicationPortfolio,
   projectAaveV4AnnualInterestCost,
   projectAaveV4InterestCost,
+  resolveCanonicalDebtBalance,
 } from '@/services/portfolio/mapping';
 import type {
   AaveV4DebtState,
@@ -340,6 +341,65 @@ describe('mapApplicationPortfolioToEngineInput — canonical V4 debt (Stage 9)',
         supplyApr: 0.02,
       },
     });
+  });
+});
+
+/**
+ * `resolveCanonicalDebtBalance` — V4 Readiness Audit §12 Stage 16. The
+ * exact same `drawnDebt + premiumDebt` sum `mapApplicationPortfolioToEngineInput`
+ * already performs, extracted so every other V4 consumer (Debt form edit
+ * delta, Exit Planner target, Loop→Simulation delta, Scenario Builder
+ * validation, Portfolios list badge, Dashboard debt quantity, CSV/exit
+ * export) can reuse the identical derivation instead of reading
+ * `debt.balance` directly.
+ */
+describe('resolveCanonicalDebtBalance (Stage 16)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns drawnDebt + premiumDebt for a V4 portfolio with synced state, ignoring a deliberately disagreeing debt.balance', () => {
+    const application = v4Application({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(15500);
+    expect(resolveCanonicalDebtBalance(application)).not.toBe(999999);
+  });
+
+  it('matches mapApplicationPortfolioToEngineInput exactly for the same portfolio (single source of truth, not a parallel derivation)', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(
+      mapApplicationPortfolioToEngineInput(application).debt.balance,
+    );
+  });
+
+  it('falls back to the legacy debt.balance (infallible, no substitution) when v4DebtState is missing', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    expect(resolveCanonicalDebtBalance(application)).toBe(20000);
+  });
+
+  it('never substitutes for a V3 (or unset) portfolio, even when v4DebtState happens to be present (no cross-inference)', () => {
+    const withStrayState = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(resolveCanonicalDebtBalance(withStrayState)).toBe(20000);
+    expect(resolveCanonicalDebtBalance({ ...withStrayState, protocolVersion: 'v3' })).toBe(20000);
   });
 });
 

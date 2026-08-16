@@ -1,8 +1,9 @@
-import type {
-  ApplicationPortfolio,
-  ExitPlanResult,
-  ServiceMetadata,
-  UnavailableExitCost,
+import {
+  type ApplicationPortfolio,
+  type ExitPlanResult,
+  resolveCanonicalDebtBalance,
+  type ServiceMetadata,
+  type UnavailableExitCost,
 } from '@/services';
 import type { ExitPlannerTargetInputs, ExitPlannerType } from '@/stores/exitPlannerStore';
 import type { StrategyWarning } from '@/types/strategy';
@@ -22,7 +23,14 @@ import type { StrategyWarning } from '@/types/strategy';
  * `ExitPlanLibrary.tsx`'s own Load button first).
  *
  * **"Current portfolio state" → `portfolio.collateral`/`.debt`/
- * `.market` (the live prop, unmodified). "Targets" → `exitType` +
+ * `.market` (the live prop, unmodified) — except `debtBalance`, which is
+ * `resolveCanonicalDebtBalance(portfolio)` (V4 Readiness Audit §12 Stage
+ * 16), not raw `debt.balance` directly: a successful `result` here always
+ * implies `planExit` already resolved the real synced V4 debt (it fails
+ * closed otherwise, per Stage 10), so exporting the possibly-stale legacy
+ * field instead would make this snapshot disagree with the plan's own
+ * `expectedResult.remainingDebt`, computed from that same canonical
+ * total. "Targets" → `exitType` +
  * `targetInputs` (the exact values the user configured). "Actions" →
  * `expectedResult`'s own `btcSold`/`debtRepaid` — the concrete
  * transaction the Engine computed, not re-derived. "Expected result" →
@@ -96,7 +104,7 @@ export function buildExitPlanExportPayload(
     targetInputs,
     currentPortfolioState: {
       collateralQuantity: portfolio.collateral.quantity,
-      debtBalance: portfolio.debt.balance,
+      debtBalance: resolveCanonicalDebtBalance(portfolio),
       btcPriceUsd: portfolio.market.btcPriceUsd,
     },
     expectedResult:

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { resolveCanonicalDebtBalance } from '@/services';
 import { type PortfolioRecord, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
@@ -194,12 +195,16 @@ function PortfolioRow({
         )}
         <span>Storage: {saveStatus}</span>
       </div>
-      {(portfolio.collateral.quantity === 0 || portfolio.debt.balance === 0) && (
+      {/* V4 Readiness Audit §12 Stage 16 — the canonical current total
+          (real synced v4DebtState for V4, unchanged debt.balance for V3),
+          not the raw legacy field directly, so this badge doesn't
+          disagree with the correct "Debt: ..." figure shown above it. */}
+      {(portfolio.collateral.quantity === 0 || resolveCanonicalDebtBalance(portfolio) === 0) && (
         <div className="flex gap-2 text-xs text-muted-foreground">
           {portfolio.collateral.quantity === 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5">No collateral</span>
           )}
-          {portfolio.debt.balance === 0 && (
+          {resolveCanonicalDebtBalance(portfolio) === 0 && (
             <span className="rounded-full bg-muted px-2 py-0.5">No debt</span>
           )}
         </div>

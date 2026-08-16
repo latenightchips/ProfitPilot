@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { formatHealthFactor } from '@/components/strategy/format';
-import { type ApplicationPortfolio } from '@/services';
+import { type ApplicationPortfolio, resolveCanonicalDebtBalance } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -35,10 +35,19 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * final state versus the current portfolio is — `collateralDelta`/
  * `debtDelta` are computed here as the difference between
  * `strategy.finalCollateral.quantity`/`finalDebt` and the active
- * portfolio's own current `collateral.quantity`/`debt.balance`, then
- * passed to the already-public `runPortfolioActionSimulation`
+ * portfolio's own current `collateral.quantity`/canonical current debt,
+ * then passed to the already-public `runPortfolioActionSimulation`
  * (`stores/simulationStore.ts`, M6-008) unchanged. Zero new types, zero
  * Service/Engine changes.
+ *
+ * **`debtDelta` uses `resolveCanonicalDebtBalance` (V4 Readiness Audit
+ * §12 Stage 16), not raw `debt.balance`.** `strategy.finalDebt` already
+ * comes from `planLoopStrategy`, which itself resolves a V4 portfolio's
+ * starting debt canonically (Stage 9/15) — subtracting the raw, possibly
+ * stale legacy `debt.balance` from it would mix a canonical figure with a
+ * non-canonical one and produce a wrong delta, silently misallocating the
+ * resulting repay/borrow simulation for any V4 portfolio whose
+ * `debt.balance` has drifted from its real synced total.
  *
  * **This is the one deliberate, narrow exception within
  * `features/loop-builder/**` that imports `useSimulationStore`.**
@@ -72,7 +81,7 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
     if (currentResult === null || currentResult.strategy === null) return;
     const collateralDelta =
       currentResult.strategy.finalCollateral.quantity - portfolio.collateral.quantity;
-    const debtDelta = currentResult.strategy.finalDebt - portfolio.debt.balance;
+    const debtDelta = currentResult.strategy.finalDebt - resolveCanonicalDebtBalance(portfolio);
     runPortfolioActionSimulation(portfolio, { collateralDelta, debtDelta });
   }
 

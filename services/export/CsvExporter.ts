@@ -38,8 +38,46 @@
  * in the overwhelming common case (none legitimately starts with one of
  * these characters), and the one field that could (`Name`) is exactly
  * the field this guard exists for.
+ *
+ * **"Debt Balance (USD)"/"Borrow APR" columns (V4 Readiness Audit §12
+ * Stage 16)** — previously always `portfolio.debt.balance`/
+ * `portfolio.protocol.borrowApr`, the legacy V3-shaped scalars, exported
+ * as-is for every portfolio regardless of protocol version. For a V4
+ * portfolio these can silently disagree with the real synced
+ * `v4DebtState` (debt balance never reconciled by live sync; the borrow
+ * rate has no defined relationship to V4's real two-parameter rate — see
+ * `services/portfolio/mapping.ts`'s `resolveCanonicalDebtBalance`/
+ * `deriveAaveV4EffectiveBorrowRate` for the full reasoning). Both columns
+ * now resolve the real canonical value for V4, reusing those two
+ * functions directly rather than any new math, and fall back to this
+ * file's own existing `null` → `'Not available'` convention (`csvLine`
+ * below) when `v4DebtState` is required but absent — never a silently
+ * stale number in an exported financial record.
  */
+import {
+  deriveAaveV4EffectiveBorrowRate,
+  resolveCanonicalDebtBalance,
+} from '@/services/portfolio/mapping';
 import type { Portfolio } from '@/types/portfolio';
+
+/** No real Engine call precedes this export — the same "first call, no prior tracked version" case `services/recommendation/recommendations.ts` already established for this same function. */
+const EXPORT_SOURCE_STATUS = 'export';
+
+function resolveDebtBalanceForExport(portfolio: Portfolio): number | null {
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState === undefined) return null;
+  return resolveCanonicalDebtBalance(portfolio);
+}
+
+function resolveBorrowAprForExport(portfolio: Portfolio): number | null {
+  if (portfolio.protocolVersion !== 'v4') return portfolio.protocol.borrowApr;
+  if (portfolio.v4DebtState === undefined) return null;
+  const rateStep = deriveAaveV4EffectiveBorrowRate(
+    portfolio.v4DebtState,
+    null,
+    EXPORT_SOURCE_STATUS,
+  );
+  return rateStep.ok ? rateStep.value : null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
@@ -98,11 +136,11 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.collateral.asset,
       portfolio.collateral.quantity,
       portfolio.debt.asset,
-      portfolio.debt.balance,
+      resolveDebtBalanceForExport(portfolio),
       portfolio.market.btcPriceUsd,
       portfolio.protocol.maxLoanToValue,
       portfolio.protocol.liquidationThreshold,
-      portfolio.protocol.borrowApr,
+      resolveBorrowAprForExport(portfolio),
       portfolio.protocol.supplyApr,
       portfolio.archivedAt !== null,
       portfolio.createdAt,

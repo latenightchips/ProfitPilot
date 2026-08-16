@@ -41,6 +41,15 @@
  * (`buildDebtAndInterestPanel`/`buildPortfolioComposition` on the
  * Dashboard, `PortfolioPageClient`'s Debt form, `services/loop/strategy.ts`,
  * `services/recommendation/recommendations.ts`) now calls this instead.
+ *
+ * **`resolveCanonicalDebtBalance` (V4 Readiness Audit §12 Stage 16)** —
+ * re-exported for the same reason again: every remaining consumer that
+ * read the legacy `debt.balance` scalar directly for "the portfolio's
+ * current total debt" (`DebtPositionForm`'s edit delta,
+ * `exitPlannerStore`'s partial-repayment target,
+ * `ApplyLoopAsSimulation`'s simulation delta, Scenario Builder
+ * validation, the Portfolios list "No debt" badge, the Dashboard's debt
+ * quantity, CSV/exit-plan export) now calls this instead.
  */
 export {
   type PortfolioAction,
@@ -58,6 +67,7 @@ export {
   type MappingFailure,
   type MappingResult,
   type MappingSuccess,
+  resolveCanonicalDebtBalance,
 } from './mapping';
 export type {
   AaveV4DebtState,

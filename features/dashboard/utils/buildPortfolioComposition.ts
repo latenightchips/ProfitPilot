@@ -4,7 +4,11 @@
  * (100% portfolio percentages and M5-012's no-new-code resolution, both
  * structural consequences of Conflict A).
  */
-import { deriveAaveV4EffectiveBorrowRate, type PortfolioSummary } from '@/services';
+import {
+  deriveAaveV4EffectiveBorrowRate,
+  type PortfolioSummary,
+  resolveCanonicalDebtBalance,
+} from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 
 import type { PortfolioComposition } from '../types/portfolioComposition';
@@ -39,6 +43,20 @@ function formatBorrowRate(
   return rateStep.ok ? formatPercent(rateStep.value) : '—';
 }
 
+/**
+ * Debt row "Quantity" — V4 Readiness Audit §12 Stage 16. Previously
+ * always `formatQuantity(portfolio.debt.balance)`, the legacy V3 scalar,
+ * inconsistent with this same row's own `formattedPositionValue` (already
+ * canonical via `summary.debtValue`) for a V4 portfolio whose
+ * `debt.balance` has drifted from its real synced total. `'—'` (never a
+ * stale number) when that state is required but absent — the same
+ * fail-closed convention `formatBorrowRate` above already established.
+ */
+function formatDebtQuantity(portfolio: Portfolio): string {
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState === undefined) return '—';
+  return formatQuantity(resolveCanonicalDebtBalance(portfolio));
+}
+
 export function buildPortfolioComposition(
   portfolio: Portfolio,
   summary: PortfolioSummary,
@@ -56,7 +74,7 @@ export function buildPortfolioComposition(
     },
     debt: {
       assetLabel: portfolio.debt.asset,
-      formattedQuantity: formatQuantity(portfolio.debt.balance),
+      formattedQuantity: formatDebtQuantity(portfolio),
       formattedCurrentPrice: '$1.00 (stablecoin)',
       formattedPositionValue: formatCurrency(summary.debtValue),
       formattedPortfolioPercentage: ALWAYS_100_PERCENT,

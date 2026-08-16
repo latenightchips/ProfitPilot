@@ -1271,3 +1271,84 @@ describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
     expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(30000);
   });
 });
+
+/**
+ * Debt form canonical seed/delta — V4 Readiness Audit §12 Stage 16.
+ * `debt.balance` deliberately disagrees with the real synced
+ * `v4DebtState` below, proving the "Debt amount" field seeds from the
+ * canonical current total (`resolveCanonicalDebtBalance`) and the edit
+ * delta is computed against that same canonical base — the exact bug
+ * this stage fixed: a stale seed/base would misinterpret the user's
+ * intended edit and repay/derive the wrong amount.
+ */
+describe('PortfolioPage — Debt form canonical V4 seed/delta (Stage 16)', () => {
+  function disagreeingV4DebtState() {
+    return { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 };
+  }
+
+  it('seeds the "Debt amount" field from the canonical total (15,500), not the deliberately-disagreeing legacy debt.balance (999,999)', () => {
+    createAndSelectV4({ debt: { asset: 'USDC', balance: 999999 } }, disagreeingV4DebtState());
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(15500);
+  });
+
+  it('an unedited field is a genuine no-op (delta 0) against the canonical base, not a spurious borrow from the stale legacy balance', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 999999 } },
+      disagreeingV4DebtState(),
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    // If the stale 999999 were still used as the base, an unedited field
+    // (value 15500) would compute a large negative "repay" delta instead
+    // of a true no-op.
+    expect(
+      screen.queryByText(/Borrowing preview and apply are not available yet/),
+    ).not.toBeInTheDocument();
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4DebtState).toEqual(disagreeingV4DebtState());
+  });
+
+  it('a partial repay edit is computed against the canonical base and correctly premium-first allocated', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 999999 } },
+      disagreeingV4DebtState(),
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    // Repay $5,000 from the canonical 15,500 → 10,500 — clears the
+    // $500 premiumDebt first, then $4,500 of drawnDebt.
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '10500');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.debt.balance).toBe(10500);
+    expect(after.v4DebtState).toEqual({
+      drawnDebt: 10500,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — the field still seeds from the real legacy debt.balance', () => {
+    createAndSelect({ debt: { asset: 'USDC', balance: 20000 } });
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
+  });
+});

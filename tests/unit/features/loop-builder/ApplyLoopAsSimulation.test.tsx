@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApplyLoopAsSimulation } from '@/features/loop-builder';
 import type { ApplicationPortfolio } from '@/services';
@@ -110,5 +110,74 @@ describe('ApplyLoopAsSimulation — applying', () => {
       'href',
       '/simulation',
     );
+  });
+});
+
+/**
+ * `debtDelta` computation for a V4 portfolio — V4 Readiness Audit §12
+ * Stage 16. `debt.balance` deliberately disagrees with the real synced
+ * `v4DebtState` below, proving `debtDelta` is computed against the
+ * canonical current total (`resolveCanonicalDebtBalance`), not the stale
+ * legacy field — the exact bug this stage fixed: mixing a canonical
+ * `strategy.finalDebt` (Stage 9/15) with a stale legacy base would
+ * silently misallocate the resulting Simulation.
+ */
+describe('ApplyLoopAsSimulation — V4 canonical debtDelta (Stage 16)', () => {
+  it('computes debtDelta as finalDebt minus the canonical total (15500), not the deliberately-disagreeing legacy debt.balance (999999)', () => {
+    const portfolio = validPortfolio({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    const { currentResult } = useLoopBuilderStore.getState();
+    if (currentResult?.strategy === null || currentResult === null) {
+      throw new Error('setup failed: expected a viable strategy');
+    }
+    const expectedDebtDelta = currentResult.strategy.finalDebt - 15500;
+
+    const runPortfolioActionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioActionSimulation')
+      .mockImplementation(() => {});
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
+
+    expect(runPortfolioActionSimulation).toHaveBeenCalledTimes(1);
+    const [, input] = runPortfolioActionSimulation.mock.calls[0]!;
+    expect(input.debtDelta).toBe(expectedDebtDelta);
+    // If the stale 999999 were used instead, the delta would be a wildly
+    // different (and far more negative) number.
+    expect(input.debtDelta).not.toBe(currentResult.strategy.finalDebt - 999999);
+
+    runPortfolioActionSimulation.mockRestore();
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still computes debtDelta from the real legacy debt.balance', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    const { currentResult } = useLoopBuilderStore.getState();
+    if (currentResult?.strategy === null || currentResult === null) {
+      throw new Error('setup failed: expected a viable strategy');
+    }
+    const expectedDebtDelta = currentResult.strategy.finalDebt - portfolio.debt.balance;
+
+    const runPortfolioActionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioActionSimulation')
+      .mockImplementation(() => {});
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
+
+    const [, input] = runPortfolioActionSimulation.mock.calls[0]!;
+    expect(input.debtDelta).toBe(expectedDebtDelta);
+
+    runPortfolioActionSimulation.mockRestore();
   });
 });

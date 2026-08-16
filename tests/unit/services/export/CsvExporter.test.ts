@@ -46,6 +46,69 @@ describe('buildPortfolioPositionsCsv', () => {
 });
 
 /**
+ * "Debt Balance (USD)"/"Borrow APR" columns for a V4 portfolio — V4
+ * Readiness Audit §12 Stage 16. `debt.balance`/`protocol.borrowApr`
+ * deliberately disagree with the real synced `v4DebtState` below,
+ * proving the export uses the canonical values (`resolveCanonicalDebtBalance`/
+ * Stage 15's `deriveAaveV4EffectiveBorrowRate`), not the stale legacy
+ * fields.
+ */
+describe('buildPortfolioPositionsCsv — V4 canonical debt balance and borrow rate (Stage 16)', () => {
+  function sampleV4Portfolio(v4DebtState?: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  }): Portfolio {
+    return {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      ...(v4DebtState !== undefined && { v4DebtState }),
+    };
+  }
+
+  it('exports the canonical debt total and derived rate, not the deliberately-disagreeing legacy fields', () => {
+    const csv = buildPortfolioPositionsCsv([
+      sampleV4Portfolio({
+        drawnDebt: 20000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.1,
+      }),
+    ]);
+    const lines = csv.split('\n');
+    // Canonical total: 20000 + 500 = 20500 (never the stale 999999).
+    expect(lines[1]).toContain(',20500,');
+    expect(lines[1]).not.toContain('999999');
+    // Same Stage 10/15 regression vector: annualCost 1100 / totalDebt 20500 ≈ 0.05365853658536585.
+    expect(lines[1]).toContain('0.05365853658536585');
+    expect(lines[1]).not.toContain(',0.05,');
+  });
+
+  it('exports "Not available" for both columns when v4DebtState has not synced yet, never the stale legacy fields', () => {
+    const csv = buildPortfolioPositionsCsv([sampleV4Portfolio()]);
+    const lines = csv.split('\n');
+    const fields = lines[1]!.split(',');
+    // Debt Balance (USD) is column index 5, Borrow APR is column index 9
+    // (Portfolio ID, Name, Collateral Asset, Collateral Quantity, Debt
+    // Asset, Debt Balance, BTC Price, Max LTV, Liquidation Threshold, Borrow APR).
+    expect(fields[5]).toBe('Not available');
+    expect(fields[9]).toBe('Not available');
+    expect(csv).not.toContain('999999');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still exports the raw legacy fields directly', () => {
+    const csv = buildPortfolioPositionsCsv([samplePortfolio()]);
+    const lines = csv.split('\n');
+    expect(lines[1]).toContain(',20000,');
+    expect(lines[1]).toContain(',0.05,');
+  });
+});
+
+/**
  * 06_TASKS.md M9-034 ("Perform Input and Output Sanitization Review") —
  * a genuine CSV-injection gap found and fixed this batch:
  * `CsvExporter.ts`'s own header comment explains the guard;

@@ -14,6 +14,7 @@ import {
   deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
   type PortfolioSummary,
+  resolveCanonicalDebtBalance,
   type ServiceResult,
 } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
@@ -1083,8 +1084,16 @@ function DebtPositionForm({
   } = useForm<DebtManagementFormValues, unknown, DebtManagementInput>({
     resolver: zodResolver(debtManagementSchema),
     mode: 'onChange',
+    // V4 Readiness Audit §12 Stage 16 — seeds from the canonical current
+    // total (real synced v4DebtState for V4, unchanged legacy
+    // `debt.balance` for V3) rather than the raw legacy field directly,
+    // so a V4 portfolio whose `debt.balance` has drifted from its real
+    // synced total shows the REAL current debt in the editable field, not
+    // a stale one. See `onPreview`'s own `debtDelta` computation below,
+    // which must use the identical base for "no edit" to always mean
+    // `debtDelta === 0` regardless of how stale `debt.balance` is.
     defaultValues: {
-      debt: portfolio.debt,
+      debt: { asset: portfolio.debt.asset, balance: resolveCanonicalDebtBalance(portfolio) },
     },
   });
 
@@ -1112,7 +1121,11 @@ function DebtPositionForm({
 
   const onPreview = handleSubmit((data) => {
     if (portfolio.protocolVersion === 'v4') {
-      const debtDelta = data.debt.balance - portfolio.debt.balance;
+      // Stage 16 — the same canonical base `defaultValues` seeded the
+      // field with, so an untouched field always yields exactly
+      // `debtDelta === 0`, never a spurious non-zero delta from a stale
+      // `debt.balance` disagreeing with the field's real starting value.
+      const debtDelta = data.debt.balance - resolveCanonicalDebtBalance(portfolio);
 
       if (debtDelta > 0) {
         setV4BorrowBlocked(true);

@@ -15,7 +15,7 @@
  * verdict" boundary `types/portfolio.schema.ts` already establishes for
  * Portfolio's own forms.
  */
-import type { ApplicationPortfolio } from '@/services';
+import { type ApplicationPortfolio, resolveCanonicalDebtBalance } from '@/services';
 
 import type {
   ScenarioBuilderFieldErrors,
@@ -72,13 +72,21 @@ export function validateScenarioBuilderInput(
     errors.collateralDelta = 'Withdrawal cannot exceed current collateral.';
   }
 
+  // V4 Readiness Audit §12 Stage 16 — the canonical current total
+  // (`resolveCanonicalDebtBalance`), not raw `debt.balance`, so this
+  // pre-submission check doesn't wrongly block a valid repayment or
+  // wrongly allow an invalid one for a V4 portfolio whose `debt.balance`
+  // has drifted from its real synced total. The actual simulation
+  // (`runPortfolioActionSimulation`) still independently fails closed on
+  // missing V4 state regardless of what this validation concludes.
+  const currentDebt = resolveCanonicalDebtBalance(portfolio);
   const debtDelta = parseNumber(values.debtDelta);
   if (debtDelta === null) {
     errors.debtDelta = 'Debt change must be a number.';
-  } else if (debtDelta < 0 && Math.abs(debtDelta) > portfolio.debt.balance) {
+  } else if (debtDelta < 0 && Math.abs(debtDelta) > currentDebt) {
     errors.debtDelta = 'Repayment cannot exceed current debt.';
   } else if (debtDelta > 0) {
-    const projectedDebt = portfolio.debt.balance + debtDelta;
+    const projectedDebt = currentDebt + debtDelta;
     const currentCollateralValue = portfolio.collateral.quantity * portfolio.market.btcPriceUsd;
     if (
       currentCollateralValue > 0 &&

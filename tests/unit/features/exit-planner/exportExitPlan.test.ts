@@ -321,6 +321,56 @@ describe('buildExitPlanExportCsv', () => {
   });
 });
 
+/**
+ * "Current Debt Balance" for a V4 portfolio — V4 Readiness Audit §12
+ * Stage 16. `debt.balance` deliberately disagrees with the real synced
+ * `v4DebtState` below, proving the export uses the canonical total
+ * (`resolveCanonicalDebtBalance`), not the stale legacy field — and that
+ * it matches the plan's own `expectedResult.remainingDebt`, which was
+ * already correctly canonical (Stage 9/10).
+ */
+describe('buildExitPlanExportPayload — V4 canonical debt balance (Stage 16)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    debt: { asset: 'USDC', balance: 999999 },
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+  };
+
+  it('exports the canonical total (drawnDebt + premiumDebt), not the deliberately-disagreeing legacy debt.balance', () => {
+    useExitPlannerStore.getState().reset();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(V4_PORTFOLIO);
+    const state = useExitPlannerStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      state.targetInputs ?? {},
+      state.currentResult,
+      state.warnings,
+      state.lastMetadata,
+      V4_PORTFOLIO,
+    );
+
+    expect(payload.currentPortfolioState.debtBalance).toBe(15500);
+    expect(payload.currentPortfolioState.debtBalance).not.toBe(999999);
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still exports the raw legacy debt.balance directly', () => {
+    const { exitType, targetInputs, result, warnings, metadata } = runFeasiblePlan();
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.currentPortfolioState.debtBalance).toBe(20000);
+  });
+});
+
 describe('downloadExitPlanExport', () => {
   afterEach(() => {
     vi.restoreAllMocks();

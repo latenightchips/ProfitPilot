@@ -246,6 +246,50 @@ describe('runExitCalculation', () => {
   });
 });
 
+/**
+ * Partial Debt Repayment target — V4 canonical current debt (V4
+ * Readiness Audit §12 Stage 16). `debt.balance` deliberately disagrees
+ * with the real synced `v4DebtState` below, proving the target is
+ * computed from the canonical total (`resolveCanonicalDebtBalance`), not
+ * the stale legacy field — the exact bug this stage fixed: a stale
+ * `currentDebt` fed into `resolveExitTarget`'s `targetDebt: currentDebt -
+ * repaymentAmount` would compute a wrong target upstream of `planExit`'s
+ * own already-correct canonical math.
+ */
+describe('runExitCalculation — V4 canonical current debt for Partial Debt Repayment (Stage 16)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+  }
+
+  it('repays the requested amount against the canonical total (15500), not the deliberately-disagreeing legacy debt.balance (999999)', () => {
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 5000 });
+    useExitPlannerStore.getState().runExitCalculation(v4Portfolio());
+
+    const state = useExitPlannerStore.getState();
+    expect(state.currentResult?.feasible).toBe(true);
+    // If the stale 999999 were used instead, the target (999999 - 5000 =
+    // 994999) would be far above the real current debt, and the actual
+    // repayment executed would not equal the requested amount.
+    expect(state.currentResult?.transaction?.repayment).toBe(5000);
+    expect(state.currentResult?.after?.debtValue).toBeCloseTo(10500, 5);
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still resolves the target from the real legacy debt.balance', () => {
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 10000 });
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+
+    const state = useExitPlannerStore.getState();
+    expect(state.currentResult?.feasible).toBe(true);
+    expect(state.currentResult?.transaction?.repayment).toBe(10000);
+  });
+});
+
 describe('runPriceSensitivity (M7-028)', () => {
   it('is a no-op when no exit type has been selected yet', () => {
     useExitPlannerStore.getState().runPriceSensitivity(validPortfolio());
