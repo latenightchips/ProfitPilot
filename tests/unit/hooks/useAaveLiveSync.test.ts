@@ -342,3 +342,147 @@ describe('useAaveLiveSync — mismatch guard: a live quote for a different asset
     });
   });
 });
+
+/**
+ * V4 Readiness Audit §12 Stage 23A — `protocol` (V3-pool risk parameters)
+ * must never be written into a portfolio whose `protocolVersion === 'v4'`.
+ * `market` (BTC price) is protocol-agnostic and keeps syncing either way.
+ * `protocolQuote.parameters` below is deliberately different from the
+ * portfolio's own stored `protocol` in every fixture, so any accidental
+ * write is directly observable, the same fixture discipline every prior
+ * V4 rate/status stage already established.
+ */
+describe('useAaveLiveSync — V4 protocol-parameter isolation (Stage 23A)', () => {
+  it('still writes protocol parameters for an explicit V3 portfolio — existing behavior byte-identical', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.market.btcPriceUsd).toBe(63000);
+      expect(updated.protocol.maxLoanToValue).toBe(0.73);
+      expect(updated.protocol.borrowApr).toBe(0.0399);
+    });
+  });
+
+  it('still syncs protocol-agnostic market/price data for a V4 portfolio', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.market.btcPriceUsd).toBe(63000);
+    });
+  });
+
+  it('never overwrites a V4 portfolio’s legacy protocol risk fields with the V3 live source', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.market.btcPriceUsd).toBe(63000);
+    });
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.protocol.maxLoanToValue).toBe(0.75);
+    expect(after.protocol.liquidationThreshold).toBe(0.8);
+    expect(after.protocol.borrowApr).toBe(0.05);
+    expect(after.protocol.supplyApr).toBe(0.02);
+  });
+
+  it('an update is still committed for market-only changes on a V4 portfolio (bumps updatedAt) even though protocol is withheld', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    const updatedAtBefore =
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.updatedAt;
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.updatedAt).not.toBe(updatedAtBefore);
+    });
+  });
+
+  it('does not bump updatedAt for a V4 portfolio when only protocol parameters "changed" (market already matches)', async () => {
+    const portfolio = createPortfolio({ market: { btcPriceUsd: 63000 } });
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    const updatedAtBefore =
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.updatedAt;
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+
+    // Give any (incorrect) effect a chance to run before asserting nothing changed.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.updatedAt).toBe(updatedAtBefore);
+    expect(after.protocol.maxLoanToValue).toBe(0.75);
+  });
+
+  it('switching a portfolio from V3 to V4 mid-session stops a later live-sync cycle from writing protocol — proves the gate reads the current portfolio, not a stale closure', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    // First cycle, still V3 — protocol syncs normally.
+    useAaveLiveDataStore.setState(readyState());
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.protocol.maxLoanToValue).toBe(0.73);
+    });
+
+    // Switch to V4 — no live-sync fetch involved, a pure Store action.
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    const protocolAfterSwitch =
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.protocol;
+
+    // Second cycle, a genuinely new, different live quote lands after the switch.
+    useAaveLiveDataStore.setState(
+      readyState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh' as const,
+          price: 70000,
+          origin: 'provider' as const,
+          timestamp: new Date().toISOString(),
+        },
+        protocolQuote: {
+          available: true as const,
+          collateralAsset: 'WBTC',
+          borrowAsset: 'USDC',
+          parameters: {
+            maxLoanToValue: 0.6,
+            liquidationThreshold: 0.65,
+            borrowApr: 0.15,
+            supplyApr: 0.01,
+          },
+          origin: 'live' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.market.btcPriceUsd).toBe(70000);
+    });
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.protocol).toEqual(protocolAfterSwitch);
+    expect(after.protocol.maxLoanToValue).not.toBe(0.6);
+  });
+});

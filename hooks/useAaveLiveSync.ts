@@ -40,6 +40,35 @@ import {
  * fetch simply leaves the portfolio's currently-stored values — live or
  * still-manual/never-synced — exactly as they were. Nothing is ever
  * blanked or zeroed.
+ *
+ * **V4 Readiness Audit §12 Stage 23A — never writes `protocol` for a V4
+ * portfolio.** `market` (BTC price) is genuinely protocol-agnostic and
+ * keeps syncing for V3 and V4 alike, unchanged. `protocol`
+ * (`maxLoanToValue`/`liquidationThreshold`/`borrowApr`/`supplyApr`) is
+ * the V3 Aave pool's own risk parameters — Stage 23's own audit found
+ * this hook previously wrote them into a V4 portfolio's shared
+ * `protocol` field unconditionally, with no relationship to that
+ * portfolio's real V4 risk configuration (V4's Collateral Factor/
+ * Liquidation Bonus/Liquidation Fee live in a versioned dynamic-config
+ * mapping this codebase does not yet read at all — see Stage 23's own
+ * audit for why building that read is explicitly deferred to Stage 23B,
+ * pending primary-source verification of the exact contract interface).
+ * `syncsProtocolParameters` below reads `portfolio.protocolVersion`
+ * fresh from the same store-subscribed `portfolio` value the rest of
+ * this effect already depends on — never a cached/memoized flag — so a
+ * mid-flight V3→V4 (or V4→V3) switch is reflected the moment the switch
+ * lands, not the value that was true when the in-flight fetch started;
+ * `portfolio` is already a required dependency of this effect for
+ * exactly this reason (`portfolioId`/`status`/`marketQuote`/
+ * `protocolQuote` are the fetch-completion signals, `portfolio` is the
+ * up-to-date target to gate and merge against). **This does not clear,
+ * migrate, or fabricate anything** — a V4 portfolio's `protocol` field
+ * simply stops being written by this hook; whatever it already held
+ * (manually entered, or a V3 snapshot from before switching to V4) stays
+ * exactly as-is until a real V4 risk-parameter source exists (Stage
+ * 23B). `protocol.liquidationThreshold`/`maxLoanToValue` remain
+ * V3-shaped and are not reinterpreted as V4 semantics anywhere by this
+ * change.
  */
 const DEFAULT_BORROW_ASSET = 'USDC';
 
@@ -75,10 +104,19 @@ export function useAaveLiveSync(portfolioId: string | null): void {
     const nextMarket = { btcPriceUsd: marketQuote.price };
     const nextProtocol = protocolQuote.parameters;
 
+    // V4 Readiness Audit §12 Stage 23A — read fresh off `portfolio` (an
+    // effect dependency below), never cached, so a version switch that
+    // lands mid-flight is honored on this very effect run.
+    const syncsProtocolParameters = portfolio.protocolVersion !== 'v4';
+
     const marketChanged = !marketPricesEqual(nextMarket, portfolio.market);
-    const protocolChanged = !protocolParametersEqual(nextProtocol, portfolio.protocol);
+    const protocolChanged =
+      syncsProtocolParameters && !protocolParametersEqual(nextProtocol, portfolio.protocol);
     if (!marketChanged && !protocolChanged) return;
 
-    update(portfolioId, { market: nextMarket, protocol: nextProtocol });
+    update(portfolioId, {
+      market: nextMarket,
+      ...(syncsProtocolParameters && { protocol: nextProtocol }),
+    });
   }, [portfolioId, portfolio, status, marketQuote, protocolQuote, update]);
 }
