@@ -1,7 +1,10 @@
 import type { ServiceMetadata } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
+import type { ProtocolStatusKind } from '@/utils/protocolStatus';
+import { formatProtocolStatus } from '@/utils/protocolStatus';
 
 import { formatCurrency, formatDateTime, formatPercent } from './format';
+import { resolveEffectiveBorrowRate } from './resolveEffectiveBorrowRate';
 
 /**
  * Shared Strategy Assumptions Panel — 06_TASKS.md M7-004 ("Create
@@ -59,16 +62,48 @@ import { formatCurrency, formatDateTime, formatPercent } from './format';
  * classification machinery (`DataFreshnessIndicators`), which is
  * Dashboard-Store-specific and not a shared type this milestone's own
  * M7-002 asked for.
+ *
+ * **V4 Readiness Audit §12 Stage 21** — two fixes, both protocol-aware via
+ * the existing `portfolio` prop plus one new optional prop, V3 behavior
+ * unchanged either way:
+ *
+ * 1. Both "Borrow APR" (inside Protocol Parameters) and "Borrow Rate" now
+ *    go through `resolveEffectiveBorrowRate` (`./resolveEffectiveBorrowRate.ts`)
+ *    instead of reading `portfolio.protocol.borrowApr` directly. For a V3
+ *    portfolio this returns the exact same scalar, so the rendered text is
+ *    byte-identical. For a V4 portfolio it returns the canonical blended
+ *    effective rate (`deriveAaveV4EffectiveBorrowRate`), never the raw V3
+ *    field, and "Not available" rather than a fabricated or stale number
+ *    when the canonical rate cannot yet be derived.
+ * 2. "Manual-Data Status" now accepts an optional `protocolStatus` prop
+ *    (`ProtocolStatusKind`, `@/utils/protocolStatus`) rather than owning
+ *    any live/freshness logic itself — this component stays free of
+ *    Zustand, per the same "panel is a pure view, caller supplies
+ *    already-computed state" boundary `SimulationAssumptions.tsx` and
+ *    `DashboardSummaryHeader` already establish for the same status kind.
+ *    `undefined` (every pre-Stage-21 caller, including this component's
+ *    own existing tests) or an explicit `{ version: 'v3', ... }` both
+ *    render the exact original static Manual Mode copy — a V4 status
+ *    renders `formatProtocolStatus` instead, so a user on a live-synced V4
+ *    portfolio sees real Live/Stale/Loading/Provider-error/Missing-debt-state
+ *    status rather than a copy that always claims "No live data provider is
+ *    connected" regardless of protocol.
  */
 export function StrategyAssumptionsPanel({
   portfolio,
   metadata,
   timeHorizonLabel,
+  protocolStatus,
 }: {
   portfolio: Portfolio;
   metadata: ServiceMetadata | null;
   timeHorizonLabel: string | null;
+  protocolStatus?: ProtocolStatusKind;
 }) {
+  const effectiveBorrowApr = resolveEffectiveBorrowRate(portfolio);
+  const borrowAprDisplay =
+    effectiveBorrowApr !== null ? formatPercent(effectiveBorrowApr) : 'Not available';
+
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-col gap-1">
@@ -82,15 +117,14 @@ export function StrategyAssumptionsPanel({
         <span className="text-xs font-medium text-foreground">Protocol Parameters</span>
         <span className="text-muted-foreground">
           Max LTV {formatPercent(portfolio.protocol.maxLoanToValue)} · Liquidation Threshold{' '}
-          {formatPercent(portfolio.protocol.liquidationThreshold)} · Borrow APR{' '}
-          {formatPercent(portfolio.protocol.borrowApr)} · Supply APR{' '}
-          {formatPercent(portfolio.protocol.supplyApr)}
+          {formatPercent(portfolio.protocol.liquidationThreshold)} · Borrow APR {borrowAprDisplay} ·
+          Supply APR {formatPercent(portfolio.protocol.supplyApr)}
         </span>
       </div>
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Borrow Rate</span>
-        <span className="text-muted-foreground">{formatPercent(portfolio.protocol.borrowApr)}</span>
+        <span className="text-muted-foreground">{borrowAprDisplay}</span>
       </div>
 
       {timeHorizonLabel !== null && (
@@ -112,8 +146,14 @@ export function StrategyAssumptionsPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Manual-Data Status</span>
         <span className="text-muted-foreground">
-          Manual Mode — reflects the values you last entered, updated{' '}
-          {formatDateTime(portfolio.marketUpdatedAt)}. No live data provider is connected.
+          {protocolStatus === undefined || protocolStatus.version === 'v3' ? (
+            <>
+              Manual Mode — reflects the values you last entered, updated{' '}
+              {formatDateTime(portfolio.marketUpdatedAt)}. No live data provider is connected.
+            </>
+          ) : (
+            formatProtocolStatus(protocolStatus)
+          )}
         </span>
       </div>
 

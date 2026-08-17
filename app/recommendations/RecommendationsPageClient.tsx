@@ -9,8 +9,13 @@ import {
   RecommendationFilters,
   RecommendationList,
 } from '@/features/recommendations';
+import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
+import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
+import { deriveProtocolStatus } from '@/utils/protocolStatus';
 
 /**
  * Recommendation Center Route — 06_TASKS.md M7-031 ("Create
@@ -57,6 +62,17 @@ import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore
  * (this route's real authoritative source) and found consistent.
  * Responsive behavior and Accessibility were already validated this
  * same batch (M7-039/M7-040).
+ *
+ * **V4 Readiness Audit §12 Stage 21** — `useAaveLiveSync`/`useAaveV4LiveSync`
+ * are now invoked directly on this route, mirroring the exact
+ * `DashboardPageClient`/`PortfolioPageClient` pattern (both hooks are
+ * single-shot fetch-on-mount, equality-gated writes, no polling interval —
+ * see each hook's own header comment), so a user who navigates straight
+ * here without visiting Dashboard/Portfolio first still gets a real,
+ * transitioning `aaveV4Status` rather than one stuck at `'idle'`/`'loading'`
+ * forever. `deriveProtocolStatus`/`formatProtocolStatus` (reused, not
+ * reinvented) turn that live state into the `protocolStatus` prop
+ * `StrategyAssumptionsPanel` now accepts for its Manual-Data-Status line.
  */
 export function RecommendationsPageClient() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
@@ -65,6 +81,12 @@ export function RecommendationsPageClient() {
   );
   const lastMetadata = useRecommendationCenterStore((state) => state.lastMetadata);
   const recalculate = useRecommendationCenterStore((state) => state.recalculate);
+  const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
+  const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+
+  useAaveLiveSync(activePortfolioId);
+  useAaveV4LiveSync(activePortfolioId);
 
   useEffect(() => {
     if (record !== undefined) {
@@ -103,6 +125,15 @@ export function RecommendationsPageClient() {
               portfolio={record.portfolio}
               metadata={lastMetadata}
               timeHorizonLabel={null}
+              protocolStatus={deriveProtocolStatus({
+                protocolVersion: record.portfolio.protocolVersion,
+                v4PositionSet: record.portfolio.v4Position !== undefined,
+                v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
+                aaveMarketQuote,
+                aaveV4Status,
+                aaveV4LastFetchedAt,
+                now: new Date().toISOString(),
+              })}
             />
           </section>
 
