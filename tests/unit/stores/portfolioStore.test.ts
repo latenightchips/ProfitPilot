@@ -1096,6 +1096,187 @@ describe('Backward compatibility — v4DebtState absence does not affect existin
 });
 
 /**
+ * `setAaveV4CollateralRisk` — V4 Readiness Audit §12 Stage 23C, same
+ * "extend model, schema, and Store action together" discipline as
+ * `setAaveV4DebtState` (Stage 6) above — mirrors that describe block's
+ * exact shape.
+ */
+const VALID_V4_COLLATERAL_RISK = {
+  collateralFactor: 0.75,
+  dynamicConfigKey: 3,
+};
+
+describe('usePortfolioStore.setAaveV4CollateralRisk (Stage 23C)', () => {
+  it('sets a well-formed v4CollateralRisk on the target portfolio', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.v4CollateralRisk).toEqual(VALID_V4_COLLATERAL_RISK);
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk).toEqual(
+      VALID_V4_COLLATERAL_RISK,
+    );
+  });
+
+  it('rejects a collateralFactor above 1 (100%), leaving the portfolio unchanged', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, { ...VALID_V4_COLLATERAL_RISK, collateralFactor: 1.5 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every((error) => error.category === 'validation')).toBe(true);
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk,
+    ).toBeUndefined();
+    expect(usePortfolioStore.getState().errors).toEqual(result.errors);
+  });
+
+  it('rejects a negative dynamicConfigKey, leaving the portfolio unchanged', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, { ...VALID_V4_COLLATERAL_RISK, dynamicConfigKey: -1 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk,
+    ).toBeUndefined();
+  });
+
+  it('accepts collateralFactor 0 (a real, uninitialized on-chain dynamic config, not a validation failure)', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, { collateralFactor: 0, dynamicConfigKey: 0 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.v4CollateralRisk).toEqual({ collateralFactor: 0, dynamicConfigKey: 0 });
+  });
+
+  it('clears v4CollateralRisk back to undefined', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    const cleared = usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, undefined);
+
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.data.v4CollateralRisk).toBeUndefined();
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk,
+    ).toBeUndefined();
+  });
+
+  it('does not set or require protocolVersion/v4Position/v4DebtState as a side effect (no cross-inference)', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.protocolVersion).toBeUndefined();
+    expect(record.v4Position).toBeUndefined();
+    expect(record.v4DebtState).toBeUndefined();
+  });
+
+  it('reports a not-found error for an unknown id and does not throw', () => {
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk('missing-id', VALID_V4_COLLATERAL_RISK);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'PORTFOLIO_NOT_FOUND' });
+  });
+
+  it('schedules a save (saveStatus reaches "saved") on a successful set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+  });
+
+  it('does not schedule a save on a rejected (invalid) set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.setState({ saveStatus: 'idle' });
+
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, { ...VALID_V4_COLLATERAL_RISK, collateralFactor: -0.1 });
+    await autoSaveCoordinator.flushAll();
+
+    expect(usePortfolioStore.getState().saveStatus).toBe('error');
+  });
+});
+
+describe('Portfolio v4CollateralRisk — real write/reload round trip (Stage 23C)', () => {
+  it('v4CollateralRisk survives a genuine local storage round trip, surviving a simulated refresh', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.v4CollateralRisk).toEqual(VALID_V4_COLLATERAL_RISK);
+  });
+
+  it('clearing v4CollateralRisk also survives the round trip (does not resurrect on reload)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    await autoSaveCoordinator.flushAll();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, undefined);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk,
+    ).toBeUndefined();
+  });
+
+  it('v4CollateralRisk, v4DebtState, v4Position, and protocolVersion all survive the same round trip together', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.protocolVersion).toBe('v4');
+    expect(record.portfolio.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+    expect(record.portfolio.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(record.portfolio.v4CollateralRisk).toEqual(VALID_V4_COLLATERAL_RISK);
+  });
+
+  it('a plain V3 portfolio (v4CollateralRisk never set) still survives a full write/reload round trip', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.v4CollateralRisk).toBeUndefined();
+  });
+});
+
+/**
  * Persistence + canonical debt reconciliation integration — V4 Readiness
  * Audit §12 Stage 9. Ties Stage 5/6 (persistence), Stage 7 (live sync's
  * own eventual `setAaveV4DebtState` caller), and Stage 9 (canonical debt)

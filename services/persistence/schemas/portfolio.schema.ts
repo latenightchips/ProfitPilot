@@ -45,11 +45,17 @@
  * `v4Position` above, now for `services/portfolio/models.ts`'s
  * `AaveV4DebtState` (drawn/premium debt, base drawn rate, risk premium).
  * Reuses `aaveV4DebtStateSchema` directly.
+ *
+ * **`v4CollateralRisk` (V4 Readiness Audit §12 Stage 23C)** — same
+ * discipline again, now for `services/portfolio/models.ts`'s
+ * `AaveV4CollateralRiskConfig` (collateral factor, dynamic-config key).
+ * Reuses `aaveV4CollateralRiskConfigSchema` directly.
  */
 import { z } from 'zod';
 
 import { sanitizedOptionalTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
 import {
+  aaveV4CollateralRiskConfigSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   collateralPositionSchema,
@@ -73,6 +79,7 @@ export const persistedPortfolioPayloadSchema = z.object({
   protocolVersion: protocolVersionSchema.optional(),
   v4Position: aaveV4PositionIdentitySchema.optional(),
   v4DebtState: aaveV4DebtStateSchema.optional(),
+  v4CollateralRisk: aaveV4CollateralRiskConfigSchema.optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

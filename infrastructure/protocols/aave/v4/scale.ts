@@ -18,3 +18,19 @@ export function basisPointsToDecimal(raw: bigint): number {
 export function assetUnitsToDecimal(raw: bigint, decimals: number): number {
   return Number(raw) / 10 ** decimals;
 }
+
+/**
+ * BPS (10000 = 100%) -> decimal fraction, same scale as
+ * `basisPointsToDecimal` above but for a value viem already decoded as a
+ * plain `number` rather than a `bigint`. `basisPointsToDecimal` is used
+ * today only for `getUserLastRiskPremium`'s `uint256` return value
+ * (always a `bigint`); V4 Readiness Audit §12 Stage 23C's
+ * `DynamicReserveConfig.collateralFactor` is a `uint16` — viem decodes
+ * any Solidity integer type of 48 bits or fewer (uint8/16/24/32) as a
+ * plain `number`, not `bigint` — so it needs this sibling instead. A
+ * separate function, not an overload, so neither call site needs a
+ * runtime `typeof` branch.
+ */
+export function bpsNumberToDecimal(raw: number): number {
+  return raw / 10000;
+}

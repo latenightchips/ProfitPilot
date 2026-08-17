@@ -162,3 +162,73 @@ describe('persistedPortfolioPayloadSchema (Stage 6: v4DebtState)', () => {
     expect(result.data.v4Position).toBeUndefined();
   });
 });
+
+/**
+ * `v4CollateralRisk` — Stage 23C (V4 Readiness Audit §12), same "don't
+ * silently strip it" regression this schema already closed for
+ * `protocolVersion`/`v4Position`/`v4DebtState` in Stages 5/6.
+ */
+const VALID_COLLATERAL_RISK = {
+  collateralFactor: 0.75,
+  dynamicConfigKey: 3,
+};
+
+describe('persistedPortfolioPayloadSchema (Stage 23C: v4CollateralRisk)', () => {
+  it('accepts a payload with no v4CollateralRisk (V3/pre-Stage-23C backward compatibility)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4CollateralRisk).toBeUndefined();
+  });
+
+  it('accepts and preserves a valid v4CollateralRisk', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4CollateralRisk: VALID_COLLATERAL_RISK }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4CollateralRisk).toEqual(VALID_COLLATERAL_RISK);
+  });
+
+  it('rejects a collateralFactor above 1 (100%), never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4CollateralRisk: { ...VALID_COLLATERAL_RISK, collateralFactor: 1.5 } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative dynamicConfigKey, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4CollateralRisk: { ...VALID_COLLATERAL_RISK, dynamicConfigKey: -1 } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts protocolVersion, v4Position, v4DebtState, and v4CollateralRisk all set together', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        protocolVersion: 'v4',
+        v4Position: { userAddress: VALID_V4_ADDRESS },
+        v4DebtState: VALID_DEBT_STATE,
+        v4CollateralRisk: VALID_COLLATERAL_RISK,
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.protocolVersion).toBe('v4');
+    expect(result.data.v4Position).toEqual({ userAddress: VALID_V4_ADDRESS });
+    expect(result.data.v4DebtState).toEqual(VALID_DEBT_STATE);
+    expect(result.data.v4CollateralRisk).toEqual(VALID_COLLATERAL_RISK);
+  });
+
+  it('accepts v4CollateralRisk set while protocolVersion/v4Position/v4DebtState remain unset (no cross-field requirement)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4CollateralRisk: VALID_COLLATERAL_RISK }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.protocolVersion).toBeUndefined();
+    expect(result.data.v4Position).toBeUndefined();
+    expect(result.data.v4DebtState).toBeUndefined();
+  });
+});

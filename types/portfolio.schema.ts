@@ -210,6 +210,29 @@ export const aaveV4DebtStateSchema = z.object({
 
 export type AaveV4DebtStateInput = z.infer<typeof aaveV4DebtStateSchema>;
 
+/**
+ * Aave V4 collateral-risk configuration — Stage 23C (V4 Readiness Audit
+ * §12). Validates `services/portfolio/models.ts`'s
+ * `AaveV4CollateralRiskConfig` shape. `collateralFactor` uses the same
+ * `[0, 1]` bound `protocol.maxLoanToValue`/`liquidationThreshold` already
+ * use (`validatePercentage`) — it is the same kind of quantity (a
+ * decimal fraction of value), just V4's, not V3's. `dynamicConfigKey` is
+ * a non-negative integer (Solidity `uint32`), never a fraction.
+ */
+export const aaveV4CollateralRiskConfigSchema = z.object({
+  collateralFactor: z
+    .number({ error: 'Enter a valid collateral factor.' })
+    .finite('Enter a valid collateral factor.')
+    .min(0, 'Collateral factor cannot be negative.')
+    .max(1, 'Collateral factor cannot exceed 100%.'),
+  dynamicConfigKey: z
+    .number({ error: 'Enter a valid dynamic config key.' })
+    .int('Dynamic config key must be a whole number.')
+    .nonnegative('Dynamic config key cannot be negative.'),
+});
+
+export type AaveV4CollateralRiskConfigInput = z.infer<typeof aaveV4CollateralRiskConfigSchema>;
+
 export const portfolioInputSchema = z.object({
   name: z
     .string()

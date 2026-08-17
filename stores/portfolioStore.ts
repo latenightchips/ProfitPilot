@@ -228,6 +228,7 @@ import { create } from 'zustand';
 
 import {
   type AaveProtocolVersion,
+  type AaveV4CollateralRiskConfig,
   type AaveV4DebtState,
   type AaveV4PositionIdentity,
   type ApplicationError,
@@ -243,6 +244,7 @@ import {
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import {
+  aaveV4CollateralRiskConfigSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   type PortfolioInput,
@@ -288,6 +290,10 @@ export interface PortfolioStoreActions {
   setAaveV4DebtState: (
     id: string,
     v4DebtState: AaveV4DebtState | undefined,
+  ) => MappingResult<Portfolio>;
+  setAaveV4CollateralRisk: (
+    id: string,
+    v4CollateralRisk: AaveV4CollateralRiskConfig | undefined,
   ) => MappingResult<Portfolio>;
 }
 
@@ -740,6 +746,42 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4DebtState: validated,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+    }));
+    schedulePortfolioSave(portfolio);
+
+    return { ok: true, data: portfolio };
+  },
+
+  setAaveV4CollateralRisk: (id, v4CollateralRisk) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    let validated: AaveV4CollateralRiskConfig | undefined;
+    if (v4CollateralRisk !== undefined) {
+      const parsed = aaveV4CollateralRiskConfigSchema.safeParse(v4CollateralRisk);
+      if (!parsed.success) {
+        const errors = zodErrorToErrors(parsed.error);
+        set({ errors, saveStatus: 'error' });
+        return { ok: false, errors };
+      }
+      validated = parsed.data;
+    }
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      v4CollateralRisk: validated,
       updatedAt: new Date().toISOString(),
     };
 

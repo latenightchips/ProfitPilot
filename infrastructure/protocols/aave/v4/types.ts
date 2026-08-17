@@ -1,6 +1,6 @@
 import type { AaveV4DebtProjectionRequest } from '@/engine';
 
-import type { Reserve, UserDebt, UserReserveStatus } from './client';
+import type { DynamicReserveConfig, Reserve, UserDebt, UserReserveStatus } from './client';
 
 /**
  * Three-layer V4 read model — Stage 3 (V4 Readiness Audit §12), per this
@@ -100,4 +100,69 @@ export interface AaveV4DebtSnapshot {
   raw: RawAaveV4Snapshot;
   engineInputs: AaveV4EngineDebtInputs;
   display: AaveV4SnapshotDisplay;
+}
+
+/**
+ * Collateral-risk read model — V4 Readiness Audit §12 Stage 23C, a
+ * genuinely separate on-chain concern from `RawAaveV4Snapshot` above:
+ * that snapshot resolves a reserve for the DEBT asset; this one resolves
+ * a reserve for the COLLATERAL asset (`addresses.ts`'s own
+ * `AAVE_V4_ETHEREUM_MARKET.collateralAsset`, WBTC) — the two can
+ * genuinely be different reserves (potentially even on different Hubs;
+ * `./index.ts`'s `resolveV4Reserve` is reused unchanged for both,
+ * probing independently). Deliberately its own standalone fetch, not
+ * folded into `fetchAaveV4DebtSnapshot` — see that function's own doc
+ * comment in `./index.ts` for why coupling the two would risk an
+ * existing, already-relied-on debt sync failing for a reason that has
+ * nothing to do with debt.
+ *
+ * **`userDynamicConfigKey` is preserved through every layer, not
+ * discarded after use** — it is the provenance of `collateralFactor`:
+ * proof of exactly which dynamic-config version the value corresponds
+ * to (the user's own bound snapshot, `ISpoke.UserPosition.dynamicConfigKey`
+ * — see `./abi.ts`'s own header comment for why this is not necessarily
+ * the reserve's current config).
+ */
+export interface RawAaveV4CollateralRiskSnapshot {
+  blockNumber: bigint;
+  blockTimestamp: bigint;
+  spoke: `0x${string}`;
+  collateralReserveId: bigint;
+  /** `ISpoke.getUserPosition(collateralReserveId, user).dynamicConfigKey` — the user's own bound snapshot, never substituted with the reserve's current key. */
+  userDynamicConfigKey: number;
+  /** `ISpoke.getDynamicReserveConfig(collateralReserveId, userDynamicConfigKey)` — fetched using the exact key above, never the reserve's current one. */
+  dynamicReserveConfig: DynamicReserveConfig;
+}
+
+/**
+ * Layer 2 — the canonical, decimal-scaled shape. Structurally identical
+ * to (but independently declared from, never imported from)
+ * `services/portfolio/models.ts`'s `AaveV4CollateralRiskConfig` — the
+ * same "duplicate the shape across layers, never cross-import" rule
+ * `AaveV4EngineDebtInputs`/`AaveV4DebtState` already establish above.
+ */
+export interface AaveV4CollateralRiskCanonical {
+  /** Decimal fraction (e.g. `0.75` for 75%), scaled from `DynamicReserveConfig.collateralFactor` (BPS) via `./scale.ts`'s `bpsNumberToDecimal`. */
+  collateralFactor: number;
+  /** The exact dynamic-config key `collateralFactor` was read at — carried through unchanged from `RawAaveV4CollateralRiskSnapshot.userDynamicConfigKey`. */
+  dynamicConfigKey: number;
+}
+
+/** Layer 3 — human-readable/display metadata, not consumed by any calculation. */
+export interface AaveV4CollateralRiskDisplay {
+  network: string;
+  collateralSymbol: string;
+  spoke: `0x${string}`;
+  reserveId: string;
+  /** Stringified — bigint doesn't survive JSON, same convention as `AaveV4SnapshotDisplay.blockNumber`. */
+  blockNumber: string;
+  /** ISO 8601, derived from `RawAaveV4CollateralRiskSnapshot.blockTimestamp`. */
+  blockTimestamp: string;
+  userAddress: `0x${string}`;
+}
+
+export interface AaveV4CollateralRiskSnapshot {
+  raw: RawAaveV4CollateralRiskSnapshot;
+  canonical: AaveV4CollateralRiskCanonical;
+  display: AaveV4CollateralRiskDisplay;
 }

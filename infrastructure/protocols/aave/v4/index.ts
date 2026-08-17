@@ -11,16 +11,24 @@ import {
   createAaveV4RpcClient,
   fetchAssetDrawnRate,
   fetchAssetId,
+  fetchDynamicReserveConfig,
   fetchPinnedBlock,
   fetchReserve,
   fetchReserveId,
   fetchTokenDecimals,
   fetchUserDebt,
   fetchUserLastRiskPremium,
+  fetchUserPosition,
   fetchUserReserveStatus,
 } from './client';
+import { mapAaveV4CollateralRiskSnapshot } from './mapAaveV4CollateralRiskSnapshot';
 import { mapAaveV4Snapshot } from './mapAaveV4Snapshot';
-import type { AaveV4DebtSnapshot, RawAaveV4Snapshot } from './types';
+import type {
+  AaveV4CollateralRiskSnapshot,
+  AaveV4DebtSnapshot,
+  RawAaveV4CollateralRiskSnapshot,
+  RawAaveV4Snapshot,
+} from './types';
 
 export interface AaveV4AdapterError {
   code: string;
@@ -260,6 +268,116 @@ export async function fetchAaveV4DebtSnapshot(
     network,
     collateralSymbol: collateralAsset.symbol,
     debtSymbol: debtAsset.symbol,
+    userAddress,
+  });
+
+  return { ok: true, data };
+}
+
+export type AaveV4CollateralRiskSnapshotResult =
+  { ok: true; data: AaveV4CollateralRiskSnapshot } | { ok: false; error: AaveV4AdapterError };
+
+/**
+ * Fetches the user's actual, on-chain-bound V4 collateral-risk
+ * configuration for the collateral asset — V4 Readiness Audit §12 Stage
+ * 23C, closing the Stage 23 finding that Health Factor/liquidation-price/
+ * LTV had no source for V4's real risk parameter (they read V3's
+ * `protocol.liquidationThreshold` unconditionally). Stage 23B's own
+ * authoritative Solidity trace (`aave/aave-v4` commit
+ * `2524fe4018a42750300e114f2a8c4355df62a878`, `Spoke.sol`'s
+ * `_processUserAccountData`) established `collateralFactor` as V4's sole
+ * borrow-capacity/liquidation-eligibility parameter, read at the user's
+ * own BOUND dynamic-config snapshot — never the reserve's current one.
+ *
+ * **Deliberately independent of `fetchAaveV4DebtSnapshot` above, not
+ * folded into it, despite both being "one V4 read cycle."** That
+ * function resolves a reserve for the DEBT asset; this one resolves a
+ * reserve for the COLLATERAL asset (`AAVE_V4_ETHEREUM_MARKET.collateralAsset`,
+ * WBTC) — a genuinely different reserve, potentially on a different Hub.
+ * Coupling the two into one all-or-nothing fetch would mean an existing,
+ * already-relied-on debt sync could start failing for a reason that has
+ * nothing to do with debt (e.g. this reserve-resolution probe failing) —
+ * `v4DebtState` staying correctly populated must not become contingent on
+ * collateral-risk data that no calculation consumes yet (Stage 23C's own
+ * scope boundary: "leave consumers unchanged"). Each fetch pins its own
+ * block independently — Stage 23C does not require the two to share a
+ * block, only that each individually follows the pinned-block/
+ * read-or-classify/fail-closed convention already established.
+ *
+ * **Two reads, in this exact order, never substituting one for the
+ * other's job:**
+ * 1. `getUserPosition(collateralReserveId, user)` → the user's OWN bound
+ *    `dynamicConfigKey`. If this fails, the whole result fails closed —
+ *    there is no fallback to the reserve's current
+ *    `Reserve.dynamicConfigKey` (`fetchReserve`'s own field of the same
+ *    name is a DIFFERENT value with a different meaning; see
+ *    `./abi.ts`'s own header comment).
+ * 2. `getDynamicReserveConfig(collateralReserveId, thatExactKey)` → the
+ *    real `collateralFactor` bound to the user's position. Never called
+ *    with any key other than the one read in step 1.
+ *
+ * Any failure at any step — reserve resolution, either RPC read —
+ * produces `ok: false`; there is no partial/placeholder result and no
+ * fallback to V3 risk parameters.
+ */
+export async function fetchAaveV4CollateralRiskSnapshot(
+  client: AaveV4RpcClient,
+  userAddress: `0x${string}`,
+  pinnedBlockNumber?: bigint,
+): Promise<AaveV4CollateralRiskSnapshotResult> {
+  const { collateralAsset, network } = AAVE_V4_ETHEREUM_MARKET;
+  const spoke = AAVE_V4_ETHEREUM_SPOKE as `0x${string}`;
+  const underlying = collateralAsset.address as `0x${string}`;
+
+  const blockResult = await fetchPinnedBlock(client, pinnedBlockNumber);
+  if (!blockResult.ok) return { ok: false, error: blockResult.error };
+  const { number: blockNumber, timestamp: blockTimestamp } = blockResult.data;
+
+  const resolution = await resolveV4Reserve(client, spoke, underlying, blockNumber);
+  if (!resolution.ok) {
+    if (resolution.error !== null) return { ok: false, error: resolution.error };
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_V4_RESERVE_NOT_FOUND',
+        message: `No Aave V4 reserve for ${collateralAsset.symbol} (${underlying}) was found on Spoke ${spoke} across any of the ${AAVE_V4_ETHEREUM_HUB_CANDIDATES.length} known Hubs.`,
+        userMessage: `Live Aave V4 collateral-risk data is not yet available for ${collateralAsset.symbol}.`,
+        retryable: false,
+      },
+    };
+  }
+  const { reserveId } = resolution.data;
+
+  const userPositionResult = await fetchUserPosition(
+    client,
+    spoke,
+    reserveId,
+    userAddress,
+    blockNumber,
+  );
+  if (!userPositionResult.ok) return { ok: false, error: userPositionResult.error };
+
+  const dynamicConfigResult = await fetchDynamicReserveConfig(
+    client,
+    spoke,
+    reserveId,
+    userPositionResult.data.dynamicConfigKey,
+    blockNumber,
+  );
+  if (!dynamicConfigResult.ok) return { ok: false, error: dynamicConfigResult.error };
+
+  const snapshot: RawAaveV4CollateralRiskSnapshot = {
+    blockNumber,
+    blockTimestamp,
+    spoke,
+    collateralReserveId: reserveId,
+    userDynamicConfigKey: userPositionResult.data.dynamicConfigKey,
+    dynamicReserveConfig: dynamicConfigResult.data,
+  };
+
+  const data = mapAaveV4CollateralRiskSnapshot(snapshot, {
+    network,
+    collateralSymbol: collateralAsset.symbol,
     userAddress,
   });
 

@@ -146,6 +146,14 @@ export type AaveV4DebtState = Omit<AaveV4DebtProjectionRequest, 'protocolVersion
  * `stores/portfolioStore.ts`'s `setAaveV4DebtState`, `undefined` on
  * every portfolio until explicitly set. See `AaveV4DebtState`'s own doc
  * comment above for what it holds and why.
+ *
+ * **`v4CollateralRisk` (V4 Readiness Audit §12 Stage 23C)** — same
+ * "extend model, schema, and Store action together" pattern as
+ * `v4DebtState`: optional, persisted via
+ * `services/persistence/schemas/portfolio.schema.ts` and
+ * `stores/portfolioStore.ts`'s `setAaveV4CollateralRisk`, `undefined` on
+ * every portfolio until explicitly set. See `AaveV4CollateralRiskConfig`'s
+ * own doc comment below for what it holds and why.
  */
 export interface ApplicationPortfolio {
   collateral: CollateralPosition;
@@ -155,6 +163,54 @@ export interface ApplicationPortfolio {
   protocolVersion?: AaveProtocolVersion;
   v4Position?: AaveV4PositionIdentity;
   v4DebtState?: AaveV4DebtState;
+  v4CollateralRisk?: AaveV4CollateralRiskConfig;
+}
+
+/**
+ * Aave V4 collateral-risk configuration — V4 Readiness Audit §12 Stage
+ * 23C, closing the Stage 23 finding that Health Factor/liquidation-price/
+ * LTV calculations had no source for V4's real risk parameter and were
+ * reading V3's `protocol.liquidationThreshold` unconditionally instead.
+ * Stage 23B's own authoritative Solidity trace (`aave/aave-v4` commit
+ * `2524fe4018a42750300e114f2a8c4355df62a878`, `Spoke.sol`'s
+ * `_processUserAccountData`/`Spoke.borrow()`) established that V4 has no
+ * V3-shaped `maxLoanToValue`/`liquidationThreshold` split at all —
+ * `collateralFactor` alone governs both borrow capacity and liquidation
+ * eligibility, via `Health Factor = Σ(collateralFactor_i × collateralValue_i)
+ * / totalDebtValue`.
+ *
+ * **`dynamicConfigKey` is preserved deliberately, not discarded** — it
+ * records exactly which dynamic-config version `collateralFactor` was
+ * read at (`ISpoke.UserPosition.dynamicConfigKey`, the user's own bound
+ * snapshot). Aave V4's dynamic-config mapping is versioned, and a user's
+ * position can remain bound to an older config than the reserve's
+ * current one until their next risk-increasing action (`borrow`/
+ * `withdraw`/`setUsingAsCollateral`/`updateUserDynamicConfig`) — see
+ * `infrastructure/protocols/aave/v4/index.ts`'s
+ * `fetchAaveV4CollateralRiskSnapshot` for the full mechanism. This field
+ * is provenance, not a value any calculation consumes.
+ *
+ * Kept as its own optional sub-object, the same reasoning as
+ * `AaveV4PositionIdentity`/`AaveV4DebtState` above — V4's collateral-risk
+ * shape is fundamentally different data from V3's flat
+ * `maxLoanToValue`/`liquidationThreshold` pair, not a value that fits
+ * into `protocol` without overloading its meaning. `protocol` itself is
+ * never reinterpreted or overwritten by this type's existence — V3
+ * portfolios, and every existing V3-shaped calculation, are completely
+ * unaffected.
+ *
+ * **Deliberately not consumed by any calculation this stage.** No
+ * Health Factor, liquidation price, LTV, Loop Builder safety, Exit
+ * Planner, Recommendations, Simulation, export, or dashboard-display
+ * Service reads this field yet — that dispatch is explicitly deferred to
+ * Stage 23D, so this stage's diff provably only adds data, never changes
+ * an existing calculation's behavior.
+ */
+export interface AaveV4CollateralRiskConfig {
+  /** Decimal fraction (e.g. `0.75` for 75%) — V4's `DynamicReserveConfig.collateralFactor`, BPS-scaled on-chain. */
+  collateralFactor: number;
+  /** The user's own bound dynamic-config snapshot key this `collateralFactor` was read at (`ISpoke.UserPosition.dynamicConfigKey`) — NOT necessarily the reserve's current key. */
+  dynamicConfigKey: number;
 }
 
 /**

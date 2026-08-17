@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aaveV4CollateralRiskConfigSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   collateralManagementSchema,
@@ -348,6 +349,107 @@ describe('aaveV4DebtStateSchema (Stage 6)', () => {
   it('rejects a non-numeric value', () => {
     expect(
       aaveV4DebtStateSchema.safeParse({ ...validDebtState(), drawnDebt: '15000' }).success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * `aaveV4CollateralRiskConfigSchema` — Stage 23C (V4 Readiness Audit
+ * §12). `collateralFactor` bounds mirror `protocol.maxLoanToValue`/
+ * `liquidationThreshold`'s own `[0, 1]` `validatePercentage` bound
+ * (same kind of quantity, V4's rather than V3's); `dynamicConfigKey` is
+ * a non-negative integer, never a fraction.
+ */
+describe('aaveV4CollateralRiskConfigSchema (Stage 23C)', () => {
+  function validCollateralRisk() {
+    return { collateralFactor: 0.75, dynamicConfigKey: 3 };
+  }
+
+  it('accepts a well-formed collateral-risk config', () => {
+    expect(aaveV4CollateralRiskConfigSchema.safeParse(validCollateralRisk()).success).toBe(true);
+  });
+
+  it('accepts collateralFactor 0 and dynamicConfigKey 0 (an uninitialized on-chain dynamic config, not a validation failure)', () => {
+    const result = aaveV4CollateralRiskConfigSchema.safeParse({
+      collateralFactor: 0,
+      dynamicConfigKey: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts collateralFactor 1 (100%)', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({ ...validCollateralRisk(), collateralFactor: 1 })
+        .success,
+    ).toBe(true);
+  });
+
+  it('rejects a collateralFactor above 1 (100%)', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        collateralFactor: 1.01,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a negative collateralFactor', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        collateralFactor: -0.01,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a negative dynamicConfigKey', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        dynamicConfigKey: -1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-integer dynamicConfigKey', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        dynamicConfigKey: 3.5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-finite collateralFactor (Infinity/NaN)', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        collateralFactor: Infinity,
+      }).success,
+    ).toBe(false);
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        collateralFactor: Number.NaN,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(['collateralFactor', 'dynamicConfigKey'])(
+    'rejects a payload missing %s entirely',
+    (field) => {
+      const payload = validCollateralRisk() as Record<string, unknown>;
+      delete payload[field];
+      expect(aaveV4CollateralRiskConfigSchema.safeParse(payload).success).toBe(false);
+    },
+  );
+
+  it('rejects a non-numeric value', () => {
+    expect(
+      aaveV4CollateralRiskConfigSchema.safeParse({
+        ...validCollateralRisk(),
+        collateralFactor: '0.75',
+      }).success,
     ).toBe(false);
   });
 });

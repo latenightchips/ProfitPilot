@@ -13,10 +13,12 @@ import {
   erc20Abi,
   hubGetAssetDrawnRateAbi,
   hubGetAssetIdAbi,
+  spokeGetDynamicReserveConfigAbi,
   spokeGetReserveAbi,
   spokeGetReserveIdAbi,
   spokeGetUserDebtAbi,
   spokeGetUserLastRiskPremiumAbi,
+  spokeGetUserPositionAbi,
   spokeGetUserReserveStatusAbi,
 } from './abi';
 
@@ -317,6 +319,77 @@ export async function fetchReserve(
       flags: reserve.flags,
       dynamicConfigKey: reserve.dynamicConfigKey,
     };
+  });
+}
+
+/**
+ * `ISpoke.getUserPosition` result — V4 Readiness Audit §12 Stage 23C.
+ * Only `dynamicConfigKey` (the user's own bound dynamic-config snapshot
+ * — see `./abi.ts`'s own header comment for why this, not the reserve's
+ * current key, is what `getDynamicReserveConfig` below must be called
+ * with) is exposed; the other four `UserPosition` fields are decoded by
+ * viem but not currently consumed by any caller.
+ */
+export interface UserPosition {
+  dynamicConfigKey: number;
+}
+
+export async function fetchUserPosition(
+  client: AaveV4RpcClient,
+  spoke: `0x${string}`,
+  reserveId: bigint,
+  user: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<AaveV4RpcResult<UserPosition>> {
+  return readOrClassify(async () => {
+    const position = await client.readContract({
+      address: spoke,
+      abi: spokeGetUserPositionAbi,
+      functionName: 'getUserPosition',
+      args: [reserveId, user],
+      blockNumber,
+    });
+    return { dynamicConfigKey: position.dynamicConfigKey };
+  });
+}
+
+/**
+ * `ISpoke.getDynamicReserveConfig` result — V4 Readiness Audit §12 Stage
+ * 23C. Only `collateralFactor` is exposed for now; `maxLiquidationBonus`/
+ * `liquidationFee` are decoded by viem but not currently consumed — see
+ * `services/portfolio/models.ts`'s `AaveV4CollateralRiskConfig` for why
+ * they were deliberately excluded from this stage's canonical data
+ * model (Stage 23B: neither feeds Health Factor/LTV/liquidation-price).
+ */
+export interface DynamicReserveConfig {
+  collateralFactor: number;
+}
+
+/**
+ * Caller MUST supply the user's own bound `dynamicConfigKey`
+ * (`UserPosition.dynamicConfigKey`, via `fetchUserPosition` above) — this
+ * function never substitutes the reserve's current
+ * `Reserve.dynamicConfigKey` on its own. `ISpoke.getDynamicReserveConfig`
+ * does not revert for an unset/uninitialized key; it returns a zeroed
+ * struct, which is passed through unchanged (a real on-chain answer, not
+ * a failure this adapter should reinterpret).
+ */
+export async function fetchDynamicReserveConfig(
+  client: AaveV4RpcClient,
+  spoke: `0x${string}`,
+  reserveId: bigint,
+  dynamicConfigKey: number,
+  blockNumber?: bigint,
+): Promise<AaveV4RpcResult<DynamicReserveConfig>> {
+  return readOrClassify(async () => {
+    const config = await client.readContract({
+      address: spoke,
+      abi: spokeGetDynamicReserveConfigAbi,
+      functionName: 'getDynamicReserveConfig',
+      args: [reserveId, dynamicConfigKey],
+      blockNumber,
+    });
+    return { collateralFactor: config.collateralFactor };
   });
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assetUnitsToDecimal,
   basisPointsToDecimal,
+  bpsNumberToDecimal,
   rayToDecimal,
 } from '@/infrastructure/protocols/aave/v4/scale';
 
@@ -35,6 +36,24 @@ describe('basisPointsToDecimal', () => {
 
   it('converts 0 BPS to 0', () => {
     expect(basisPointsToDecimal(0n)).toBe(0);
+  });
+});
+
+describe('bpsNumberToDecimal', () => {
+  it('converts 10000 BPS (number) to 1.0 (100%)', () => {
+    expect(bpsNumberToDecimal(10000)).toBe(1);
+  });
+
+  it('converts 7500 BPS (number) to 0.75 (75% collateral factor)', () => {
+    expect(bpsNumberToDecimal(7500)).toBeCloseTo(0.75, 10);
+  });
+
+  it('converts 0 BPS to 0 (an uninitialized/unset dynamic config)', () => {
+    expect(bpsNumberToDecimal(0)).toBe(0);
+  });
+
+  it('matches basisPointsToDecimal’s scale for the same value, bigint vs number input', () => {
+    expect(bpsNumberToDecimal(1000)).toBeCloseTo(Number(basisPointsToDecimal(1000n)), 10);
   });
 });
 

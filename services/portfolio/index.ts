@@ -50,6 +50,13 @@
  * `ApplyLoopAsSimulation`'s simulation delta, Scenario Builder
  * validation, the Portfolios list "No debt" badge, the Dashboard's debt
  * quantity, CSV/exit-plan export) now calls this instead.
+ *
+ * **`AaveV4CollateralRiskConfig` (V4 Readiness Audit §12 Stage 23C)** —
+ * joins `AaveV4DebtState` for the same reason: `setAaveV4CollateralRisk`
+ * (`stores/portfolioStore.ts`) is its first Store-layer consumer. Not yet
+ * read by any calculation Service — see that type's own doc comment
+ * (`./models.ts`) for why that dispatch is explicitly deferred to Stage
+ * 23D.
  */
 export {
   type PortfolioAction,
@@ -70,6 +77,7 @@ export {
   resolveCanonicalDebtBalance,
 } from './mapping';
 export type {
+  AaveV4CollateralRiskConfig,
   AaveV4DebtState,
   AaveV4PositionIdentity,
   ApplicationPortfolio,

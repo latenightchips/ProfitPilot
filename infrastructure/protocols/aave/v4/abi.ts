@@ -6,9 +6,19 @@
  *     `getAssetDrawnRate`, `error AssetNotListed()`
  *   - `src/spoke/interfaces/ISpoke.sol` — `getReserveId`, `getUserDebt`,
  *     `getUserLastRiskPremium`, `getUserReserveStatus`, `getReserve`,
- *     `error ReserveNotListed()`
+ *     `getUserPosition`, `getDynamicReserveConfig`, `error ReserveNotListed()`
  * Only the functions this read-only adapter actually calls — no state-
  * changing functions are represented (Stage 3 is read-only by design).
+ *
+ * **`getUserPosition`/`getDynamicReserveConfig` (V4 Readiness Audit §12
+ * Stage 23C)** — added to close the Stage 23 finding that Health
+ * Factor/liquidation calculations had no source for V4's actual
+ * collateral-risk parameter. Verified directly against `ISpoke.sol`
+ * (`struct UserPosition`, `struct DynamicReserveConfig`, both interface
+ * declarations) at the same pinned commit above, during Stage 23B's own
+ * primary-source research — see `./index.ts`'s
+ * `fetchAaveV4CollateralRiskSnapshot` for the full reasoning on why both
+ * reads are needed together and in this order.
  *
  * **Custom errors are included deliberately** (Stage 3 hardening review,
  * item 1/6) — `Hub.sol`'s `getAssetId` (`require(isUnderlyingListed(...),
@@ -178,6 +188,79 @@ export const spokeGetReserveAbi = [
           { name: 'collateralRisk', type: 'uint24' },
           { name: 'flags', type: 'uint8' },
           { name: 'dynamicConfigKey', type: 'uint32' },
+        ],
+      },
+    ],
+  },
+] as const;
+
+/**
+ * `ISpoke.getUserPosition` — the raw per-user, per-reserve position
+ * struct, verified against `ISpoke.sol`'s own `struct UserPosition`
+ * declaration. This adapter reads it ONLY for `dynamicConfigKey` — the
+ * user's own bound dynamic-config snapshot (Stage 23B's own research:
+ * `_processUserAccountData` in `Spoke.sol` uses exactly this field, not
+ * the reserve's current `dynamicConfigKey`, for every read-only Health
+ * Factor/account-data call). The other four fields (`drawnShares`/
+ * `premiumShares`/`premiumOffsetRay`/`suppliedShares`) are decoded
+ * because viem must decode the full tuple, but are not currently
+ * consumed anywhere — `getUserDebt` (already used above) is this
+ * adapter's real source for drawn/premium debt, already resolved to
+ * asset units by the Spoke itself, so nothing here duplicates that.
+ */
+export const spokeGetUserPositionAbi = [
+  {
+    name: 'getUserPosition',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'reserveId', type: 'uint256' },
+      { name: 'user', type: 'address' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'drawnShares', type: 'uint120' },
+          { name: 'premiumShares', type: 'uint120' },
+          { name: 'premiumOffsetRay', type: 'int200' },
+          { name: 'suppliedShares', type: 'uint120' },
+          { name: 'dynamicConfigKey', type: 'uint32' },
+        ],
+      },
+    ],
+  },
+] as const;
+
+/**
+ * `ISpoke.getDynamicReserveConfig` — the exact bound configuration for
+ * one reserve at one specific `dynamicConfigKey`, verified against
+ * `ISpoke.sol`'s own `struct DynamicReserveConfig` declaration.
+ * `ISpoke.sol`'s own doc comment for this function: "Does not revert if
+ * `dynamicConfigKey` is unset" — an uninitialized key returns a zeroed
+ * struct (`collateralFactor: 0`), not a revert, so a genuinely-zero
+ * on-chain answer and "never configured" are indistinguishable at this
+ * layer; both are passed through as real, unfabricated data, never
+ * special-cased into a synthetic "unavailable" here.
+ */
+export const spokeGetDynamicReserveConfigAbi = [
+  {
+    name: 'getDynamicReserveConfig',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'reserveId', type: 'uint256' },
+      { name: 'dynamicConfigKey', type: 'uint32' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'collateralFactor', type: 'uint16' },
+          { name: 'maxLiquidationBonus', type: 'uint32' },
+          { name: 'liquidationFee', type: 'uint16' },
         ],
       },
     ],
