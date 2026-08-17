@@ -239,6 +239,93 @@ describe('SimulationWarnings — High borrowing cost (real Store + real Portfoli
   });
 });
 
+/**
+ * V4 High Borrowing Cost rate source — V4 Readiness Audit §12 Stage 20.
+ * `protocol.borrowApr` and `v4DebtState.baseDrawnApr`/`riskPremium` are
+ * deliberately different values so a legacy-field read or a
+ * risk-premium mixup is directly observable.
+ */
+describe('SimulationWarnings — V4 High Borrowing Cost rate source (Stage 20)', () => {
+  function createAndSelectV4(v4DebtState: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  }): Portfolio {
+    const portfolio = createPortfolio({ protocol: { ...validInput().protocol, borrowApr: 0.99 } });
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, {
+      userAddress: '0x1234567890123456789012345678901234567890',
+    });
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, v4DebtState);
+    return usePortfolioStore.getState().portfolios[portfolio.id]!.portfolio;
+  }
+
+  it('baseline (portfolio action, no interest scenario) uses the canonical effective V4 rate, never the raw 99% legacy scalar', () => {
+    const portfolio = createAndSelectV4({
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    });
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(portfolio, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationWarnings portfolio={portfolio} />);
+
+    // Real effective rate ≈5.37%, below the 15% threshold — no warning,
+    // even though the raw legacy scalar (99%) would have triggered one.
+    expect(screen.getByText('No warnings for this simulation.')).toBeInTheDocument();
+  });
+
+  it('an active interest scenario with no established rate stress uses the real unstressed effective rate (same as baseline)', () => {
+    const portfolio = createAndSelectV4({
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    });
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.99, // V3-only field; must not be read for V4
+    });
+    useSimulationStore.getState().runSimulation(portfolio);
+
+    render(<SimulationWarnings portfolio={portfolio} />);
+
+    expect(screen.getByText('No warnings for this simulation.')).toBeInTheDocument();
+  });
+
+  it('an active, genuinely-stressed V4 rate scenario evaluates the actual stressed effective rate — crosses the High Borrowing Cost threshold', () => {
+    const portfolio = createAndSelectV4({
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    });
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 30,
+      borrowApr: 0.99, // V3-only field; must not be read for V4
+      v4RateStress: { baseDrawnApr: 0.5, riskPremium: 0.1 },
+    });
+    useSimulationStore.getState().runSimulation(portfolio);
+
+    render(<SimulationWarnings portfolio={portfolio} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toMatch(/simulated Borrow APR \(\d+\.\d\d%\) is unusually high/);
+    // The blended stressed rate must not equal the raw baseDrawnApr
+    // (50.00%) itself — riskPremium is layered on top by the Engine, so
+    // the true effective rate is higher than 50%, not equal to it.
+    expect(alert.textContent).not.toMatch(/\(50\.00%\)/);
+  });
+});
+
 describe('SimulationWarnings — Long holding-period assumption (real Store + real Portfolio)', () => {
   it('warns for a Custom Holding Period beyond the longest built-in preset (400 days)', () => {
     const portfolio = createPortfolio();

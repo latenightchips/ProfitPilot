@@ -1,9 +1,15 @@
 'use client';
 
+import {
+  type AaveV4DebtState,
+  deriveAaveV4EffectiveBorrowRate,
+  type SimulationResult,
+} from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
 
 import { buildSimulationWarnings } from '../utils/buildSimulationWarnings';
+import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate';
 
 /**
  * Simulation Warnings — 06_TASKS.md M6-014 ("Implement Simulation
@@ -38,6 +44,25 @@ import { buildSimulationWarnings } from '../utils/buildSimulationWarnings';
  * that check is simply skipped (`timeHorizonDays: null`) for every other
  * kind.
  *
+ * **`resolveSimulatedBorrowApr` — V4 Readiness Audit §12 Stage 20.**
+ * Previously fell back to `portfolio.protocol.borrowApr` unconditionally
+ * for a non-interest result — a legacy V3 scalar wrong for V4 — and, for
+ * an active V4 interest scenario, echoed `currentResult.assumptions.borrowApr`,
+ * a field V4's own accrual model never reads at all (`resolveScenarioInputs.ts`'s
+ * own header comment). Now protocol-version-dispatched: V3 keeps both
+ * cases exactly as before. V4 with no active interest scenario uses the
+ * real, canonical effective rate (`resolveEffectiveBorrowRate`). V4 with
+ * an active interest scenario recomputes the canonical BLENDED effective
+ * rate from whichever rates the scenario actually used —
+ * `currentResult.assumptions.v4RateStress`, when the user genuinely
+ * established one (`ScenarioBuilder.tsx`'s own established-field
+ * tracking), else the portfolio's real unstressed rates — never the raw
+ * `v4RateStress.baseDrawnApr` directly, which is a different quantity
+ * from "the effective rate" this warning check needs (see
+ * `resolveEffectiveBorrowRate.ts`'s own header comment for why the two
+ * must never be conflated: `riskPremium` is applied on top of
+ * `baseDrawnApr` by the Engine, not already blended into it).
+ *
  * **A zero-warnings result is shown as positive confirmation text, not
  * rendered as nothing** — the same "always-visible section" convention
  * every other Simulation component already follows (`ScenarioSummary`,
@@ -46,6 +71,30 @@ import { buildSimulationWarnings } from '../utils/buildSimulationWarnings';
  * (`features/dashboard/`, M5-010), which renders `null` on zero
  * warnings since it is a floating banner, not a fixed page section.
  */
+function resolveSimulatedBorrowApr(
+  portfolio: Portfolio,
+  currentResult: SimulationResult | null,
+): number | null {
+  if (currentResult?.assumptions.type !== 'interest') {
+    return resolveEffectiveBorrowRate(portfolio);
+  }
+  if (portfolio.protocolVersion !== 'v4') {
+    return currentResult.assumptions.borrowApr;
+  }
+  if (portfolio.v4DebtState === undefined) return null;
+
+  const stressedV4DebtState: AaveV4DebtState = {
+    drawnDebt: portfolio.v4DebtState.drawnDebt,
+    premiumDebt: portfolio.v4DebtState.premiumDebt,
+    baseDrawnApr:
+      currentResult.assumptions.v4RateStress?.baseDrawnApr ?? portfolio.v4DebtState.baseDrawnApr,
+    riskPremium:
+      currentResult.assumptions.v4RateStress?.riskPremium ?? portfolio.v4DebtState.riskPremium,
+  };
+  const rateStep = deriveAaveV4EffectiveBorrowRate(stressedV4DebtState, null, 'manual');
+  return rateStep.ok ? rateStep.value : null;
+}
+
 export function SimulationWarnings({ portfolio }: { portfolio: Portfolio }) {
   const currentResult = useSimulationStore((state) => state.currentResult);
   const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
@@ -60,10 +109,7 @@ export function SimulationWarnings({ portfolio }: { portfolio: Portfolio }) {
     currentResult?.scenario.equity ?? portfolioActionPreview?.after.netEquity ?? null;
   const simulatedLeverage =
     currentResult?.scenario.leverage ?? portfolioActionPreview?.after.leverage ?? null;
-  const simulatedBorrowApr =
-    currentResult?.assumptions.type === 'interest'
-      ? currentResult.assumptions.borrowApr
-      : portfolio.protocol.borrowApr;
+  const simulatedBorrowApr = resolveSimulatedBorrowApr(portfolio, currentResult);
   const simulatedTimeHorizonDays =
     currentResult?.assumptions.type === 'interest'
       ? currentResult.assumptions.timeHorizonDays

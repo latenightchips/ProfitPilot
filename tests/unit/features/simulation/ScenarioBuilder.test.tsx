@@ -422,6 +422,132 @@ describe('ScenarioBuilder — Reset Scenario', () => {
   });
 });
 
+/**
+ * V4 Borrow Rate established-field gate — V4 Readiness Audit §12 Stage
+ * 20. `v4DebtState.baseDrawnApr`/`riskPremium` and `protocol.borrowApr`
+ * are deliberately different values throughout, so an accidental legacy
+ * read or a risk-premium mixup would be directly observable in the
+ * resulting `debtCost`.
+ */
+describe('ScenarioBuilder — V4 Borrow Rate established-field gate (Stage 20)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 999999 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.99, // deliberately unrelated — must never leak into the V4 calculation
+      supplyApr: 0.02,
+    },
+    protocolVersion: 'v4',
+    v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+    v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+  };
+
+  it('requirement 4 (display default) — shows the canonical blended effective rate, not raw protocol.borrowApr', () => {
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+    const input = screen.getByLabelText('Borrow Rate (%)') as HTMLInputElement;
+    // Same Stage 10/15/16 regression vector: annualCost 1100 / totalDebt 20500 ≈ 5.365853658536585%.
+    expect(Number(input.value)).toBeCloseTo(5.365853658536585, 6);
+    expect(Number(input.value)).not.toBe(99);
+  });
+
+  it('requirement 1/2 — running a scenario (via Holding Period) without touching Borrow Rate uses the real, unstressed V4 baseline — merely displaying the effective default does not activate rate stress', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario?.type).toBe('interest');
+    if (state.currentScenario?.type !== 'interest') return;
+    expect(state.currentScenario).not.toHaveProperty('v4RateStress');
+    expect(state.currentResult).not.toBeNull();
+    expect(state.currentResult?.scenario.debtCost).toBeGreaterThan(0);
+  });
+
+  it('requirement 3 — explicitly changing Borrow Rate activates V4 rate stress and changes debtCost relative to the unstressed baseline', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
+    const baselineDebtCost = useSimulationStore.getState().currentResult?.scenario.debtCost;
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '30');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({
+      type: 'interest',
+      v4RateStress: { baseDrawnApr: 0.3, riskPremium: 0.1 },
+    });
+    expect(state.currentResult?.scenario.debtCost).not.toBeCloseTo(baselineDebtCost ?? NaN, 2);
+  });
+
+  it('requirement 4 (riskPremium exactly once) — the stressed scenario carries the real riskPremium unchanged, never derived from the typed rate', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '30');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({ v4RateStress: { riskPremium: 0.1 } });
+  });
+
+  it("requirement 5 — the entered rate maps directly to v4RateStress.baseDrawnApr under the chosen UI semantics (absolute replacement, same as V3's own borrowApr field)", async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '12.5');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).toMatchObject({
+      v4RateStress: { baseDrawnApr: 0.125 },
+      borrowApr: 0.125, // the V3-only field is still set from the same typed value, harmlessly unread for V4
+    });
+  });
+
+  it('Reset Scenario clears the established flag — a subsequent Holding Period-only change reverts to the real unstressed baseline again', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={V4_PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '30');
+    expect(useSimulationStore.getState().currentScenario).toMatchObject({
+      v4RateStress: { baseDrawnApr: 0.3 },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Reset Scenario' }));
+    await user.selectOptions(screen.getByLabelText('Holding Period'), '90');
+
+    expect(useSimulationStore.getState().currentScenario).not.toHaveProperty('v4RateStress');
+  });
+
+  it('a V4 portfolio with no synced v4DebtState never carries v4RateStress, even once the field is established (fails closed via the existing Stage 9/10 guard, not an ambiguous stress)', async () => {
+    const user = userEvent.setup();
+    const noStatePortfolio: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4DebtState: undefined,
+    };
+    render(<ScenarioBuilder portfolio={noStatePortfolio} portfolioId="portfolio-1" />);
+
+    const borrowRateInput = screen.getByLabelText('Borrow Rate (%)');
+    await user.clear(borrowRateInput);
+    await user.type(borrowRateInput, '30');
+
+    const state = useSimulationStore.getState();
+    expect(state.currentScenario).not.toHaveProperty('v4RateStress');
+    expect(state.status).toBe('error');
+  });
+});
+
 describe('ScenarioBuilder — PT-11 scenario grouping is unmistakable', () => {
   it('groups Price/Interest Scenario fields and Portfolio Action fields into two distinct, accessibly-named fieldsets', () => {
     render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);

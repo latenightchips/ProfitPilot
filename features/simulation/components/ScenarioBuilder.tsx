@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ApplicationPortfolio } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -10,6 +10,7 @@ import {
   PRICE_PRESETS,
   type ScenarioBuilderFormValues,
 } from '../types/scenarioBuilder';
+import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate';
 import { resolveInterestScenario } from '../utils/resolveScenarioInputs';
 import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderInput';
 
@@ -58,6 +59,26 @@ import { validateScenarioBuilderInput } from '../utils/validateScenarioBuilderIn
  * doesn't have. "Rate increase," "Rate decrease," and "Custom rate"
  * (M6-006's own Include list) are all satisfied by this one free-form
  * field — M6-006, unlike M6-005, names no preset buttons.
+ *
+ * **Borrow Rate's default value is the canonical effective rate for V4
+ * — V4 Readiness Audit §12 Stage 20 — but that default alone must never
+ * become a V4 rate stress.** `defaultFormValues` seeds this field from
+ * `resolveEffectiveBorrowRate` (V3: `protocol.borrowApr` unchanged; V4:
+ * the real, blended `deriveAaveV4EffectiveBorrowRate` value, `0` only
+ * when V4 state hasn't synced yet). That displayed number is NOT the
+ * same quantity `AaveV4RateStress.baseDrawnApr` expects — see
+ * `resolveEffectiveBorrowRate.ts`'s own header comment for exactly why
+ * wiring one into the other would double-count `riskPremium`.
+ * `borrowAprEstablishedRef` below (the same pattern
+ * `LoopStrategyControls.tsx`'s own `rateEstablishedRef` already uses)
+ * tracks whether the user has actually typed into THIS field; only then
+ * does `resolveInterestScenario` translate the typed value into
+ * `v4RateStress.baseDrawnApr`. Until established, every
+ * `resolveInterestScenario` call below (Borrow Rate itself, BTC
+ * Price/Percentage Change preserving an active interest scenario,
+ * Holding Period) omits `v4RateStress` entirely, so the real portfolio's
+ * own current, unstressed rates apply — exactly what produced the
+ * displayed default in the first place.
  *
  * **Holding Period / Custom Holding Period Days initiate or re-run the
  * interest scenario (M6-007, Batch 7; trigger condition fixed PT-12,
@@ -188,7 +209,12 @@ function defaultFormValues(portfolio: ApplicationPortfolio): ScenarioBuilderForm
   return {
     btcPriceUsd: String(portfolio.market.btcPriceUsd),
     percentageChange: '',
-    borrowApr: toPercentInput(portfolio.protocol.borrowApr),
+    // V4 Readiness Audit §12 Stage 20 — the canonical, blended effective
+    // rate (V3 unchanged: still the raw protocol.borrowApr). `?? 0` only
+    // matters before any V4 live data has synced — the same fail-closed
+    // numeric placeholder `LoopStrategyControls.tsx`'s own default
+    // already established, never a fabricated or stale V3 number.
+    borrowApr: toPercentInput(resolveEffectiveBorrowRate(portfolio) ?? 0),
     collateralDelta: '0',
     debtDelta: '0',
     targetHealthFactor: '',
@@ -220,6 +246,11 @@ export function ScenarioBuilder({
   const [values, setValues] = useState<ScenarioBuilderFormValues>(() =>
     defaultFormValues(portfolio),
   );
+  // V4 Readiness Audit §12 Stage 20 — see this component's own header
+  // comment. `false` means Borrow Rate still shows its auto-seeded
+  // default (the blended effective rate for V4), never a real user
+  // override.
+  const borrowAprEstablishedRef = useRef(false);
   const currentScenario = useSimulationStore((state) => state.currentScenario);
   const setCurrentScenario = useSimulationStore((state) => state.setCurrentScenario);
   const runSimulation = useSimulationStore((state) => state.runSimulation);
@@ -268,7 +299,11 @@ export function ScenarioBuilder({
       // Period/Borrow Rate handlers already use, preserving the active
       // Borrow Rate + Holding Period while only the price input changes.
       if (currentScenario?.type === 'interest') {
-        const scenario = resolveInterestScenario(nextValues, portfolio);
+        const scenario = resolveInterestScenario(
+          nextValues,
+          portfolio,
+          borrowAprEstablishedRef.current,
+        );
         if (scenario === null) return;
         setCurrentScenario(scenario);
         runSimulation(portfolio);
@@ -289,7 +324,11 @@ export function ScenarioBuilder({
       // reason: preserve an already-active interest scenario instead of
       // silently demoting it back to a bare price scenario.
       if (currentScenario?.type === 'interest') {
-        const scenario = resolveInterestScenario(nextValues, portfolio);
+        const scenario = resolveInterestScenario(
+          nextValues,
+          portfolio,
+          borrowAprEstablishedRef.current,
+        );
         if (scenario === null) return;
         setCurrentScenario(scenario);
         runSimulation(portfolio);
@@ -316,7 +355,15 @@ export function ScenarioBuilder({
     }
 
     if (field === 'borrowApr') {
-      const scenario = resolveInterestScenario(nextValues, portfolio);
+      // V4 Readiness Audit §12 Stage 20 — the very edit that touches
+      // this field is itself what establishes it as a real user
+      // override; set before resolving so this same edit is included.
+      borrowAprEstablishedRef.current = true;
+      const scenario = resolveInterestScenario(
+        nextValues,
+        portfolio,
+        borrowAprEstablishedRef.current,
+      );
       if (scenario === null) return;
       setCurrentScenario(scenario);
       runSimulation(portfolio);
@@ -339,7 +386,11 @@ export function ScenarioBuilder({
       // matching the Borrow Rate handler immediately above — the same,
       // unmodified `resolveInterestScenario` formula path, just no
       // longer gated on prior scenario-type history.
-      const scenario = resolveInterestScenario(nextValues, portfolio);
+      const scenario = resolveInterestScenario(
+        nextValues,
+        portfolio,
+        borrowAprEstablishedRef.current,
+      );
       if (scenario === null) return;
       setCurrentScenario(scenario);
       runSimulation(portfolio);
@@ -352,6 +403,7 @@ export function ScenarioBuilder({
   }
 
   function handleReset() {
+    borrowAprEstablishedRef.current = false;
     setValues(defaultFormValues(portfolio));
     resetSimulation();
   }

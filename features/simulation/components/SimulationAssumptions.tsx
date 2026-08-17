@@ -4,6 +4,7 @@ import type { ApplicationPortfolio, PriceScenarioInput } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
 
 import { formatCurrency } from '../utils/format';
+import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate';
 
 /**
  * Simulation Assumptions Panel — 06_TASKS.md M6-013 ("Implement
@@ -44,9 +45,22 @@ import { formatCurrency } from '../utils/format';
  * separate rate is assumed beyond the protocol's own configured value,
  * so this row is omitted rather than duplicating Protocol Parameters.
  *
- * **"Protocol parameters"**: always shown, reading directly from the
- * `portfolio.protocol` prop (Max LTV, Liquidation Threshold, Borrow APR,
- * Supply APR) — real, already-validated values, no Engine call needed.
+ * **"Protocol parameters"**: always shown, reading Max LTV/Liquidation
+ * Threshold/Supply APR directly from the `portfolio.protocol` prop — real,
+ * already-validated values, no Engine call needed.
+ *
+ * **Borrow APR here is protocol-version-dispatched — V4 Readiness Audit
+ * §12 Stage 20.** Previously always `portfolio.protocol.borrowApr`, a
+ * legacy V3-shaped scalar shown for V4 too even though it has no
+ * relationship to a V4 position's real, synced rate. Now
+ * `resolveEffectiveBorrowRate` (V3: unchanged; V4: the canonical,
+ * blended `deriveAaveV4EffectiveBorrowRate` value) — "Not available"
+ * rather than a fabricated or stale V3 number when V4 state hasn't
+ * synced yet. **This is the BLENDED "effective borrow rate," not the raw
+ * `AaveV4DebtState.baseDrawnApr`** — see `resolveEffectiveBorrowRate.ts`'s
+ * own header comment for why the two must never be confused; this
+ * component only ever displays the blended one, never feeds it back into
+ * a `v4RateStress` calculation.
  *
  * **"Fees" and "Slippage" are a structural, permanent gap, not a
  * "sometimes" one — the same conflict #8 pattern `engine/loop/
@@ -96,6 +110,8 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       ? `${formatPercent(currentResult.assumptions.borrowApr)} over ${currentResult.assumptions.timeHorizonDays} days`
       : null;
 
+  const effectiveBorrowApr = resolveEffectiveBorrowRate(portfolio);
+
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-col gap-1">
@@ -115,8 +131,8 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
         <span className="text-muted-foreground">
           Max LTV {formatPercent(portfolio.protocol.maxLoanToValue)} · Liquidation Threshold{' '}
           {formatPercent(portfolio.protocol.liquidationThreshold)} · Borrow APR{' '}
-          {formatPercent(portfolio.protocol.borrowApr)} · Supply APR{' '}
-          {formatPercent(portfolio.protocol.supplyApr)}
+          {effectiveBorrowApr !== null ? formatPercent(effectiveBorrowApr) : 'Not available'} ·
+          Supply APR {formatPercent(portfolio.protocol.supplyApr)}
         </span>
       </div>
 

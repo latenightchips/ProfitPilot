@@ -38,5 +38,6 @@ export * from './types/simulationWarnings';
 export * from './utils/buildSimulationWarnings';
 export * from './utils/exportSimulation';
 export * from './utils/format';
+export * from './utils/resolveEffectiveBorrowRate';
 export * from './utils/resolveScenarioInputs';
 export * from './utils/validateScenarioBuilderInput';

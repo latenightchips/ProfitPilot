@@ -42,6 +42,38 @@
  * live calculation, satisfying M6-007's own "Project portfolio changes
  * over time" Description — not just capturing the value passively at
  * Borrow-Rate-change time, which is all Batch 6 did).
+ *
+ * **`borrowAprEstablished` / `v4RateStress` — V4 Readiness Audit §12
+ * Stage 20.** `scenario.borrowApr` (below) is always set from the
+ * form's own current value, unchanged — V3's own semantics, exactly as
+ * before. For V4, `scenario.borrowApr` is never read by
+ * `services/simulation/scenario.ts`'s V4 branch at all; the mechanism
+ * that actually reaches V4's real accrual model is `AaveV4RateStress`
+ * (`services/simulation/scenario.ts`'s own Stage 10 addition).
+ *
+ * **`AaveV4RateStress.baseDrawnApr` is NOT the same quantity as the
+ * canonical "effective borrow rate" (`deriveAaveV4EffectiveBorrowRate`,
+ * Stage 15/17) shown elsewhere as this field's own default value — see
+ * `resolveEffectiveBorrowRate.ts`'s own header comment for the full
+ * derivation of why they differ (a blended whole-position rate vs. the
+ * raw drawn-only rate `riskPremium` is layered on top of separately).**
+ * Submitting the form's default, UNTOUCHED value as `baseDrawnApr`
+ * would double-count `riskPremium`'s effect for any position with
+ * nonzero `premiumDebt`. `borrowAprEstablished` (threaded in from
+ * `ScenarioBuilder.tsx`'s own field-level "has the user actually typed
+ * into Borrow Rate" tracking — the exact same pattern
+ * `LoopStrategyControls.tsx`'s own `rateEstablishedRef` already uses,
+ * reused here rather than inventing a second interaction model) gates
+ * this: while `false`, no `v4RateStress` is sent at all, so the real
+ * portfolio's own current, unstressed `baseDrawnApr`/`riskPremium`
+ * apply — which is exactly what produced the displayed default in the
+ * first place, so this is self-consistent, not a silent no-op. Once
+ * `true` (the user has genuinely edited the field), the typed value
+ * becomes `v4RateStress.baseDrawnApr` directly — an absolute
+ * replacement for the raw base rate, the same semantics
+ * `scenario.borrowApr` already has for V3 — with `riskPremium` carried
+ * over from the portfolio's own real, current value, applied exactly
+ * once, by the Engine itself, never touched here.
  */
 import type { ApplicationPortfolio, PriceScenarioInput, SimulationScenario } from '@/services';
 
@@ -78,6 +110,7 @@ export function resolveTimeHorizonDays(values: ScenarioBuilderFormValues): numbe
 export function resolveInterestScenario(
   values: ScenarioBuilderFormValues,
   portfolio: ApplicationPortfolio,
+  borrowAprEstablished: boolean,
 ): SimulationScenario | null {
   const errors = validateScenarioBuilderInput(values, portfolio);
   if (errors.borrowApr !== null) return null;
@@ -90,6 +123,26 @@ export function resolveInterestScenario(
     type: 'interest',
     priceScenario,
     timeHorizonDays,
+    // V3-only; services/simulation/scenario.ts's V4 branch never reads
+    // this field (see this file's own header comment). Kept unchanged,
+    // unconditionally, for both protocol versions — V3's own semantics.
     borrowApr: Number(values.borrowApr) / 100,
+    ...(portfolio.protocolVersion === 'v4' &&
+      borrowAprEstablished &&
+      portfolio.v4DebtState !== undefined && {
+        v4RateStress: {
+          // The user's typed value, absolute — this is the raw
+          // AaveV4DebtState.baseDrawnApr the Engine applies to the
+          // drawn-debt stream, NOT the blended "effective borrow rate"
+          // this field displayed as its own default before being
+          // established. See this file's own header comment.
+          baseDrawnApr: Number(values.borrowApr) / 100,
+          // Unstressed — carried from the portfolio's real, current
+          // value so riskPremium is applied exactly once, by the Engine
+          // itself, never doubled up with anything already blended into
+          // a displayed rate.
+          riskPremium: portfolio.v4DebtState.riskPremium,
+        },
+      }),
   };
 }

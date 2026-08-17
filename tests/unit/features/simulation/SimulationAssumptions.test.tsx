@@ -127,6 +127,58 @@ describe('SimulationAssumptions — Formula Version survives Load (Batch 18, M6-
   });
 });
 
+/**
+ * V4 Protocol Parameters Borrow APR — V4 Readiness Audit §12 Stage 20.
+ * `protocol.borrowApr` and `v4DebtState.baseDrawnApr`/`riskPremium` are
+ * deliberately different values so a legacy-field read is directly
+ * observable.
+ */
+describe('SimulationAssumptions — V4 Protocol Parameters Borrow APR (Stage 20)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 999999 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.99, // deliberately unrelated — must never be displayed for V4
+      supplyApr: 0.02,
+    },
+    protocolVersion: 'v4',
+    v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+    v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+  };
+
+  it('shows the canonical blended effective V4 rate, never the raw legacy protocol.borrowApr', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={V4_PORTFOLIO} />);
+
+    // Same Stage 10/15/16 regression vector: annualCost 1100 / totalDebt 20500 ≈ 5.37%.
+    expect(screen.getByText(/Borrow APR 5\.37%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Borrow APR 99\.00%/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Not available" rather than a fabricated or stale V3 number when v4DebtState has not synced yet', () => {
+    const noStatePortfolio: ApplicationPortfolio = { ...V4_PORTFOLIO, v4DebtState: undefined };
+    // A real result must already exist for this component to render its
+    // content instead of the empty-state prompt — this test exercises
+    // the Borrow APR display helper specifically, using a *different*
+    // portfolio object as the `portfolio` prop than the one the Store's
+    // own result was computed against (the display reads directly from
+    // the prop, not from the stored result).
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={noStatePortfolio} />);
+
+    expect(screen.getByText(/Borrow APR Not available/)).toBeInTheDocument();
+  });
+});
+
 describe('SimulationAssumptions — portfolio action', () => {
   it('shows the current market price, unmodified, with no Rate Assumptions row', () => {
     useSimulationStore
