@@ -7,7 +7,12 @@ import {
   downloadExitPlanExport,
   EXIT_EXPORT_SCHEMA_VERSION,
 } from '@/features/exit-planner';
-import type { ApplicationPortfolio, ExitPlanResult, ServiceMetadata } from '@/services';
+import {
+  type ApplicationPortfolio,
+  deriveAaveV4EffectiveBorrowRate,
+  type ExitPlanResult,
+  type ServiceMetadata,
+} from '@/services';
 import {
   type ExitPlannerTargetInputs,
   type ExitPlannerType,
@@ -368,6 +373,92 @@ describe('buildExitPlanExportPayload — V4 canonical debt balance (Stage 16)', 
       PORTFOLIO,
     );
     expect(payload.currentPortfolioState.debtBalance).toBe(20000);
+  });
+});
+
+/**
+ * "Borrow APR (Protocol)" for a V4 portfolio — V4 Readiness Audit §12
+ * Stage 22. `protocol.borrowApr` deliberately disagrees with the real
+ * synced `v4DebtState` below, proving the export uses the canonical
+ * effective rate (`deriveAaveV4EffectiveBorrowRate`), never the raw
+ * legacy scalar — the same fixture discipline Stage 20/21's own V4 rate
+ * tests already established.
+ */
+describe('buildExitPlanExportPayload — V4 canonical Borrow APR (Stage 22)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocol: { ...PORTFOLIO.protocol, borrowApr: 0.99 },
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+  };
+
+  it('exports the canonical effective V4 rate, never the raw 99% legacy scalar', () => {
+    useExitPlannerStore.getState().reset();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(V4_PORTFOLIO);
+    const state = useExitPlannerStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      state.targetInputs ?? {},
+      state.currentResult,
+      state.warnings,
+      state.lastMetadata,
+      V4_PORTFOLIO,
+    );
+
+    const rateStep = deriveAaveV4EffectiveBorrowRate(V4_PORTFOLIO.v4DebtState!, null, 'export');
+    if (!rateStep.ok) throw new Error('setup failed: expected a valid effective rate');
+    expect(payload.assumptions.protocolParameters.borrowApr).toBeCloseTo(rateStep.value);
+    expect(payload.assumptions.protocolParameters.borrowApr).not.toBe(0.99);
+
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).not.toContain('Borrow APR (Protocol),0.99');
+  });
+
+  it('never falls back to the legacy scalar when v4DebtState is unavailable — exports null (JSON) / "Not available" (CSV)', () => {
+    useExitPlannerStore.getState().reset();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(V4_PORTFOLIO);
+    const state = useExitPlannerStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+
+    const portfolioMissingDebtState: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4DebtState: undefined,
+    };
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      state.targetInputs ?? {},
+      state.currentResult,
+      state.warnings,
+      state.lastMetadata,
+      portfolioMissingDebtState,
+    );
+
+    expect(payload.assumptions.protocolParameters.borrowApr).toBeNull();
+    expect(payload.assumptions.protocolParameters.borrowApr).not.toBe(0.99);
+
+    const json = buildExitPlanExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.borrowApr).toBeNull();
+
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).toContain('Borrow APR (Protocol),Not available');
+    expect(csv).not.toContain('Borrow APR (Protocol),0.99');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — protocolParameters still equals the raw portfolio.protocol', () => {
+    const { exitType, targetInputs, result, warnings, metadata } = runFeasiblePlan();
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
   });
 });
 

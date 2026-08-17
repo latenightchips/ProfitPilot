@@ -1,12 +1,46 @@
-import type {
-  ApplicationPortfolio,
-  PriceScenarioInput,
-  ScenarioComparisonResult,
-  ScenarioSummary,
-  ServiceMetadata,
-  SimulationResult,
-  SimulationScenario,
+import {
+  type ApplicationPortfolio,
+  deriveAaveV4EffectiveBorrowRate,
+  type PriceScenarioInput,
+  type ScenarioComparisonResult,
+  type ScenarioSummary,
+  type ServiceMetadata,
+  type SimulationResult,
+  type SimulationScenario,
 } from '@/services';
+
+/** No real Engine call precedes this export — the same "first call, no prior tracked version" case `services/export/CsvExporter.ts` already established for this same function. */
+const EXPORT_SOURCE_STATUS = 'export';
+
+/**
+ * V4 Readiness Audit §12 Stage 22 — mirrors `services/export/CsvExporter.ts`'s
+ * own `resolveBorrowAprForExport` exactly. `assumptions.protocolParameters`
+ * below previously always carried raw `portfolio.protocol.borrowApr`, the
+ * legacy V3 scalar, exported as-is regardless of protocol version. For a
+ * V4 portfolio this can disagree with the real synced `v4DebtState` (no
+ * defined relationship between the two — see
+ * `services/portfolio/mapping.ts`'s `deriveAaveV4EffectiveBorrowRate` for
+ * the full reasoning) and, since `hooks/useAaveLiveSync.ts` keeps
+ * `portfolio.protocol` live-synced from the V3 pool regardless of
+ * `protocolVersion`, is not even reliably stale — it can be a real,
+ * currently-fetched, wrong-protocol rate. Never falls back to the legacy
+ * scalar for V4: `null` (rendered as "Not available" in CSV, literal
+ * `null` in JSON) when `v4DebtState` is absent or the derivation fails.
+ * Distinct from `result.assumptions.borrowApr` (the "Rate Assumption
+ * Borrow APR" row below, unchanged) — that field is the scenario's own
+ * V3-shaped interest-rate input (V4 Readiness Audit §12 Stage 20), a
+ * different concept from "Protocol Parameters," not touched here.
+ */
+function resolveBorrowAprForExport(portfolio: ApplicationPortfolio): number | null {
+  if (portfolio.protocolVersion !== 'v4') return portfolio.protocol.borrowApr;
+  if (portfolio.v4DebtState === undefined) return null;
+  const rateStep = deriveAaveV4EffectiveBorrowRate(
+    portfolio.v4DebtState,
+    null,
+    EXPORT_SOURCE_STATUS,
+  );
+  return rateStep.ok ? rateStep.value : null;
+}
 
 /**
  * Simulation Export — 06_TASKS.md M6-019 ("Export Simulation").
@@ -115,7 +149,10 @@ export interface SimulationExportPayload {
   assumptions: {
     priceScenario: PriceScenarioInput;
     rateAssumption: { borrowApr: number; timeHorizonDays: number } | null;
-    protocolParameters: ApplicationPortfolio['protocol'];
+    protocolParameters: Omit<ApplicationPortfolio['protocol'], 'borrowApr'> & {
+      /** V4 Readiness Audit §12 Stage 22 — `resolveBorrowAprForExport`'s canonical value, `null` (never the legacy V3 scalar) when unavailable for a V4 portfolio. */
+      borrowApr: number | null;
+    };
     feesAndSlippage: string;
   };
   timestamp: string | null;
@@ -148,7 +185,10 @@ export function buildSimulationExportPayload(
               timeHorizonDays: result.assumptions.timeHorizonDays,
             }
           : null,
-      protocolParameters: portfolio.protocol,
+      protocolParameters: {
+        ...portfolio.protocol,
+        borrowApr: resolveBorrowAprForExport(portfolio),
+      },
       feesAndSlippage: FEES_AND_SLIPPAGE_NOTE,
     },
     timestamp: metadata?.calculationTimestamp ?? null,
@@ -215,7 +255,12 @@ export function buildSimulationExportCsv(payload: SimulationExportPayload): stri
   rows.push(
     csvRow('Liquidation Threshold', payload.assumptions.protocolParameters.liquidationThreshold),
   );
-  rows.push(csvRow('Borrow APR (Protocol)', payload.assumptions.protocolParameters.borrowApr));
+  rows.push(
+    csvRow(
+      'Borrow APR (Protocol)',
+      payload.assumptions.protocolParameters.borrowApr ?? 'Not available',
+    ),
+  );
   rows.push(csvRow('Supply APR', payload.assumptions.protocolParameters.supplyApr));
   rows.push(csvRow('Fees & Slippage', payload.assumptions.feesAndSlippage));
 

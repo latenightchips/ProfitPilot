@@ -7,7 +7,12 @@ import {
   downloadLoopStrategyExport,
   LOOP_EXPORT_SCHEMA_VERSION,
 } from '@/features/loop-builder';
-import type { ApplicationPortfolio, LoopStrategyPreview, ServiceMetadata } from '@/services';
+import {
+  type ApplicationPortfolio,
+  deriveAaveV4EffectiveBorrowRate,
+  type LoopStrategyPreview,
+  type ServiceMetadata,
+} from '@/services';
 import type { LoopStrategySettings } from '@/services/loop/strategy';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import type { StrategyWarning } from '@/types/strategy';
@@ -199,6 +204,86 @@ describe('buildLoopStrategyExportCsv', () => {
     expect(csv).toContain('Timestamp,Not captured');
     expect(csv).toContain('Engine Version,Not captured');
     expect(csv).toContain('Formula Version,Not captured');
+  });
+});
+
+/**
+ * "Borrow APR (Protocol)" for a V4 portfolio — V4 Readiness Audit §12
+ * Stage 22. `protocol.borrowApr` deliberately disagrees with the real
+ * synced `v4DebtState` below, proving the export uses the canonical
+ * effective rate (`deriveAaveV4EffectiveBorrowRate`), never the raw
+ * legacy scalar — the same fixture discipline Stage 20/21's own V4 rate
+ * tests already established.
+ */
+describe('buildLoopStrategyExportPayload — V4 canonical Borrow APR (Stage 22)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocol: { ...PORTFOLIO.protocol, borrowApr: 0.99 },
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+  };
+
+  function runV4ViableStrategy(): {
+    result: LoopStrategyPreview;
+    warnings: ReturnType<typeof useLoopBuilderStore.getState>['warnings'];
+    metadata: ServiceMetadata | null;
+  } {
+    useLoopBuilderStore.getState().reset();
+    useLoopBuilderStore.getState().setSettings(SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(V4_PORTFOLIO);
+    const state = useLoopBuilderStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return { result: state.currentResult, warnings: state.warnings, metadata: state.lastMetadata };
+  }
+
+  it('exports the canonical effective V4 rate, never the raw 99% legacy scalar', () => {
+    const { result, warnings, metadata } = runV4ViableStrategy();
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+
+    const rateStep = deriveAaveV4EffectiveBorrowRate(V4_PORTFOLIO.v4DebtState!, null, 'export');
+    if (!rateStep.ok) throw new Error('setup failed: expected a valid effective rate');
+    expect(payload.assumptions.protocolParameters.borrowApr).toBeCloseTo(rateStep.value);
+    expect(payload.assumptions.protocolParameters.borrowApr).not.toBe(0.99);
+
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).not.toContain('Borrow APR (Protocol),0.99');
+  });
+
+  it('never falls back to the legacy scalar when v4DebtState is unavailable — exports null (JSON) / "Not available" (CSV)', () => {
+    const { result, warnings, metadata } = runV4ViableStrategy();
+    const portfolioMissingDebtState: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4DebtState: undefined,
+    };
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      portfolioMissingDebtState,
+    );
+
+    expect(payload.assumptions.protocolParameters.borrowApr).toBeNull();
+    expect(payload.assumptions.protocolParameters.borrowApr).not.toBe(0.99);
+
+    const json = buildLoopStrategyExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.borrowApr).toBeNull();
+
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).toContain('Borrow APR (Protocol),Not available');
+    expect(csv).not.toContain('Borrow APR (Protocol),0.99');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — protocolParameters still equals the raw portfolio.protocol', () => {
+    const { result, warnings, metadata } = runViableStrategy();
+    const payload = buildLoopStrategyExportPayload(SETTINGS, result, warnings, metadata, PORTFOLIO);
+    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
   });
 });
 
