@@ -134,9 +134,11 @@ import type { TrackedFormulaVersion } from '../shared/formulaStep';
 import { formulaStep as step, optionsFromTracked as optionsFrom } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 import {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   mapApplicationPortfolioToEngineInput,
   projectAaveV4AnnualInterestCost,
+  resolveRiskCapacityFraction,
 } from './mapping';
 import type { ApplicationPortfolio } from './models';
 
@@ -193,6 +195,27 @@ export function calculatePortfolioSummary(
   );
   if (v4GuardFailure !== null) return v4GuardFailure;
 
+  // V4 Readiness Audit §12 Stage 23D — the same fail-closed discipline as
+  // the debt-state guard above, now for `v4CollateralRisk` (Stage 23C).
+  // Health Factor and liquidation price/distance/buffer below all need a
+  // real risk-capacity fraction; for a V4 portfolio that fraction is
+  // `v4CollateralRisk.collateralFactor`, never `protocol.liquidationThreshold`
+  // (see `resolveRiskCapacityFraction`'s own doc comment in `./mapping.ts`
+  // for why V4 has no separate max-LTV/liquidation-threshold split to
+  // reinterpret V3's field as).
+  const v4CollateralRiskGuardFailure = checkAaveV4CollateralRiskAvailable(
+    portfolio,
+    collateralValueStep.tracked,
+    sourceStatus,
+  );
+  if (v4CollateralRiskGuardFailure !== null) return v4CollateralRiskGuardFailure;
+
+  // Non-null by construction: V3 always returns `protocol.liquidationThreshold`
+  // from `resolveRiskCapacityFraction`; for V4, the guard immediately above
+  // already returned on the one condition (`v4CollateralRisk === undefined`)
+  // that would make it `null`.
+  const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
+
   const debtValueStep = step(calculateDebtValue(engineInput.debt), tracked, sourceStatus);
   if (!debtValueStep.ok) return debtValueStep.failure;
   tracked = debtValueStep.tracked;
@@ -222,7 +245,7 @@ export function calculatePortfolioSummary(
   const leverage = leverageStep.value;
 
   const healthFactorStep = step(
-    calculateHealthFactor(collateralValue, engineInput.protocol.liquidationThreshold, debtValue),
+    calculateHealthFactor(collateralValue, riskCapacityFraction, debtValue),
     tracked,
     sourceStatus,
   );
@@ -243,7 +266,7 @@ export function calculatePortfolioSummary(
         engineInput.market.btcPriceUsd,
         debtValue,
         collateralValue,
-        engineInput.protocol.liquidationThreshold,
+        riskCapacityFraction,
       ),
       tracked,
       sourceStatus,
@@ -253,11 +276,7 @@ export function calculatePortfolioSummary(
     warnings.push(...liquidationPriceStep.warnings);
 
     const liquidationDistanceStep = step(
-      calculateLiquidationDistance(
-        collateralValue,
-        engineInput.protocol.liquidationThreshold,
-        debtValue,
-      ),
+      calculateLiquidationDistance(collateralValue, riskCapacityFraction, debtValue),
       tracked,
       sourceStatus,
     );
@@ -270,7 +289,7 @@ export function calculatePortfolioSummary(
         engineInput.market.btcPriceUsd,
         debtValue,
         collateralValue,
-        engineInput.protocol.liquidationThreshold,
+        riskCapacityFraction,
       ),
       tracked,
       sourceStatus,

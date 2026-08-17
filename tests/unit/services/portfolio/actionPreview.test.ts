@@ -214,6 +214,7 @@ describe('previewPortfolioAction — V4 borrow/repay state (Stage 11, resolved f
       ...basePortfolio(),
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
   }
 

@@ -576,6 +576,12 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       return debtPortfolio({
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        // Stage 23D's collateral-risk guard now requires this on every V4
+        // portfolio. Same numeric value as `protocol.liquidationThreshold`
+        // above (0.8) so this Stage 8 debt-dispatch test's expected values
+        // (which never assert on healthFactor/liquidationDistance here) are
+        // unaffected by the switch to risk-capacity dispatch.
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
         ...overrides,
       });
     }
@@ -669,6 +675,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
           debt: { asset: 'USDC', balance: 999999 },
           protocolVersion: 'v4',
           v4DebtState: V4_DEBT_STATE,
+          v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
         }),
         interestScenario,
         '1 year',
@@ -689,7 +696,11 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
         'live',
       );
       const v4Result = simulateScenario(
-        debtPortfolio({ protocolVersion: 'v4', v4DebtState: V4_DEBT_STATE }),
+        debtPortfolio({
+          protocolVersion: 'v4',
+          v4DebtState: V4_DEBT_STATE,
+          v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+        }),
         interestScenario,
         '1 year',
         'live',
@@ -707,6 +718,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
         debtPortfolio({
           protocolVersion: 'v4',
           v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+          v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
         }),
         interestScenario,
         '1 year',
@@ -716,6 +728,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
         debtPortfolio({
           protocolVersion: 'v4',
           v4DebtState: { drawnDebt: 5000, premiumDebt: 0, baseDrawnApr: 0.1, riskPremium: 0 },
+          v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
         }),
         interestScenario,
         '1 year',
@@ -733,6 +746,7 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       const portfolioA = debtPortfolio({
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       });
       const portfolioB = debtPortfolio({ protocolVersion: 'v3' });
       simulateScenario(portfolioA, interestScenario, '1 year', 'live');
@@ -764,6 +778,9 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
         // wins, not the legacy field.
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        // Same value as `protocol.liquidationThreshold` (0.8) so the
+        // expected healthFactor below is unaffected by Stage 23D's dispatch.
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       }),
       scenario,
       'Price drop',
@@ -811,6 +828,11 @@ describe('simulateScenario — V4 rate stress (V4 Readiness Audit §12 Stage 10)
       },
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      // Stage 23D's collateral-risk guard now requires this on every V4
+      // portfolio; same value as `protocol.liquidationThreshold` (0.8) so
+      // this Stage 10 rate-stress suite's expected debtCost values (which
+      // never depend on collateralFactor) are unaffected.
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       ...overrides,
     };
   }
@@ -937,5 +959,189 @@ describe('simulateScenario — V4 rate stress (V4 Readiness Audit §12 Stage 10)
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.assumptions).toEqual(scenario);
+  });
+});
+
+/**
+ * V4 risk-capacity dispatch for Health Factor/liquidationDistance in both
+ * scenario branches — V4 Readiness Audit §12 Stage 23D. The price-scenario
+ * branch delegates to the Engine's bundled `simulatePriceScenario`, which
+ * internally computes `healthFactor`/`liquidationDistance` from
+ * `engineInput.protocol.liquidationThreshold` unconditionally (Engine
+ * layer stays protocol-agnostic, never modified); `simulateScenario`
+ * overrides just those 2 fields for V4 using
+ * `resolveRiskCapacityFraction`. The interest-scenario branch composes
+ * `calculateHealthFactor`/`calculateLiquidationDistance` directly and
+ * dispatches at the call site. `collateralFactor: 0.65` is deliberately
+ * chosen to differ from every fixture's `protocol.liquidationThreshold: 0.8`
+ * so a test that silently used the V3 field would fail on an exact
+ * numeric mismatch.
+ */
+describe('simulateScenario — V4 risk-capacity dispatch (Stage 23D)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+      ...overrides,
+    };
+  }
+
+  describe('price scenarios', () => {
+    it('overrides healthFactor/liquidationDistance for V4 using collateralFactor, never protocol.liquidationThreshold', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const result = simulateScenario(v4Portfolio(), scenario, 'BTC drops to $40,000', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Collateral: 2 BTC @ $40,000 = $80,000. Debt: $20,000 (drawnDebt
+      // only, premiumDebt 0). HF = 0.65 * 80000 / 20000 = 2.6.
+      expect(result.data.scenario.healthFactor).toBeCloseTo(2.6, 9);
+      expect(result.data.scenario.liquidationDistance).toBeCloseTo(1.6, 9);
+      // If this had silently used protocol.liquidationThreshold (0.8),
+      // HF would be 3.2, not 2.6.
+      expect(result.data.scenario.healthFactor).not.toBeCloseTo(3.2, 6);
+    });
+
+    it('still uses the Engine-computed V3 healthFactor/liquidationDistance unchanged for a "v3"/unset portfolio (byte-identical to before Stage 23D)', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const result = simulateScenario(basePortfolio(), scenario, 'BTC drops to $40,000', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Unchanged from the "price scenarios" suite above: HF 3.2 via
+      // protocol.liquidationThreshold (0.8).
+      expect(result.data.scenario.healthFactor).toBe(3.2);
+      expect(result.data.scenario.liquidationDistance).toBe(2.2);
+    });
+
+    it('the V4 baseline (from calculatePortfolioSummary) also uses collateralFactor, not protocol.liquidationThreshold', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const result = simulateScenario(v4Portfolio(), scenario, 'Price drop', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Baseline collateral: 2 BTC @ $50,000 = $100,000, debt $20,000.
+      // HF = 0.65 * 100000 / 20000 = 3.25.
+      expect(result.data.baseline.healthFactor).toBeCloseTo(3.25, 9);
+    });
+
+    it('fails closed with AAVE_V4_COLLATERAL_RISK_MISSING (inherited from calculatePortfolioSummary baseline) rather than falling back to protocol.liquidationThreshold', () => {
+      const scenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 40000 },
+      };
+      const result = simulateScenario(
+        v4Portfolio({ v4CollateralRisk: undefined }),
+        scenario,
+        'Price drop',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
+    });
+  });
+
+  describe('interest scenarios', () => {
+    const oneYearInterestScenario: SimulationScenario = {
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.05,
+    };
+
+    it('computes healthFactor/liquidationDistance from collateralFactor, never protocol.liquidationThreshold — numerical fixture from the authoritative Solidity formula', () => {
+      // Same Stage 8 regression vector as the existing V4 dispatch suite:
+      // drawnDebt 20000, premiumDebt 500, baseDrawnApr 0.05, riskPremium
+      // 0.1, 365 days -> totalDebt 21600. Price unchanged at $50,000, so
+      // collateralValue stays $100,000.
+      const portfolio = v4Portfolio({
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      });
+      const result = simulateScenario(portfolio, oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // HF = collateralFactor * collateralValue / projectedDebt
+      //    = 0.65 * 100000 / 21600 = 3.0092592592592595.
+      expect(result.data.scenario.healthFactor).toBeCloseTo(3.0092592592592595, 9);
+      expect(result.data.scenario.liquidationDistance).toBeCloseTo(2.0092592592592595, 9);
+      // If this had silently used protocol.liquidationThreshold (0.8),
+      // HF would be 0.8 * 100000 / 21600 ≈ 3.7037, not ≈ 3.0093.
+      expect(result.data.scenario.healthFactor).not.toBeCloseTo(3.7037, 3);
+    });
+
+    it('a deliberately conflicting V3/V4 fixture on the same portfolio shape proves the correct branch is selected purely by protocolVersion', () => {
+      const sharedOverrides = {
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+      };
+      const v3Result = simulateScenario(
+        v4Portfolio({ ...sharedOverrides, protocolVersion: 'v3' }),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      const v4Result = simulateScenario(
+        v4Portfolio({ ...sharedOverrides, protocolVersion: 'v4' }),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(v3Result.ok).toBe(true);
+      expect(v4Result.ok).toBe(true);
+      if (!v3Result.ok || !v4Result.ok) return;
+      // V3 uses protocol.liquidationThreshold (0.8) with V3's own
+      // compounded debt projection (not the V4 dispatch's 21600), so this
+      // only needs to prove the two sides genuinely diverge, not match a
+      // specific V3 number already covered elsewhere.
+      expect(v4Result.data.scenario.healthFactor).toBeCloseTo(3.0092592592592595, 9);
+      expect(v3Result.data.scenario.healthFactor).not.toBeCloseTo(
+        v4Result.data.scenario.healthFactor,
+        2,
+      );
+    });
+
+    it('fails closed with AAVE_V4_COLLATERAL_RISK_MISSING when v4DebtState is present but v4CollateralRisk is not', () => {
+      const result = simulateScenario(
+        v4Portfolio({ v4CollateralRisk: undefined }),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
+    });
+
+    it('hypothetical collateral/debt changes produce a correct V4 Health Factor via pure local Engine calculation, no RPC call', () => {
+      // A hypothetical +1 BTC collateral top-up, computed purely from the
+      // ApplicationPortfolio object passed in.
+      const portfolio = v4Portfolio({
+        collateral: { asset: 'BTC', quantity: 3 }, // was 2, hypothetically +1
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      });
+      const result = simulateScenario(portfolio, oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Collateral: 3 BTC @ $50,000 = $150,000. HF = 0.65 * 150000 / 21600
+      // = 4.513888888888889.
+      expect(result.data.scenario.healthFactor).toBeCloseTo(4.513888888888889, 9);
+    });
   });
 });

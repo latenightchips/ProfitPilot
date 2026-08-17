@@ -262,6 +262,7 @@ describe('runExitCalculation — V4 canonical current debt for Partial Debt Repa
       debt: { asset: 'USDC', balance: 999999 },
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     });
   }
 

@@ -147,6 +147,7 @@ describe('SimulationAssumptions — V4 Protocol Parameters Borrow APR (Stage 20)
     protocolVersion: 'v4',
     v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
     v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   it('shows the canonical blended effective V4 rate, never the raw legacy protocol.borrowApr', () => {

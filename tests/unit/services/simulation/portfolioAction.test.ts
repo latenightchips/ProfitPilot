@@ -195,6 +195,7 @@ describe('simulatePortfolioAction — V4 debt-delta state (Stage 11, resolved fo
     return basePortfolio({
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       ...overrides,
     });
   }
@@ -371,6 +372,7 @@ describe('simulatePortfolioTransition — V4 Loop → Simulation, end to end (St
       protocolVersion: 'v4',
       v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     });
   }
 

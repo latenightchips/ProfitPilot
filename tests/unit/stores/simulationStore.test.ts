@@ -255,6 +255,7 @@ describe('useSimulationStore — runPortfolioTransitionSimulation (Stage 18)', (
     const before: ApplicationPortfolio = validPortfolio({
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     });
     const after: ApplicationPortfolio = {
       ...before,

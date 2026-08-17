@@ -177,6 +177,7 @@ import {
 import {
   mapApplicationPortfolioToEngineInput,
   projectAaveV4AnnualInterestCost,
+  resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
@@ -321,6 +322,18 @@ export function simulateScenario(
 
   const protocolVersion: AaveProtocolVersion =
     portfolio.protocolVersion ?? DEFAULT_PROTOCOL_VERSION;
+
+  // V4 Readiness Audit §12 Stage 23D — the same risk-capacity fraction
+  // `calculatePortfolioSummary` itself now dispatches by protocol version
+  // (V3: `protocol.liquidationThreshold`; V4:
+  // `v4CollateralRisk.collateralFactor`, never the V3 field — see
+  // `resolveRiskCapacityFraction`'s own doc comment in
+  // `../portfolio/mapping.ts`). Non-null by construction: `baselineResult.ok`
+  // above already proves `calculatePortfolioSummary` passed its own
+  // `checkAaveV4CollateralRiskAvailable` guard for this exact portfolio, so
+  // a V4 portfolio reaching this line is guaranteed to have
+  // `v4CollateralRisk` present.
+  const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
   const baselineSummary = toScenarioSummary(BASELINE_LABEL, baselineResult.data, 0);
   const engineInput = mapApplicationPortfolioToEngineInput(portfolio);
   const warnings: ServiceWarning[] = [...baselineResult.warnings];
@@ -373,12 +386,56 @@ export function simulateScenario(
     tracked = debtCostStep.tracked;
     warnings.push(...debtCostStep.warnings);
 
+    // V4 Readiness Audit §12 Stage 23D — `simulatePriceScenario` (Engine
+    // layer, must stay protocol-agnostic) internally computes its own
+    // `healthFactor`/`liquidationDistance` from `engineInput.protocol.
+    // liquidationThreshold` unconditionally — the only 2 of its 8 output
+    // fields that depend on that parameter. Rather than modifying the
+    // Engine function (protocol-awareness belongs at the Service layer)
+    // or re-implementing the whole bundled calculation, this recomputes
+    // just those 2 fields for V4 using the dispatched
+    // `riskCapacityFraction`, reusing `priceResult`'s own already-computed
+    // `collateralValue`/`debtValue` (protocol-neutral, correct as-is). V3
+    // is byte-identical to before: `priceResult.healthFactor`/
+    // `liquidationDistance` are used unchanged.
+    let priceHealthFactor = priceResult.healthFactor;
+    let priceLiquidationDistance = priceResult.liquidationDistance;
+    if (protocolVersion === 'v4') {
+      const v4HealthFactorStep = formulaStep(
+        calculateHealthFactor(
+          priceResult.collateralValue,
+          riskCapacityFraction,
+          priceResult.debtValue,
+        ),
+        tracked,
+        sourceStatus,
+      );
+      if (!v4HealthFactorStep.ok) return v4HealthFactorStep.failure;
+      tracked = v4HealthFactorStep.tracked;
+      warnings.push(...v4HealthFactorStep.warnings);
+      priceHealthFactor = v4HealthFactorStep.value;
+
+      const v4LiquidationDistanceStep = formulaStep(
+        calculateLiquidationDistance(
+          priceResult.collateralValue,
+          riskCapacityFraction,
+          priceResult.debtValue,
+        ),
+        tracked,
+        sourceStatus,
+      );
+      if (!v4LiquidationDistanceStep.ok) return v4LiquidationDistanceStep.failure;
+      tracked = v4LiquidationDistanceStep.tracked;
+      warnings.push(...v4LiquidationDistanceStep.warnings);
+      priceLiquidationDistance = v4LiquidationDistanceStep.value;
+    }
+
     const scenarioSummary: ScenarioSummary = {
       label: scenarioLabel,
       equity: priceResult.netEquity,
       profitOrLoss: priceResult.profitOrLoss,
-      healthFactor: priceResult.healthFactor,
-      liquidationDistance: priceResult.liquidationDistance,
+      healthFactor: priceHealthFactor,
+      liquidationDistance: priceLiquidationDistance,
       debtCost: debtCostStep.value,
       leverage: leverageStep.value,
     };
@@ -479,12 +536,12 @@ export function simulateScenario(
   tracked = projectedEquityStep.tracked;
   warnings.push(...projectedEquityStep.warnings);
 
+  // V4 Readiness Audit §12 Stage 23D — dispatched via `riskCapacityFraction`
+  // (V3: `protocol.liquidationThreshold`, unchanged; V4:
+  // `v4CollateralRisk.collateralFactor`), never
+  // `engineInput.protocol.liquidationThreshold` directly.
   const projectedHealthFactorStep = formulaStep(
-    calculateHealthFactor(
-      projectedCollateralValueStep.value,
-      engineInput.protocol.liquidationThreshold,
-      projectedDebt,
-    ),
+    calculateHealthFactor(projectedCollateralValueStep.value, riskCapacityFraction, projectedDebt),
     tracked,
     sourceStatus,
   );
@@ -539,10 +596,12 @@ export function simulateScenario(
     debtCost: projectedDebtBalance(baselineProjectedDebtStep.value) - currentTotalDebt,
   };
 
+  // V4 Readiness Audit §12 Stage 23D — same dispatch as the Health Factor
+  // step above.
   const liquidationDistanceStep = formulaStep(
     calculateLiquidationDistance(
       projectedCollateralValueStep.value,
-      engineInput.protocol.liquidationThreshold,
+      riskCapacityFraction,
       projectedDebt,
     ),
     tracked,

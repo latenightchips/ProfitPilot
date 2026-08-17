@@ -199,12 +199,20 @@ export interface ApplicationPortfolio {
  * portfolios, and every existing V3-shaped calculation, are completely
  * unaffected.
  *
- * **Deliberately not consumed by any calculation this stage.** No
- * Health Factor, liquidation price, LTV, Loop Builder safety, Exit
- * Planner, Recommendations, Simulation, export, or dashboard-display
- * Service reads this field yet — that dispatch is explicitly deferred to
- * Stage 23D, so this stage's diff provably only adds data, never changes
- * an existing calculation's behavior.
+ * **Consumed by the core calculation layer as of Stage 23D** —
+ * `services/portfolio/mapping.ts`'s `resolveRiskCapacityFraction`/
+ * `checkAaveV4CollateralRiskAvailable` dispatch `collateralFactor` (never
+ * `protocol.liquidationThreshold`/`maxLoanToValue`) into
+ * `calculatePortfolioSummary` (Health Factor, liquidation price/distance/
+ * buffer), `services/simulation/scenario.ts` (both scenario types), and
+ * `services/portfolio/borrowCapacity.ts` (maximum additional borrow). A V4
+ * portfolio with no synced `v4CollateralRisk` fails those calculations
+ * closed rather than falling back to V3 semantics. Loop Builder UI, Exit
+ * Planner UI, Recommendations UI, and exports still consume the V3-shaped
+ * `PortfolioSummary`/`SimulationResult` output types unchanged — those UI
+ * layers do not yet know they're looking at protocol-aware numbers for a
+ * V4 portfolio; propagating that awareness into presentation is deferred
+ * to the next stage.
  */
 export interface AaveV4CollateralRiskConfig {
   /** Decimal fraction (e.g. `0.75` for 75%) — V4's `DynamicReserveConfig.collateralFactor`, BPS-scaled on-chain. */

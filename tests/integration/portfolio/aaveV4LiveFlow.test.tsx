@@ -269,6 +269,13 @@ describe('Aave V4 live flow — successful sync through the real component/store
     expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
       V4_FIXTURE_DEBT_STATE,
     );
+    // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
+    // synced (mirroring the pre-existing `v4DebtState` guard). This flow has
+    // no UI-driven collateral-risk fetch yet, so it's set directly here —
+    // same fixture convention as this file's own `protocol.liquidationThreshold: 0.8`.
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, { collateralFactor: 0.8, dynamicConfigKey: 1 });
 
     // Repay $5,000 — exactly clears the fixture's $5,000 premiumDebt first (premium-first allocation, Stage 12).
     await user.clear(debtSection.getByLabelText('Debt amount', { exact: false }));

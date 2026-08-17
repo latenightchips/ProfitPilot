@@ -1312,6 +1312,7 @@ describe('Portfolio identity persistence + canonical debt reconciliation (Stage 
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
     });
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.data.id, VALID_V4_COLLATERAL_RISK);
     await autoSaveCoordinator.flushAll();
 
     // Simulate a page refresh: wipe in-memory state, hydrate purely from

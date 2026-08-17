@@ -137,6 +137,11 @@ describe('ApplyLoopAsSimulation — V4 structured Loop → Simulation handoff (S
       protocolVersion: 'v4',
       v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      // Stage 23D's collateral-risk guard now requires this on every V4
+      // portfolio; same value as `protocol.liquidationThreshold` on
+      // `validPortfolio` (0.8) so this Stage 18 suite's expected values
+      // (which never assert on healthFactor) are unaffected.
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     });
   }
 

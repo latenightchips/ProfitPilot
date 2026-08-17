@@ -443,6 +443,7 @@ describe('ScenarioBuilder — V4 Borrow Rate established-field gate (Stage 20)',
     protocolVersion: 'v4',
     v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
     v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   it('requirement 4 (display default) — shows the canonical blended effective rate, not raw protocol.borrowApr', () => {

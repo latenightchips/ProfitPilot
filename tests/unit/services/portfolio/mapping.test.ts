@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
@@ -9,6 +10,7 @@ import {
   projectAaveV4AnnualInterestCost,
   projectAaveV4InterestCost,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityFraction,
 } from '@/services/portfolio/mapping';
 import type {
   AaveV4DebtState,
@@ -473,6 +475,172 @@ describe('checkAaveV4DebtStateAvailable (Stage 10)', () => {
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
     });
     expect(checkAaveV4DebtStateAvailable(application, tracked, 'live')).toBeNull();
+  });
+});
+
+/**
+ * V4 collateral-risk fail-closed guard — V4 Readiness Audit §12 Stage
+ * 23D. Same shape/reasoning as `checkAaveV4DebtStateAvailable` above, now
+ * for `v4CollateralRisk` (Stage 23C).
+ */
+describe('checkAaveV4CollateralRiskAvailable (Stage 23D)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns null (no failure) for a "v4" portfolio with v4CollateralRisk present', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 3 },
+    });
+    expect(checkAaveV4CollateralRiskAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns null for a "v4" portfolio with collateralFactor: 0 — a real, synced zero-weight config is not "missing"', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0, dynamicConfigKey: 3 },
+    });
+    expect(checkAaveV4CollateralRiskAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns an AAVE_V4_COLLATERAL_RISK_MISSING failure for a "v4" portfolio with no v4CollateralRisk', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    const failure = checkAaveV4CollateralRiskAvailable(application, tracked, 'live');
+    expect(failure).not.toBeNull();
+    expect(failure?.ok).toBe(false);
+    expect(failure?.errors[0]).toMatchObject({
+      category: 'calculation',
+      code: 'AAVE_V4_COLLATERAL_RISK_MISSING',
+    });
+  });
+
+  it('threads sourceStatus and the caller-supplied tracked metadata through, never fabricating it', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    const failure = checkAaveV4CollateralRiskAvailable(
+      application,
+      { engineVersion: '9.9.9', formulaVersion: '2.0' },
+      'manual',
+    );
+    expect(failure?.metadata.sourceStatus).toBe('manual');
+    expect(failure?.metadata.engineVersion).toBe('9.9.9');
+    expect(failure?.metadata.formulaVersion).toBe('2.0');
+  });
+
+  it('returns null for a "v3" portfolio even when v4CollateralRisk happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      protocolVersion: 'v3',
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 3 },
+    });
+    expect(checkAaveV4CollateralRiskAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns null when protocolVersion is unset, even when v4CollateralRisk happens to be present (no cross-inference)', () => {
+    const application = v4Application({
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 3 },
+    });
+    expect(checkAaveV4CollateralRiskAvailable(application, tracked, 'live')).toBeNull();
+  });
+});
+
+/**
+ * `resolveRiskCapacityFraction` — V4 Readiness Audit §12 Stage 23D. The
+ * single risk-capacity fraction Health Factor/liquidation/borrow-capacity
+ * dispatch by protocol version: V3 unchanged (`protocol.liquidationThreshold`);
+ * V4 uses `v4CollateralRisk.collateralFactor`, never a reuse of the V3
+ * field — see the function's own doc comment for why it returns `null`
+ * (never a silent V3 fallback) when V4 data is unavailable.
+ */
+describe('resolveRiskCapacityFraction (Stage 23D)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns protocol.liquidationThreshold for a "v3" portfolio', () => {
+    expect(resolveRiskCapacityFraction(v4Application({ protocolVersion: 'v3' }))).toBe(0.8);
+  });
+
+  it('returns protocol.liquidationThreshold when protocolVersion is unset (backward-compatible default)', () => {
+    expect(resolveRiskCapacityFraction(v4Application())).toBe(0.8);
+  });
+
+  it('returns v4CollateralRisk.collateralFactor for a "v4" portfolio, never protocol.liquidationThreshold', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+    });
+    expect(resolveRiskCapacityFraction(application)).toBe(0.7);
+    expect(resolveRiskCapacityFraction(application)).not.toBe(0.8);
+  });
+
+  it('never maps collateralFactor to maxLoanToValue either — the two concepts stay separate', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      protocol: {
+        maxLoanToValue: 0.6,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+    });
+    expect(resolveRiskCapacityFraction(application)).toBe(0.7);
+    expect(resolveRiskCapacityFraction(application)).not.toBe(0.6);
+    expect(resolveRiskCapacityFraction(application)).not.toBe(0.8);
+  });
+
+  it('preserves collateralFactor: 0 as real data, not missing — returns 0, not null or a V3 fallback', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0, dynamicConfigKey: 2 },
+    });
+    expect(resolveRiskCapacityFraction(application)).toBe(0);
+  });
+
+  it('returns null for a "v4" portfolio with no v4CollateralRisk — never silently falls back to protocol.liquidationThreshold', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    expect(resolveRiskCapacityFraction(application)).toBeNull();
+  });
+
+  it('a deliberately conflicting V3/V4 fixture selects the correct branch strictly by protocolVersion', () => {
+    const sharedFields = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 4 },
+    };
+    expect(resolveRiskCapacityFraction({ ...sharedFields, protocolVersion: 'v3' })).toBe(0.8);
+    expect(resolveRiskCapacityFraction({ ...sharedFields, protocolVersion: 'v4' })).toBe(0.65);
   });
 });
 

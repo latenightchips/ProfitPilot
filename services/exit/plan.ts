@@ -163,6 +163,17 @@ export function planExit(
     ...(portfolio.protocolVersion !== undefined && { protocolVersion: portfolio.protocolVersion }),
     ...(portfolio.v4Position !== undefined && { v4Position: portfolio.v4Position }),
     ...(afterV4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
+    // V4 Readiness Audit §12 Stage 23D — an exit/repayment changes debt,
+    // never the collateral-risk config itself (Stage 23B: collateralFactor
+    // is bound to the reserve's dynamic-config snapshot, not touched by
+    // repay), so this carries the real synced value forward unchanged,
+    // the same "carry real state forward, never invent it" rule
+    // `v4Position` above already follows. Without this, `afterResult`
+    // below would fail closed on AAVE_V4_COLLATERAL_RISK_MISSING for a
+    // V4 exit even when the portfolio's collateral risk was fully synced.
+    ...(portfolio.v4CollateralRisk !== undefined && {
+      v4CollateralRisk: portfolio.v4CollateralRisk,
+    }),
   };
 
   const afterResult = calculatePortfolioSummary(afterPortfolio, sourceStatus);

@@ -266,6 +266,7 @@ describe('buildSimulationExportPayload — V4 canonical Borrow APR (Stage 22)', 
     protocol: { ...PORTFOLIO.protocol, borrowApr: 0.99 },
     protocolVersion: 'v4',
     v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   function runV4PriceScenario(): { result: SimulationResult; metadata: ServiceMetadata | null } {

@@ -341,6 +341,71 @@ export function checkAaveV4DebtStateAvailable(
 }
 
 /**
+ * V4 fail-closed guard (V4 Readiness Audit §12 Stage 23D) — the same
+ * shape and same reasoning as `checkAaveV4DebtStateAvailable` above, now
+ * for `v4CollateralRisk` (Stage 23C). Health Factor, liquidation price/
+ * distance/buffer, and borrow-capacity calculations all need V4's real
+ * `collateralFactor` (Stage 23B's authoritative Solidity trace:
+ * `Spoke.sol`'s `_processUserAccountData`/`Spoke.borrow()` — V4 has no
+ * V3-shaped `maxLoanToValue`/`liquidationThreshold` split at all, only
+ * this one parameter governs both). A V4 portfolio with no synced
+ * `v4CollateralRisk` has no real source for that parameter — this fails
+ * the calculation closed rather than silently falling back to
+ * `protocol.liquidationThreshold`/`maxLoanToValue` (the legacy V3
+ * scalars, mathematically unrelated to V4's real risk parameter — see
+ * `resolveRiskCapacityFraction` below).
+ *
+ * Checks `v4CollateralRisk !== undefined` (object presence), never
+ * `collateralFactor`'s own truthiness — a real, synced `collateralFactor: 0`
+ * (a genuinely uninitialized or zero-weight on-chain dynamic config, see
+ * `AaveV4CollateralRiskConfig`'s own doc comment) must pass this guard
+ * and be treated as real configuration, not as "missing."
+ */
+export function checkAaveV4CollateralRiskAvailable(
+  application: ApplicationPortfolio,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+): ServiceFailure | null {
+  if (application.protocolVersion !== 'v4' || application.v4CollateralRisk !== undefined) {
+    return null;
+  }
+  const error: ApplicationError = createApplicationError(
+    'calculation',
+    'AAVE_V4_COLLATERAL_RISK_MISSING',
+    'This calculation requires live Aave V4 collateral-risk data (collateral factor, bound at the user’s own dynamic-config snapshot) for this portfolio, but none has been synced yet.',
+  );
+  return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
+}
+
+/**
+ * The single risk-capacity fraction Health Factor, liquidation price/
+ * distance/buffer, and borrow-capacity all weight collateral by — V4
+ * Readiness Audit §12 Stage 23D. V3: `protocol.liquidationThreshold`,
+ * completely unchanged. V4: `v4CollateralRisk.collateralFactor` — a
+ * genuinely different on-chain concept (Stage 23B: V4 has no separate
+ * max-LTV/liquidation-threshold pair; `collateralFactor` alone governs
+ * both borrow capacity and liquidation eligibility), never a reuse or
+ * reinterpretation of the V3 field.
+ *
+ * **Deliberately returns `null`, never a silent legacy-field fallback,
+ * when V4 collateral risk is unavailable.** Unlike
+ * `resolveCanonicalDebtBalance` above (which stays infallible by
+ * design, deferring fail-closed behavior to its own caller-enforced
+ * guard), this function's callers are expected to have already called
+ * `checkAaveV4CollateralRiskAvailable` and returned on failure — by the
+ * time this runs for a V4 portfolio, `v4CollateralRisk` is guaranteed
+ * present, so the `null` branch here is unreachable in practice, kept
+ * only so this function's own type signature can never lie about V4
+ * unavailability the way a bare `!` assertion would.
+ */
+export function resolveRiskCapacityFraction(application: ApplicationPortfolio): number | null {
+  if (application.protocolVersion !== 'v4') {
+    return application.protocol.liquidationThreshold;
+  }
+  return application.v4CollateralRisk?.collateralFactor ?? null;
+}
+
+/**
  * V4 interest cost via the real V4 accrual engine, over an arbitrary
  * holding period (V4 Readiness Audit §12 Stage 10, generalized at Stage
  * 11) — replaces a legacy `calculateDailyInterest`/`calculateMonthlyInterest`/

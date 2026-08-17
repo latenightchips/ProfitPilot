@@ -168,6 +168,7 @@ describe('planExit — V4 fail-closed guard, inherited via calculatePortfolioSum
         ...basePortfolio(),
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       },
       target,
       'live',
@@ -209,6 +210,7 @@ describe('planExit — V4 post-exit state (Stage 11, resolved for partial exits 
       protocolVersion: 'v4',
       v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
   }
 

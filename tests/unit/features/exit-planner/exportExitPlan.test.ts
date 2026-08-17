@@ -340,6 +340,7 @@ describe('buildExitPlanExportPayload — V4 canonical debt balance (Stage 16)', 
     debt: { asset: 'USDC', balance: 999999 },
     protocolVersion: 'v4',
     v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   it('exports the canonical total (drawnDebt + premiumDebt), not the deliberately-disagreeing legacy debt.balance', () => {
@@ -390,6 +391,7 @@ describe('buildExitPlanExportPayload — V4 canonical Borrow APR (Stage 22)', ()
     protocol: { ...PORTFOLIO.protocol, borrowApr: 0.99 },
     protocolVersion: 'v4',
     v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   it('exports the canonical effective V4 rate, never the raw 99% legacy scalar', () => {

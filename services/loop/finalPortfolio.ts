@@ -73,6 +73,17 @@ export function buildFinalLoopPortfolio(
     ...finalPortfolio,
     protocolVersion: portfolio.protocolVersion,
     v4Position: portfolio.v4Position,
+    // V4 Readiness Audit §12 Stage 23D — a loop strategy changes debt via
+    // additional borrowing against the SAME already-configured collateral
+    // reserve, never the collateral-risk config itself (Stage 23B:
+    // collateralFactor is bound to the reserve's dynamic-config snapshot,
+    // not touched by borrow), so this carries the real synced value
+    // forward unchanged, the same rule `v4Position` above already
+    // follows. Without this, the calculatePortfolioSummary call this
+    // final portfolio eventually reaches would fail closed on
+    // AAVE_V4_COLLATERAL_RISK_MISSING even when the starting portfolio's
+    // collateral risk was fully synced.
+    v4CollateralRisk: portfolio.v4CollateralRisk,
     v4DebtState: {
       drawnDebt: portfolio.v4DebtState.drawnDebt + newlyBorrowed,
       premiumDebt: portfolio.v4DebtState.premiumDebt,

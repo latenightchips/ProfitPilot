@@ -53,19 +53,28 @@
  *
  * **`AaveV4CollateralRiskConfig` (V4 Readiness Audit §12 Stage 23C)** —
  * joins `AaveV4DebtState` for the same reason: `setAaveV4CollateralRisk`
- * (`stores/portfolioStore.ts`) is its first Store-layer consumer. Not yet
- * read by any calculation Service — see that type's own doc comment
- * (`./models.ts`) for why that dispatch is explicitly deferred to Stage
- * 23D.
+ * (`stores/portfolioStore.ts`) is its first Store-layer consumer.
+ *
+ * **`checkAaveV4CollateralRiskAvailable`/`resolveRiskCapacityFraction`/
+ * `calculateMaxAdditionalBorrow` (V4 Readiness Audit §12 Stage 23D)** —
+ * `AaveV4CollateralRiskConfig` is now consumed: `calculatePortfolioSummary`
+ * (Health Factor, liquidation price/distance/buffer) and the new
+ * `calculateMaxAdditionalBorrow` (maximum additional borrow) both dispatch
+ * `collateralFactor`/`liquidationThreshold` by `protocolVersion` via these
+ * shared helpers, never reinterpreting one field as the other. Re-exported
+ * so any future consumer that needs the risk-capacity fraction directly
+ * (rather than through a full summary) can reuse the identical dispatch.
  */
 export {
   type PortfolioAction,
   type PortfolioActionPreview,
   previewPortfolioAction,
 } from './actionPreview';
+export { calculateMaxAdditionalBorrow } from './borrowCapacity';
 export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
@@ -75,6 +84,7 @@ export {
   type MappingResult,
   type MappingSuccess,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityFraction,
 } from './mapping';
 export type {
   AaveV4CollateralRiskConfig,

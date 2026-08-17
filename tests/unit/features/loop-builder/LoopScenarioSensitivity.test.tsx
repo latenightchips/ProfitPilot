@@ -149,6 +149,12 @@ describe('LoopScenarioSensitivity — V4 Rate Increase / Combined actually stres
       protocolVersion: 'v4',
       v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      // Stage 23D's collateral-risk guard now requires this on every V4
+      // portfolio; same value as `protocol.liquidationThreshold` on
+      // `validPortfolio` (0.8) so this Stage 17 suite's expected
+      // healthFactor-comparison values (relative, not absolute — see the
+      // tests below) are unaffected.
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     });
   }
 

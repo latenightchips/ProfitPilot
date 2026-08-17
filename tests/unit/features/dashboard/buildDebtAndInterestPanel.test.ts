@@ -85,6 +85,12 @@ function buildOkV4(v4DebtState?: {
   });
   if (v4DebtState !== undefined) {
     usePortfolioStore.getState().setAaveV4DebtState(created.data.id, v4DebtState);
+    // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
+    // synced (mirroring this same `v4DebtState` guard) — set alongside it
+    // whenever a test needs the calculation to actually succeed.
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.data.id, { collateralFactor: 0.8, dynamicConfigKey: 1 });
   }
   const record = usePortfolioStore.getState().portfolios[created.data.id];
   if (!record.summary.ok) throw new Error('expected a successful summary');
