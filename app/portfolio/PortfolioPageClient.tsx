@@ -31,7 +31,6 @@ import {
   type PortfolioDetailsInput,
   portfolioDetailsSchema,
 } from '@/types/portfolio.schema';
-import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
 import { downloadPortfolioRecoveryCopy } from '@/utils/portfolioRecoveryExport';
 import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStatus';
 
@@ -47,9 +46,12 @@ import { AaveTechnicalDetails } from './AaveTechnicalDetails';
  * Borrow rate are now live/read-only, synced from Aave V3 by
  * `hooks/useAaveLiveSync.ts` into `portfolio.market`/`portfolio.protocol`
  * — this page only ever *displays* those two objects now, via the
- * shared `deriveAaveDataStatus`/`formatAaveDataStatus` Live/Stale/
- * Unavailable badge (identical wording on both forms, since both are
- * fetched together in one request). Collateral quantity, debt asset, and
+ * shared, protocol-aware `deriveProtocolStatus`/`formatProtocolStatus`
+ * badge both forms use (Stage 25B: Collateral's own badge used to call
+ * the older, V3-only `deriveAaveDataStatus`/`formatAaveDataStatus` pair
+ * directly instead — identical V3 wording, but it never recognized a V4
+ * portfolio; see `CollateralPositionForm`'s own comment below).
+ * Collateral quantity, debt asset, and
  * debt amount remain exactly as documented below: manually entered,
  * user-editable, until wallet/address integration exists. Verification
  * detail (protocol/version, network, block number, method, fetch
@@ -926,7 +928,47 @@ function CollateralPositionForm({
   });
 
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
-  const aaveStatusLabel = formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
+  const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
+  const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
+  const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+  const aaveV4CollateralRiskStatus = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
+  const aaveV4CollateralRiskLastFetchedAt = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.lastFetchedAt,
+  );
+  // Stage 25B — this badge used to be computed via the pre-V4
+  // `formatAaveDataStatus(deriveAaveDataStatus(marketQuote))` pair
+  // (`utils/aaveDataStatus.ts`), which hardcodes "Aave V3 · ..." in every
+  // branch and never checks `protocolVersion` — a leftover from before V4
+  // existed. A V4 portfolio's Collateral section therefore always showed
+  // "Aave V3 · Live" even for a manual/hypothetical or live-synced V4
+  // position, mislabeling the shared BTC-price-quote freshness signal as
+  // if it described the position's own (V3) risk provenance. Switched to
+  // the same protocol-aware `deriveProtocolStatus`/`formatProtocolStatus`
+  // pair `DebtPositionForm` (below) and `AaveProtocolVersionForm` already
+  // use on this exact page — same inputs, same mismatch guard, so V3
+  // behavior (including the "Aave V3 · Live/Stale/Unavailable" text
+  // itself) is unchanged; only a V4 portfolio's badge changes, to
+  // correctly read e.g. "Aave V4 · Manual entry". Purely a display fix —
+  // `riskCapacityDisplay` below (the actual Collateral Factor/Max LTV
+  // figures, and the Health Factor calculation that consumes the same
+  // underlying value) is untouched.
+  const protocolMatchesDebtAsset =
+    protocolQuote !== null && protocolQuote.borrowAsset === portfolio.debt.asset;
+  const protocolStatus = deriveProtocolStatus({
+    protocolVersion: portfolio.protocolVersion,
+    v4PositionSet: portfolio.v4Position !== undefined,
+    v4DebtStateSet: portfolio.v4DebtState !== undefined,
+    aaveMarketQuote: protocolMatchesDebtAsset ? marketQuote : null,
+    aaveV4Status,
+    aaveV4LastFetchedAt,
+    v4CollateralRiskSet: portfolio.v4CollateralRisk !== undefined,
+    aaveV4CollateralRiskStatus,
+    aaveV4CollateralRiskLastFetchedAt,
+    v4DebtStateSource: portfolio.v4DebtStateSource,
+    v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
+    now: new Date().toISOString(),
+  });
+  const aaveStatusLabel = formatProtocolStatus(protocolStatus);
   // "Maximum LTV"/"Liquidation threshold" vs. "Collateral Factor" — V4
   // Readiness Audit §12 Stage 23E. See `resolveRiskCapacityDisplay`'s own
   // doc comment (`services/portfolio/mapping.ts`) for the full reasoning:

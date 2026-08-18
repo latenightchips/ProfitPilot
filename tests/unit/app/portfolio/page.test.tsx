@@ -1226,6 +1226,149 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
 });
 
 /**
+ * Collateral section status badge — V4 Readiness Audit §12 Stage 25B.
+ * Before this stage, `CollateralPositionForm`'s own badge was computed
+ * via the pre-V4 `formatAaveDataStatus(deriveAaveDataStatus(marketQuote))`
+ * pair, which hardcodes "Aave V3 · ..." regardless of `protocolVersion` —
+ * a V4 portfolio's Collateral section always showed "Aave V3 · Live"
+ * even for a manual/hypothetical or live-synced V4 position, mislabeling
+ * the shared BTC-price-quote freshness signal as the position's own (V3)
+ * risk provenance. This block proves the Collateral badge now agrees
+ * with the Debt section's own (already protocol-aware) badge in every
+ * V4 state, and that V3 is completely unaffected — same wording as
+ * before, never a V4 label.
+ */
+describe('PortfolioPage — Collateral section status badge is protocol-aware (Stage 25B)', () => {
+  function createManualV4Portfolio(debtState?: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  }) {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    if (debtState !== undefined) {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, debtState, 'manual');
+    }
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(
+        created.id,
+        { collateralFactor: 0.75, dynamicConfigKey: 0 },
+        'manual',
+      );
+    return usePortfolioStore.getState().portfolios[created.id].portfolio;
+  }
+
+  it('shows "Aave V4 · Manual entry" on the Collateral section for a manual V4 portfolio, matching the Debt section', () => {
+    createManualV4Portfolio({
+      drawnDebt: 30000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    render(<PortfolioPage />);
+
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    const debtSection = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(collateralSection.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
+    expect(debtSection.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
+    expect(collateralSection.queryByText(/Aave V3/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Aave V4 · Waiting for address" on the Collateral section before any manual or live V4 data exists', () => {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    render(<PortfolioPage />);
+
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(collateralSection.getByText('Aave V4 · Waiting for address')).toBeInTheDocument();
+    expect(collateralSection.queryByText(/Aave V3/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Aave V4 · Live" on the Collateral section for a live-synced V4 portfolio, matching the Debt section', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    );
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      matchingAaveV4CollateralRiskLiveState({ status: 'ready' }),
+    );
+    render(<PortfolioPage />);
+
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    const debtSection = within(screen.getByRole('group', { name: 'Debt' }));
+    expect(collateralSection.getByText('Aave V4 · Live')).toBeInTheDocument();
+    expect(debtSection.getByText('Aave V4 · Live')).toBeInTheDocument();
+  });
+
+  it('shows "Aave V4 · Stale" (not "Live") on the Collateral section once the last successful fetch is old, matching the Debt section', () => {
+    createAndSelectV4(
+      {},
+      { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    );
+    useAaveV4LiveDataStore.setState(
+      matchingAaveV4LiveState({
+        status: 'ready',
+        lastFetchedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      }),
+    );
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      matchingAaveV4CollateralRiskLiveState({ status: 'ready' }),
+    );
+    render(<PortfolioPage />);
+
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(collateralSection.getByText('Aave V4 · Stale')).toBeInTheDocument();
+    expect(collateralSection.queryByText('Aave V4 · Live')).not.toBeInTheDocument();
+  });
+
+  it('a V3 (or unset) portfolio keeps the unchanged V3 badge on the Collateral section — never a V4 label', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(collateralSection.getByText('Aave V3 · Live')).toBeInTheDocument();
+    expect(collateralSection.queryByText(/Aave V4/)).not.toBeInTheDocument();
+  });
+
+  it('a V3 (or unset) portfolio still shows "Aave V3 · Unavailable" on the Collateral section exactly as before this stage', () => {
+    createAndSelect();
+    useAaveLiveDataStore.setState({
+      status: 'error',
+      marketQuote: null,
+      protocolQuote: null,
+      collateralSymbol: null,
+      borrowSymbol: null,
+      source: null,
+      errorMessage: 'Live Aave data is temporarily unavailable.',
+      fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<PortfolioPage />);
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(collateralSection.getByText(/Aave V3 · Unavailable/)).toBeInTheDocument();
+  });
+
+  it('does not change the displayed Collateral Factor or any collateral/HF calculation — purely the badge label', () => {
+    const created = createManualV4Portfolio({
+      drawnDebt: 30000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    render(<PortfolioPage />);
+
+    const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(collateralSection.getByText('Collateral Factor')).toBeInTheDocument();
+    expect(collateralSection.getByText('75%')).toBeInTheDocument();
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk).toEqual({
+      collateralFactor: 0.75,
+      dynamicConfigKey: 0,
+    });
+  });
+});
+
+/**
  * Debt form "Borrow rate" stat — V4 Readiness Audit §12 Stage 15.
  * Previously always `formatPercent(portfolio.protocol.borrowApr)`,
  * showing a legacy V3 scalar for a V4 portfolio regardless of its real
