@@ -193,6 +193,130 @@ describe('useSimulationStore — runPortfolioActionSimulation (M6-008)', () => {
 });
 
 /**
+ * V4 borrow-blocked pre-check — V4 Readiness Audit §12 Stage 25C. Closes
+ * the exact bug reported: a manual-only V4 portfolio with real,
+ * calculation-ready debt state hit the generic
+ * `AAVE_V4_DEBT_STATE_MISSING` guard (worded around "hasn't synced yet")
+ * the moment a Portfolio Action's `debtDelta` was positive (a borrow) —
+ * misleading, since real debt state IS present and no amount of syncing
+ * or manual entry would change the outcome; V4 borrow simulation is
+ * genuinely unsupported (`services/portfolio/mapping.ts`'s
+ * `deriveV4DebtStateAfterDelta`, Stage 11), identically for manual and
+ * live portfolios. This Store-level pre-check intercepts that one
+ * specific case with an accurate, borrow-specific message —
+ * `simulatePortfolioAction` itself (tested directly in
+ * `tests/unit/services/simulation/portfolioAction.test.ts`) still fails
+ * closed exactly as before for every caller; only what the Store
+ * displays for THIS one flow changes.
+ */
+describe('useSimulationStore — V4 borrow-blocked pre-check (Stage 25C)', () => {
+  function v4Portfolio(
+    source: 'manual' | 'live',
+    overrides: Partial<ApplicationPortfolio> = {},
+  ): ApplicationPortfolio {
+    return validPortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: source,
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: source,
+      ...overrides,
+    });
+  }
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 debt increase shows the accurate borrow-specific error, not the generic "hasn\'t synced" message',
+    (source) => {
+      useSimulationStore.getState().runPortfolioActionSimulation(v4Portfolio(source), {
+        collateralDelta: 0,
+        debtDelta: 10000,
+      });
+
+      const state = useSimulationStore.getState();
+      expect(state.status).toBe('error');
+      expect(state.portfolioActionPreview).toBeNull();
+      expect(state.errors).toEqual([
+        {
+          category: 'calculation',
+          code: 'AAVE_V4_BORROW_SIMULATION_UNSUPPORTED',
+          message: expect.stringContaining('cannot be simulated'),
+        },
+      ]);
+      expect(state.errors[0].message).not.toMatch(/hasn.t synced|none has been synced/);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 debt DECREASE is never blocked by the borrow pre-check',
+    (source) => {
+      useSimulationStore.getState().runPortfolioActionSimulation(v4Portfolio(source), {
+        collateralDelta: 0,
+        debtDelta: -5000,
+      });
+
+      const state = useSimulationStore.getState();
+      expect(state.status).toBe('idle');
+      expect(state.errors).toEqual([]);
+      expect(state.portfolioActionPreview?.after.debtValue).toBe(25500);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 collateral-only change is never blocked by the borrow pre-check',
+    (source) => {
+      useSimulationStore
+        .getState()
+        .runPortfolioActionSimulation(v4Portfolio(source), { collateralDelta: 1, debtDelta: 0 });
+
+      const state = useSimulationStore.getState();
+      expect(state.status).toBe('idle');
+      expect(state.errors).toEqual([]);
+      expect(state.portfolioActionPreview).not.toBeNull();
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a combined %s-sourced collateral + debt-decrease change is never blocked by the borrow pre-check',
+    (source) => {
+      useSimulationStore.getState().runPortfolioActionSimulation(v4Portfolio(source), {
+        collateralDelta: 1,
+        debtDelta: -10000,
+      });
+
+      const state = useSimulationStore.getState();
+      expect(state.status).toBe('idle');
+      expect(state.errors).toEqual([]);
+      expect(state.portfolioActionPreview?.after.debtValue).toBe(20500);
+    },
+  );
+
+  it('a genuinely missing V4 debt state still falls through to the real (now provenance-neutral) Service error, not the borrow-specific one', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio({ protocolVersion: 'v4' }), {
+        collateralDelta: 0,
+        debtDelta: 10000,
+      });
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+    expect(state.errors[0].message).not.toMatch(/requires live/);
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — a large debt increase still succeeds normally', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(validPortfolio(), { collateralDelta: 0, debtDelta: 10000 });
+
+    const state = useSimulationStore.getState();
+    expect(state.status).toBe('idle');
+    expect(state.errors).toEqual([]);
+    expect(state.portfolioActionPreview?.after.debtValue).toBe(30000);
+  });
+});
+
+/**
  * `runPortfolioTransitionSimulation` — V4 Readiness Audit §12 Stage 18.
  * A second entry point into the same `portfolioActionPreview`/`status`/
  * `errors`/`warnings`/`lastMetadata` fields as `runPortfolioActionSimulation`,

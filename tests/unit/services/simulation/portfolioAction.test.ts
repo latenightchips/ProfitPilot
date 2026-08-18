@@ -299,6 +299,126 @@ describe('simulatePortfolioAction — V4 debt-delta state (Stage 11, resolved fo
 });
 
 /**
+ * Manual/live provenance parity — V4 Readiness Audit §12 Stage 25C.
+ * Closes the Stage 25C audit's own central finding: `v4DebtStateSource`/
+ * `v4CollateralRiskSource` are never read anywhere in this Service (or
+ * anywhere else in the calculation path) — presence of real
+ * `v4DebtState`/`v4CollateralRisk`, never provenance, is what determines
+ * calculation eligibility here. Every scenario below is run against both
+ * a manual-sourced and a live-sourced portfolio to prove they produce
+ * IDENTICAL results (same numbers, same pass/fail), closing the specific
+ * regression coverage requested: debt increase, debt decrease, premium-
+ * first repayment, collateral change, and combined actions must all
+ * behave the same regardless of `v4DebtStateSource`/`v4CollateralRiskSource`.
+ */
+describe('simulatePortfolioAction — manual/live provenance parity (Stage 25C)', () => {
+  function provenancePortfolio(
+    source: 'manual' | 'live',
+    overrides: Partial<ApplicationPortfolio> = {},
+  ): ApplicationPortfolio {
+    return basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: source,
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: source,
+      ...overrides,
+    });
+  }
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 debt decrease (repayment) succeeds identically',
+    (source) => {
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source),
+        { collateralDelta: 0, debtDelta: -5000 },
+        source,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // 30,500 total − 5,000 repayment = 25,500; premium-first clears the
+      // $500 premium, then $4,500 of drawn debt.
+      expect(result.data.after.debtValue).toBe(25500);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 repayment allocates premium-first, identically regardless of provenance',
+    (source) => {
+      // Repay exactly the $500 premium — drawnDebt must stay untouched at 30,000.
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source),
+        { collateralDelta: 0, debtDelta: -500 },
+        source,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.after.debtValue).toBe(30000);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 collateral-only change succeeds identically',
+    (source) => {
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source),
+        { collateralDelta: 1, debtDelta: 0 },
+        source,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.after.collateralValue).toBe(3 * 50000);
+      expect(result.data.after.debtValue).toBe(30500);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a combined %s-sourced collateral + debt (repayment) change succeeds identically',
+    (source) => {
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source),
+        { collateralDelta: 1, debtDelta: -10000 },
+        source,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.after.collateralValue).toBe(3 * 50000);
+      expect(result.data.after.debtValue).toBe(20500);
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a %s-sourced V4 debt INCREASE (borrow) still fails closed identically — provenance never changes this Service’s own guard',
+    (source) => {
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source),
+        { collateralDelta: 0, debtDelta: 10000 },
+        source,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+    },
+  );
+
+  it.each(['manual', 'live'] as const)(
+    'a genuinely missing V4 debt state still fails closed identically, regardless of the OTHER dimension’s source',
+    (source) => {
+      const result = simulatePortfolioAction(
+        provenancePortfolio(source, { v4DebtState: undefined, v4DebtStateSource: undefined }),
+        { collateralDelta: 0, debtDelta: -1000 },
+        source,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
+      // The corrected message no longer implies "live" is specifically required.
+      expect(result.errors[0].message).not.toMatch(/requires live/);
+    },
+  );
+});
+
+/**
  * `simulatePortfolioTransition` — V4 Readiness Audit §12 Stage 18. A
  * second, protocol-neutral entry point comparing two already-fully-built
  * portfolio snapshots directly, extracted from what `simulatePortfolioAction`

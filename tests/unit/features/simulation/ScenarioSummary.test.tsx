@@ -185,7 +185,7 @@ describe('ScenarioSummary — V4 missing debt state fails closed with a clear me
     render(<ScenarioSummary />);
 
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByText(/requires live Aave V4 debt data/)).toBeInTheDocument();
+    expect(screen.getByText(/requires Aave V4 debt data/)).toBeInTheDocument();
     expect(screen.getByText('Error code: AAVE_V4_DEBT_STATE_MISSING')).toBeInTheDocument();
   });
 });

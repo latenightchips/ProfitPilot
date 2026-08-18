@@ -4,6 +4,7 @@ import {
   type ApplicationError,
   type ApplicationPortfolio,
   autoSaveCoordinator,
+  createApplicationError,
   persistenceService,
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
@@ -333,6 +334,41 @@ export interface SimulationStoreActions {
 const SOURCE_STATUS = 'manual';
 const TIMELINE_POINT_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 
+/**
+ * V4 Readiness Audit §12 Stage 25C — a V4 Portfolio Action with a
+ * positive `debtDelta` (a borrow) is genuinely unsimulable: Aave V4's
+ * Risk Premium can change on a borrow via the on-chain Risk Premium
+ * Algorithm, which needs the user's full multi-collateral position —
+ * data this codebase's domain model has never captured
+ * (`services/portfolio/mapping.ts`'s `deriveV4DebtStateAfterDelta`, Stage
+ * 11, already fails this closed at the Service layer, deliberately, for
+ * every V4 portfolio regardless of provenance — this is not new, and not
+ * being relaxed here). Before this fix, that fail-closed guard was
+ * reached AFTER building a synthetic "after" portfolio with
+ * `v4DebtState: undefined`, so `calculatePortfolioSummary` surfaced the
+ * generic `AAVE_V4_DEBT_STATE_MISSING` guard — worded around "hasn't
+ * synced yet," which is actively wrong here: real V4 debt state IS
+ * present, sync/manual entry would not fix anything, and this exact
+ * failure is unrelated to `v4DebtStateSource`/`v4CollateralRiskSource`
+ * (confirmed: neither field is read anywhere in the calculation path).
+ * Intercepting here — mirroring `app/portfolio/PortfolioPageClient.tsx`'s
+ * own `v4BorrowBlocked` UI guard on `DebtPositionForm`, the same
+ * unsupported action, given a specific message instead of the generic
+ * one — replaces only the DISPLAYED explanation; `simulatePortfolioAction`
+ * itself, and every other caller of `deriveV4DebtStateAfterDelta`, keep
+ * failing exactly as before for a direct call.
+ */
+const V4_BORROW_SIMULATION_UNSUPPORTED_MESSAGE =
+  'This scenario increases V4 debt (a borrow), which cannot be simulated — Aave V4’s risk premium can change on a borrow and requires a fresh on-chain position refresh to know the new value. Try a debt decrease (repayment) or a collateral-only change instead.';
+
+function v4BorrowSimulationBlockedError(): ApplicationError {
+  return createApplicationError(
+    'calculation',
+    'AAVE_V4_BORROW_SIMULATION_UNSUPPORTED',
+    V4_BORROW_SIMULATION_UNSUPPORTED_MESSAGE,
+  );
+}
+
 const INITIAL_STATE: SimulationStoreState = {
   currentScenario: null,
   currentResult: null,
@@ -399,6 +435,26 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
 
     runPortfolioActionSimulation: (portfolio, input) => {
       set({ status: 'calculating' });
+
+      // Stage 25C — see `V4_BORROW_SIMULATION_UNSUPPORTED_MESSAGE`'s own
+      // comment above. Only intercepts the specific unsupported case
+      // (real V4 debt state present, but the requested delta is a
+      // borrow); a genuinely missing `v4DebtState` still falls through
+      // to the Service's own (now provenance-neutral) fail-closed guard.
+      if (
+        portfolio.protocolVersion === 'v4' &&
+        portfolio.v4DebtState !== undefined &&
+        input.debtDelta > 0
+      ) {
+        set({
+          status: 'error',
+          errors: [v4BorrowSimulationBlockedError()],
+          warnings: [],
+          portfolioActionPreview: null,
+          lastMetadata: null,
+        });
+        return;
+      }
 
       const result = simulatePortfolioAction(portfolio, input, SOURCE_STATUS);
 

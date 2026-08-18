@@ -335,7 +335,7 @@ export function checkAaveV4DebtStateAvailable(
   const error: ApplicationError = createApplicationError(
     'calculation',
     'AAVE_V4_DEBT_STATE_MISSING',
-    'This calculation requires live Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none has been synced yet.',
+    'This calculation requires Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none is available yet — sync a live position or enter it manually.',
   );
   return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
 }
@@ -372,7 +372,7 @@ export function checkAaveV4CollateralRiskAvailable(
   const error: ApplicationError = createApplicationError(
     'calculation',
     'AAVE_V4_COLLATERAL_RISK_MISSING',
-    'This calculation requires live Aave V4 collateral-risk data (collateral factor, bound at the user’s own dynamic-config snapshot) for this portfolio, but none has been synced yet.',
+    'This calculation requires Aave V4 collateral-risk data (collateral factor, bound at the user’s own dynamic-config snapshot) for this portfolio, but none is available yet — sync a live position or enter it manually.',
   );
   return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
 }
