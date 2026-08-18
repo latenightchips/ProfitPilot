@@ -267,3 +267,54 @@ describe('StrategyAssumptionsPanel — protocol-aware Manual-Data Status (Stage 
     },
   );
 });
+
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. V4 has no separate max-LTV/liquidation-
+ * threshold pair (Stage 23B), so showing the V3-shaped pair for a V4
+ * portfolio would render `portfolio.protocol.maxLoanToValue`/
+ * `.liquidationThreshold` — legacy fields with no defined relationship to
+ * V4's real `collateralFactor`.
+ */
+describe('StrategyAssumptionsPanel — V4 risk-capacity display (Stage 23E)', () => {
+  it('shows Collateral Factor (never Max LTV/Liquidation Threshold) for a V4 portfolio with synced v4CollateralRisk', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({
+          protocolVersion: 'v4',
+          v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+        })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    expect(screen.getByText(/Collateral Factor 65\.00%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Max LTV/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Liquidation Threshold/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Collateral Factor Not available" when v4CollateralRisk has not synced yet, never falling back to a V3 number', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({ protocolVersion: 'v4' })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    expect(screen.getByText(/Collateral Factor Not available/)).toBeInTheDocument();
+    expect(screen.queryByText(/Max LTV/)).not.toBeInTheDocument();
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still shows Max LTV/Liquidation Threshold', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio()}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    expect(screen.getByText(/Max LTV 75\.00%/)).toBeInTheDocument();
+    expect(screen.getByText(/Liquidation Threshold 80\.00%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Collateral Factor/)).not.toBeInTheDocument();
+  });
+});

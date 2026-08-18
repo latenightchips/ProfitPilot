@@ -10,6 +10,7 @@ import {
   projectAaveV4AnnualInterestCost,
   projectAaveV4InterestCost,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
   resolveRiskCapacityFraction,
 } from '@/services/portfolio/mapping';
 import type {
@@ -641,6 +642,96 @@ describe('resolveRiskCapacityFraction (Stage 23D)', () => {
     };
     expect(resolveRiskCapacityFraction({ ...sharedFields, protocolVersion: 'v3' })).toBe(0.8);
     expect(resolveRiskCapacityFraction({ ...sharedFields, protocolVersion: 'v4' })).toBe(0.65);
+  });
+});
+
+/**
+ * `resolveRiskCapacityDisplay` — V4 Readiness Audit §12 Stage 23E. The
+ * shared display-shape resolver every "Max LTV"/"Liquidation Threshold"
+ * UI/export consumer now calls instead of reading `portfolio.protocol.*`
+ * directly.
+ */
+describe('resolveRiskCapacityDisplay (Stage 23E)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns kind: "v3" with both maxLoanToValue/liquidationThreshold for a "v3" portfolio', () => {
+    expect(resolveRiskCapacityDisplay(v4Application({ protocolVersion: 'v3' }))).toEqual({
+      kind: 'v3',
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+    });
+  });
+
+  it('returns kind: "v3" when protocolVersion is unset (backward-compatible default)', () => {
+    expect(resolveRiskCapacityDisplay(v4Application())).toEqual({
+      kind: 'v3',
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+    });
+  });
+
+  it('returns kind: "v4Available" with collateralFactor for a "v4" portfolio with synced v4CollateralRisk', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+    });
+    expect(resolveRiskCapacityDisplay(application)).toEqual({
+      kind: 'v4Available',
+      collateralFactor: 0.7,
+    });
+  });
+
+  it('preserves collateralFactor: 0 as "v4Available", not "v4Unavailable" — real data, not missing', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0, dynamicConfigKey: 2 },
+    });
+    expect(resolveRiskCapacityDisplay(application)).toEqual({
+      kind: 'v4Available',
+      collateralFactor: 0,
+    });
+  });
+
+  it('returns kind: "v4Unavailable" for a "v4" portfolio with no synced v4CollateralRisk', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    expect(resolveRiskCapacityDisplay(application)).toEqual({ kind: 'v4Unavailable' });
+  });
+
+  it('a deliberately conflicting V3/V4 fixture selects the correct branch strictly by protocolVersion', () => {
+    const sharedFields = {
+      collateral: { asset: 'BTC' as const, quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 4 },
+    };
+    expect(resolveRiskCapacityDisplay({ ...sharedFields, protocolVersion: 'v3' })).toEqual({
+      kind: 'v3',
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+    });
+    expect(resolveRiskCapacityDisplay({ ...sharedFields, protocolVersion: 'v4' })).toEqual({
+      kind: 'v4Available',
+      collateralFactor: 0.65,
+    });
   });
 });
 

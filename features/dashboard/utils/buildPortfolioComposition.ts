@@ -8,10 +8,14 @@ import {
   deriveAaveV4EffectiveBorrowRate,
   type PortfolioSummary,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 
-import type { PortfolioComposition } from '../types/portfolioComposition';
+import type {
+  PortfolioComposition,
+  PortfolioCompositionProtocolParameters,
+} from '../types/portfolioComposition';
 import type { DashboardMarketFreshness } from '../types/viewModel';
 import { formatCurrency, formatPercent, formatQuantity } from './format';
 
@@ -57,6 +61,44 @@ function formatDebtQuantity(portfolio: Portfolio): string {
   return formatQuantity(resolveCanonicalDebtBalance(portfolio));
 }
 
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. Previously always
+ * `formatPercent(portfolio.protocol.maxLoanToValue)`/`.liquidationThreshold`,
+ * a V3-only pair with no V4 equivalent (Stage 23B:
+ * `collateralFactor` alone governs both) — rendering a meaningless V3
+ * number under a V3-only label for a V4 portfolio. Resolves via the
+ * shared `resolveRiskCapacityDisplay` (`services/portfolio/mapping.ts`)
+ * rather than re-deriving the V3/V4 branch here; only the formatting
+ * (`formatPercent`) is local to this Dashboard util, consistent with the
+ * Service layer's own "never format for display" rule.
+ */
+function formatProtocolParameters(
+  portfolio: Portfolio,
+  formattedBorrowApr: string,
+): PortfolioCompositionProtocolParameters {
+  const display = resolveRiskCapacityDisplay(portfolio);
+  const formattedSupplyApr = formatPercent(portfolio.protocol.supplyApr);
+  if (display.kind === 'v3') {
+    return {
+      kind: 'v3',
+      formattedMaxLoanToValue: formatPercent(display.maxLoanToValue),
+      formattedLiquidationThreshold: formatPercent(display.liquidationThreshold),
+      formattedBorrowApr,
+      formattedSupplyApr,
+    };
+  }
+  if (display.kind === 'v4Available') {
+    return {
+      kind: 'v4Available',
+      formattedCollateralFactor: formatPercent(display.collateralFactor),
+      formattedBorrowApr,
+      formattedSupplyApr,
+    };
+  }
+  return { kind: 'v4Unavailable', formattedBorrowApr, formattedSupplyApr };
+}
+
 export function buildPortfolioComposition(
   portfolio: Portfolio,
   summary: PortfolioSummary,
@@ -79,12 +121,7 @@ export function buildPortfolioComposition(
       formattedPositionValue: formatCurrency(summary.debtValue),
       formattedPortfolioPercentage: ALWAYS_100_PERCENT,
     },
-    protocolParameters: {
-      formattedMaxLoanToValue: formatPercent(portfolio.protocol.maxLoanToValue),
-      formattedLiquidationThreshold: formatPercent(portfolio.protocol.liquidationThreshold),
-      formattedBorrowApr: formatBorrowRate(portfolio, tracked),
-      formattedSupplyApr: formatPercent(portfolio.protocol.supplyApr),
-    },
+    protocolParameters: formatProtocolParameters(portfolio, formatBorrowRate(portfolio, tracked)),
     showAllocationChart: false,
   };
 }

@@ -92,11 +92,12 @@ describe('buildPortfolioPositionsCsv — V4 canonical debt balance and borrow ra
     const csv = buildPortfolioPositionsCsv([sampleV4Portfolio()]);
     const lines = csv.split('\n');
     const fields = lines[1]!.split(',');
-    // Debt Balance (USD) is column index 5, Borrow APR is column index 9
+    // Debt Balance (USD) is column index 5, Borrow APR is column index 10
     // (Portfolio ID, Name, Collateral Asset, Collateral Quantity, Debt
-    // Asset, Debt Balance, BTC Price, Max LTV, Liquidation Threshold, Borrow APR).
+    // Asset, Debt Balance, BTC Price, Max LTV, Liquidation Threshold,
+    // Collateral Factor [Stage 23E], Borrow APR).
     expect(fields[5]).toBe('Not available');
-    expect(fields[9]).toBe('Not available');
+    expect(fields[10]).toBe('Not available');
     expect(csv).not.toContain('999999');
   });
 
@@ -105,6 +106,66 @@ describe('buildPortfolioPositionsCsv — V4 canonical debt balance and borrow ra
     const lines = csv.split('\n');
     expect(lines[1]).toContain(',20000,');
     expect(lines[1]).toContain(',0.05,');
+  });
+});
+
+/**
+ * "Max LTV"/"Liquidation Threshold"/"Collateral Factor" columns — V4
+ * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
+ * differs from `samplePortfolio()`'s own `protocol.liquidationThreshold: 0.8`,
+ * so a test that silently used the V3 field would fail on an exact
+ * numeric mismatch.
+ */
+describe('buildPortfolioPositionsCsv — V4 risk-capacity columns (Stage 23E)', () => {
+  function sampleV4PortfolioWithRisk(collateralFactor: number): Portfolio {
+    return {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor, dynamicConfigKey: 1 },
+    };
+  }
+
+  it('exports "Not available" for Max LTV/Liquidation Threshold and the real value for Collateral Factor, for a V4 portfolio', () => {
+    const csv = buildPortfolioPositionsCsv([sampleV4PortfolioWithRisk(0.65)]);
+    const lines = csv.split('\n');
+    const fields = lines[1]!.split(',');
+    // Max LTV index 7, Liquidation Threshold index 8, Collateral Factor index 9.
+    expect(fields[7]).toBe('Not available');
+    expect(fields[8]).toBe('Not available');
+    expect(fields[9]).toBe('0.65');
+  });
+
+  it('exports "Not available" for Collateral Factor when v4CollateralRisk has not synced, never falling back to a V3 number', () => {
+    const noRiskPortfolio: Portfolio = {
+      ...sampleV4PortfolioWithRisk(0.65),
+      v4CollateralRisk: undefined,
+    };
+    const csv = buildPortfolioPositionsCsv([noRiskPortfolio]);
+    const lines = csv.split('\n');
+    const fields = lines[1]!.split(',');
+    expect(fields[9]).toBe('Not available');
+  });
+
+  it('a V3 row and a V4 row in the same export each show only their own protocol-relevant columns', () => {
+    // A comma-free name here — samplePortfolio()'s own name contains a
+    // comma, which csvEscape correctly quotes but would throw off this
+    // test's own naive `.split(',')` column counting.
+    const csv = buildPortfolioPositionsCsv([
+      { ...samplePortfolio(), name: 'V3 Portfolio' },
+      sampleV4PortfolioWithRisk(0.65),
+    ]);
+    const lines = csv.split('\n');
+    const v3Fields = lines[1]!.split(',');
+    const v4Fields = lines[2]!.split(',');
+    expect(v3Fields[7]).toBe('0.75'); // Max LTV
+    expect(v3Fields[8]).toBe('0.8'); // Liquidation Threshold
+    expect(v3Fields[9]).toBe('Not available'); // Collateral Factor
+    expect(v4Fields[7]).toBe('Not available'); // Max LTV
+    expect(v4Fields[8]).toBe('Not available'); // Liquidation Threshold
+    expect(v4Fields[9]).toBe('0.65'); // Collateral Factor
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ServiceMetadata } from '@/services';
+import { resolveRiskCapacityDisplay, type ServiceMetadata } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import type { ProtocolStatusKind } from '@/utils/protocolStatus';
 import { formatProtocolStatus } from '@/utils/protocolStatus';
@@ -88,6 +88,17 @@ import { resolveEffectiveBorrowRate } from './resolveEffectiveBorrowRate';
  *    portfolio sees real Live/Stale/Loading/Provider-error/Missing-debt-state
  *    status rather than a copy that always claims "No live data provider is
  *    connected" regardless of protocol.
+ *
+ * **V4 Readiness Audit §12 Stage 23E** — "Protocol Parameters" previously
+ * always showed `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
+ * unconditionally — a meaningless V3 pair for a V4 portfolio, since V4 has
+ * no such pair at all (Stage 23B: `collateralFactor` alone governs both
+ * borrow capacity and liquidation eligibility). Now resolved via the
+ * shared `resolveRiskCapacityDisplay` (`services/portfolio/mapping.ts`,
+ * the same canonical Service-layer dispatch `calculatePortfolioSummary`
+ * itself uses) rather than reading `portfolio.protocol.*` directly — V3
+ * unchanged, V4 shows "Collateral Factor" (or "Not available" when
+ * `v4CollateralRisk` has not synced yet), never a reinterpreted V3 field.
  */
 export function StrategyAssumptionsPanel({
   portfolio,
@@ -103,6 +114,17 @@ export function StrategyAssumptionsPanel({
   const effectiveBorrowApr = resolveEffectiveBorrowRate(portfolio);
   const borrowAprDisplay =
     effectiveBorrowApr !== null ? formatPercent(effectiveBorrowApr) : 'Not available';
+  // "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+  // Readiness Audit §12 Stage 23E. See `resolveRiskCapacityDisplay`'s own
+  // doc comment (`services/portfolio/mapping.ts`) for the full reasoning:
+  // V4 has no separate max-LTV/liquidation-threshold pair.
+  const riskCapacityDisplay = resolveRiskCapacityDisplay(portfolio);
+  const riskCapacityText =
+    riskCapacityDisplay.kind === 'v3'
+      ? `Max LTV ${formatPercent(riskCapacityDisplay.maxLoanToValue)} · Liquidation Threshold ${formatPercent(riskCapacityDisplay.liquidationThreshold)}`
+      : riskCapacityDisplay.kind === 'v4Available'
+        ? `Collateral Factor ${formatPercent(riskCapacityDisplay.collateralFactor)}`
+        : 'Collateral Factor Not available';
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -116,9 +138,8 @@ export function StrategyAssumptionsPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Protocol Parameters</span>
         <span className="text-muted-foreground">
-          Max LTV {formatPercent(portfolio.protocol.maxLoanToValue)} · Liquidation Threshold{' '}
-          {formatPercent(portfolio.protocol.liquidationThreshold)} · Borrow APR {borrowAprDisplay} ·
-          Supply APR {formatPercent(portfolio.protocol.supplyApr)}
+          {riskCapacityText} · Borrow APR {borrowAprDisplay} · Supply APR{' '}
+          {formatPercent(portfolio.protocol.supplyApr)}
         </span>
       </div>
 

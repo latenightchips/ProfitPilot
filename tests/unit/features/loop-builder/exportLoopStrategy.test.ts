@@ -93,7 +93,10 @@ describe('buildLoopStrategyExportPayload', () => {
     const { result, warnings, metadata } = runViableStrategy();
     const payload = buildLoopStrategyExportPayload(SETTINGS, result, warnings, metadata, PORTFOLIO);
 
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
     expect(payload.assumptions.feesAndSlippage).toMatch(/Formula ID/);
   });
 
@@ -221,6 +224,9 @@ describe('buildLoopStrategyExportPayload — V4 canonical Borrow APR (Stage 22)'
     protocol: { ...PORTFOLIO.protocol, borrowApr: 0.99 },
     protocolVersion: 'v4',
     v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    // Stage 23E's collateral-risk guard now requires this on every V4
+    // portfolio, in addition to v4DebtState.
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
   };
 
   function runV4ViableStrategy(): {
@@ -283,7 +289,86 @@ describe('buildLoopStrategyExportPayload — V4 canonical Borrow APR (Stage 22)'
   it('a V3 (or unset) portfolio is completely unaffected — protocolParameters still equals the raw portfolio.protocol', () => {
     const { result, warnings, metadata } = runViableStrategy();
     const payload = buildLoopStrategyExportPayload(SETTINGS, result, warnings, metadata, PORTFOLIO);
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
+  });
+});
+
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
+ * differs from `PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`, so
+ * a test that silently used the V3 field would fail on an exact numeric
+ * mismatch.
+ */
+describe('buildLoopStrategyExportPayload — V4 risk-capacity export (Stage 23E)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+  };
+
+  function runV4Strategy(portfolio: ApplicationPortfolio) {
+    useLoopBuilderStore.getState().reset();
+    useLoopBuilderStore.getState().setSettings(SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    const state = useLoopBuilderStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return { result: state.currentResult, warnings: state.warnings, metadata: state.lastMetadata };
+  }
+
+  it('exports maxLoanToValue/liquidationThreshold as null and the real collateralFactor for a V4 portfolio, never a reinterpreted V3 field', () => {
+    const { result, warnings, metadata } = runV4Strategy(V4_PORTFOLIO);
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.maxLoanToValue).toBeNull();
+    expect(payload.assumptions.protocolParameters.liquidationThreshold).toBeNull();
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBe(0.65);
+  });
+
+  it('CSV replaces Max LTV/Liquidation Threshold with a single Collateral Factor row for V4', () => {
+    const { result, warnings, metadata } = runV4Strategy(V4_PORTFOLIO);
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,0.65');
+    expect(csv).not.toContain('Max LTV,');
+    expect(csv).not.toContain('Liquidation Threshold,');
+  });
+
+  it('exports "Collateral Factor,Not available" in CSV / null in JSON when v4CollateralRisk has not synced, never falling back to a V3 number', () => {
+    const { result, warnings, metadata } = runV4Strategy(V4_PORTFOLIO);
+    const portfolioMissingRisk: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+    };
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      portfolioMissingRisk,
+    );
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const json = buildLoopStrategyExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,Not available');
   });
 });
 

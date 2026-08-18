@@ -15,6 +15,7 @@ import {
   deriveV4DebtStateAfterDelta,
   type PortfolioSummary,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
   type ServiceResult,
 } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
@@ -925,6 +926,11 @@ function CollateralPositionForm({
 
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const aaveStatusLabel = formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
+  // "Maximum LTV"/"Liquidation threshold" vs. "Collateral Factor" — V4
+  // Readiness Audit §12 Stage 23E. See `resolveRiskCapacityDisplay`'s own
+  // doc comment (`services/portfolio/mapping.ts`) for the full reasoning:
+  // V4 has no separate max-LTV/liquidation-threshold pair.
+  const riskCapacityDisplay = resolveRiskCapacityDisplay(portfolio);
 
   return (
     <form className="mx-auto flex w-full max-w-2xl flex-col gap-3">
@@ -960,18 +966,36 @@ function CollateralPositionForm({
               {formatCurrency(portfolio.market.btcPriceUsd)}
             </dd>
           </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Maximum LTV</dt>
-            <dd className="text-sm font-medium text-foreground">
-              {formatPercent(portfolio.protocol.maxLoanToValue)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Liquidation threshold</dt>
-            <dd className="text-sm font-medium text-foreground">
-              {formatPercent(portfolio.protocol.liquidationThreshold)}
-            </dd>
-          </div>
+          {riskCapacityDisplay.kind === 'v3' && (
+            <>
+              <div>
+                <dt className="text-xs text-muted-foreground">Maximum LTV</dt>
+                <dd className="text-sm font-medium text-foreground">
+                  {formatPercent(riskCapacityDisplay.maxLoanToValue)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Liquidation threshold</dt>
+                <dd className="text-sm font-medium text-foreground">
+                  {formatPercent(riskCapacityDisplay.liquidationThreshold)}
+                </dd>
+              </div>
+            </>
+          )}
+          {riskCapacityDisplay.kind === 'v4Available' && (
+            <div>
+              <dt className="text-xs text-muted-foreground">Collateral Factor</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {formatPercent(riskCapacityDisplay.collateralFactor)}
+              </dd>
+            </div>
+          )}
+          {riskCapacityDisplay.kind === 'v4Unavailable' && (
+            <div>
+              <dt className="text-xs text-muted-foreground">Collateral Factor</dt>
+              <dd className="text-sm font-medium text-foreground">—</dd>
+            </div>
+          )}
         </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>

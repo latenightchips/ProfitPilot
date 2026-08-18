@@ -69,6 +69,7 @@ import { calculateTargetExit, type ExitTarget, type UnavailableExitCost } from '
 import {
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
+  resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { AaveV4DebtState, ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
@@ -115,8 +116,31 @@ export function planExit(
     formulaVersion: baselineResult.metadata.formulaVersion,
   };
 
+  // V4 Readiness Audit §12 Stage 23E — `calculateTargetExit`'s
+  // `'healthFactor'` target type reads `portfolio.protocol.liquidationThreshold`
+  // directly inside its own Engine formula (`engine/exit/calculateTargetExit.ts`'s
+  // `resolveTargetDebt`), a V3-shaped assumption Stage 23D didn't reach
+  // (it only wired `summary.ts`/`scenario.ts`/`borrowCapacity.ts`).
+  // `baselineResult.ok` above already proves `calculatePortfolioSummary`
+  // passed its own `checkAaveV4CollateralRiskAvailable` guard for this
+  // exact portfolio, so no separate guard call is needed here (the same
+  // "guard inherited for free" pattern `services/simulation/scenario.ts`
+  // already established). The dispatched value is substituted into the
+  // SAME `PortfolioInput.protocol.liquidationThreshold` slot the Engine
+  // function reads generically — never modifying the Engine, never
+  // permanently redefining what `protocol.liquidationThreshold` means on
+  // the persisted portfolio. Inert for `'debtBalance'`/`'retainedBtc'`
+  // targets, which never read this field (confirmed by reading
+  // `calculateTargetExit.ts`/`calculateExitPosition.ts` in full — no
+  // other function in this call chain reads `.protocol` at all).
+  const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
+  const dispatchedEngineInput = {
+    ...engineInput,
+    protocol: { ...engineInput.protocol, liquidationThreshold: riskCapacityFraction },
+  };
+
   const exitStep = formulaStep(
-    calculateTargetExit({ portfolio: engineInput, target, scenarioBtcPriceUsd }),
+    calculateTargetExit({ portfolio: dispatchedEngineInput, target, scenarioBtcPriceUsd }),
     tracked,
     sourceStatus,
   );

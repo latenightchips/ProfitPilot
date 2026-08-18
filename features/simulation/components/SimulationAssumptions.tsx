@@ -1,6 +1,10 @@
 'use client';
 
-import type { ApplicationPortfolio, PriceScenarioInput } from '@/services';
+import {
+  type ApplicationPortfolio,
+  type PriceScenarioInput,
+  resolveRiskCapacityDisplay,
+} from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
 
 import { formatCurrency } from '../utils/format';
@@ -45,9 +49,11 @@ import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate'
  * separate rate is assumed beyond the protocol's own configured value,
  * so this row is omitted rather than duplicating Protocol Parameters.
  *
- * **"Protocol parameters"**: always shown, reading Max LTV/Liquidation
- * Threshold/Supply APR directly from the `portfolio.protocol` prop — real,
- * already-validated values, no Engine call needed.
+ * **"Protocol parameters"**: always shown — Supply APR reads directly
+ * from the `portfolio.protocol` prop; the risk-capacity line
+ * (Max LTV/Liquidation Threshold for V3, Collateral Factor for V4) is
+ * protocol-version-dispatched — see the V4 Readiness Audit §12 Stage 23E
+ * note below.
  *
  * **Borrow APR here is protocol-version-dispatched — V4 Readiness Audit
  * §12 Stage 20.** Previously always `portfolio.protocol.borrowApr`, a
@@ -76,6 +82,16 @@ import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate'
  * `lastMetadata` field (Batch 12) — the real `ServiceMetadata.engineVersion`/
  * `formulaVersion` the most recent successful calculation actually
  * returned, not a hardcoded constant duplicated in the UI layer.
+ *
+ * **V4 Readiness Audit §12 Stage 23E** — the risk-capacity line of
+ * "Protocol Parameters" previously always showed
+ * `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
+ * unconditionally, a meaningless V3 pair for a V4 portfolio (Stage 23B:
+ * `collateralFactor` alone governs both). Now resolved via the shared
+ * `resolveRiskCapacityDisplay` (`services/portfolio/mapping.ts`) rather
+ * than reading `portfolio.protocol.*` directly — V3 unchanged, V4 shows
+ * "Collateral Factor" (or "Not available" when `v4CollateralRisk` has not
+ * synced yet), never a reinterpreted V3 field.
  */
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
@@ -111,6 +127,17 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       : null;
 
   const effectiveBorrowApr = resolveEffectiveBorrowRate(portfolio);
+  // "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+  // Readiness Audit §12 Stage 23E. See `resolveRiskCapacityDisplay`'s own
+  // doc comment (`services/portfolio/mapping.ts`) for the full reasoning:
+  // V4 has no separate max-LTV/liquidation-threshold pair.
+  const riskCapacityDisplay = resolveRiskCapacityDisplay(portfolio);
+  const riskCapacityText =
+    riskCapacityDisplay.kind === 'v3'
+      ? `Max LTV ${formatPercent(riskCapacityDisplay.maxLoanToValue)} · Liquidation Threshold ${formatPercent(riskCapacityDisplay.liquidationThreshold)}`
+      : riskCapacityDisplay.kind === 'v4Available'
+        ? `Collateral Factor ${formatPercent(riskCapacityDisplay.collateralFactor)}`
+        : 'Collateral Factor Not available';
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -129,8 +156,7 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Protocol Parameters</span>
         <span className="text-muted-foreground">
-          Max LTV {formatPercent(portfolio.protocol.maxLoanToValue)} · Liquidation Threshold{' '}
-          {formatPercent(portfolio.protocol.liquidationThreshold)} · Borrow APR{' '}
+          {riskCapacityText} · Borrow APR{' '}
           {effectiveBorrowApr !== null ? formatPercent(effectiveBorrowApr) : 'Not available'} ·
           Supply APR {formatPercent(portfolio.protocol.supplyApr)}
         </span>

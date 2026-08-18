@@ -180,6 +180,67 @@ describe('SimulationAssumptions — V4 Protocol Parameters Borrow APR (Stage 20)
   });
 });
 
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. V4 has no separate max-LTV/liquidation-
+ * threshold pair (Stage 23B). `collateralFactor: 0.65` deliberately
+ * differs from `V4_PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`,
+ * so a test that silently used the V3 field would fail on an exact
+ * numeric mismatch.
+ */
+describe('SimulationAssumptions — V4 risk-capacity display (Stage 23E)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 999999 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.99,
+      supplyApr: 0.02,
+    },
+    protocolVersion: 'v4',
+    v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+    v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+  };
+
+  it('shows Collateral Factor (never Max LTV/Liquidation Threshold) for a V4 portfolio with synced v4CollateralRisk', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={V4_PORTFOLIO} />);
+
+    expect(screen.getByText(/Collateral Factor 65\.00%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Max LTV/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Liquidation Threshold/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Collateral Factor Not available" when v4CollateralRisk has not synced yet, never falling back to a V3 number', () => {
+    const noRiskPortfolio: ApplicationPortfolio = { ...V4_PORTFOLIO, v4CollateralRisk: undefined };
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={noRiskPortfolio} />);
+
+    expect(screen.getByText(/Collateral Factor Not available/)).toBeInTheDocument();
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still shows Max LTV/Liquidation Threshold', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={PORTFOLIO} />);
+
+    expect(screen.getByText(/Max LTV 75\.00%/)).toBeInTheDocument();
+    expect(screen.getByText(/Liquidation Threshold 80\.00%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Collateral Factor/)).not.toBeInTheDocument();
+  });
+});
+
 describe('SimulationAssumptions — portfolio action', () => {
   it('shows the current market price, unmodified, with no Rate Assumptions row', () => {
     useSimulationStore

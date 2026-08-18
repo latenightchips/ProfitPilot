@@ -169,6 +169,9 @@ describe('generateRecommendationSet — V4 fail-closed guard (Stage 10)', () => 
         ...basePortfolio(),
         protocolVersion: 'v4',
         v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+        // Stage 23E's collateral-risk guard now requires this on every V4
+        // portfolio, in addition to v4DebtState.
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
       },
       baseRules(),
       'live',
@@ -222,7 +225,20 @@ describe('generateRecommendationSet — V4 effective borrow rate for the loop re
     expect(rateStep.value).toBeCloseTo(0.05365853658536585, 10);
 
     const v4Result = generateRecommendationSet(
-      { ...basePortfolio(), protocolVersion: 'v4', v4DebtState },
+      {
+        ...basePortfolio(),
+        protocolVersion: 'v4',
+        v4DebtState,
+        // Matches `basePortfolio().protocol.maxLoanToValue` (0.75) —
+        // Stage 23E dispatches `collateralFactor` into BOTH
+        // `maxLoanToValue`/`liquidationThreshold` for V4, and this test's
+        // whole premise is that `annualInterestCost` (driven by
+        // `borrowedAmount`, which depends only on `maxLoanToValue`)
+        // matches an equivalent V3 portfolio using the SAME
+        // `maxLoanToValue` — so this value must match, not just be "any"
+        // valid fraction.
+        v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 1 },
+      },
       baseRules(),
       'live',
     );
@@ -261,5 +277,104 @@ describe('generateRecommendationSet — V4 effective borrow rate for the loop re
       legacyLoop.relevantValues.annualInterestCost,
       2,
     );
+  });
+});
+
+/**
+ * V4 risk-capacity dispatch for the borrow/loop recommendations — V4
+ * Readiness Audit §12 Stage 23E. `calculateBorrowRecommendation` (F-061)
+ * reads BOTH `protocol.liquidationThreshold` (Health Factor) and
+ * `protocol.maxLoanToValue` (available borrow) directly;
+ * `calculateLoopRecommendation`'s `calculateLoopStep` (F-014) reads both
+ * too — V3-shaped assumptions Stage 23D didn't reach. Per Stage 23B, V4
+ * has no separate max-LTV/liquidation-threshold split, so both fields
+ * dispatch to the same `collateralFactor` value. `collateralFactor: 0.65`
+ * is deliberately chosen to differ from every fixture's
+ * `protocol.liquidationThreshold: 0.8`/`maxLoanToValue: 0.75` in this
+ * file, so a test that silently used a V3 field would fail on an exact
+ * numeric mismatch.
+ */
+describe('generateRecommendationSet — V4 risk-capacity dispatch for borrow/loop recommendations (Stage 23E)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      ...basePortfolio(),
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 },
+      ...overrides,
+    };
+  }
+
+  function findBorrowRecommendation(recommendations: Recommendation[]): Recommendation {
+    const borrow = recommendations.find((r) => r.formulaReferences.includes('F-061'));
+    if (borrow === undefined) throw new Error('expected a borrow (F-061) recommendation');
+    return borrow;
+  }
+
+  it("computes the borrow recommendation's healthFactor/availableBorrow from collateralFactor, dispatched into BOTH liquidationThreshold and maxLoanToValue slots — numerical fixture", () => {
+    const result = generateRecommendationSet(v4Portfolio(), baseRules(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const borrow = findBorrowRecommendation(result.data.recommendations);
+    // Collateral: 2 BTC @ $50,000 = $100,000. Debt: $20,000.
+    // healthFactor = 100000 * 0.65 / 20000 = 3.25.
+    expect(borrow.relevantValues.healthFactor).toBeCloseTo(3.25, 9);
+    // availableBorrow (F-013) = 100000 * 0.65 - 20000 = 45000.
+    expect(borrow.relevantValues.availableBorrow).toBeCloseTo(45000, 6);
+    // If this had silently used protocol.liquidationThreshold (0.8) for
+    // healthFactor, it would be 4, not 3.25. If maxLoanToValue (0.75) for
+    // availableBorrow, it would be 55000, not 45000.
+    expect(borrow.relevantValues.healthFactor).not.toBeCloseTo(4, 6);
+    expect(borrow.relevantValues.availableBorrow).not.toBeCloseTo(55000, 6);
+  });
+
+  it('a deliberately conflicting V3/V4 fixture on the same portfolio shape proves the correct branch is selected purely by protocolVersion', () => {
+    const v3Result = generateRecommendationSet(
+      v4Portfolio({ protocolVersion: 'v3' }),
+      baseRules(),
+      'live',
+    );
+    const v4Result = generateRecommendationSet(v4Portfolio(), baseRules(), 'live');
+    expect(v3Result.ok).toBe(true);
+    expect(v4Result.ok).toBe(true);
+    if (!v3Result.ok || !v4Result.ok) return;
+    const v3Borrow = findBorrowRecommendation(v3Result.data.recommendations);
+    const v4Borrow = findBorrowRecommendation(v4Result.data.recommendations);
+    // V3: maxLoanToValue 0.75 -> availableBorrow = 100000*0.75-20000=55000.
+    expect(v3Borrow.relevantValues.availableBorrow).toBeCloseTo(55000, 6);
+    // V4: collateralFactor 0.65 -> availableBorrow = 45000.
+    expect(v4Borrow.relevantValues.availableBorrow).toBeCloseTo(45000, 6);
+  });
+
+  it('fails closed with AAVE_V4_COLLATERAL_RISK_MISSING when v4DebtState is present but v4CollateralRisk is not, never falling back to protocol.liquidationThreshold/maxLoanToValue', () => {
+    const result = generateRecommendationSet(
+      v4Portfolio({ v4CollateralRisk: undefined }),
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
+  });
+
+  it('does not have a data field on the missing-collateral-risk failure (no partial/placeholder result leaks through)', () => {
+    const result = generateRecommendationSet(
+      v4Portfolio({ v4CollateralRisk: undefined }),
+      baseRules(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('hypothetical collateral/debt changes produce correct V4 recommendations via pure local Engine calculation, no RPC call', () => {
+    const portfolio = v4Portfolio({ collateral: { asset: 'BTC', quantity: 3 } });
+    const result = generateRecommendationSet(portfolio, baseRules(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const borrow = findBorrowRecommendation(result.data.recommendations);
+    // Collateral: 3 BTC @ $50,000 = $150,000.
+    // healthFactor = 150000 * 0.65 / 20000 = 4.875.
+    expect(borrow.relevantValues.healthFactor).toBeCloseTo(4.875, 9);
   });
 });

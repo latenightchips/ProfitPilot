@@ -293,3 +293,84 @@ describe('planExit — V4 post-exit state (Stage 11, resolved for partial exits 
     expect(result.ok).toBe(true);
   });
 });
+
+/**
+ * V4 risk-capacity dispatch for the `'healthFactor'` exit target type —
+ * V4 Readiness Audit §12 Stage 23E. `calculateTargetExit`'s
+ * `resolveTargetDebt` (`engine/exit/calculateTargetExit.ts`) reads
+ * `portfolio.protocol.liquidationThreshold` directly for this one target
+ * type — a V3-shaped assumption Stage 23D didn't reach (it only wired
+ * `summary.ts`/`scenario.ts`/`borrowCapacity.ts`). This silently produced
+ * a wrong target debt/sale amount for a V4 portfolio before this fix.
+ * `collateralFactor: 0.65` is deliberately chosen to differ from every
+ * fixture's `protocol.liquidationThreshold: 0.8` in this file, so a test
+ * that silently used the V3 field would fail on an exact numeric
+ * mismatch, not merely "some number came back."
+ */
+describe('planExit — V4 risk-capacity dispatch for the "healthFactor" target type (Stage 23E)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      ...basePortfolio(),
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 30000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 },
+      ...overrides,
+    };
+  }
+
+  it('resolves the target debt from collateralFactor, not protocol.liquidationThreshold — numerical fixture from the authoritative F-040 formula', () => {
+    // Authoritative formula (F-040, calculateTargetDebt, reused by
+    // resolveTargetDebt): Target Debt = (Collateral Value * risk-capacity
+    // fraction) / Target HF. Collateral: 2 BTC @ $50,000 = $100,000.
+    // collateralFactor: 0.65. targetHealthFactor: 2.6.
+    // Target Debt = 100000 * 0.65 / 2.6 = 25000.
+    const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 2.6 };
+    const result = planExit(v4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    // Repayment = currentDebt (30000) - targetDebt (25000) = 5000.
+    expect(result.data.transaction?.repayment).toBeCloseTo(5000, 6);
+    // BTC sold = repayment / price = 5000 / 50000 = 0.1.
+    expect(result.data.transaction?.btcSold).toBeCloseTo(0.1, 9);
+    expect(result.data.transaction?.btcRetained).toBeCloseTo(1.9, 9);
+    // If this had silently used protocol.liquidationThreshold (0.8), the
+    // target debt would be 100000 * 0.8 / 2.6 ≈ 30769.23 — infeasible
+    // (exceeds current debt of 30000) — a completely different outcome.
+  });
+
+  it('a deliberately conflicting V3/V4 fixture on the same portfolio shape proves the correct branch is selected purely by protocolVersion', () => {
+    const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 2.6 };
+    const v3Result = planExit(
+      v4Portfolio({ protocolVersion: 'v3', debt: { asset: 'USDC', balance: 30000 } }),
+      target,
+      'live',
+    );
+    const v4Result = planExit(v4Portfolio(), target, 'live');
+    expect(v3Result.ok).toBe(true);
+    expect(v4Result.ok).toBe(true);
+    if (!v3Result.ok || !v4Result.ok) return;
+    // V3 uses liquidationThreshold (0.8): target debt = 100000*0.8/2.6 ≈
+    // 30769.23, which EXCEEDS current debt (30000) — infeasible.
+    expect(v3Result.data.feasible).toBe(false);
+    // V4 uses collateralFactor (0.65): target debt = 25000, feasible.
+    expect(v4Result.data.feasible).toBe(true);
+  });
+
+  it('fails closed with AAVE_V4_COLLATERAL_RISK_MISSING for a "healthFactor" target when v4CollateralRisk is unavailable, never falling back to protocol.liquidationThreshold', () => {
+    const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 2.6 };
+    const result = planExit(v4Portfolio({ v4CollateralRisk: undefined }), target, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
+  });
+
+  it('is inert for "debtBalance"/"retainedBtc" target types, which never read the risk-capacity fraction', () => {
+    const debtBalanceTarget: ExitTarget = { type: 'debtBalance', targetDebt: 25000 };
+    const result = planExit(v4Portfolio(), debtBalanceTarget, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.repayment).toBeCloseTo(5000, 6);
+  });
+});

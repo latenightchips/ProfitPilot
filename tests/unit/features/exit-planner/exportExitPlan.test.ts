@@ -119,7 +119,13 @@ describe('buildExitPlanExportPayload', () => {
       PORTFOLIO,
     );
 
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    // V4 Readiness Audit §12 Stage 23E — `collateralFactor: null` is a
+    // new, additive field (never populated for a V3 portfolio); every
+    // other field matches `PORTFOLIO.protocol` unchanged.
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
     expect(payload.assumptions.feesAndSlippage).toMatch(/Formula ID/);
   });
 
@@ -460,7 +466,119 @@ describe('buildExitPlanExportPayload — V4 canonical Borrow APR (Stage 22)', ()
       metadata,
       PORTFOLIO,
     );
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
+  });
+});
+
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
+ * differs from `V4_PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`,
+ * so a test that silently used the V3 field would fail on an exact
+ * numeric mismatch.
+ */
+describe('buildExitPlanExportPayload — V4 risk-capacity export (Stage 23E)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+  };
+
+  function runV4Plan(portfolio: ApplicationPortfolio) {
+    useExitPlannerStore.getState().reset();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+    const state = useExitPlannerStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return {
+      targetInputs: state.targetInputs ?? {},
+      result: state.currentResult,
+      warnings: state.warnings,
+      metadata: state.lastMetadata,
+    };
+  }
+
+  it('exports maxLoanToValue/liquidationThreshold as null and the real collateralFactor for a V4 portfolio, never a reinterpreted V3 field', () => {
+    const { targetInputs, result, warnings, metadata } = runV4Plan(V4_PORTFOLIO);
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.maxLoanToValue).toBeNull();
+    expect(payload.assumptions.protocolParameters.liquidationThreshold).toBeNull();
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBe(0.65);
+
+    const json = buildExitPlanExportJson(payload);
+    const parsed = JSON.parse(json);
+    expect(parsed.assumptions.protocolParameters.maxLoanToValue).toBeNull();
+    expect(parsed.assumptions.protocolParameters.collateralFactor).toBe(0.65);
+  });
+
+  it('CSV replaces Max LTV/Liquidation Threshold with a single Collateral Factor row for V4, rather than adding an always-empty row alongside them', () => {
+    const { targetInputs, result, warnings, metadata } = runV4Plan(V4_PORTFOLIO);
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,0.65');
+    expect(csv).not.toContain('Max LTV');
+    expect(csv).not.toContain('Liquidation Threshold');
+  });
+
+  it('exports "Collateral Factor,Not available" in CSV / null in JSON when v4CollateralRisk has not synced, never falling back to a V3 number', () => {
+    const portfolioMissingRisk: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+    };
+    const { targetInputs, result, warnings, metadata } = runV4Plan(V4_PORTFOLIO);
+    const payload = buildExitPlanExportPayload(
+      'fullExit',
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      portfolioMissingRisk,
+    );
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const json = buildExitPlanExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,Not available');
+  });
+
+  it('a V3 (or unset) portfolio exports Max LTV/Liquidation Threshold exactly as before, with collateralFactor: null', () => {
+    const { exitType, targetInputs, result, warnings, metadata } = runFeasiblePlan();
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.maxLoanToValue).toBe(0.75);
+    expect(payload.assumptions.protocolParameters.liquidationThreshold).toBe(0.8);
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).toContain('Max LTV,0.75');
+    expect(csv).toContain('Liquidation Threshold,0.8');
+    expect(csv).not.toContain('Collateral Factor');
   });
 });
 

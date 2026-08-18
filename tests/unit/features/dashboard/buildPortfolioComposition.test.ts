@@ -118,9 +118,11 @@ describe('buildPortfolioComposition — collateral and debt rows', () => {
 });
 
 describe('buildPortfolioComposition — protocol parameters', () => {
-  it('formats every protocol parameter as a percentage', () => {
+  it('formats every protocol parameter as a percentage (V3: kind "v3", Max LTV/Liquidation Threshold pair)', () => {
     const { portfolio, summary, marketFreshness, tracked } = buildOk();
     const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.kind).toBe('v3');
+    if (composition.protocolParameters.kind !== 'v3') return;
     expect(composition.protocolParameters.formattedMaxLoanToValue).toBe('75%');
     expect(composition.protocolParameters.formattedLiquidationThreshold).toBe('80%');
     expect(composition.protocolParameters.formattedBorrowApr).toBe('5%');
@@ -210,5 +212,108 @@ describe('buildPortfolioComposition — V4 canonical debt quantity (Stage 16)', 
     const { portfolio, summary, marketFreshness, tracked } = buildOk();
     const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
     expect(composition.debt.formattedQuantity).toBe('20,000');
+  });
+});
+
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. Previously always read
+ * `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
+ * unconditionally — a meaningless V3 pair for a V4 portfolio, shown under
+ * V3-only labels. `resolveRiskCapacityDisplay` (`services/portfolio/mapping.ts`)
+ * is the single shared resolver; this Dashboard util only formats.
+ */
+describe('buildPortfolioComposition — V4 risk-capacity display (Stage 23E)', () => {
+  function buildOkV4WithCollateralRisk(collateralFactor: number, drawnDebt = 20000) {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.data.id, { collateralFactor, dynamicConfigKey: 1 });
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    if (!record.summary.ok) throw new Error('expected a successful summary');
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+    if (!viewModel.ok) throw new Error('expected a successful view model');
+    return {
+      portfolio: record.portfolio,
+      summary: record.summary.data,
+      marketFreshness: viewModel.freshness.market,
+      tracked: {
+        engineVersion: record.summary.metadata.engineVersion,
+        formulaVersion: record.summary.metadata.formulaVersion,
+      },
+    };
+  }
+
+  it('shows kind: "v4Available" with the real collateralFactor, never protocol.maxLoanToValue/liquidationThreshold', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOkV4WithCollateralRisk(0.65);
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.kind).toBe('v4Available');
+    if (composition.protocolParameters.kind !== 'v4Available') return;
+    expect(composition.protocolParameters.formattedCollateralFactor).toBe('65%');
+    // The V3-shaped fields are absent from this variant entirely (proven
+    // by TypeScript's own discriminated-union narrowing above), not just
+    // hidden — no "formattedMaxLoanToValue"/"formattedLiquidationThreshold"
+    // exists on this shape at all.
+  });
+
+  it('shows kind: "v4Unavailable" when v4CollateralRisk has not synced, never falling back to a V3 number', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const v4PortfolioMissingRisk = { ...portfolio, protocolVersion: 'v4' as const };
+    const composition = buildPortfolioComposition(
+      v4PortfolioMissingRisk,
+      summary,
+      marketFreshness,
+      tracked,
+    );
+    expect(composition.protocolParameters.kind).toBe('v4Unavailable');
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still shows kind: "v3" with Max LTV/Liquidation Threshold', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.kind).toBe('v3');
+    if (composition.protocolParameters.kind !== 'v3') return;
+    expect(composition.protocolParameters.formattedMaxLoanToValue).toBe('75%');
+    expect(composition.protocolParameters.formattedLiquidationThreshold).toBe('80%');
+  });
+
+  it('a deliberately conflicting V3/V4 fixture proves the correct branch is selected purely by protocolVersion', () => {
+    const v3 = buildOk();
+    const v4 = buildOkV4WithCollateralRisk(0.65);
+    const v3Composition = buildPortfolioComposition(
+      v3.portfolio,
+      v3.summary,
+      v3.marketFreshness,
+      v3.tracked,
+    );
+    const v4Composition = buildPortfolioComposition(
+      v4.portfolio,
+      v4.summary,
+      v4.marketFreshness,
+      v4.tracked,
+    );
+    expect(v3Composition.protocolParameters.kind).toBe('v3');
+    expect(v4Composition.protocolParameters.kind).toBe('v4Available');
+  });
+
+  it('treats collateralFactor: 0 as real configuration ("v4Available" with 0%), not "v4Unavailable"', () => {
+    // Zero debt sidesteps calculatePortfolioSummary's liquidation-price
+    // step (conflict #20), which would otherwise correctly fail on
+    // DIVISION_BY_ZERO for zero effective collateral with nonzero debt —
+    // see summary.test.ts's own identical case. This test isolates
+    // collateralFactor: 0's display behavior, not the summary calculation.
+    const { portfolio, summary, marketFreshness, tracked } = buildOkV4WithCollateralRisk(0, 0);
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.kind).toBe('v4Available');
+    if (composition.protocolParameters.kind !== 'v4Available') return;
+    expect(composition.protocolParameters.formattedCollateralFactor).toBe('0%');
   });
 });

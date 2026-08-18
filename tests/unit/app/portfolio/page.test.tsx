@@ -339,6 +339,35 @@ describe('PortfolioPage — Collateral Position Management (Portfolio Live-State
     expect(section.getByText('Aave V3 · Live')).toBeInTheDocument();
   });
 
+  /**
+   * "Maximum LTV"/"Liquidation threshold" vs. "Collateral Factor" — V4
+   * Readiness Audit §12 Stage 23E. V4 has no separate max-LTV/liquidation-
+   * threshold pair (Stage 23B); showing the V3-shaped pair under a V4
+   * portfolio would render `portfolio.protocol.maxLoanToValue`/
+   * `.liquidationThreshold` — legacy fields with no defined relationship
+   * to V4's real `collateralFactor`.
+   */
+  it('shows Collateral Factor (never Maximum LTV/Liquidation threshold) for a V4 portfolio with synced v4CollateralRisk', () => {
+    createAndSelectV4({}, { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 });
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.getByText('Collateral Factor')).toBeInTheDocument();
+    expect(section.getByText('80%')).toBeInTheDocument();
+    expect(section.queryByText('Maximum LTV')).not.toBeInTheDocument();
+    expect(section.queryByText('Liquidation threshold')).not.toBeInTheDocument();
+  });
+
+  it('shows "—" for Collateral Factor when v4CollateralRisk has not synced yet, never falling back to a V3 number', () => {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.id, { userAddress: V4_ADDRESS });
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Collateral' }));
+    expect(section.getByText('Collateral Factor')).toBeInTheDocument();
+    expect(section.queryByText('Maximum LTV')).not.toBeInTheDocument();
+    expect(section.queryByText('Liquidation threshold')).not.toBeInTheDocument();
+  });
+
   it('does not apply a change without first previewing it (hard gate)', () => {
     createAndSelect();
     render(<PortfolioPage />);

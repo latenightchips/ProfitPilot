@@ -35,13 +35,16 @@
  */
 import {
   calculateAdditionalCollateralRecommendation,
+  calculateCollateralValue,
   calculateRepaymentRecommendation,
   type Recommendation,
 } from '@/engine';
 
 import {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   mapApplicationPortfolioToEngineInput,
+  resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import {
@@ -64,6 +67,28 @@ export interface TargetHealthFactorActions {
  * Health Factor. Fails as one unit (fail-fast, matching
  * `calculatePortfolioSummary`'s own sequential-dependency convention) —
  * either both recommendations are meaningful together or neither is.
+ *
+ * **V4 risk-capacity dispatch (V4 Readiness Audit §12 Stage 23E)** — both
+ * `calculateRepaymentRecommendation` (F-062) and
+ * `calculateAdditionalCollateralRecommendation` (F-063) read
+ * `portfolio.protocol.liquidationThreshold` directly inside their own
+ * Engine formulas, a V3-shaped assumption Stage 23D didn't reach (it only
+ * wired `services/portfolio/summary.ts`/`services/simulation/scenario.ts`/
+ * `services/portfolio/borrowCapacity.ts`). A leading, protocol/risk-
+ * independent Engine call (`calculateCollateralValue`, which never reads
+ * `debt` or `protocol`) runs first, purely to obtain real Engine metadata
+ * before either V4 guard runs — `ServiceMetadata.engineVersion` must
+ * always come from a real Engine call (see
+ * `services/portfolio/mapping.ts`'s own `checkAaveV4DebtStateAvailable`
+ * doc comment), and both real recommendation calls below need the
+ * correctly-dispatched risk-capacity fraction from their very first read,
+ * so neither can safely run before the guards (mirrors
+ * `calculatePortfolioSummary`'s own `collateralValueStep` positioning).
+ * The dispatched value is substituted into the SAME
+ * `PortfolioInput.protocol.liquidationThreshold` slot both formulas
+ * already read generically — never modifying the Engine, never
+ * permanently redefining what `protocol.liquidationThreshold` means on
+ * the persisted portfolio.
  */
 export function calculateTargetHealthFactorActions(
   portfolio: ApplicationPortfolio,
@@ -72,10 +97,43 @@ export function calculateTargetHealthFactorActions(
 ): ServiceResult<TargetHealthFactorActions> {
   const engineInput = mapApplicationPortfolioToEngineInput(portfolio);
   const warnings: ServiceWarning[] = [];
-  let tracked: TrackedFormulaVersion | null = null;
+
+  const anchorStep = step(
+    calculateCollateralValue(engineInput.collateral, engineInput.market),
+    null,
+    sourceStatus,
+  );
+  if (!anchorStep.ok) return anchorStep.failure;
+  let tracked: TrackedFormulaVersion = anchorStep.tracked;
+  warnings.push(...anchorStep.warnings);
+
+  // V4 Readiness Audit §12 Stage 10 — both recommendations below read
+  // debt (via `engineInput`), so a V4 portfolio with no synced
+  // `v4DebtState` must fail closed rather than silently recommending a
+  // repayment/collateral amount computed from stale legacy `debt.balance`.
+  const v4DebtGuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4DebtGuardFailure !== null) return v4DebtGuardFailure;
+
+  // V4 Readiness Audit §12 Stage 23E — see this function's own doc
+  // comment above.
+  const v4CollateralRiskGuardFailure = checkAaveV4CollateralRiskAvailable(
+    portfolio,
+    tracked,
+    sourceStatus,
+  );
+  if (v4CollateralRiskGuardFailure !== null) return v4CollateralRiskGuardFailure;
+
+  // Non-null by construction: V3 always returns `protocol.liquidationThreshold`
+  // from `resolveRiskCapacityFraction`; for V4, the guard immediately
+  // above already returned on the one condition that would make it `null`.
+  const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
+  const dispatchedEngineInput = {
+    ...engineInput,
+    protocol: { ...engineInput.protocol, liquidationThreshold: riskCapacityFraction },
+  };
 
   const repaymentStep = step(
-    calculateRepaymentRecommendation({ portfolio: engineInput, targetHealthFactor }),
+    calculateRepaymentRecommendation({ portfolio: dispatchedEngineInput, targetHealthFactor }),
     tracked,
     sourceStatus,
   );
@@ -83,15 +141,11 @@ export function calculateTargetHealthFactorActions(
   tracked = repaymentStep.tracked;
   warnings.push(...repaymentStep.warnings);
 
-  // V4 Readiness Audit §12 Stage 10 — both recommendations above/below
-  // read debt (via `engineInput`), so a V4 portfolio with no synced
-  // `v4DebtState` must fail closed rather than silently recommending a
-  // repayment/collateral amount computed from stale legacy `debt.balance`.
-  const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
-  if (v4GuardFailure !== null) return v4GuardFailure;
-
   const additionalCollateralStep = step(
-    calculateAdditionalCollateralRecommendation({ portfolio: engineInput, targetHealthFactor }),
+    calculateAdditionalCollateralRecommendation({
+      portfolio: dispatchedEngineInput,
+      targetHealthFactor,
+    }),
     tracked,
     sourceStatus,
   );

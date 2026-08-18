@@ -71,6 +71,9 @@ describe('buildFinalLoopPortfolio — V4 identity carry-through (Stage 17)', () 
       protocolVersion: 'v4',
       v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
       v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      // Stage 23E's collateral-risk guard now requires this on every V4
+      // portfolio, in addition to v4DebtState.
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
   }
 

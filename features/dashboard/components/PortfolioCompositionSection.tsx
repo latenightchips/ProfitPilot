@@ -116,10 +116,23 @@ export function PortfolioCompositionSection({
       <div>
         <p className="mb-1 text-xs text-muted-foreground">Protocol Parameters</p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-foreground">
-          <span>Maximum LTV: {composition.protocolParameters.formattedMaxLoanToValue}</span>
-          <span>
-            Liquidation Threshold: {composition.protocolParameters.formattedLiquidationThreshold}
-          </span>
+          {composition.protocolParameters.kind === 'v3' && (
+            <>
+              <span>Maximum LTV: {composition.protocolParameters.formattedMaxLoanToValue}</span>
+              <span>
+                Liquidation Threshold:{' '}
+                {composition.protocolParameters.formattedLiquidationThreshold}
+              </span>
+            </>
+          )}
+          {composition.protocolParameters.kind === 'v4Available' && (
+            <span>
+              Collateral Factor: {composition.protocolParameters.formattedCollateralFactor}
+            </span>
+          )}
+          {composition.protocolParameters.kind === 'v4Unavailable' && (
+            <span>Collateral Factor: —</span>
+          )}
           <span>Borrow APR: {composition.protocolParameters.formattedBorrowApr}</span>
           <span>Supply APR: {composition.protocolParameters.formattedSupplyApr}</span>
         </div>

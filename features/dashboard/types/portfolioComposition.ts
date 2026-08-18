@@ -38,12 +38,38 @@ export interface PortfolioCompositionRow {
   formattedPortfolioPercentage: string;
 }
 
-export interface PortfolioCompositionProtocolParameters {
-  formattedMaxLoanToValue: string;
-  formattedLiquidationThreshold: string;
-  formattedBorrowApr: string;
-  formattedSupplyApr: string;
-}
+/**
+ * **Discriminated by `kind` (V4 Readiness Audit §12 Stage 23E).** V3
+ * exposes the documented Max LTV/Liquidation Threshold pair, byte-for-byte
+ * unchanged from before this stage. V4 has no such pair (Stage 23B:
+ * `collateralFactor` alone governs both borrow capacity and liquidation
+ * eligibility) — `v4Available` shows the one real Collateral Factor value
+ * instead of reinterpreting a V3 field under a V3 label; `v4Unavailable`
+ * covers a V4 portfolio with no synced `v4CollateralRisk` yet. Mirrors
+ * `services/portfolio/mapping.ts`'s own `RiskCapacityDisplay` shape —
+ * `buildPortfolioComposition.ts` resolves via that shared Service-layer
+ * helper and only adds its own local formatting here, never re-deriving
+ * the V3/V4 branch itself.
+ */
+export type PortfolioCompositionProtocolParameters =
+  | {
+      kind: 'v3';
+      formattedMaxLoanToValue: string;
+      formattedLiquidationThreshold: string;
+      formattedBorrowApr: string;
+      formattedSupplyApr: string;
+    }
+  | {
+      kind: 'v4Available';
+      formattedCollateralFactor: string;
+      formattedBorrowApr: string;
+      formattedSupplyApr: string;
+    }
+  | {
+      kind: 'v4Unavailable';
+      formattedBorrowApr: string;
+      formattedSupplyApr: string;
+    };
 
 export interface PortfolioComposition {
   collateral: PortfolioCompositionRow;

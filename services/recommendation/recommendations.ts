@@ -46,6 +46,7 @@
  * consuming this Service.
  */
 import {
+  calculateCollateralValue,
   type DecisionPriority,
   generateRecommendations,
   type Recommendation,
@@ -54,13 +55,21 @@ import {
 } from '@/engine';
 
 import {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   mapApplicationPortfolioToEngineInput,
+  resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { type ApplicationError, createApplicationError } from '../shared/errors';
-import { createServiceFailure, createServiceSuccess, type ServiceResult } from '../shared/result';
+import { formulaStep as step, type TrackedFormulaVersion } from '../shared/formulaStep';
+import {
+  createServiceFailure,
+  createServiceSuccess,
+  type ServiceResult,
+  type ServiceWarning,
+} from '../shared/result';
 
 /** 02_Formulas.md's Recommendation Engine chapter (page 8) "DECISION PRIORITY" order, highest first. */
 const DECISION_PRIORITY_ORDER: DecisionPriority[] = [
@@ -92,26 +101,88 @@ export function generateRecommendationSet(
   sourceStatus: string,
 ): ServiceResult<RecommendationResult> {
   let engineInput = mapApplicationPortfolioToEngineInput(portfolio);
+  const warnings: ServiceWarning[] = [];
+
+  // V4 Readiness Audit §12 Stage 23E — a leading, protocol/risk-
+  // independent Engine call (never reads debt or protocol), purely to
+  // obtain real Engine metadata before either V4 guard below runs —
+  // `ServiceMetadata.engineVersion` must always come from a real Engine
+  // call (see `services/portfolio/mapping.ts`'s own
+  // `checkAaveV4DebtStateAvailable` doc comment), and the borrow-rate and
+  // risk-capacity dispatches below both need to run before
+  // `generateRecommendations`'s own first call, so neither can safely be
+  // that anchor (mirrors `calculatePortfolioSummary`'s own
+  // `collateralValueStep` positioning and
+  // `calculateTargetHealthFactorActions`'s identical Stage 23E fix).
+  const anchorStep = step(
+    calculateCollateralValue(engineInput.collateral, engineInput.market),
+    null,
+    sourceStatus,
+  );
+  if (!anchorStep.ok) return anchorStep.failure;
+  const tracked: TrackedFormulaVersion = anchorStep.tracked;
+  warnings.push(...anchorStep.warnings);
+
+  // V4 Readiness Audit §12 Stage 10 — `generateRecommendations` below
+  // reads debt throughout, so a V4 portfolio with no synced `v4DebtState`
+  // must fail closed rather than silently computing recommendations from
+  // stale legacy `debt.balance`. Moved earlier than this guard's original
+  // Stage 10 position (previously ran AFTER `generateRecommendations`,
+  // discarding an already-computed result on failure) now that a real
+  // `tracked` is available this early via the anchor call above —
+  // `ServiceFailure` carries no `warnings` field, so this is not an
+  // observable behavior change, only less wasted computation.
+  const v4DebtGuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4DebtGuardFailure !== null) return v4DebtGuardFailure;
+
+  // V4 Readiness Audit §12 Stage 23E — `calculateBorrowRecommendation`
+  // (F-061, via `calculateAvailableBorrow`/`calculateHealthFactor`) and
+  // `calculateLoopRecommendation`'s `calculateLoopStep` (F-014) both read
+  // `portfolio.protocol.liquidationThreshold`/`.maxLoanToValue` directly
+  // inside `generateRecommendations`, a V3-shaped assumption Stage 23D
+  // didn't reach.
+  const v4CollateralRiskGuardFailure = checkAaveV4CollateralRiskAvailable(
+    portfolio,
+    tracked,
+    sourceStatus,
+  );
+  if (v4CollateralRiskGuardFailure !== null) return v4CollateralRiskGuardFailure;
 
   // V4 Readiness Audit §12 Stage 15 — `generateRecommendations` below
   // internally calls `calculateLoopRecommendation`, which reads
   // `engineInput.protocol.borrowApr` for its "how much more could you
   // loop" cost estimate. That legacy V3 scalar is not the real V4 rate
   // for a V4 portfolio with synced `v4DebtState`; substitute the real,
-  // derived effective rate BEFORE the Engine call runs (there is no
-  // Engine formula here that patches one field of an already-computed
-  // aggregate result afterward). `tracked: null` — this is genuinely the
-  // first Engine call in this function, so there is no prior tracked
-  // version to require yet (see `deriveAaveV4EffectiveBorrowRate`'s own
-  // doc comment). A portfolio with no synced `v4DebtState` yet is left
-  // untouched here — the existing post-call guard below still fails it
-  // closed exactly as before.
+  // derived effective rate before the Engine call runs. `v4DebtGuardFailure`
+  // above already confirmed `v4DebtState` is present whenever
+  // `protocolVersion === 'v4'` reaches this point, so deriving from it is
+  // always safe here.
   if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
-    const rateStep = deriveAaveV4EffectiveBorrowRate(portfolio.v4DebtState, null, sourceStatus);
+    const rateStep = deriveAaveV4EffectiveBorrowRate(portfolio.v4DebtState, tracked, sourceStatus);
     if (!rateStep.ok) return rateStep.failure;
     engineInput = {
       ...engineInput,
       protocol: { ...engineInput.protocol, borrowApr: rateStep.value },
+    };
+  }
+
+  // V4 Readiness Audit §12 Stage 23E — `liquidationThreshold`/
+  // `maxLoanToValue` dispatch for V4 (Stage 23B: V4 has no separate
+  // max-LTV/liquidation-threshold split — `collateralFactor` alone
+  // governs both borrow capacity and liquidation eligibility, so both
+  // V3-shaped fields are set to the same dispatched value).
+  // `v4CollateralRiskGuardFailure` above already confirmed
+  // `v4CollateralRisk` is present whenever `protocolVersion === 'v4'`
+  // reaches this point.
+  if (portfolio.protocolVersion === 'v4') {
+    const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
+    engineInput = {
+      ...engineInput,
+      protocol: {
+        ...engineInput.protocol,
+        liquidationThreshold: riskCapacityFraction,
+        maxLoanToValue: riskCapacityFraction,
+      },
     };
   }
 
@@ -130,22 +201,6 @@ export function generateRecommendationSet(
     });
   }
 
-  // V4 Readiness Audit §12 Stage 10 — `generateRecommendations` above
-  // already ran against `engineInput`, which silently falls back to
-  // legacy `debt.balance` for a V4 portfolio with no synced `v4DebtState`
-  // (`mapApplicationPortfolioToEngineInput`'s own documented gap). Fail
-  // closed here, discarding that result, rather than returning
-  // recommendations computed from stale debt.
-  const v4GuardFailure = checkAaveV4DebtStateAvailable(
-    portfolio,
-    {
-      engineVersion: result.metadata.engineVersion,
-      formulaVersion: result.metadata.formulaVersion,
-    },
-    sourceStatus,
-  );
-  if (v4GuardFailure !== null) return v4GuardFailure;
-
   const ranked: RankedRecommendation[] = [...result.value.recommendations]
     .sort(
       (a, b) =>
@@ -161,6 +216,6 @@ export function generateRecommendationSet(
       engineVersion: result.metadata.engineVersion,
       formulaVersion: result.metadata.formulaVersion,
     },
-    result.warnings,
+    [...warnings, ...result.warnings],
   );
 }

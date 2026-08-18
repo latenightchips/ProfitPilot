@@ -319,6 +319,9 @@ describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
       ...healthyPortfolio(),
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      // Stage 23E's collateral-risk guard now requires this on every V4
+      // portfolio, in addition to v4DebtState.
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
     const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
     expect(result.ok).toBe(true);
@@ -348,6 +351,7 @@ describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
       collateral: { asset: 'BTC', quantity: 2 },
       protocolVersion: 'v4',
       v4DebtState,
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
     const result = planLoopStrategy(v4Portfolio, healthySettings(), 'live');
     expect(result.ok).toBe(true);
@@ -383,6 +387,7 @@ describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
       collateral: { asset: 'BTC', quantity: 2 },
       protocolVersion: 'v4',
       v4DebtState,
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
     };
     const result = planLoopStrategy(
       v4Portfolio,
@@ -402,5 +407,117 @@ describe('planLoopStrategy — V4 fail-closed guard (Stage 10)', () => {
     };
     const result = planLoopStrategy(portfolioWithStrayV4State, healthySettings(), 'live');
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * V4 risk-capacity dispatch — V4 Readiness Audit §12 Stage 23E.
+ * `validateLoopStrategySafety` (via `calculateLoopStrategy`/
+ * `calculateLoopStep`, F-014) and `calculateAvailableBorrow` (F-013, this
+ * file's own `remainingBorrowCapacity` step) both read
+ * `engineInput.protocol.liquidationThreshold`/`.maxLoanToValue` directly
+ * — a V3-shaped assumption Stage 23D didn't reach, meaning the entirety
+ * of Loop Builder's per-step Health Factor/LTV math was V3-shaped for a
+ * V4 portfolio before this fix. Per Stage 23B, V4 has no separate
+ * max-LTV/liquidation-threshold split, so both fields dispatch to the
+ * same `collateralFactor` value. `collateralFactor: 0.65` is deliberately
+ * chosen to differ from `healthyPortfolio()`'s own `maxLoanToValue: 0.5`/
+ * `liquidationThreshold: 0.8`, so a test that silently used a V3 field
+ * would fail on an exact numeric mismatch.
+ */
+describe('planLoopStrategy — V4 risk-capacity dispatch (Stage 23E)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      ...healthyPortfolio(),
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 },
+      ...overrides,
+    };
+  }
+
+  it("computes remainingBorrowCapacity from collateralFactor, not maxLoanToValue — self-consistent numerical proof using the strategy's own real final position", () => {
+    const result = planLoopStrategy(v4Portfolio(), healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null || result.data.btcExposure === null) return;
+    // remainingBorrowCapacity (F-013) = exposure (= finalCollateral value)
+    // * collateralFactor - finalDebt. Reading the strategy's own real
+    // finalDebt/exposure (rather than hand-simulating every loop
+    // iteration) keeps this test correct regardless of exactly how many
+    // loop steps ran, while still proving the risk-capacity fraction fed
+    // into F-013 is collateralFactor (0.65), not maxLoanToValue (0.5).
+    const expectedCapacity = result.data.btcExposure * 0.65 - result.data.strategy.finalDebt;
+    expect(result.data.remainingBorrowCapacity).toBeCloseTo(expectedCapacity, 4);
+  });
+
+  it('a deliberately conflicting V3/V4 fixture on the same portfolio shape proves the correct branch is selected purely by protocolVersion — a higher V4 collateralFactor draws strictly more final debt than the V3 maxLoanToValue', () => {
+    // healthyPortfolio()'s own maxLoanToValue is 0.5; collateralFactor
+    // here is 0.65 (higher) — a viable V4 strategy should draw MORE debt
+    // per step than the same portfolio run as V3, proving the dispatch
+    // reaches the actual per-step borrow-capacity math, not just a
+    // post-hoc capacity readout.
+    const v3Result = planLoopStrategy(
+      { ...healthyPortfolio(), v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 } },
+      healthySettings(),
+      'live',
+    );
+    const v4Result = planLoopStrategy(v4Portfolio(), healthySettings(), 'live');
+    expect(v3Result.ok).toBe(true);
+    expect(v4Result.ok).toBe(true);
+    if (
+      !v3Result.ok ||
+      !v4Result.ok ||
+      v3Result.data.strategy === null ||
+      v4Result.data.strategy === null
+    ) {
+      return;
+    }
+    // V3 never reads v4CollateralRisk at all (inert extra field, the same
+    // pattern v4DebtState already has for a v3/unset portfolio) — it
+    // still uses maxLoanToValue: 0.5.
+    expect(v4Result.data.strategy.finalDebt).toBeGreaterThan(v3Result.data.strategy.finalDebt);
+  });
+
+  it('fails closed with AAVE_V4_COLLATERAL_RISK_MISSING when v4DebtState is present but v4CollateralRisk is not, never falling back to protocol.liquidationThreshold/maxLoanToValue', () => {
+    const result = planLoopStrategy(
+      v4Portfolio({ v4CollateralRisk: undefined }),
+      healthySettings(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
+  });
+
+  it('does not have a data field on the missing-collateral-risk failure (no partial/placeholder result leaks through)', () => {
+    const result = planLoopStrategy(
+      v4Portfolio({ v4CollateralRisk: undefined }),
+      healthySettings(),
+      'live',
+    );
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('an explicit maxLoanToValueOverride still wins over the dispatched collateralFactor for V4 (a deliberate planning override, applied to both the LTV and liquidation-threshold slots together)', () => {
+    const overridden = planLoopStrategy(
+      v4Portfolio(),
+      { ...healthySettings(), maxLoanToValueOverride: 0.2 },
+      'live',
+    );
+    const real = planLoopStrategy(v4Portfolio(), healthySettings(), 'live');
+    expect(overridden.ok).toBe(true);
+    expect(real.ok).toBe(true);
+    if (
+      !overridden.ok ||
+      !real.ok ||
+      overridden.data.strategy === null ||
+      real.data.strategy === null
+    ) {
+      return;
+    }
+    // A much lower override (0.2, vs. the real collateralFactor 0.65)
+    // must draw strictly less final debt.
+    expect(overridden.data.strategy.finalDebt).toBeLessThan(real.data.strategy.finalDebt);
   });
 });

@@ -84,6 +84,7 @@
  */
 import {
   calculateAvailableBorrow,
+  calculateCollateralValue,
   calculateExposure,
   calculateLoopCosts,
   calculateMonthlyInterest,
@@ -95,9 +96,11 @@ import {
 } from '@/engine';
 
 import {
+  checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   mapApplicationPortfolioToEngineInput,
+  resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
@@ -139,16 +142,85 @@ export function planLoopStrategy(
   sourceStatus: string,
 ): ServiceResult<LoopStrategyPreview> {
   const mappedInput = mapApplicationPortfolioToEngineInput(portfolio);
+  const { targetBorrowPercentage, maxLoops, minHealthFactor } = settings;
+  const warnings: ServiceWarning[] = [];
+
+  // V4 Readiness Audit §12 Stage 23E — a leading, protocol/risk-
+  // independent Engine call (never reads debt or protocol), purely to
+  // obtain real Engine metadata before either V4 guard below runs —
+  // `ServiceMetadata.engineVersion` must always come from a real Engine
+  // call (see `services/portfolio/mapping.ts`'s own
+  // `checkAaveV4DebtStateAvailable` doc comment), and `validateLoopStrategySafety`
+  // below needs the correctly-dispatched risk-capacity fraction from its
+  // very first read, so it cannot safely be that anchor (mirrors
+  // `calculatePortfolioSummary`'s own `collateralValueStep` positioning).
+  const anchorStep = formulaStep(
+    calculateCollateralValue(mappedInput.collateral, mappedInput.market),
+    null,
+    sourceStatus,
+  );
+  if (!anchorStep.ok) return anchorStep.failure;
+  let tracked: TrackedFormulaVersion = anchorStep.tracked;
+  warnings.push(...anchorStep.warnings);
+
+  // V4 Readiness Audit §12 Stage 10 — this Service reads debt (via
+  // `mappedInput`/`engineInput` below) and `protocol.borrowApr` throughout
+  // (`calculateLoopCosts`, `calculateMonthlyInterest`), so a V4 portfolio
+  // with no synced `v4DebtState` must fail closed here rather than
+  // silently planning a loop strategy against stale legacy `debt.balance`.
+  // See `services/portfolio/mapping.ts`'s `checkAaveV4DebtStateAvailable`.
+  // Moved earlier than this guard's original Stage 10 position (previously
+  // ran AFTER `validateLoopStrategySafety`, discarding an already-computed
+  // result on failure) now that a real `tracked` is available this early
+  // via the anchor call above — `ServiceFailure` carries no `warnings`
+  // field, so this is not an observable behavior change, only less wasted
+  // computation.
+  const v4DebtGuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
+  if (v4DebtGuardFailure !== null) return v4DebtGuardFailure;
+
+  // V4 Readiness Audit §12 Stage 23E — `validateLoopStrategySafety`
+  // (via `calculateLoopStrategy`/`calculateLoopStep`, F-014) and the
+  // `calculateAvailableBorrow` call below both read
+  // `engineInput.protocol.liquidationThreshold`/`.maxLoanToValue`
+  // directly, a V3-shaped assumption Stage 23D didn't reach — the
+  // entirety of Loop Builder's per-step Health Factor/LTV math was
+  // V3-shaped for a V4 portfolio until this fix.
+  const v4CollateralRiskGuardFailure = checkAaveV4CollateralRiskAvailable(
+    portfolio,
+    tracked,
+    sourceStatus,
+  );
+  if (v4CollateralRiskGuardFailure !== null) return v4CollateralRiskGuardFailure;
+
+  // V4 Readiness Audit §12 Stage 23E — V4 has no separate max-LTV/
+  // liquidation-threshold split (Stage 23B): `collateralFactor` alone
+  // governs both borrow capacity and liquidation eligibility, so both
+  // V3-shaped fields are set to the same dispatched value for every
+  // downstream Engine call in this file. `maxLoanToValueOverride`, when
+  // supplied, still wins — the same "what if this risk-capacity limit
+  // were X" planning override `borrowAprOverride` already provides for
+  // rate, just applied to both V3-shaped fields together for V4 rather
+  // than to `maxLoanToValue` alone. `v4CollateralRiskGuardFailure` above
+  // already confirmed `v4CollateralRisk` is present whenever
+  // `protocolVersion === 'v4'` reaches this point.
+  let maxLoanToValue = mappedInput.protocol.maxLoanToValue;
+  let liquidationThreshold = mappedInput.protocol.liquidationThreshold;
+  if (portfolio.protocolVersion === 'v4') {
+    const riskCapacityFraction = resolveRiskCapacityFraction(portfolio)!;
+    const dispatched = settings.maxLoanToValueOverride ?? riskCapacityFraction;
+    maxLoanToValue = dispatched;
+    liquidationThreshold = dispatched;
+  } else if (settings.maxLoanToValueOverride !== undefined) {
+    maxLoanToValue = settings.maxLoanToValueOverride;
+  }
+
   const protocol: ProtocolParameters = {
     ...mappedInput.protocol,
-    ...(settings.maxLoanToValueOverride !== undefined && {
-      maxLoanToValue: settings.maxLoanToValueOverride,
-    }),
+    maxLoanToValue,
+    liquidationThreshold,
     ...(settings.borrowAprOverride !== undefined && { borrowApr: settings.borrowAprOverride }),
   };
   const engineInput = { ...mappedInput, protocol };
-  const { targetBorrowPercentage, maxLoops, minHealthFactor } = settings;
-  const warnings: ServiceWarning[] = [];
 
   const safetyStep = formulaStep(
     validateLoopStrategySafety({
@@ -157,22 +229,13 @@ export function planLoopStrategy(
       maxLoops,
       minHealthFactor,
     }),
-    null,
+    tracked,
     sourceStatus,
   );
   if (!safetyStep.ok) return safetyStep.failure;
-  let tracked: TrackedFormulaVersion = safetyStep.tracked;
+  tracked = safetyStep.tracked;
   warnings.push(...safetyStep.warnings);
   const safety = safetyStep.value;
-
-  // V4 Readiness Audit §12 Stage 10 — this Service reads debt (via
-  // `mappedInput`/`engineInput` above) and `protocol.borrowApr` throughout
-  // (`calculateLoopCosts`, `calculateMonthlyInterest`), so a V4 portfolio
-  // with no synced `v4DebtState` must fail closed here rather than
-  // silently planning a loop strategy against stale legacy `debt.balance`.
-  // See `services/portfolio/mapping.ts`'s `checkAaveV4DebtStateAvailable`.
-  const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
-  if (v4GuardFailure !== null) return v4GuardFailure;
 
   if (safety.strategy === null) {
     return createServiceSuccess(
@@ -207,9 +270,9 @@ export function planLoopStrategy(
   // override, which still wins here — the same precedence
   // `maxLoanToValueOverride`/`borrowAprOverride` already have over every
   // other portfolio-derived value in this Service). Neither is the real
-  // V4 rate for a V4 portfolio. `v4GuardFailure` above already confirmed
-  // `v4DebtState` is present whenever `protocolVersion === 'v4'` reaches
-  // this point, so deriving from it is always safe here.
+  // V4 rate for a V4 portfolio. `v4DebtGuardFailure` above already
+  // confirmed `v4DebtState` is present whenever `protocolVersion === 'v4'`
+  // reaches this point, so deriving from it is always safe here.
   let effectiveBorrowApr = engineInput.protocol.borrowApr;
   if (
     portfolio.protocolVersion === 'v4' &&

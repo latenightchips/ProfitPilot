@@ -64,6 +64,16 @@
  * shared helpers, never reinterpreting one field as the other. Re-exported
  * so any future consumer that needs the risk-capacity fraction directly
  * (rather than through a full summary) can reuse the identical dispatch.
+ *
+ * **`resolveRiskCapacityDisplay` (V4 Readiness Audit §12 Stage 23E)** —
+ * the same dispatch, reshaped for presentation: every UI/export consumer
+ * that shows "Max LTV"/"Liquidation Threshold" (previously all read
+ * `portfolio.protocol.*` directly, unconditionally, showing a meaningless
+ * V3 number under a V3-only label for a V4 portfolio) now calls this
+ * instead, branching on `.kind` to render V3's two-field pair, V4's single
+ * "Collateral Factor", or an explicit unavailable state — never a
+ * formatted string itself (this Service layer never formats for display),
+ * just the resolved raw values and which shape applies.
  */
 export {
   type PortfolioAction,
@@ -84,7 +94,9 @@ export {
   type MappingResult,
   type MappingSuccess,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
   resolveRiskCapacityFraction,
+  type RiskCapacityDisplay,
 } from './mapping';
 export type {
   AaveV4CollateralRiskConfig,

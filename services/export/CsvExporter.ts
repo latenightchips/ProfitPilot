@@ -53,10 +53,22 @@
  * file's own existing `null` → `'Not available'` convention (`csvLine`
  * below) when `v4DebtState` is required but absent — never a silently
  * stale number in an exported financial record.
+ *
+ * **"Max LTV"/"Liquidation Threshold"/"Collateral Factor" columns (V4
+ * Readiness Audit §12 Stage 23E)** — the two V3 columns previously
+ * carried `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
+ * unconditionally for every row, a meaningless V3 pair for a V4 portfolio
+ * (Stage 23B: `collateralFactor` alone governs both). A new "Collateral
+ * Factor" column was added rather than reinterpreting either V3 column
+ * for V4 rows — since this table spans every saved portfolio at once
+ * (V3 and V4 rows together), the three columns coexist, each
+ * `'Not available'` for whichever protocol version a given row doesn't
+ * apply to. V3 rows' own two columns are populated exactly as before.
  */
 import {
   deriveAaveV4EffectiveBorrowRate,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
 } from '@/services/portfolio/mapping';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -77,6 +89,35 @@ function resolveBorrowAprForExport(portfolio: Portfolio): number | null {
     EXPORT_SOURCE_STATUS,
   );
   return rateStep.ok ? rateStep.value : null;
+}
+
+/**
+ * "Max LTV"/"Liquidation Threshold"/"Collateral Factor" columns — V4
+ * Readiness Audit §12 Stage 23E. Previously always `portfolio.protocol.
+ * maxLoanToValue`/`.liquidationThreshold`, unconditionally, for every row
+ * regardless of protocol version — a meaningless V3 pair for a V4
+ * portfolio (Stage 23B: `collateralFactor` alone governs both). Since
+ * this is a single fixed-column table spanning every saved portfolio
+ * (V3 and V4 rows can appear together), the two V3 columns and the one
+ * new V4 column all exist side by side, each `'Not available'` (this
+ * file's own existing `null` -> `'Not available'` convention) for
+ * whichever protocol version a given row doesn't apply to — never a
+ * reinterpreted V3 field for a V4 row, and V3 rows' own two columns are
+ * populated exactly as before.
+ */
+function resolveMaxLoanToValueForExport(portfolio: Portfolio): number | null {
+  const display = resolveRiskCapacityDisplay(portfolio);
+  return display.kind === 'v3' ? display.maxLoanToValue : null;
+}
+
+function resolveLiquidationThresholdForExport(portfolio: Portfolio): number | null {
+  const display = resolveRiskCapacityDisplay(portfolio);
+  return display.kind === 'v3' ? display.liquidationThreshold : null;
+}
+
+function resolveCollateralFactorForExport(portfolio: Portfolio): number | null {
+  const display = resolveRiskCapacityDisplay(portfolio);
+  return display.kind === 'v4Available' ? display.collateralFactor : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -122,6 +163,7 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'BTC Price (USD)',
     'Max LTV',
     'Liquidation Threshold',
+    'Collateral Factor',
     'Borrow APR',
     'Supply APR',
     'Archived',
@@ -138,8 +180,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.debt.asset,
       resolveDebtBalanceForExport(portfolio),
       portfolio.market.btcPriceUsd,
-      portfolio.protocol.maxLoanToValue,
-      portfolio.protocol.liquidationThreshold,
+      resolveMaxLoanToValueForExport(portfolio),
+      resolveLiquidationThresholdForExport(portfolio),
+      resolveCollateralFactorForExport(portfolio),
       resolveBorrowAprForExport(portfolio),
       portfolio.protocol.supplyApr,
       portfolio.archivedAt !== null,

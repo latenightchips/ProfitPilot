@@ -3,6 +3,7 @@ import {
   deriveAaveV4EffectiveBorrowRate,
   type ExitPlanResult,
   resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
   type ServiceMetadata,
   type UnavailableExitCost,
 } from '@/services';
@@ -36,6 +37,28 @@ function resolveBorrowAprForExport(portfolio: ApplicationPortfolio): number | nu
     EXPORT_SOURCE_STATUS,
   );
   return rateStep.ok ? rateStep.value : null;
+}
+
+/**
+ * V4 Readiness Audit §12 Stage 23E — `maxLoanToValue`/`liquidationThreshold`
+ * previously always carried `portfolio.protocol.*` unconditionally, a
+ * meaningless V3 pair for a V4 portfolio (Stage 23B: `collateralFactor`
+ * alone governs both). `null` for whichever fields don't apply to the
+ * portfolio's own protocol version, rather than a reinterpreted V3 field.
+ */
+function resolveProtocolParametersForExport(
+  portfolio: ApplicationPortfolio,
+): ExitPlanExportPayload['assumptions']['protocolParameters'] {
+  const riskCapacityDisplay = resolveRiskCapacityDisplay(portfolio);
+  return {
+    maxLoanToValue: riskCapacityDisplay.kind === 'v3' ? riskCapacityDisplay.maxLoanToValue : null,
+    liquidationThreshold:
+      riskCapacityDisplay.kind === 'v3' ? riskCapacityDisplay.liquidationThreshold : null,
+    collateralFactor:
+      riskCapacityDisplay.kind === 'v4Available' ? riskCapacityDisplay.collateralFactor : null,
+    supplyApr: portfolio.protocol.supplyApr,
+    borrowApr: resolveBorrowAprForExport(portfolio),
+  };
 }
 
 /**
@@ -110,7 +133,20 @@ export interface ExitPlanExportPayload {
   costs: UnavailableExitCost[] | null;
   warnings: StrategyWarning[];
   assumptions: {
-    protocolParameters: Omit<ApplicationPortfolio['protocol'], 'borrowApr'> & {
+    protocolParameters: {
+      /**
+       * V4 Readiness Audit §12 Stage 23E — `null` for a V4 portfolio
+       * (never the legacy `protocol.maxLoanToValue`/`.liquidationThreshold`
+       * scalars, which have no defined relationship to V4's real
+       * `collateralFactor` — Stage 23B: V4 has no separate max-LTV/
+       * liquidation-threshold pair at all). Populated exactly as before
+       * for V3.
+       */
+      maxLoanToValue: number | null;
+      liquidationThreshold: number | null;
+      /** V4 Readiness Audit §12 Stage 23E — the real V4 risk-capacity parameter; `null` for V3 or when unavailable for a V4 portfolio. */
+      collateralFactor: number | null;
+      supplyApr: number;
       /** V4 Readiness Audit §12 Stage 22 — `resolveBorrowAprForExport`'s canonical value, `null` (never the legacy V3 scalar) when unavailable for a V4 portfolio. */
       borrowApr: number | null;
     };
@@ -155,10 +191,7 @@ export function buildExitPlanExportPayload(
     costs: result.unavailableCosts,
     warnings,
     assumptions: {
-      protocolParameters: {
-        ...portfolio.protocol,
-        borrowApr: resolveBorrowAprForExport(portfolio),
-      },
+      protocolParameters: resolveProtocolParametersForExport(portfolio),
       feesAndSlippage: FEES_AND_SLIPPAGE_NOTE,
     },
     versions:
@@ -237,10 +270,23 @@ export function buildExitPlanExportCsv(payload: ExitPlanExportPayload): string {
     rows.push(csvRow(`Warning ${index + 1}`, `${warning.severity}: ${warning.cause}`));
   });
 
-  rows.push(csvRow('Max LTV', payload.assumptions.protocolParameters.maxLoanToValue));
-  rows.push(
-    csvRow('Liquidation Threshold', payload.assumptions.protocolParameters.liquidationThreshold),
-  );
+  // V4 Readiness Audit §12 Stage 23E — V3's exact two rows unchanged; V4
+  // has no separate max-LTV/liquidation-threshold pair (Stage 23B), so
+  // its one "Collateral Factor" row replaces them rather than sitting
+  // alongside two always-"Not available" rows.
+  if (payload.assumptions.protocolParameters.maxLoanToValue !== null) {
+    rows.push(csvRow('Max LTV', payload.assumptions.protocolParameters.maxLoanToValue));
+    rows.push(
+      csvRow('Liquidation Threshold', payload.assumptions.protocolParameters.liquidationThreshold!),
+    );
+  } else {
+    rows.push(
+      csvRow(
+        'Collateral Factor',
+        payload.assumptions.protocolParameters.collateralFactor ?? 'Not available',
+      ),
+    );
+  }
   rows.push(
     csvRow(
       'Borrow APR (Protocol)',

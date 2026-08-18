@@ -81,7 +81,10 @@ describe('buildSimulationExportPayload', () => {
     expect(payload.outputs.comparison).toEqual(result.comparison);
     expect(payload.assumptions.priceScenario).toEqual({ type: 'absolute', btcPriceUsd: 65000 });
     expect(payload.assumptions.rateAssumption).toBeNull();
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
     expect(payload.assumptions.feesAndSlippage).toMatch(/no Formula ID or equation/);
     expect(payload.timestamp).toBe(metadata?.calculationTimestamp);
     expect(payload.formulaVersion).toEqual({
@@ -331,7 +334,89 @@ describe('buildSimulationExportPayload — V4 canonical Borrow APR (Stage 22)', 
       metadata,
       PORTFOLIO,
     );
-    expect(payload.assumptions.protocolParameters).toEqual(PORTFOLIO.protocol);
+    expect(payload.assumptions.protocolParameters).toEqual({
+      ...PORTFOLIO.protocol,
+      collateralFactor: null,
+    });
+  });
+});
+
+/**
+ * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
+ * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
+ * differs from `PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`, so
+ * a test that silently used the V3 field would fail on an exact numeric
+ * mismatch.
+ */
+describe('buildSimulationExportPayload — V4 risk-capacity export (Stage 23E)', () => {
+  const V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+  };
+
+  function runV4PriceScenario(portfolio: ApplicationPortfolio): {
+    result: SimulationResult;
+    metadata: ServiceMetadata | null;
+  } {
+    useSimulationStore.getState().reset();
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 65000 },
+    });
+    useSimulationStore.getState().runSimulation(portfolio);
+    const state = useSimulationStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return { result: state.currentResult, metadata: state.lastMetadata };
+  }
+
+  it('exports maxLoanToValue/liquidationThreshold as null and the real collateralFactor for a V4 portfolio, never a reinterpreted V3 field', () => {
+    const { result, metadata } = runV4PriceScenario(V4_PORTFOLIO);
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.maxLoanToValue).toBeNull();
+    expect(payload.assumptions.protocolParameters.liquidationThreshold).toBeNull();
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBe(0.65);
+  });
+
+  it('CSV replaces Max LTV/Liquidation Threshold with a single Collateral Factor row for V4', () => {
+    const { result, metadata } = runV4PriceScenario(V4_PORTFOLIO);
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    const csv = buildSimulationExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,0.65');
+    expect(csv).not.toContain('Max LTV,');
+    expect(csv).not.toContain('Liquidation Threshold,');
+  });
+
+  it('exports "Collateral Factor,Not available" in CSV / null in JSON when v4CollateralRisk has not synced, never falling back to a V3 number', () => {
+    const { result, metadata } = runV4PriceScenario(V4_PORTFOLIO);
+    const portfolioMissingRisk: ApplicationPortfolio = {
+      ...V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+    };
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      portfolioMissingRisk,
+    );
+    expect(payload.assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const json = buildSimulationExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.collateralFactor).toBeNull();
+
+    const csv = buildSimulationExportCsv(payload);
+    expect(csv).toContain('Collateral Factor,Not available');
   });
 });
 

@@ -406,6 +406,51 @@ export function resolveRiskCapacityFraction(application: ApplicationPortfolio): 
 }
 
 /**
+ * Display-shape resolution for the risk-capacity parameter — V4
+ * Readiness Audit §12 Stage 23E. Every consumer that shows "Max LTV"/
+ * "Liquidation Threshold" (Dashboard's Portfolio Composition, the
+ * Portfolio page's Collateral form stat, the shared Loop Builder/Exit
+ * Planner `StrategyAssumptionsPanel`, Simulation's `SimulationAssumptions`,
+ * and 4 CSV/JSON exporters) previously read `portfolio.protocol.maxLoanToValue`/
+ * `.liquidationThreshold` unconditionally, regardless of `protocolVersion`
+ * — for a V4 portfolio this rendered a meaningless V3 number under a
+ * V3-only label, since V4 has no such pair (Stage 23B: `collateralFactor`
+ * alone governs both). This is the single shared resolver every one of
+ * those consumers now calls instead of re-deriving the same
+ * `protocolVersion`/`v4CollateralRisk` branch locally — "reuse canonical
+ * Service results, don't duplicate formulas" applies to display-shape
+ * resolution exactly as much as to numeric formulas.
+ *
+ * **Deliberately not a formatted string** — `services/portfolio/mapping.ts`'s
+ * own header comment ("do not format values for display") applies here
+ * too; every consumer still does its own local `formatPercent`/CSV-cell
+ * formatting, only the underlying raw values and V3-vs-V4 branch are
+ * shared.
+ *
+ * **Distinguishes "available" from "unavailable" for V4** the same way
+ * `checkAaveV4CollateralRiskAvailable` does (object-presence, not
+ * truthiness) — a real, synced `collateralFactor: 0` is `v4Available`
+ * with `collateralFactor: 0`, never conflated with `v4Unavailable`.
+ */
+export type RiskCapacityDisplay =
+  | { kind: 'v3'; maxLoanToValue: number; liquidationThreshold: number }
+  | { kind: 'v4Available'; collateralFactor: number }
+  | { kind: 'v4Unavailable' };
+
+export function resolveRiskCapacityDisplay(application: ApplicationPortfolio): RiskCapacityDisplay {
+  if (application.protocolVersion !== 'v4') {
+    return {
+      kind: 'v3',
+      maxLoanToValue: application.protocol.maxLoanToValue,
+      liquidationThreshold: application.protocol.liquidationThreshold,
+    };
+  }
+  return application.v4CollateralRisk === undefined
+    ? { kind: 'v4Unavailable' }
+    : { kind: 'v4Available', collateralFactor: application.v4CollateralRisk.collateralFactor };
+}
+
+/**
  * V4 interest cost via the real V4 accrual engine, over an arbitrary
  * holding period (V4 Readiness Audit §12 Stage 10, generalized at Stage
  * 11) — replaces a legacy `calculateDailyInterest`/`calculateMonthlyInterest`/
