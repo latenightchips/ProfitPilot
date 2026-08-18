@@ -68,6 +68,12 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * (BTC quantity) / `after.collateralValue` (USD) and `after.debtValue`
  * directly — both already-computed `ExitPlanResult` fields, never
  * recalculated.
+ *
+ * **A V4-only debt breakdown row (V4 Readiness Audit §12 Stage 25D)** —
+ * see `PartialExitResult.tsx`'s own identical addition for the full
+ * reasoning; a full exit clears both `drawnDebt`/`premiumDebt` to `0` via
+ * the same real premium-first rule, itemized here for the same "prove
+ * it, don't just assert it" reason.
  */
 const UNAVAILABLE_COST_LABELS: Record<string, string> = {
   swapFees: 'Swap Fees',
@@ -131,6 +137,28 @@ export function FullExitResult() {
         <span className="text-muted-foreground">Remaining Debt</span>
         <span className="font-medium text-foreground">{formatCurrency(after.debtValue)}</span>
       </div>
+
+      {transaction.v4DebtBreakdown && (
+        <div className="flex flex-col gap-1 border-t border-border pt-2 text-xs">
+          <span className="text-muted-foreground">
+            Aave V4 Debt Breakdown (premium repaid first)
+          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Premium Debt</span>
+            <span className="font-medium text-foreground">
+              {formatCurrency(transaction.v4DebtBreakdown.before.premiumDebt)} →{' '}
+              {formatCurrency(transaction.v4DebtBreakdown.after.premiumDebt)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Drawn Debt</span>
+            <span className="font-medium text-foreground">
+              {formatCurrency(transaction.v4DebtBreakdown.before.drawnDebt)} →{' '}
+              {formatCurrency(transaction.v4DebtBreakdown.after.drawnDebt)}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-muted-foreground">Transaction Costs</span>

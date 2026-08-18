@@ -295,6 +295,104 @@ describe('planExit — V4 post-exit state (Stage 11, resolved for partial exits 
 });
 
 /**
+ * `transaction.v4DebtBreakdown` — V4 Readiness Audit §12 Stage 25D.
+ * Closes a real follow-up bug: the tests above already prove the
+ * AGGREGATE `after.debtValue` is correct, but that aggregate alone is
+ * numerically identical whether the real premium-first Aave V4 rule was
+ * used or a naive `totalDebt - repayment` shortcut was — nothing in the
+ * previous `ExitPlanResult` shape let a caller (or a test) independently
+ * verify the actual `drawnDebt`/`premiumDebt` split. `v4DebtBreakdown`
+ * exposes exactly that split, itemizing state `deriveV4DebtStateAfterDelta`
+ * already computed — zero new calculation.
+ */
+describe('planExit — transaction.v4DebtBreakdown (Stage 25D)', () => {
+  function manualV4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      ...basePortfolio(),
+      debt: { asset: 'USDC', balance: 999999 },
+      market: { btcPriceUsd: 64547.56 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'manual',
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: 'manual',
+      ...overrides,
+    };
+  }
+
+  it('a $10,000 partial repayment resolves as premium debt $500 -> $0 and drawn debt $30,000 -> $20,500 (premium-first), exactly reproducing the reported scenario', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 20500 };
+    const result = planExit(manualV4Portfolio(), target, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.v4DebtBreakdown).toEqual({
+      before: { drawnDebt: 30000, premiumDebt: 500 },
+      after: { drawnDebt: 20500, premiumDebt: 0 },
+    });
+    // The aggregate stays correct too — the breakdown is additive, not a
+    // second, independent calculation.
+    expect(result.data.after?.debtValue).toBe(20500);
+  });
+
+  it('a repayment smaller than the premium reduces ONLY premiumDebt in the breakdown, leaving drawnDebt untouched', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 30300 };
+    const result = planExit(manualV4Portfolio(), target, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.v4DebtBreakdown).toEqual({
+      before: { drawnDebt: 30000, premiumDebt: 500 },
+      after: { drawnDebt: 30000, premiumDebt: 300 },
+    });
+  });
+
+  it('a full exit shows both streams reaching exactly $0 in the breakdown', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(manualV4Portfolio(), target, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.v4DebtBreakdown).toEqual({
+      before: { drawnDebt: 30000, premiumDebt: 500 },
+      after: { drawnDebt: 0, premiumDebt: 0 },
+    });
+  });
+
+  it('is identical for a live-sourced V4 portfolio — provenance never changes the breakdown', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 20500 };
+    const result = planExit(
+      manualV4Portfolio({ v4DebtStateSource: 'live', v4CollateralRiskSource: 'live' }),
+      target,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.v4DebtBreakdown).toEqual({
+      before: { drawnDebt: 30000, premiumDebt: 500 },
+      after: { drawnDebt: 20500, premiumDebt: 0 },
+    });
+  });
+
+  it('is absent (undefined) for a V3 (or unset) portfolio', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+    const result = planExit(basePortfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.transaction?.v4DebtBreakdown).toBeUndefined();
+  });
+
+  it('is absent (undefined) for a V4 portfolio with no synced v4DebtState (the infeasible/fail-closed case never reaches this field anyway)', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(
+      { ...basePortfolio(), protocolVersion: 'v4', v4DebtState: undefined },
+      target,
+      'live',
+    );
+    // Fails closed via AAVE_V4_DEBT_STATE_MISSING (Stage 10) before ever
+    // reaching a transaction object at all.
+    expect(result.ok).toBe(false);
+  });
+});
+
+/**
  * V4 risk-capacity dispatch for the `'healthFactor'` exit target type —
  * V4 Readiness Audit §12 Stage 23E. `calculateTargetExit`'s
  * `resolveTargetDebt` (`engine/exit/calculateTargetExit.ts`) reads

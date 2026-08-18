@@ -124,3 +124,41 @@ describe('FullExitResult — a genuine full-exit result (DoD: reconciles with po
     expect(screen.getAllByText(/Not itemized —/).length).toBe(3);
   });
 });
+
+/**
+ * V4 debt breakdown row — V4 Readiness Audit §12 Stage 25D.
+ */
+describe('FullExitResult — V4 debt breakdown (Stage 25D)', () => {
+  function manualV4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      debt: { asset: 'USDC', balance: 999999 },
+      market: { btcPriceUsd: 64547.56 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'manual',
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: 'manual',
+    });
+  }
+
+  it('shows both streams clearing to $0.00 for a full exit', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(manualV4Portfolio());
+
+    render(<FullExitResult />);
+    expect(screen.getByText('Premium Debt').nextElementSibling?.textContent).toBe(
+      '$500.00 → $0.00',
+    );
+    expect(screen.getByText('Drawn Debt').nextElementSibling?.textContent).toBe(
+      '$30,000.00 → $0.00',
+    );
+  });
+
+  it('does not render the V4 breakdown row for a V3 (or unset) portfolio', () => {
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(validPortfolio());
+
+    render(<FullExitResult />);
+    expect(screen.queryByText('Premium Debt')).not.toBeInTheDocument();
+  });
+});

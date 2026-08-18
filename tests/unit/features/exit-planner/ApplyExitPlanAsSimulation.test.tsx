@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { formatHealthFactor } from '@/components/strategy/format';
 import { ApplyExitPlanAsSimulation } from '@/features/exit-planner';
 import type { ApplicationPortfolio } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
@@ -120,5 +121,105 @@ describe('ApplyExitPlanAsSimulation — applying', () => {
       'href',
       '/simulation',
     );
+  });
+});
+
+/**
+ * "Applied — ..." confirmation message — V4 Readiness Audit §12 Stage 25
+ * follow-up. Closes a real, reproduced bug: the message used to read
+ * `useSimulationStore.portfolioActionPreview` reactively — a Store
+ * shared with Simulation's own Portfolio Action feature and Loop
+ * Builder's `ApplyLoopAsSimulation`. A stale result left over from any
+ * of those (or an earlier exit-plan attempt with different numbers)
+ * showed as "Applied" with the WRONG Health Factor even though nothing
+ * was ever clicked in THIS render, or even though the exit target had
+ * since changed. Fixed by snapshotting the applied Health Factor/BTC-sold
+ * locally, only at the moment `handleApply` actually runs, and clearing
+ * that snapshot whenever the underlying transaction changes.
+ */
+describe('ApplyExitPlanAsSimulation — "Applied" confirmation is never stale (Stage 25 follow-up)', () => {
+  it('shows no "Applied" message before the button has ever been clicked, even with a stale portfolioActionPreview already in the Store', () => {
+    // Simulates a stale global Store value left over from an unrelated
+    // apply (Loop Builder, Simulation's own Portfolio Action, or an
+    // earlier exit-plan attempt) — never touched by anything in this
+    // render.
+    useSimulationStore.setState({
+      portfolioActionPreview: {
+        before: { healthFactor: 1.73 } as never,
+        after: { healthFactor: 1.73 } as never,
+        profitOrLoss: 0,
+      },
+    });
+
+    const portfolio = validPortfolio();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+
+    render(<ApplyExitPlanAsSimulation portfolio={portfolio} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applied —/)).not.toBeInTheDocument();
+  });
+
+  it('shows the real, freshly-applied Health Factor after clicking, not a stale one already sitting in the Store', () => {
+    // A stale, wrong Health Factor sitting in the Store before the click —
+    // proves the click overwrites it with the real result, not the display
+    // merely tolerating it being absent.
+    useSimulationStore.setState({
+      portfolioActionPreview: {
+        before: { healthFactor: 1.73 } as never,
+        after: { healthFactor: 1.73 } as never,
+        profitOrLoss: 0,
+      },
+    });
+
+    const portfolio = validPortfolio();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+
+    render(<ApplyExitPlanAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Exit Plan as Simulation/i }));
+
+    const status = screen.getByRole('status');
+    expect(status.textContent).not.toMatch(/1\.73/);
+    // A Full Exit on this fixture produces Health Factor Infinity (zero
+    // remaining debt) — the real, freshly-computed result.
+    expect(status.textContent).toMatch(/Applied —/);
+  });
+
+  it('clears a previously-shown "Applied" message once the exit target changes, rather than leaving it referring to stale numbers', () => {
+    const portfolio = validPortfolio();
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 5000 });
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+
+    const { rerender } = render(<ApplyExitPlanAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Exit Plan as Simulation/i }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // The user edits the repayment amount after applying — a genuinely
+    // different transaction, never re-applied.
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 8000 });
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+    rerender(<ApplyExitPlanAsSimulation portfolio={portfolio} />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applied —/)).not.toBeInTheDocument();
+  });
+
+  it('shows a matching Health Factor and BTC-sold figure together — never a mix of a fresh transaction with a stale Health Factor', () => {
+    const portfolio = validPortfolio();
+    useExitPlannerStore.getState().setExitType('partialDebtRepayment');
+    useExitPlannerStore.getState().setTargetInputs({ repaymentAmount: 10000 });
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+
+    render(<ApplyExitPlanAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Exit Plan as Simulation/i }));
+
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    expect(preview).not.toBeNull();
+    const status = screen.getByRole('status');
+    // 0.2 BTC sold to raise the $10,000 repayment at $50,000/BTC.
+    expect(status.textContent).toContain('0.200000 BTC sold');
+    expect(status.textContent).toContain(formatHealthFactor(preview!.after.healthFactor));
   });
 });

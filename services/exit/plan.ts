@@ -80,6 +80,26 @@ export interface ExitTransactionSummary {
   repayment: number;
   btcSold: number;
   btcRetained: number;
+  /**
+   * V4 Readiness Audit §12 Stage 25D — the real, premium-first
+   * `drawnDebt`/`premiumDebt` split this repayment actually produced
+   * (`deriveV4DebtStateAfterDelta`), for a V4 portfolio with real synced
+   * `v4DebtState`. `undefined` for a V3 (or unset-protocol) portfolio, or
+   * a V4 one with no synced `v4DebtState` at all — this is display
+   * itemization of the SAME `v4DebtState` already carried onto
+   * `afterPortfolio` below, never a second calculation: `before.drawnDebt`/
+   * `.premiumDebt` are `portfolio.v4DebtState`'s own real values,
+   * `after.drawnDebt`/`.premiumDebt` are `afterV4DebtState`'s. Added
+   * because `repayment`/`btcSold`/`btcRetained` alone give no visible
+   * proof that the real premium-first Aave V4 repayment rule (premium
+   * repaid first, then drawn debt with the remainder) was used, rather
+   * than a naive `totalDebt - repayment` figure that happens to produce
+   * the identical aggregate `after.debtValue` either way.
+   */
+  v4DebtBreakdown?: {
+    before: { drawnDebt: number; premiumDebt: number };
+    after: { drawnDebt: number; premiumDebt: number };
+  };
 }
 
 export interface ExitPlanResult {
@@ -213,6 +233,20 @@ export function planExit(
         repayment: targetExit.exit.repayment,
         btcSold: targetExit.exit.btcSold,
         btcRetained: targetExit.exit.btcRetained,
+        ...(portfolio.protocolVersion === 'v4' &&
+          portfolio.v4DebtState !== undefined &&
+          afterV4DebtState !== undefined && {
+            v4DebtBreakdown: {
+              before: {
+                drawnDebt: portfolio.v4DebtState.drawnDebt,
+                premiumDebt: portfolio.v4DebtState.premiumDebt,
+              },
+              after: {
+                drawnDebt: afterV4DebtState.drawnDebt,
+                premiumDebt: afterV4DebtState.premiumDebt,
+              },
+            },
+          }),
       },
       unavailableCosts: targetExit.exit.unavailableCosts,
     },

@@ -33,6 +33,16 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * non-null assertion, the same discipline this engagement applies
  * throughout rather than asserting away a type the Service itself
  * declares nullable.
+ *
+ * **A ninth, V4-only row (V4 Readiness Audit §12 Stage 25D)** — the
+ * aggregate "Debt Retained" figure alone gives no visible proof that the
+ * real, premium-first Aave V4 repayment rule was used rather than a
+ * naive `totalDebt - repayment` figure (both produce the identical
+ * aggregate). `transaction.v4DebtBreakdown` (present only for a V4
+ * portfolio with real synced `v4DebtState`) itemizes the real
+ * `drawnDebt`/`premiumDebt` split `deriveV4DebtStateAfterDelta` actually
+ * computed — zero new calculation, purely display of state already
+ * carried onto the Service's own "after" portfolio.
  */
 const UNAVAILABLE_COST_LABELS: Record<string, string> = {
   swapFees: 'Swap Fees',
@@ -92,6 +102,28 @@ export function PartialExitResult() {
           {after.liquidation !== null ? formatCurrency(after.liquidation.price) : '—'}
         </span>
       </div>
+
+      {transaction.v4DebtBreakdown && (
+        <div className="flex flex-col gap-1 border-t border-border pt-2 text-xs">
+          <span className="text-muted-foreground">
+            Aave V4 Debt Breakdown (premium repaid first)
+          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Premium Debt</span>
+            <span className="font-medium text-foreground">
+              {formatCurrency(transaction.v4DebtBreakdown.before.premiumDebt)} →{' '}
+              {formatCurrency(transaction.v4DebtBreakdown.after.premiumDebt)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Drawn Debt</span>
+            <span className="font-medium text-foreground">
+              {formatCurrency(transaction.v4DebtBreakdown.before.drawnDebt)} →{' '}
+              {formatCurrency(transaction.v4DebtBreakdown.after.drawnDebt)}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-muted-foreground">Costs</span>

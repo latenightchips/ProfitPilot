@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 import { formatHealthFactor } from '@/components/strategy/format';
 import type { ApplicationPortfolio } from '@/services';
@@ -38,13 +39,52 @@ import { useSimulationStore } from '@/stores/simulationStore';
  * `ApplyLoopAsSimulation.tsx`'s own header comment already establishes.
  * `stores/exitPlannerStore.ts` itself is untouched, keeping its own
  * independence DoD intact.
+ *
+ * **"Applied — ..." reads a local snapshot, not a reactive
+ * `portfolioActionPreview` subscription (V4 Readiness Audit §12 Stage 25
+ * follow-up)** — see `handleApply`'s own comment below for the real bug
+ * this closes: the shared Simulation Store's `portfolioActionPreview`
+ * can hold a result from an entirely different apply (a prior exit
+ * attempt, a Loop Builder apply, Simulation's own Portfolio Action),
+ * which a reactive read would show mixed with this render's always-fresh
+ * `transaction.btcSold` — a real, reproduced stale-Health-Factor bug.
+ * `ApplyLoopAsSimulation.tsx` has the identical reactive-read pattern and
+ * is very likely susceptible to the same bug, but was out of this
+ * specific fix's reported scope — not fixed here.
  */
 export function ApplyExitPlanAsSimulation({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useExitPlannerStore((state) => state.currentResult);
-  const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
   const runPortfolioActionSimulation = useSimulationStore(
     (state) => state.runPortfolioActionSimulation,
   );
+  // Stage 25D — local snapshot of what THIS button actually applied, not
+  // a reactive read of the global `useSimulationStore.portfolioActionPreview`.
+  // That Store is shared across Simulation's own Portfolio Action feature,
+  // `features/loop-builder/components/ApplyLoopAsSimulation.tsx`, and this
+  // component — reading it reactively meant "Applied — Health Factor
+  // X, Y BTC sold" could show a stale Health Factor left over from a
+  // completely different apply (an earlier exit-plan attempt, a Loop
+  // Builder apply, or the Simulation page's own Portfolio Action), mixed
+  // with THIS render's always-fresh `transaction.btcSold` — a real,
+  // reproduced bug (V4 Readiness Audit §12 Stage 25 follow-up). Snapshotting
+  // both values together, only at the moment `handleApply` actually runs,
+  // means the message can never show a Health Factor that didn't come from
+  // applying the transaction currently on screen.
+  const [appliedResult, setAppliedResult] = useState<{
+    healthFactor: number;
+    btcSoldFormatted: string;
+  } | null>(null);
+
+  const transactionBtcSold = currentResult?.transaction?.btcSold;
+  const transactionRepayment = currentResult?.transaction?.repayment;
+
+  // Clears a previously-applied confirmation the moment the underlying
+  // exit transaction changes (e.g. the user edits the repayment amount
+  // or target after applying) — an "Applied" message must never survive
+  // referring to numbers that are no longer what's displayed.
+  useEffect(() => {
+    setAppliedResult(null);
+  }, [transactionBtcSold, transactionRepayment]);
 
   if (currentResult === null || !currentResult.feasible || currentResult.transaction === null) {
     return (
@@ -54,8 +94,6 @@ export function ApplyExitPlanAsSimulation({ portfolio }: { portfolio: Applicatio
     );
   }
 
-  const { transaction } = currentResult;
-
   function handleApply() {
     // Unreachable in practice — this button only renders past the
     // early-return guard above, which already proves both non-null.
@@ -63,10 +101,21 @@ export function ApplyExitPlanAsSimulation({ portfolio }: { portfolio: Applicatio
     // `ApplyLoopAsSimulation.tsx`'s own `handleApply` already
     // establishes for the identical shape.
     if (currentResult === null || currentResult.transaction === null) return;
+    const { btcSold, repayment } = currentResult.transaction;
     runPortfolioActionSimulation(portfolio, {
-      collateralDelta: -currentResult.transaction.btcSold,
-      debtDelta: -currentResult.transaction.repayment,
+      collateralDelta: -btcSold,
+      debtDelta: -repayment,
     });
+    // Synchronous store action (`stores/simulationStore.ts`) — reading
+    // `getState()` immediately after it returns the fresh result, not a
+    // stale one, without subscribing this component to the Store's own
+    // reactive updates (see this component's own header note above).
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    setAppliedResult(
+      preview !== null
+        ? { healthFactor: preview.after.healthFactor, btcSoldFormatted: btcSold.toFixed(6) }
+        : null,
+    );
   }
 
   return (
@@ -90,10 +139,10 @@ export function ApplyExitPlanAsSimulation({ portfolio }: { portfolio: Applicatio
           Open Simulation Workspace
         </Link>
       </div>
-      {portfolioActionPreview !== null && (
+      {appliedResult !== null && (
         <p role="status" className="text-xs text-muted-foreground">
-          Applied — Health Factor {formatHealthFactor(portfolioActionPreview.after.healthFactor)},
-          {transaction.btcSold.toFixed(6)} BTC sold.
+          Applied — Health Factor {formatHealthFactor(appliedResult.healthFactor)},{' '}
+          {appliedResult.btcSoldFormatted} BTC sold.
         </p>
       )}
     </div>
