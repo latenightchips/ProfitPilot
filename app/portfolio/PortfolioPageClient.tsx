@@ -1200,7 +1200,19 @@ function DebtPositionForm({
     const result = update(portfolioId, data);
     if (result.ok) {
       if (portfolio.protocolVersion === 'v4' && v4DerivedDebtState !== undefined) {
-        setAaveV4DebtState(portfolioId, v4DerivedDebtState);
+        // V4 Readiness Audit §12 Stage 25 — a repayment derives a new
+        // `v4DebtState` from the existing one's real numbers
+        // (`deriveV4DebtStateAfterDelta`), but does not change WHERE
+        // that baseline came from — repaying a manual entry must stay
+        // manual, repaying a live-synced position must stay live. Never
+        // defaults here (unlike the live-sync hooks' own calls): this is
+        // the one call site that must actively carry the portfolio's
+        // own existing source forward, not assert a fresh one.
+        setAaveV4DebtState(
+          portfolioId,
+          v4DerivedDebtState,
+          portfolio.v4DebtStateSource ?? 'manual',
+        );
       }
       setPreview(null);
       setRiskAcknowledged(false);
@@ -1237,6 +1249,8 @@ function DebtPositionForm({
     v4CollateralRiskSet: portfolio.v4CollateralRisk !== undefined,
     aaveV4CollateralRiskStatus,
     aaveV4CollateralRiskLastFetchedAt,
+    v4DebtStateSource: portfolio.v4DebtStateSource,
+    v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
     now: new Date().toISOString(),
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);

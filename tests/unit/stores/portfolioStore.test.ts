@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { autoSaveCoordinator, calculatePortfolioSummary } from '@/services';
+import { buildLocalStorageKey } from '@/services/persistence/adapters/localStorageKeys';
+import { computeChecksum } from '@/services/persistence/envelope';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -1273,6 +1275,205 @@ describe('Portfolio v4CollateralRisk — real write/reload round trip (Stage 23C
     const record = usePortfolioStore.getState().portfolios[created.id];
     expect(record).toBeDefined();
     expect(record.portfolio.v4CollateralRisk).toBeUndefined();
+  });
+});
+
+/**
+ * `v4DebtStateSource`/`v4CollateralRiskSource` provenance — Stage 25
+ * (Manual/Hypothetical V4 Mode). `setAaveV4DebtState`/
+ * `setAaveV4CollateralRisk` default an omitted `source` to `'live'`
+ * (every pre-existing caller, including the two live-sync hooks, was
+ * already modeling live-synced data), while an explicit `'manual'` is
+ * how the new manual-entry UI records user-authored state. Clearing a
+ * value (`undefined`) always clears its source too — the invariant "a
+ * source field is defined if and only if the corresponding value field
+ * is defined" holds at every write.
+ */
+describe('usePortfolioStore.setAaveV4DebtState / setAaveV4CollateralRisk — source provenance (Stage 25)', () => {
+  it('defaults v4DebtStateSource to "live" when source is omitted', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE);
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateSource).toBe(
+      'live',
+    );
+  });
+
+  it('records an explicit "manual" source when passed', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateSource).toBe(
+      'manual',
+    );
+  });
+
+  it('records an explicit "live" source when passed', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateSource).toBe(
+      'live',
+    );
+  });
+
+  it('clearing v4DebtState also clears v4DebtStateSource', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, undefined);
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toBeUndefined();
+    expect(record.v4DebtStateSource).toBeUndefined();
+  });
+
+  it('defaults v4CollateralRiskSource to "live" when source is omitted', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK);
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRiskSource,
+    ).toBe('live');
+  });
+
+  it('records an explicit "manual" source when passed', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRiskSource,
+    ).toBe('manual');
+  });
+
+  it('clearing v4CollateralRisk also clears v4CollateralRiskSource', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, undefined);
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4CollateralRisk).toBeUndefined();
+    expect(record.v4CollateralRiskSource).toBeUndefined();
+  });
+
+  it('debt and collateral-risk sources are independently settable — one manual, the other live', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateSource).toBe('manual');
+    expect(record.v4CollateralRiskSource).toBe('live');
+  });
+
+  it('provenance survives a genuine local storage round trip', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateSource).toBe('manual');
+    expect(record.v4CollateralRiskSource).toBe('live');
+  });
+});
+
+/**
+ * `normalizeV4Provenance` load-time backfill — Stage 25. A portfolio
+ * persisted before `v4DebtStateSource`/`v4CollateralRiskSource` existed
+ * (or written by any code path that never set them) has a defined value
+ * with no source field. `load()` must backfill the missing source to
+ * `'manual'` — never `'live'`, since nothing can actually prove a
+ * historical value was ever live-synced — while leaving an
+ * already-present source (of either kind) untouched.
+ */
+describe('usePortfolioStore.load — normalizeV4Provenance backfill (Stage 25)', () => {
+  function writeRawPortfolioRecord(id: string, payload: Record<string, unknown>) {
+    const envelope = {
+      app: 'ProfitPilot',
+      storageSchemaVersion: '1.0.0',
+      appVersion: '1.0.0',
+      recordType: 'portfolio',
+      recordId: id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      checksum: computeChecksum(payload),
+      payload,
+    };
+    window.localStorage.setItem(buildLocalStorageKey('portfolio', id), JSON.stringify(envelope));
+  }
+
+  it('backfills a historical v4DebtState with no source field to "manual", never "live"', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const { v4DebtStateSource, ...withoutSource } = stored as unknown as Record<string, unknown> & {
+      v4DebtStateSource?: unknown;
+    };
+    void v4DebtStateSource;
+    writeRawPortfolioRecord(created.id, withoutSource);
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(record.v4DebtStateSource).toBe('manual');
+  });
+
+  it('backfills a historical v4CollateralRisk with no source field to "manual", never "live"', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const { v4CollateralRiskSource, ...withoutSource } = stored as unknown as Record<
+      string,
+      unknown
+    > & {
+      v4CollateralRiskSource?: unknown;
+    };
+    void v4CollateralRiskSource;
+    writeRawPortfolioRecord(created.id, withoutSource);
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4CollateralRisk).toEqual(VALID_V4_COLLATERAL_RISK);
+    expect(record.v4CollateralRiskSource).toBe('manual');
+  });
+
+  it('leaves an already-present source field untouched (does not overwrite "manual" with "live" or vice versa)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateSource).toBe('manual');
+  });
+
+  it('does not fabricate a source field when the value itself was never set', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toBeUndefined();
+    expect(record.v4DebtStateSource).toBeUndefined();
+    expect(record.v4CollateralRisk).toBeUndefined();
+    expect(record.v4CollateralRiskSource).toBeUndefined();
   });
 });
 

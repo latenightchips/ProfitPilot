@@ -164,6 +164,19 @@ export interface ApplicationPortfolio {
   v4Position?: AaveV4PositionIdentity;
   v4DebtState?: AaveV4DebtState;
   v4CollateralRisk?: AaveV4CollateralRiskConfig;
+  /**
+   * V4 Readiness Audit §12 Stage 25 — see `AaveV4DataSource`'s own doc
+   * comment below. Optional for the same backward-compatibility reason
+   * as every other V4 field here: every portfolio persisted before this
+   * stage has it `undefined`. **Invariant maintained by every writer**
+   * (`stores/portfolioStore.ts`'s `setAaveV4DebtState`, and the
+   * `load()` normalization for pre-Stage-25 persisted data): this field
+   * is defined if and only if `v4DebtState` is defined — never an
+   * orphaned source with no value, never a value with no known source.
+   */
+  v4DebtStateSource?: AaveV4DataSource;
+  /** Same invariant as `v4DebtStateSource`, independently, for `v4CollateralRisk`. See `setAaveV4CollateralRisk`'s own comment. */
+  v4CollateralRiskSource?: AaveV4DataSource;
 }
 
 /**
@@ -220,6 +233,34 @@ export interface AaveV4CollateralRiskConfig {
   /** The user's own bound dynamic-config snapshot key this `collateralFactor` was read at (`ISpoke.UserPosition.dynamicConfigKey`) — NOT necessarily the reserve's current key. */
   dynamicConfigKey: number;
 }
+
+/**
+ * V4 state provenance — V4 Readiness Audit §12 Stage 25 ("Manual/
+ * Hypothetical Mode"). `'manual'`: the user typed this value directly
+ * (no wallet, no RPC call, no real Aave position required —
+ * `hooks/useAaveV4CollateralRiskLiveSync.ts`/`useAaveV4LiveSync.ts` never
+ * write this). `'live'`: this value was written by one of those two
+ * live-sync hooks from a real, successful on-chain read.
+ *
+ * **Independent per dimension, deliberately.** `v4DebtStateSource` and
+ * `v4CollateralRiskSource` can disagree at any moment — e.g. a user
+ * manually enters both, later adds a wallet address, and the debt-state
+ * live fetch succeeds before the collateral-risk one does (or one keeps
+ * failing while the other succeeds). Neither field infers or waits on
+ * the other, the same "no cross-inference" discipline `v4Position`/
+ * `v4DebtState`/`v4CollateralRisk` themselves already established.
+ *
+ * **Not itself a freshness/staleness concept** — `'live'` alone doesn't
+ * mean "current," only "came from a real on-chain read at some point."
+ * Freshness for `'live'` data is still `useAaveV4LiveDataStore`/
+ * `useAaveV4CollateralRiskLiveDataStore`'s own `lastFetchedAt`
+ * (`utils/protocolStatus.ts`'s existing staleness check, unchanged). A
+ * `'manual'` value has no independent "freshness" of its own to check —
+ * it's exactly as current as whatever the user last typed, by
+ * definition, matching how V3's own manually-tracked `debt.balance` has
+ * never had a staleness concept either.
+ */
+export type AaveV4DataSource = 'manual' | 'live';
 
 /**
  * The persistence-layer Portfolio shape, as far as M3-004 defines it.

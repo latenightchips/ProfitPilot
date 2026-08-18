@@ -11,6 +11,8 @@ import type { Portfolio } from '@/types/portfolio';
 import { aaveV4PositionIdentitySchema } from '@/types/portfolio.schema';
 import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStatus';
 
+import { ManualAaveV4StateForm } from './ManualAaveV4StateForm';
+
 /**
  * Aave Protocol Version selector — V4 Readiness Audit §12 Stage 13. The
  * "smallest clean place for a per-portfolio protocol selector" this
@@ -53,6 +55,13 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * (`utils/protocolStatus.ts`) reads only real state: `v4Position`/
  * `v4DebtState` presence and `useAaveV4LiveDataStore`'s own live fetch
  * status — never a guessed or interpolated value.
+ *
+ * **`ManualAaveV4StateForm` renders as a sibling section below the
+ * address sub-form, same visibility gate (V4 Readiness Audit §12 Stage
+ * 25)** — a user with no real V4 position, no wallet, and no RPC calls
+ * can still fully model a V4 portfolio; live sync (the address form
+ * above) stays optional enrichment, never a prerequisite. See that
+ * component's own header comment for the full manual/live design.
  */
 type V4AddressFormValues = z.input<typeof aaveV4PositionIdentitySchema>;
 
@@ -101,6 +110,8 @@ export function AaveProtocolVersionForm({
     v4CollateralRiskSet: portfolio.v4CollateralRisk !== undefined,
     aaveV4CollateralRiskStatus,
     aaveV4CollateralRiskLastFetchedAt,
+    v4DebtStateSource: portfolio.v4DebtStateSource,
+    v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
     now: new Date().toISOString(),
   });
 
@@ -179,6 +190,8 @@ export function AaveProtocolVersionForm({
               {formatProtocolStatus(status)}
             </span>
           </p>
+
+          <ManualAaveV4StateForm portfolioId={portfolioId} portfolio={portfolio} />
         </div>
       )}
     </fieldset>

@@ -229,6 +229,7 @@ import { create } from 'zustand';
 import {
   type AaveProtocolVersion,
   type AaveV4CollateralRiskConfig,
+  type AaveV4DataSource,
   type AaveV4DebtState,
   type AaveV4PositionIdentity,
   type ApplicationError,
@@ -287,13 +288,34 @@ export interface PortfolioStoreActions {
     id: string,
     v4Position: AaveV4PositionIdentity | undefined,
   ) => MappingResult<Portfolio>;
+  /**
+   * V4 Readiness Audit §12 Stage 25 — `source` is optional and defaults
+   * to `'live'` when a defined `v4DebtState` is supplied without one.
+   * `'live'` is the correct default, not just a convenient one: every
+   * caller of this action before this stage (the two live-sync hooks,
+   * and every existing test's own fixture setup) was already modeling a
+   * live-synced value — defaulting preserves that behavior for all of
+   * them unchanged. Only a caller that genuinely means "manual" (the new
+   * manual-entry form) or that must PRESERVE an existing, possibly
+   * manual, source (`DebtPositionForm`'s repay path, which derives a new
+   * `v4DebtState` from whatever the old one's provenance already was)
+   * needs to pass `source` explicitly. See `AaveV4DataSource`'s own doc
+   * comment (`services/portfolio/models.ts`) for what the two values
+   * mean, and `normalizeV4Provenance` above for the SEPARATE, more
+   * conservative default (`'manual'`, never silently `'live'`) this
+   * Store applies to historical PERSISTED data with no recorded source —
+   * a different problem in a different context, not a contradiction.
+   */
   setAaveV4DebtState: (
     id: string,
     v4DebtState: AaveV4DebtState | undefined,
+    source?: AaveV4DataSource,
   ) => MappingResult<Portfolio>;
+  /** Same optional-`source`-defaults-to-`'live'` discipline as `setAaveV4DebtState` above. */
   setAaveV4CollateralRisk: (
     id: string,
     v4CollateralRisk: AaveV4CollateralRiskConfig | undefined,
+    source?: AaveV4DataSource,
   ) => MappingResult<Portfolio>;
 }
 
@@ -385,6 +407,50 @@ export function aaveV4CollateralRiskEqual(
 }
 
 /**
+ * Backfills `v4DebtStateSource`/`v4CollateralRiskSource` for a portfolio
+ * loaded from persisted storage — V4 Readiness Audit §12 Stage 25. Every
+ * portfolio persisted before this stage may already carry a real
+ * `v4DebtState`/`v4CollateralRisk` (necessarily written by a live sync,
+ * since manual entry did not exist before now) but has no source field at
+ * all, since `persistedPortfolioPayloadSchema` only started accepting it
+ * this stage.
+ *
+ * **Defaults the gap to `'manual'`, never `'live'`.** "Do not silently
+ * classify historical state as live unless that can actually be proven"
+ * (this stage's own explicit requirement) — we cannot prove a historical
+ * value is still fresh/correct, so asserting `'live'` here would be
+ * exactly the kind of unproven claim the requirement forbids. `'manual'`
+ * is the conservative, provable choice: the value is real and usable
+ * (calculations proceed exactly as they already did before this stage),
+ * but the status badge won't claim a freshness guarantee this Store has
+ * no way to back up. A live sync, if the portfolio still has a
+ * `v4Position` address, will naturally overwrite this with real `'live'`
+ * provenance on the next successful fetch — the normal manual→live
+ * transition, not a special migration path.
+ *
+ * Maintains the same "source is defined if and only if the value is"
+ * invariant `setAaveV4DebtState`/`setAaveV4CollateralRisk` themselves
+ * enforce, for a portfolio that was never touched by an already-normalized write.
+ */
+function normalizeV4Provenance(portfolio: Portfolio): Portfolio {
+  const v4DebtStateSource =
+    portfolio.v4DebtState !== undefined ? (portfolio.v4DebtStateSource ?? 'manual') : undefined;
+  const v4CollateralRiskSource =
+    portfolio.v4CollateralRisk !== undefined
+      ? (portfolio.v4CollateralRiskSource ?? 'manual')
+      : undefined;
+
+  if (
+    v4DebtStateSource === portfolio.v4DebtStateSource &&
+    v4CollateralRiskSource === portfolio.v4CollateralRiskSource
+  ) {
+    return portfolio;
+  }
+
+  return { ...portfolio, v4DebtStateSource, v4CollateralRiskSource };
+}
+
+/**
  * The one portfolio id `saveStatus` currently tracks — updated by every
  * mutating action right before it schedules a save/delete, read by the
  * module-level `autoSaveCoordinator.subscribe` below. A plain module
@@ -433,7 +499,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const activePortfolioId = activeResult.ok ? (activeResult.data?.portfolioId ?? null) : null;
 
     const portfolios: Record<string, PortfolioRecord> = {};
-    for (const portfolio of portfoliosResult.data) {
+    for (const raw of portfoliosResult.data) {
+      const portfolio = normalizeV4Provenance(raw);
       portfolios[portfolio.id] = { portfolio, summary: buildSummary(portfolio) };
     }
 
@@ -741,7 +808,11 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     return { ok: true, data: portfolio };
   },
 
-  setAaveV4DebtState: (id, v4DebtState) => {
+  setAaveV4DebtState: (
+    id: string,
+    v4DebtState: AaveV4DebtState | undefined,
+    source?: AaveV4DataSource,
+  ) => {
     set({ saveStatus: 'saving' });
 
     const existing = get().portfolios[id];
@@ -765,6 +836,14 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4DebtState: validated,
+      // V4 Readiness Audit §12 Stage 25 — the invariant `ApplicationPortfolio`'s
+      // own doc comment documents: a source is recorded if and only if a
+      // value is. Clearing (`validated === undefined`) also clears the
+      // source, never leaving an orphaned provenance flag behind.
+      // Defaults an omitted `source` to `'live'` — see this action's own
+      // interface doc comment for why that default, not `'manual'`, is
+      // correct here.
+      v4DebtStateSource: validated !== undefined ? (source ?? 'live') : undefined,
       updatedAt: new Date().toISOString(),
     };
 
@@ -777,7 +856,11 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     return { ok: true, data: portfolio };
   },
 
-  setAaveV4CollateralRisk: (id, v4CollateralRisk) => {
+  setAaveV4CollateralRisk: (
+    id: string,
+    v4CollateralRisk: AaveV4CollateralRiskConfig | undefined,
+    source?: AaveV4DataSource,
+  ) => {
     set({ saveStatus: 'saving' });
 
     const existing = get().portfolios[id];
@@ -801,6 +884,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4CollateralRisk: validated,
+      // Same invariant, and same `'live'` default, as `setAaveV4DebtState` above.
+      v4CollateralRiskSource: validated !== undefined ? (source ?? 'live') : undefined,
       updatedAt: new Date().toISOString(),
     };
 

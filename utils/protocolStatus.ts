@@ -1,4 +1,5 @@
 import { FRESHNESS_THRESHOLD_MINUTES, type MarketQuote } from '@/services/market/quote';
+import type { AaveV4DataSource } from '@/services/portfolio/models';
 import type { AaveV4CollateralRiskLiveDataStatus } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 
@@ -21,72 +22,94 @@ import { type AaveDataStatus, deriveAaveDataStatus, formatAaveDataStatus } from 
  * Live/Stale/Unavailable rule** — this module adds V4 status on top,
  * it does not reinterpret V3's own, already-correct freshness logic.
  *
- * **V4's five distinct states, in the order Stage 13's own instructions
- * name them** ("waiting for address/config, loading, live/synced,
- * provider error, missing debt state"):
- *   - `'waiting-for-address'` — `protocolVersion: 'v4'` but no `v4Position`
- *     set yet. `useAaveV4LiveSync` makes zero fetch calls in this state
- *     (its own header comment), so `aaveV4Status` is meaningless here —
- *     checked first, before reading it at all.
- *   - `'loading'` — an address is set and a fetch is in flight or about
- *     to start (`aaveV4Status` is `'idle'` or `'loading'`; `'idle'`
- *     covers the one render before the sync effect's first fetch call
- *     lands, which reads identically to "loading" from a user's
- *     perspective).
- *   - `'provider-error'` — the last fetch attempt failed
- *     (`useAaveV4LiveDataStore`'s own "on API failure, do not erase
- *     existing data" — the portfolio's last-known-good `v4DebtState`, if
- *     any, is untouched; this is a status LABEL only, never a reason to
- *     blank or fail-close any actual calculation).
- *   - `'missing-debt-state'` — the fetch succeeded at least once
- *     historically is not required; this specifically means the
- *     portfolio's own `v4DebtState` is still `undefined` even though the
- *     live-data store itself is `'ready'` (e.g. a genuinely fresh
- *     portfolio whose first sync hasn't landed as a Store write yet, or
- *     an identity mismatch `useAaveV4LiveSync`'s own guard is holding
- *     back). This is exactly the condition
- *     `checkAaveV4DebtStateAvailable` (`services/portfolio/mapping.ts`)
- *     fails closed on for every debt-sensitive calculation — the status
- *     badge and the calculation guard now describe the same real
- *     condition, not two independently-invented ones.
- *   - `'live'` — an address is set, the live-data store is `'ready'`,
- *     the portfolio has a real `v4DebtState`, and the last successful
- *     fetch is within `FRESHNESS_THRESHOLD_MINUTES`.
- *   - `'stale'` — everything `'live'` requires, except the last
- *     successful fetch (`aaveV4LastFetchedAt`) is older than
- *     `FRESHNESS_THRESHOLD_MINUTES`, or was never recorded at all
- *     (defensive: a `'ready'` status with no known fetch time cannot be
- *     verified fresh, so it is never labeled `'live'`) — V4 Readiness
- *     Audit §12 Stage 17. Reuses the same threshold V3's own
- *     `normalizeMarketQuote` freshness rule already applies
- *     (`services/market/quote.ts`'s `FRESHNESS_THRESHOLD_MINUTES`), just
- *     against this store's own fetch time rather than a price
- *     candidate's origin timestamp — see `stores/aaveV4LiveDataStore.ts`'s
- *     own header comment for why V4 has no equivalent candidate/origin
- *     concept to reuse the exact same code path. `'error'` already reads
- *     "showing last known value" and is unaffected by this check — an
- *     explicit provider error is a stronger, more specific signal than a
- *     generic staleness label.
+ * **V4's states**, in the precedence order `deriveProtocolStatus` checks
+ * them:
+ *   - `'manual'` — V4 Readiness Audit §12 Stage 25. Checked FIRST, before
+ *     anything live-fetch-related: both dimensions already have a real,
+ *     usable value, and at least one of them is `'manual'`-sourced. See
+ *     "Manual/hypothetical mode" below for why this must win over a
+ *     concurrent loading/error state for the OTHER, still-live-syncing
+ *     dimension, rather than the reverse.
+ *   - `'waiting-for-address'` — genuinely nothing provided yet for
+ *     EITHER V4 dimension: no `v4Position`, no `v4DebtState`, no
+ *     `v4CollateralRisk`. Narrower than it once was (V4 Readiness Audit
+ *     §12 Stage 25) — a portfolio that already has manual data for at
+ *     least one dimension never reaches this branch (the `'manual'`
+ *     check above only fires when BOTH dimensions are usable, so a
+ *     partially-manual portfolio instead falls through to the
+ *     `'missing-*'` checks below, which is the more specific, more
+ *     actionable answer).
+ *   - `'loading'` / `'provider-error'` — only reachable when
+ *     `v4PositionSet` is true (an address exists — with none, nothing is
+ *     genuinely "in flight," so an idle live-data store must never read
+ *     as "loading"). Checked before `'missing-debt-state'`/
+ *     `'missing-collateral-risk'` below, preserving Stage 13's own
+ *     original precedence: the ordinary "a fetch just started, hasn't
+ *     landed yet" case must still read as `'loading'`, not
+ *     `'missing-debt-state'`.
+ *   - `'missing-debt-state'` / `'missing-collateral-risk'` — that
+ *     specific dimension has neither a live nor a manual value, and (per
+ *     the two checks above) this isn't merely "still loading." This is
+ *     exactly the condition `checkAaveV4DebtStateAvailable`/
+ *     `checkAaveV4CollateralRiskAvailable` (`services/portfolio/mapping.ts`)
+ *     fail closed on for every V4 calculation — the status badge and the
+ *     calculation guard describe the same real condition, never two
+ *     independently-invented ones.
+ *   - `'stale'` / `'live'` — reached only once BOTH dimensions are
+ *     confirmed set and `'live'`-sourced (the `'manual'` check above
+ *     already ruled out either being manual); unchanged from Stage
+ *     17/23F's own composition logic (worse-of-two across the two
+ *     independent live-data stores). See each case's own reasoning below,
+ *     carried over unchanged.
  *
- * **`'missing-collateral-risk'` — V4 Readiness Audit §12 Stage 23F.**
- * Debt-state sync (Stage 7) and collateral-risk sync (Stage 23F) are two
- * independent live-data stores (`useAaveV4LiveDataStore`,
- * `useAaveV4CollateralRiskLiveDataStore`) that can be in different states
- * at the same instant — e.g. debt state fetched and applied moments ago
- * while the collateral-risk fetch is still in flight, or failed. This
- * module composes the two into ONE badge by taking the worse of the two
- * sub-statuses at every step, so the overall status is never more
- * optimistic than either individual one: an error on either store is an
- * overall `'provider-error'`; loading on either (with no error on the
- * other) is an overall `'loading'`; a missing `v4DebtState` is checked
- * before a missing `v4CollateralRisk` (arbitrary but stable ordering —
- * both are "not usable yet" and only one can be shown at a time);
- * staleness is measured against whichever of the two fetch times is
- * older, so a fresh debt-state fetch sitting next to a stale
- * collateral-risk fetch still reads as `'stale'` overall. This directly
- * satisfies this stage's own requirement: do not silently mark the
- * portfolio "V4 Live" if debt state is fresh but collateral-risk state is
- * missing/stale and a risk calculation depends on it.
+ * **Manual/hypothetical mode (V4 Readiness Audit §12 Stage 25).** A user
+ * must be able to model a V4 portfolio with zero wallet address and zero
+ * RPC calls — `hooks/useAaveV4CollateralRiskLiveSync.ts`'s and
+ * `useAaveV4LiveSync.ts`'s own live-sync machinery stays completely
+ * optional enrichment, never a prerequisite. `v4DebtStateSource`/
+ * `v4CollateralRiskSource` (`services/portfolio/models.ts`'s
+ * `AaveV4DataSource`) record, independently per dimension, whether the
+ * portfolio's current value came from a real on-chain read (`'live'`) or
+ * was typed directly by the user (`'manual'`). Whenever a dimension is
+ * manual, this module reports the honest, calculation-ready `'manual'`
+ * status rather than either of two wrong alternatives: claiming `'live'`
+ * (a freshness guarantee this module has no way to back up for a
+ * user-typed number), or blocking/warning as if something were actually
+ * missing (a manual value IS present and IS exactly what
+ * `checkAaveV4DebtStateAvailable`/`checkAaveV4CollateralRiskAvailable`
+ * already treat as sufficient — presence, not provenance, is what those
+ * guards have ever checked). `'manual'` is reached regardless of whether
+ * a live fetch is concurrently loading, has failed, or has never been
+ * attempted at all — none of that changes whether the CURRENT value is
+ * usable right now, which is what this status communicates. A live
+ * fetch's own failure remains separately visible through
+ * `aaveV4Status`/`aaveV4CollateralRiskStatus`'s own `errorMessage` (each
+ * store's existing field) for a caller that wants to surface it
+ * additionally — this module does not fold "a live attempt is also
+ * failing in the background" into the primary status string, since doing
+ * so would risk exactly what Stage 25's own instructions forbid:
+ * "pretending manual state is live" in reverse, i.e. making a perfectly
+ * usable manual value look broken because of an unrelated, non-blocking
+ * live-sync hiccup.
+ *
+ * **`'live'` still means what it always meant**: BOTH dimensions
+ * `'live'`-sourced, both live-data stores `'ready'`, both fetches within
+ * `FRESHNESS_THRESHOLD_MINUTES`. A mixed state (one dimension live, the
+ * other still manual) is conservatively reported as `'manual'` overall —
+ * never `'live'` — since claiming `'live'` would overstate the freshness
+ * of the dimension that isn't. `'stale'` is everything `'live'` requires,
+ * except the last successful fetch (`aaveV4LastFetchedAt`/
+ * `aaveV4CollateralRiskLastFetchedAt`) is older than
+ * `FRESHNESS_THRESHOLD_MINUTES`, or was never recorded at all (defensive:
+ * a `'ready'` status with no known fetch time cannot be verified fresh,
+ * so it is never labeled `'live'`) — V4 Readiness Audit §12 Stage 17,
+ * reusing the same threshold V3's own `normalizeMarketQuote` freshness
+ * rule already applies (`services/market/quote.ts`'s
+ * `FRESHNESS_THRESHOLD_MINUTES`), just against each store's own fetch
+ * time rather than a price candidate's origin timestamp. Composed
+ * worse-of-two across the two independent live-data stores (V4 Readiness
+ * Audit §12 Stage 23F) — a fresh debt-state fetch sitting next to a stale
+ * collateral-risk fetch still reads as `'stale'` overall.
  */
 export type ProtocolStatusKind =
   | { version: 'v3'; status: AaveDataStatus }
@@ -99,7 +122,8 @@ export type ProtocolStatusKind =
         | 'stale'
         | 'provider-error'
         | 'missing-debt-state'
-        | 'missing-collateral-risk';
+        | 'missing-collateral-risk'
+        | 'manual';
     };
 
 export interface ProtocolStatusInput {
@@ -117,6 +141,15 @@ export interface ProtocolStatusInput {
   aaveV4CollateralRiskStatus: AaveV4CollateralRiskLiveDataStatus;
   /** ISO 8601 instant of the V4 collateral-risk live-data store's last successful fetch, `null` if none has ever landed. */
   aaveV4CollateralRiskLastFetchedAt: string | null;
+  /**
+   * V4 Readiness Audit §12 Stage 25 — the portfolio's own
+   * `v4DebtStateSource`. `undefined` whenever `v4DebtStateSet` is
+   * `false` (nothing to have a source for yet); always defined
+   * otherwise, per `ApplicationPortfolio`'s own invariant.
+   */
+  v4DebtStateSource: AaveV4DataSource | undefined;
+  /** Same shape as `v4DebtStateSource`, independently, for `v4CollateralRiskSet`. */
+  v4CollateralRiskSource: AaveV4DataSource | undefined;
   /** ISO 8601 instant to classify V4 freshness against — caller-supplied for determinism, mirroring `normalizeMarketQuote`'s own `now`. */
   now: string;
 }
@@ -132,26 +165,67 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
     return { version: 'v3', status: deriveAaveDataStatus(input.aaveMarketQuote) };
   }
 
-  if (!input.v4PositionSet) {
+  // 1. Full manual gate — V4 Readiness Audit §12 Stage 25. Checked FIRST,
+  // before any live-fetch status is even read: both dimensions already
+  // have a usable value, and at least one is `'manual'`. A concurrent
+  // live fetch (loading, or even failing) for the other dimension must
+  // never override this — "retain the valid manual state... do not
+  // clear it merely because live synchronization started" is this
+  // stage's own mandatory semantic. Requiring BOTH dimensions `Set` is
+  // what keeps this from ever firing for a genuinely incomplete
+  // portfolio (one where a dimension is entirely absent) — that falls
+  // through to the missing-state checks below instead, unchanged.
+  if (
+    input.v4DebtStateSet &&
+    input.v4CollateralRiskSet &&
+    (input.v4DebtStateSource === 'manual' || input.v4CollateralRiskSource === 'manual')
+  ) {
+    return { version: 'v4', status: 'manual' };
+  }
+
+  // 2. Truly nothing provided at all — no address, no manual entry for
+  // either dimension.
+  if (!input.v4PositionSet && !input.v4DebtStateSet && !input.v4CollateralRiskSet) {
     return { version: 'v4', status: 'waiting-for-address' };
   }
-  if (input.aaveV4Status === 'error' || input.aaveV4CollateralRiskStatus === 'error') {
-    return { version: 'v4', status: 'provider-error' };
+
+  // 3. A live fetch is only ever genuinely "in flight" or "erroring"
+  // once an address exists — `aaveV4Status`/`aaveV4CollateralRiskStatus`
+  // sitting at their `'idle'` default with no address must never read as
+  // "loading" (nothing is happening, and nothing will start on its own
+  // without one). Checked before the missing-state checks below so the
+  // ordinary "fetch just started, hasn't landed yet" case still reads as
+  // `'loading'`, not `'missing-debt-state'` — unchanged from Stage 13's
+  // own original precedence.
+  if (input.v4PositionSet) {
+    if (input.aaveV4Status === 'error' || input.aaveV4CollateralRiskStatus === 'error') {
+      return { version: 'v4', status: 'provider-error' };
+    }
+    if (
+      input.aaveV4Status === 'idle' ||
+      input.aaveV4Status === 'loading' ||
+      input.aaveV4CollateralRiskStatus === 'idle' ||
+      input.aaveV4CollateralRiskStatus === 'loading'
+    ) {
+      return { version: 'v4', status: 'loading' };
+    }
   }
-  if (
-    input.aaveV4Status === 'idle' ||
-    input.aaveV4Status === 'loading' ||
-    input.aaveV4CollateralRiskStatus === 'idle' ||
-    input.aaveV4CollateralRiskStatus === 'loading'
-  ) {
-    return { version: 'v4', status: 'loading' };
-  }
+
+  // 4. By now: either there is no address (and step 2 already ruled out
+  // "nothing at all"), or there is one and both live stores are past
+  // idle/loading/error (i.e. `'ready'`). Either way, a still-unset
+  // dimension here is a genuine, reportable gap — never "loading",
+  // never silently treated as manual.
   if (!input.v4DebtStateSet) {
     return { version: 'v4', status: 'missing-debt-state' };
   }
   if (!input.v4CollateralRiskSet) {
     return { version: 'v4', status: 'missing-collateral-risk' };
   }
+
+  // 5. Both dimensions are set and neither is manual (step 1 already
+  // ruled that out) — both are confirmed `'live'`-sourced. Unchanged
+  // Stage 17/23F freshness composition.
   if (
     isV4DataStale(input.aaveV4LastFetchedAt, input.now) ||
     isV4DataStale(input.aaveV4CollateralRiskLastFetchedAt, input.now)
@@ -179,5 +253,7 @@ export function formatProtocolStatus(kind: ProtocolStatusKind): string {
       return 'Aave V4 · Missing debt state';
     case 'missing-collateral-risk':
       return 'Aave V4 · Missing collateral-risk data';
+    case 'manual':
+      return 'Aave V4 · Manual entry';
   }
 }

@@ -140,6 +140,8 @@ export function RecommendationsPageClient() {
                 v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
                 aaveV4CollateralRiskStatus,
                 aaveV4CollateralRiskLastFetchedAt,
+                v4DebtStateSource: record.portfolio.v4DebtStateSource,
+                v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
                 now: new Date().toISOString(),
               })}
             />

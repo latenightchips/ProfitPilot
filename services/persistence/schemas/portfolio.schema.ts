@@ -50,12 +50,24 @@
  * discipline again, now for `services/portfolio/models.ts`'s
  * `AaveV4CollateralRiskConfig` (collateral factor, dynamic-config key).
  * Reuses `aaveV4CollateralRiskConfigSchema` directly.
+ *
+ * **`v4DebtStateSource`/`v4CollateralRiskSource` (V4 Readiness Audit §12
+ * Stage 25)** — same discipline again, for `services/portfolio/models.ts`'s
+ * `AaveV4DataSource`. Both optional, independently: a portfolio persisted
+ * before Stage 25 has neither, even though it may already carry a real
+ * `v4DebtState`/`v4CollateralRisk` (necessarily from a live sync, since
+ * manual entry did not exist before this stage) — `stores/portfolioStore.ts`'s
+ * `load()` is where that historical gap gets a conservative, provable
+ * default (`'manual'`, never a silently-assumed `'live'`), not this
+ * schema. This schema only needs to round-trip whatever the Store
+ * already attached, on both read and write.
  */
 import { z } from 'zod';
 
 import { sanitizedOptionalTextSchema, sanitizedTextSchema } from '@/services/shared/sanitizeText';
 import {
   aaveV4CollateralRiskConfigSchema,
+  aaveV4DataSourceSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
   collateralPositionSchema,
@@ -80,6 +92,8 @@ export const persistedPortfolioPayloadSchema = z.object({
   v4Position: aaveV4PositionIdentitySchema.optional(),
   v4DebtState: aaveV4DebtStateSchema.optional(),
   v4CollateralRisk: aaveV4CollateralRiskConfigSchema.optional(),
+  v4DebtStateSource: aaveV4DataSourceSchema.optional(),
+  v4CollateralRiskSource: aaveV4DataSourceSchema.optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

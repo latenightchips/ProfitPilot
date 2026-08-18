@@ -232,3 +232,77 @@ describe('persistedPortfolioPayloadSchema (Stage 23C: v4CollateralRisk)', () => 
     expect(result.data.v4DebtState).toBeUndefined();
   });
 });
+
+/**
+ * `v4DebtStateSource`/`v4CollateralRiskSource` — Stage 25 (V4 Readiness
+ * Audit §12, "Manual/Hypothetical Mode"), same "don't silently strip it"
+ * regression this schema already closed for every other V4 field in
+ * Stages 5/6/23C. A payload with no source at all (every portfolio
+ * persisted before this stage) must still parse successfully — the
+ * conservative "default to 'manual', never silently 'live'" backfill for
+ * that historical gap is `stores/portfolioStore.ts`'s `load()` own job
+ * (`normalizeV4Provenance`), not this schema's.
+ */
+describe('persistedPortfolioPayloadSchema (Stage 25: v4DebtStateSource/v4CollateralRiskSource)', () => {
+  it('accepts a payload with neither source field (pre-Stage-25 backward compatibility)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE, v4CollateralRisk: VALID_COLLATERAL_RISK }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateSource).toBeUndefined();
+    expect(result.data.v4CollateralRiskSource).toBeUndefined();
+  });
+
+  it('accepts and preserves "manual" for both sources', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        v4DebtState: VALID_DEBT_STATE,
+        v4DebtStateSource: 'manual',
+        v4CollateralRisk: VALID_COLLATERAL_RISK,
+        v4CollateralRiskSource: 'manual',
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateSource).toBe('manual');
+    expect(result.data.v4CollateralRiskSource).toBe('manual');
+  });
+
+  it('accepts and preserves "live" for both sources', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        v4DebtState: VALID_DEBT_STATE,
+        v4DebtStateSource: 'live',
+        v4CollateralRisk: VALID_COLLATERAL_RISK,
+        v4CollateralRiskSource: 'live',
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateSource).toBe('live');
+    expect(result.data.v4CollateralRiskSource).toBe('live');
+  });
+
+  it('preserves independently-differing sources — debt manual, collateral-risk live', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        v4DebtState: VALID_DEBT_STATE,
+        v4DebtStateSource: 'manual',
+        v4CollateralRisk: VALID_COLLATERAL_RISK,
+        v4CollateralRiskSource: 'live',
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateSource).toBe('manual');
+    expect(result.data.v4CollateralRiskSource).toBe('live');
+  });
+
+  it('rejects a source value outside "manual"/"live", never silently coercing it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE, v4DebtStateSource: 'synced' }),
+    );
+    expect(result.success).toBe(false);
+  });
+});

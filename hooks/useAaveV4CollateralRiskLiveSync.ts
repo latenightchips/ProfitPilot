@@ -119,12 +119,16 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
 
     if (userAddress === undefined) {
       // No identity to sync against — see this hook's own "Clears on
-      // identity removal" header comment. Only acts when there is
-      // something to clear, so this is a genuine no-op (no Store write,
-      // no updatedAt bump) for every portfolio that never had
-      // `v4CollateralRisk` set in the first place — V3 portfolios never
-      // reach this branch's write.
-      if (portfolio.v4CollateralRisk !== undefined) {
+      // identity removal" header comment. Only clears a previously
+      // `'live'`-sourced value that is now orphaned by the identity's
+      // removal — NEVER a `'manual'` one (V4 Readiness Audit §12 Stage
+      // 25): manual entries have no dependency on a wallet address at
+      // all, by design, so a portfolio with no address and a valid
+      // manual `v4CollateralRisk` must be left completely untouched
+      // here. Genuine no-op (no Store write, no updatedAt bump) for
+      // every portfolio that never had `v4CollateralRisk` set in the
+      // first place — V3 portfolios never reach this branch's write.
+      if (portfolio.v4CollateralRisk !== undefined && portfolio.v4CollateralRiskSource === 'live') {
         setAaveV4CollateralRisk(portfolioId, undefined);
       }
       return;
@@ -134,13 +138,22 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     if (fetchedUserAddress !== userAddress) return;
     if (lastAppliedCanonical.current === canonical) return;
 
-    if (aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)) {
+    // V4 Readiness Audit §12 Stage 25 — same reasoning as
+    // `hooks/useAaveV4LiveSync.ts`'s own identical fix: a successful live
+    // fetch must always transition `v4CollateralRiskSource` to `'live'`,
+    // even when the fetched value coincidentally matches an existing
+    // manual entry's numbers. Only skip the write when the stored value
+    // is already `'live'`.
+    if (
+      portfolio.v4CollateralRiskSource === 'live' &&
+      aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)
+    ) {
       lastAppliedCanonical.current = canonical;
       return;
     }
 
     lastAppliedCanonical.current = canonical;
-    setAaveV4CollateralRisk(portfolioId, canonical);
+    setAaveV4CollateralRisk(portfolioId, canonical, 'live');
   }, [
     portfolioId,
     portfolio,

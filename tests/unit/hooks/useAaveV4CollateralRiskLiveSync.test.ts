@@ -369,3 +369,85 @@ describe('useAaveV4CollateralRiskLiveSync — clears a stale v4CollateralRisk wh
     ).toEqual(VALID_CANONICAL);
   });
 });
+
+/**
+ * Manual/hypothetical mode — V4 Readiness Audit §12 Stage 25. A manual
+ * `v4CollateralRisk` has no dependency on a wallet address at all, by
+ * design (the whole point of manual mode), so it must NEVER be cleared
+ * by this hook's own "orphaned by identity removal" logic — that logic
+ * exists specifically for a `'live'`-sourced value that no longer has an
+ * address to have been read from. Confirms the fix made alongside this
+ * stage: the clearing branch now checks `v4CollateralRiskSource ===
+ * 'live'`, not just `v4CollateralRisk !== undefined`.
+ */
+describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25)', () => {
+  it('never clears a MANUAL v4CollateralRisk for a portfolio with no address at all', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
+    ).toEqual(VALID_CANONICAL);
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
+    ).toBe('manual');
+  });
+
+  it('never clears a MANUAL v4CollateralRisk when the v4Position address is removed (manual has no address dependency)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
+    ).toEqual(VALID_CANONICAL);
+  });
+
+  it('a successful live fetch still transitions a manual value to "live", even with coincidentally-equal numbers', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    // The live store resolves with the EXACT SAME numbers already stored
+    // manually — a real, if coincidental, possibility.
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: VALID_CANONICAL }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
+      ).toBe('live');
+    });
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
+    ).toEqual(VALID_CANONICAL);
+  });
+
+  it('a failed live fetch preserves the manual value and its "manual" source untouched', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'error',
+      canonical: null,
+      userAddress: null,
+      errorMessage: 'Live Aave V4 collateral-risk data is temporarily unavailable.',
+      lastFetchedAt: null,
+      fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(VALID_CANONICAL);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+  });
+});

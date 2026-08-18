@@ -22,21 +22,23 @@ const INITIAL_PORTFOLIO_STATE = {
   lastSynchronizedAt: null,
 };
 
-const IDLE_V4_STATE = {
-  status: 'idle' as const,
-  engineInputs: null,
-  userAddress: null,
-  debtAsset: null,
-  errorMessage: null,
-  fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
-};
+function idleV4State() {
+  return {
+    status: 'idle' as const,
+    engineInputs: null,
+    userAddress: null,
+    debtAsset: null,
+    errorMessage: null,
+    fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 const VALID_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' as `0x${string}`;
 const OTHER_ADDRESS = '0x1111111111111111111111111111111111111111' as `0x${string}`;
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_PORTFOLIO_STATE);
-  useAaveV4LiveDataStore.setState(IDLE_V4_STATE);
+  useAaveV4LiveDataStore.setState(idleV4State());
 });
 
 function createPortfolio(overrides: Record<string, unknown> = {}) {
@@ -374,5 +376,60 @@ describe('useAaveV4LiveSync — does not fabricate or infer data', () => {
         distinctiveInputs,
       );
     });
+  });
+});
+
+/**
+ * Manual/hypothetical mode — V4 Readiness Audit §12 Stage 25.
+ */
+describe('useAaveV4LiveSync — manual/hypothetical mode (Stage 25)', () => {
+  it('a successful live fetch transitions a manual value to "live", even with coincidentally-equal numbers', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: VALID_ENGINE_INPUTS }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtStateSource,
+      ).toBe('live');
+    });
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+      VALID_ENGINE_INPUTS,
+    );
+  });
+
+  it('a failed live fetch preserves the manual value and its "manual" source untouched', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState({
+      status: 'error',
+      engineInputs: null,
+      userAddress: null,
+      debtAsset: null,
+      errorMessage: 'Live Aave V4 data is temporarily unavailable.',
+      fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(VALID_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it('a manual v4DebtState has no dependency on a wallet address — set with no v4Position at all, still usable', () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    expect(useAaveV4LiveDataStore.getState().fetchAaveV4LiveData).not.toHaveBeenCalled();
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(VALID_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('manual');
   });
 });

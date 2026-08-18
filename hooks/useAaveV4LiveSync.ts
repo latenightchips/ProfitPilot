@@ -117,13 +117,24 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     if (fetchedUserAddress !== userAddress || fetchedDebtAsset !== debtAsset) return;
     if (lastAppliedEngineInputs.current === engineInputs) return;
 
-    if (aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)) {
+    // V4 Readiness Audit §12 Stage 25 — a successful live fetch must
+    // ALWAYS transition `v4DebtStateSource` to `'live'`, even when the
+    // fetched values happen to numerically match an existing MANUAL
+    // entry (a real, if coincidental, possibility once manual mode
+    // exists). The equality short-circuit below is therefore only safe
+    // to take when the stored value is already `'live'` — otherwise a
+    // manual→live transition with coincidentally-equal numbers would be
+    // silently skipped, leaving the portfolio mislabeled as manual.
+    if (
+      portfolio.v4DebtStateSource === 'live' &&
+      aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)
+    ) {
       lastAppliedEngineInputs.current = engineInputs;
       return;
     }
 
     lastAppliedEngineInputs.current = engineInputs;
-    setAaveV4DebtState(portfolioId, engineInputs);
+    setAaveV4DebtState(portfolioId, engineInputs, 'live');
   }, [
     portfolioId,
     portfolio,

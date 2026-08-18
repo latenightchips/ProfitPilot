@@ -205,10 +205,21 @@ export function SimulationPageClient() {
           v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
           aaveV4CollateralRiskStatus,
           aaveV4CollateralRiskLastFetchedAt,
+          v4DebtStateSource: record.portfolio.v4DebtStateSource,
+          v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
           now: new Date().toISOString(),
         })
       : null;
-  const v4NotLive = protocolStatus?.version === 'v4' && protocolStatus.status !== 'live';
+  // V4 Readiness Audit §12 Stage 25 — `'manual'` is calculation-ready,
+  // exactly like `'live'` (see `deriveProtocolStatus`'s own header
+  // comment): a manual/hypothetical V4 portfolio must not be blocked
+  // here merely because it has no wallet address. This is the ONE
+  // targeted change to the Stage 24 gate itself — the gate's own
+  // fail-closed shape (block on anything else) is unchanged.
+  const v4NotLive =
+    protocolStatus?.version === 'v4' &&
+    protocolStatus.status !== 'live' &&
+    protocolStatus.status !== 'manual';
   const v4ProviderError =
     protocolStatus?.version === 'v4' && protocolStatus.status === 'provider-error';
 

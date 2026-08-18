@@ -100,6 +100,7 @@ export {
 } from './mapping';
 export type {
   AaveV4CollateralRiskConfig,
+  AaveV4DataSource,
   AaveV4DebtState,
   AaveV4PositionIdentity,
   ApplicationPortfolio,

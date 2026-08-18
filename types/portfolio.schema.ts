@@ -233,6 +233,12 @@ export const aaveV4CollateralRiskConfigSchema = z.object({
 
 export type AaveV4CollateralRiskConfigInput = z.infer<typeof aaveV4CollateralRiskConfigSchema>;
 
+/**
+ * V4 data-source provenance — Stage 25 (V4 Readiness Audit §12).
+ * Validates `services/portfolio/models.ts`'s `AaveV4DataSource`.
+ */
+export const aaveV4DataSourceSchema = z.enum(['manual', 'live']);
+
 export const portfolioInputSchema = z.object({
   name: z
     .string()

@@ -29,7 +29,7 @@ function freshQuote(): MarketQuoteAvailable {
 const NOW = new Date().toISOString();
 
 function baseInput(overrides: Partial<ProtocolStatusInput> = {}): ProtocolStatusInput {
-  return {
+  const merged: Omit<ProtocolStatusInput, 'v4DebtStateSource' | 'v4CollateralRiskSource'> = {
     protocolVersion: undefined,
     v4PositionSet: false,
     v4DebtStateSet: false,
@@ -50,6 +50,20 @@ function baseInput(overrides: Partial<ProtocolStatusInput> = {}): ProtocolStatus
     aaveV4CollateralRiskLastFetchedAt: NOW,
     now: NOW,
     ...overrides,
+  };
+  return {
+    ...merged,
+    // V4 Readiness Audit §12 Stage 25 — defaults each source to `'live'`
+    // whenever the corresponding value is set, UNLESS a test explicitly
+    // overrides it. Every pre-existing case above (written before manual
+    // mode existed) was already modeling live-synced data, so this
+    // preserves every one of them exercising exactly the live-composition
+    // branches they were written for, with zero changes to their own
+    // override objects — a dedicated describe block below exercises the
+    // new `'manual'` branch on its own by overriding these explicitly.
+    v4DebtStateSource: overrides.v4DebtStateSource ?? (merged.v4DebtStateSet ? 'live' : undefined),
+    v4CollateralRiskSource:
+      overrides.v4CollateralRiskSource ?? (merged.v4CollateralRiskSet ? 'live' : undefined),
   };
 }
 
@@ -89,16 +103,29 @@ describe('deriveProtocolStatus — V3/unset (delegates to the existing V3 freshn
 });
 
 describe('deriveProtocolStatus — V4, all five distinct states', () => {
-  it('reports "waiting-for-address" when protocolVersion is "v4" but v4Position is unset', () => {
+  it('reports "waiting-for-address" when protocolVersion is "v4" but nothing has been provided yet (no address, no manual data)', () => {
     expect(
-      deriveProtocolStatus(baseInput({ protocolVersion: 'v4', v4PositionSet: false })),
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: false,
+          v4DebtStateSet: false,
+          v4CollateralRiskSet: false,
+        }),
+      ),
     ).toEqual({ version: 'v4', status: 'waiting-for-address' });
   });
 
-  it('reports "waiting-for-address" regardless of aaveV4Status when v4Position is unset', () => {
+  it('reports "waiting-for-address" regardless of aaveV4Status when nothing has been provided yet', () => {
     expect(
       deriveProtocolStatus(
-        baseInput({ protocolVersion: 'v4', v4PositionSet: false, aaveV4Status: 'ready' }),
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: false,
+          v4DebtStateSet: false,
+          v4CollateralRiskSet: false,
+          aaveV4Status: 'ready',
+        }),
       ),
     ).toEqual({ version: 'v4', status: 'waiting-for-address' });
   });
@@ -366,6 +393,171 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
   });
 });
 
+/**
+ * Manual/hypothetical V4 mode — V4 Readiness Audit §12 Stage 25. A user
+ * with no wallet address and zero RPC calls must be able to fully model
+ * a V4 portfolio; `deriveProtocolStatus` must report this honestly
+ * (`'manual'`) rather than `'waiting-for-address'` or any of the
+ * live-only sub-states, and must never let a concurrent live-sync
+ * attempt (loading or failing) override a valid manual reading.
+ */
+describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () => {
+  it('reports "manual" for a fully manual portfolio with no wallet address at all', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: false,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'manual',
+          v4CollateralRiskSet: true,
+          v4CollateralRiskSource: 'manual',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'manual' });
+  });
+
+  it('never reports "waiting-for-address" for a portfolio with valid manual data, even with no address', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: false,
+        v4DebtStateSet: true,
+        v4DebtStateSource: 'manual',
+        v4CollateralRiskSet: true,
+        v4CollateralRiskSource: 'manual',
+      }),
+    );
+    expect(result.status).not.toBe('waiting-for-address');
+  });
+
+  it('reports "manual" when only ONE dimension is manual and the other is genuinely live', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'live',
+          aaveV4Status: 'ready',
+          v4CollateralRiskSet: true,
+          v4CollateralRiskSource: 'manual',
+          aaveV4CollateralRiskStatus: 'ready',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'manual' });
+  });
+
+  it('a mixed manual+live state is never reported as "live" (conservative — never overstates freshness)', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: true,
+        v4DebtStateSet: true,
+        v4DebtStateSource: 'live',
+        aaveV4Status: 'ready',
+        v4CollateralRiskSet: true,
+        v4CollateralRiskSource: 'manual',
+        aaveV4CollateralRiskStatus: 'ready',
+      }),
+    );
+    expect(result.status).not.toBe('live');
+  });
+
+  it('"manual" wins over a concurrently-loading live fetch (address just added, sync pending) — retains usable manual state', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'manual',
+          v4CollateralRiskSet: true,
+          v4CollateralRiskSource: 'manual',
+          aaveV4Status: 'loading',
+          aaveV4CollateralRiskStatus: 'loading',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'manual' });
+  });
+
+  it('"manual" wins over a concurrently-FAILED live fetch — never destroys or hides valid manual state behind a provider-error label', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'manual',
+          v4CollateralRiskSet: true,
+          v4CollateralRiskSource: 'manual',
+          aaveV4Status: 'error',
+          aaveV4CollateralRiskStatus: 'error',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'manual' });
+  });
+
+  it('missing-collateral-risk still takes priority over "manual" when collateral risk is genuinely absent, even though debt is manually set', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: false,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'manual',
+          v4CollateralRiskSet: false,
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+  });
+
+  it('a plain address-entered, never-synced-or-entered portfolio still reports "loading"/"missing", not "manual" (no source implies no manual data)', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: false,
+          v4CollateralRiskSet: false,
+          aaveV4Status: 'ready',
+          aaveV4CollateralRiskStatus: 'ready',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+  });
+
+  it('an idle live-data store with no address never reads as "loading" — reports the specific missing dimension instead', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: false,
+          v4DebtStateSet: true,
+          v4DebtStateSource: 'manual',
+          v4CollateralRiskSet: false,
+          aaveV4CollateralRiskStatus: 'idle',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+  });
+
+  it('the ordinary "fetch just started, address set, nothing manual" case still reports "loading", not "missing-debt-state" (Stage 13 precedence preserved)', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: false,
+          v4CollateralRiskSet: false,
+          aaveV4Status: 'loading',
+          aaveV4CollateralRiskStatus: 'idle',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'loading' });
+  });
+});
+
 describe('formatProtocolStatus — labels', () => {
   it('delegates V3 labels to the existing formatAaveDataStatus wording exactly', () => {
     expect(formatProtocolStatus({ version: 'v3', status: 'live' })).toBe('Aave V3 · Live');
@@ -375,7 +567,7 @@ describe('formatProtocolStatus — labels', () => {
     );
   });
 
-  it('produces seven distinct, clearly labeled V4 states (Stage 23F adds "missing-collateral-risk")', () => {
+  it('produces eight distinct, clearly labeled V4 states (Stage 25 adds "manual")', () => {
     const labels = new Set(
       (
         [
@@ -386,13 +578,20 @@ describe('formatProtocolStatus — labels', () => {
           'provider-error',
           'missing-debt-state',
           'missing-collateral-risk',
+          'manual',
         ] as const
       ).map((status) => formatProtocolStatus({ version: 'v4', status })),
     );
-    expect(labels.size).toBe(7);
+    expect(labels.size).toBe(8);
     for (const label of labels) {
       expect(label.startsWith('Aave V4 ·')).toBe(true);
     }
+  });
+
+  it('labels "manual" plainly, never implying anything is missing or blocked', () => {
+    expect(formatProtocolStatus({ version: 'v4', status: 'manual' })).toBe(
+      'Aave V4 · Manual entry',
+    );
   });
 
   it('the provider-error label notes the value shown is last-known, matching the V3 unavailable convention', () => {
