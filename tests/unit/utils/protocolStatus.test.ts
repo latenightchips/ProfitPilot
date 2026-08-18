@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MarketQuote, MarketQuoteAvailable } from '@/services/market/quote';
+import type { AaveV4CollateralRiskLiveDataStatus } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 import {
   deriveProtocolStatus,
@@ -38,6 +39,15 @@ function baseInput(overrides: Partial<ProtocolStatusInput> = {}): ProtocolStatus
     // every pre-existing case below (written before staleness existed)
     // still reads as fresh/live unless a test overrides it.
     aaveV4LastFetchedAt: NOW,
+    // V4 Readiness Audit §12 Stage 23F — defaults to "already synced and
+    // fresh", so every pre-existing debt-state-focused case above
+    // continues to exercise ONLY the debt-state branch it was written
+    // for, unaffected by the new collateral-risk composition; a
+    // dedicated describe block below overrides these to exercise
+    // collateral-risk-driven statuses on their own.
+    v4CollateralRiskSet: true,
+    aaveV4CollateralRiskStatus: 'ready',
+    aaveV4CollateralRiskLastFetchedAt: NOW,
     now: NOW,
     ...overrides,
   };
@@ -244,6 +254,118 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
   });
 });
 
+/**
+ * V4 collateral-risk composition — V4 Readiness Audit §12 Stage 23F.
+ * `deriveProtocolStatus` now composes TWO independent live-data stores
+ * (debt-state, collateral-risk) into one badge, taking the worse of the
+ * two at every step, per this stage's own explicit requirement: "Do not
+ * silently mark the portfolio 'V4 Live' if debt state is fresh but
+ * collateral-risk state is missing/stale."
+ */
+describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', () => {
+  it('reports "missing-collateral-risk" when debt state is set but collateral risk is not', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          aaveV4Status: 'ready',
+          v4CollateralRiskSet: false,
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+  });
+
+  it('reports "live" only when BOTH debt state and collateral risk are set, ready, and fresh', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          aaveV4Status: 'ready',
+          v4CollateralRiskSet: true,
+          aaveV4CollateralRiskStatus: 'ready',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'live' });
+  });
+
+  it.each<AaveV4CollateralRiskLiveDataStatus>(['idle', 'loading'])(
+    'reports "loading" when debt state is ready but collateral-risk fetch is %s, even though v4DebtState is set',
+    (aaveV4CollateralRiskStatus) => {
+      expect(
+        deriveProtocolStatus(
+          baseInput({
+            protocolVersion: 'v4',
+            v4PositionSet: true,
+            v4DebtStateSet: true,
+            aaveV4Status: 'ready',
+            aaveV4CollateralRiskStatus,
+          }),
+        ),
+      ).toEqual({ version: 'v4', status: 'loading' });
+    },
+  );
+
+  it('reports "provider-error" when the collateral-risk fetch failed, even though debt state is ready', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          aaveV4Status: 'ready',
+          aaveV4CollateralRiskStatus: 'error',
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'provider-error' });
+  });
+
+  it('reports "stale" when debt state is fresh but collateral-risk data is stale (worse-of-two)', () => {
+    const staleTime = new Date(Date.parse(NOW) - 60 * 60_000).toISOString();
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: true,
+          aaveV4Status: 'ready',
+          aaveV4LastFetchedAt: NOW,
+          aaveV4CollateralRiskStatus: 'ready',
+          aaveV4CollateralRiskLastFetchedAt: staleTime,
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'stale' });
+  });
+
+  it('missing-debt-state still takes priority over missing-collateral-risk (stable ordering)', () => {
+    expect(
+      deriveProtocolStatus(
+        baseInput({
+          protocolVersion: 'v4',
+          v4PositionSet: true,
+          v4DebtStateSet: false,
+          aaveV4Status: 'ready',
+          v4CollateralRiskSet: false,
+        }),
+      ),
+    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+  });
+
+  it('a V3 (or unset) portfolio never reads collateral-risk fields (no cross-inference)', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        v4CollateralRiskSet: false,
+        aaveV4CollateralRiskStatus: 'error',
+        aaveV4CollateralRiskLastFetchedAt: null,
+      }),
+    );
+    expect(result).toEqual({ version: 'v3', status: 'live' });
+  });
+});
+
 describe('formatProtocolStatus — labels', () => {
   it('delegates V3 labels to the existing formatAaveDataStatus wording exactly', () => {
     expect(formatProtocolStatus({ version: 'v3', status: 'live' })).toBe('Aave V3 · Live');
@@ -253,7 +375,7 @@ describe('formatProtocolStatus — labels', () => {
     );
   });
 
-  it('produces six distinct, clearly labeled V4 states (Stage 17 adds "stale")', () => {
+  it('produces seven distinct, clearly labeled V4 states (Stage 23F adds "missing-collateral-risk")', () => {
     const labels = new Set(
       (
         [
@@ -263,10 +385,11 @@ describe('formatProtocolStatus — labels', () => {
           'stale',
           'provider-error',
           'missing-debt-state',
+          'missing-collateral-risk',
         ] as const
       ).map((status) => formatProtocolStatus({ version: 'v4', status })),
     );
-    expect(labels.size).toBe(6);
+    expect(labels.size).toBe(7);
     for (const label of labels) {
       expect(label.startsWith('Aave V4 ·')).toBe(true);
     }

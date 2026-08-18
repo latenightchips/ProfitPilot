@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -70,6 +71,10 @@ export function AaveProtocolVersionForm({
   const setAaveV4Position = usePortfolioStore((state) => state.setAaveV4Position);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
   const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+  const aaveV4CollateralRiskStatus = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
+  const aaveV4CollateralRiskLastFetchedAt = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.lastFetchedAt,
+  );
 
   const version = portfolio.protocolVersion ?? 'v3';
 
@@ -93,6 +98,9 @@ export function AaveProtocolVersionForm({
     aaveMarketQuote: null,
     aaveV4Status,
     aaveV4LastFetchedAt,
+    v4CollateralRiskSet: portfolio.v4CollateralRisk !== undefined,
+    aaveV4CollateralRiskStatus,
+    aaveV4CollateralRiskLastFetchedAt,
     now: new Date().toISOString(),
   });
 

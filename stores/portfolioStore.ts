@@ -366,6 +366,25 @@ export function aaveV4DebtStateEqual(
 }
 
 /**
+ * `aaveV4CollateralRiskEqual` (V4 Readiness Audit §12 Stage 23F) — same
+ * equality-gate role as `aaveV4DebtStateEqual` above, for
+ * `hooks/useAaveV4CollateralRiskLiveSync.ts`'s own sync effect.
+ * `dynamicConfigKey` is compared alongside `collateralFactor`, not
+ * dropped — it is real provenance (which bound dynamic-config version the
+ * value was read at, `AaveV4CollateralRiskConfig`'s own doc comment), so a
+ * key change with a coincidentally-equal `collateralFactor` still counts
+ * as a real change worth writing (and worth clearing an open Preview
+ * for), not a no-op.
+ */
+export function aaveV4CollateralRiskEqual(
+  a: AaveV4CollateralRiskConfig | undefined,
+  b: AaveV4CollateralRiskConfig | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.collateralFactor === b.collateralFactor && a.dynamicConfigKey === b.dynamicConfigKey;
+}
+
+/**
  * The one portfolio id `saveStatus` currently tracks — updated by every
  * mutating action right before it schedules a save/delete, read by the
  * module-level `autoSaveCoordinator.subscribe` below. A plain module

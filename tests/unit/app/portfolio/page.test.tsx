@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PortfolioPage from '@/app/portfolio/page';
 import { autoSaveCoordinator } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -107,10 +108,32 @@ function matchingAaveV4LiveState(
   };
 }
 
+/**
+ * V4 Readiness Audit §12 Stage 23F — same role as `matchingAaveV4LiveState`
+ * above, one store over: stubs `fetchAaveV4CollateralRiskLiveData` so
+ * mounting `useAaveV4CollateralRiskLiveSync` (via `useAaveV4Sync`) never
+ * makes a real, unmocked network call. Defaults to `'idle'`/no address —
+ * a strict no-op for every test that never opts a portfolio into V4.
+ */
+function matchingAaveV4CollateralRiskLiveState(
+  overrides: Partial<ReturnType<typeof useAaveV4CollateralRiskLiveDataStore.getState>> = {},
+) {
+  return {
+    status: 'idle' as const,
+    canonical: null,
+    userAddress: null,
+    errorMessage: null,
+    lastFetchedAt: new Date().toISOString(),
+    fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
   useAaveLiveDataStore.setState(matchingAaveLiveState());
   useAaveV4LiveDataStore.setState(matchingAaveV4LiveState());
+  useAaveV4CollateralRiskLiveDataStore.setState(matchingAaveV4CollateralRiskLiveState());
   window.localStorage.clear();
 });
 
@@ -1085,6 +1108,21 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
     expect(section.getByText('Aave V4 · Waiting for address')).toBeInTheDocument();
   });
 
+  /**
+   * V4 Readiness Audit §12 Stage 23F — direct navigation to /portfolio
+   * (never having visited another V4-wired page first) still populates
+   * `v4CollateralRisk`, closing the Stage 23E blocker for Portfolio
+   * specifically. Mirrors `tests/unit/app/page.test.tsx`'s own Dashboard
+   * "direct navigation" assertion for the same hook pairing.
+   */
+  it('fetches live V4 collateral-risk data on mount once a V4 address is set — status does not stay stuck at idle/loading on direct navigation', () => {
+    createAndSelectV4();
+    render(<PortfolioPage />);
+    expect(
+      useAaveV4CollateralRiskLiveDataStore.getState().fetchAaveV4CollateralRiskLiveData,
+    ).toHaveBeenCalledWith(V4_ADDRESS);
+  });
+
   it('shows "Loading" while a fetch for a known address is in flight', () => {
     createAndSelectV4();
     useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'loading' }));
@@ -1122,6 +1160,12 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
   it('shows "Missing debt state" when the fetch is ready but v4DebtState has not synced onto the portfolio yet', () => {
     createAndSelectV4();
     useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    // V4 Readiness Audit §12 Stage 23F — collateral-risk sync is also
+    // "ready" here, proving debt-state absence takes priority over a
+    // collateral-risk state that is otherwise perfectly fine.
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      matchingAaveV4CollateralRiskLiveState({ status: 'ready' }),
+    );
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
     expect(section.getByText('Aave V4 · Missing debt state')).toBeInTheDocument();
@@ -1133,6 +1177,12 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
       { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
     );
     useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    // V4 Readiness Audit §12 Stage 23F — "Live" now also requires
+    // collateral-risk sync to be ready (`createAndSelectV4` already set
+    // `v4CollateralRisk` on the portfolio itself, mirroring `v4DebtState`).
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      matchingAaveV4CollateralRiskLiveState({ status: 'ready' }),
+    );
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
     expect(section.getByText('Aave V4 · Live')).toBeInTheDocument();
@@ -1154,6 +1204,12 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
         status: 'ready',
         lastFetchedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
       }),
+    );
+    // V4 Readiness Audit §12 Stage 23F — collateral-risk sync itself is
+    // fresh; staleness here is driven entirely by the debt-state fetch
+    // being old (worse-of-two composition, see `utils/protocolStatus.ts`).
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      matchingAaveV4CollateralRiskLiveState({ status: 'ready' }),
     );
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));

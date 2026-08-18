@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
-import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
+import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
 import {
   type AaveV4DebtState,
   calculatePortfolioSummary,
@@ -19,6 +19,7 @@ import {
   type ServiceResult,
 } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { type PortfolioSaveStatus, usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -1213,6 +1214,10 @@ function DebtPositionForm({
   const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
   const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+  const aaveV4CollateralRiskStatus = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
+  const aaveV4CollateralRiskLastFetchedAt = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.lastFetchedAt,
+  );
   // Mismatch guard (USDT Support milestone): a live V3 protocol quote
   // fetched for a different asset than this portfolio's own `debt.asset`
   // must never be shown as "Aave V3 · Live" here — same protection as
@@ -1229,6 +1234,9 @@ function DebtPositionForm({
     aaveMarketQuote: protocolMatchesDebtAsset ? marketQuote : null,
     aaveV4Status,
     aaveV4LastFetchedAt,
+    v4CollateralRiskSet: portfolio.v4CollateralRisk !== undefined,
+    aaveV4CollateralRiskStatus,
+    aaveV4CollateralRiskLastFetchedAt,
     now: new Date().toISOString(),
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);
@@ -1356,12 +1364,14 @@ export function PortfolioPageClient() {
   // keeps `market`/`protocol` in sync (equality-gated, never touching
   // `collateral`/`debt` — see that hook's own header comment).
   useAaveLiveSync(activePortfolioId);
-  // V4 Readiness Audit §12 Stage 7 — fetches live Aave V4 debt data and
-  // keeps `v4DebtState` in sync, but ONLY for a portfolio that already has
-  // both `protocolVersion: 'v4'` and `v4Position` set (neither is settable
-  // from any UI yet) — a strict no-op for every portfolio today, see that
-  // hook's own header comment.
-  useAaveV4LiveSync(activePortfolioId);
+  // V4 Readiness Audit §12 Stage 7, joined by collateral-risk sync at
+  // Stage 23F via `useAaveV4Sync` — fetches live Aave V4 debt and
+  // collateral-risk data and keeps `v4DebtState`/`v4CollateralRisk` in
+  // sync, but ONLY for a portfolio that already has both
+  // `protocolVersion: 'v4'` and `v4Position` set — a strict no-op for
+  // every portfolio that hasn't opted in, see `useAaveV4Sync`'s own
+  // header comment.
+  useAaveV4Sync(activePortfolioId);
 
   return (
     <div className="flex flex-col gap-6">

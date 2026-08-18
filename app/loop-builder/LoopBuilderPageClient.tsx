@@ -20,8 +20,9 @@ import {
   SaveLoopStrategyForm,
 } from '@/features/loop-builder';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
-import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
+import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -148,9 +149,13 @@ export function LoopBuilderPageClient() {
   const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
   const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+  const aaveV4CollateralRiskStatus = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
+  const aaveV4CollateralRiskLastFetchedAt = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.lastFetchedAt,
+  );
 
   useAaveLiveSync(activePortfolioId);
-  useAaveV4LiveSync(activePortfolioId);
+  useAaveV4Sync(activePortfolioId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -230,6 +235,9 @@ export function LoopBuilderPageClient() {
                   aaveMarketQuote,
                   aaveV4Status,
                   aaveV4LastFetchedAt,
+                  v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
+                  aaveV4CollateralRiskStatus,
+                  aaveV4CollateralRiskLastFetchedAt,
                   now: new Date().toISOString(),
                 })}
               />

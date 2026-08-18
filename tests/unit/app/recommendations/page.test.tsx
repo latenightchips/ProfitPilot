@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RecommendationsPage from '@/app/recommendations/page';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
@@ -100,6 +101,16 @@ beforeEach(() => {
     errorMessage: null,
     lastFetchedAt: new Date().toISOString(),
     fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+  });
+  // V4 Readiness Audit §12 Stage 23F — same role as the V4 debt-state
+  // reset above, one store over.
+  useAaveV4CollateralRiskLiveDataStore.setState({
+    status: 'idle',
+    canonical: null,
+    userAddress: null,
+    errorMessage: null,
+    lastFetchedAt: new Date().toISOString(),
+    fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
   });
   push.mockClear();
 });
@@ -266,6 +277,13 @@ describe('RecommendationsPage — V4 live-sync invocation (Stage 21)', () => {
       riskPremium: 0.01,
     });
     useAaveV4LiveDataStore.setState({ status: 'ready' });
+    // V4 Readiness Audit §12 Stage 23F — "Live" now also requires
+    // collateral-risk sync to be ready and the portfolio's own
+    // `v4CollateralRisk` to be set (mirroring the pre-existing `v4DebtState` guard).
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(portfolio.id, { collateralFactor: 0.8, dynamicConfigKey: 1 });
+    useAaveV4CollateralRiskLiveDataStore.setState({ status: 'ready' });
 
     render(<RecommendationsPage />);
 

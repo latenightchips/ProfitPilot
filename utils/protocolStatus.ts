@@ -1,4 +1,5 @@
 import { FRESHNESS_THRESHOLD_MINUTES, type MarketQuote } from '@/services/market/quote';
+import type { AaveV4CollateralRiskLiveDataStatus } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 
 import { type AaveDataStatus, deriveAaveDataStatus, formatAaveDataStatus } from './aaveDataStatus';
@@ -66,6 +67,26 @@ import { type AaveDataStatus, deriveAaveDataStatus, formatAaveDataStatus } from 
  *     "showing last known value" and is unaffected by this check — an
  *     explicit provider error is a stronger, more specific signal than a
  *     generic staleness label.
+ *
+ * **`'missing-collateral-risk'` — V4 Readiness Audit §12 Stage 23F.**
+ * Debt-state sync (Stage 7) and collateral-risk sync (Stage 23F) are two
+ * independent live-data stores (`useAaveV4LiveDataStore`,
+ * `useAaveV4CollateralRiskLiveDataStore`) that can be in different states
+ * at the same instant — e.g. debt state fetched and applied moments ago
+ * while the collateral-risk fetch is still in flight, or failed. This
+ * module composes the two into ONE badge by taking the worse of the two
+ * sub-statuses at every step, so the overall status is never more
+ * optimistic than either individual one: an error on either store is an
+ * overall `'provider-error'`; loading on either (with no error on the
+ * other) is an overall `'loading'`; a missing `v4DebtState` is checked
+ * before a missing `v4CollateralRisk` (arbitrary but stable ordering —
+ * both are "not usable yet" and only one can be shown at a time);
+ * staleness is measured against whichever of the two fetch times is
+ * older, so a fresh debt-state fetch sitting next to a stale
+ * collateral-risk fetch still reads as `'stale'` overall. This directly
+ * satisfies this stage's own requirement: do not silently mark the
+ * portfolio "V4 Live" if debt state is fresh but collateral-risk state is
+ * missing/stale and a risk calculation depends on it.
  */
 export type ProtocolStatusKind =
   | { version: 'v3'; status: AaveDataStatus }
@@ -77,7 +98,8 @@ export type ProtocolStatusKind =
         | 'live'
         | 'stale'
         | 'provider-error'
-        | 'missing-debt-state';
+        | 'missing-debt-state'
+        | 'missing-collateral-risk';
     };
 
 export interface ProtocolStatusInput {
@@ -87,8 +109,14 @@ export interface ProtocolStatusInput {
   v4DebtStateSet: boolean;
   aaveMarketQuote: MarketQuote | null;
   aaveV4Status: AaveV4LiveDataStatus;
-  /** ISO 8601 instant of the V4 live-data store's last successful fetch, `null` if none has ever landed. */
+  /** ISO 8601 instant of the V4 debt-state live-data store's last successful fetch, `null` if none has ever landed. */
   aaveV4LastFetchedAt: string | null;
+  /** Whether the portfolio's own `v4CollateralRisk` (Stage 23C/23F) is currently set. */
+  v4CollateralRiskSet: boolean;
+  /** `useAaveV4CollateralRiskLiveDataStore`'s own status — independent of `aaveV4Status`, see this module's header comment. */
+  aaveV4CollateralRiskStatus: AaveV4CollateralRiskLiveDataStatus;
+  /** ISO 8601 instant of the V4 collateral-risk live-data store's last successful fetch, `null` if none has ever landed. */
+  aaveV4CollateralRiskLastFetchedAt: string | null;
   /** ISO 8601 instant to classify V4 freshness against — caller-supplied for determinism, mirroring `normalizeMarketQuote`'s own `now`. */
   now: string;
 }
@@ -107,16 +135,27 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
   if (!input.v4PositionSet) {
     return { version: 'v4', status: 'waiting-for-address' };
   }
-  if (input.aaveV4Status === 'error') {
+  if (input.aaveV4Status === 'error' || input.aaveV4CollateralRiskStatus === 'error') {
     return { version: 'v4', status: 'provider-error' };
   }
-  if (input.aaveV4Status === 'idle' || input.aaveV4Status === 'loading') {
+  if (
+    input.aaveV4Status === 'idle' ||
+    input.aaveV4Status === 'loading' ||
+    input.aaveV4CollateralRiskStatus === 'idle' ||
+    input.aaveV4CollateralRiskStatus === 'loading'
+  ) {
     return { version: 'v4', status: 'loading' };
   }
   if (!input.v4DebtStateSet) {
     return { version: 'v4', status: 'missing-debt-state' };
   }
-  if (isV4DataStale(input.aaveV4LastFetchedAt, input.now)) {
+  if (!input.v4CollateralRiskSet) {
+    return { version: 'v4', status: 'missing-collateral-risk' };
+  }
+  if (
+    isV4DataStale(input.aaveV4LastFetchedAt, input.now) ||
+    isV4DataStale(input.aaveV4CollateralRiskLastFetchedAt, input.now)
+  ) {
     return { version: 'v4', status: 'stale' };
   }
   return { version: 'v4', status: 'live' };
@@ -138,5 +177,7 @@ export function formatProtocolStatus(kind: ProtocolStatusKind): string {
       return 'Aave V4 · Provider error (showing last known value)';
     case 'missing-debt-state':
       return 'Aave V4 · Missing debt state';
+    case 'missing-collateral-risk':
+      return 'Aave V4 · Missing collateral-risk data';
   }
 }

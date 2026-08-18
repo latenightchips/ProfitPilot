@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PortfolioPage from '@/app/portfolio/page';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -73,6 +74,14 @@ const IDLE_AAVE_V4_STATE = {
   errorMessage: null,
 };
 
+const IDLE_AAVE_V4_COLLATERAL_RISK_STATE = {
+  status: 'idle' as const,
+  canonical: null,
+  userAddress: null,
+  errorMessage: null,
+  lastFetchedAt: null,
+};
+
 const IDLE_AAVE_V3_STATE = {
   status: 'idle' as const,
   marketQuote: null,
@@ -101,6 +110,31 @@ function v4SuccessBody(debtState: typeof V4_FIXTURE_DEBT_STATE = V4_FIXTURE_DEBT
 }
 
 function v4ErrorBody() {
+  return {
+    ok: false,
+    errors: [
+      {
+        category: 'provider',
+        code: 'AAVE_V4_RPC_NETWORK_ERROR',
+        message: 'Could not reach the Ethereum RPC endpoint. Please try again.',
+      },
+    ],
+  };
+}
+
+/** Deterministic fixture — the only "V4 collateral risk" this file ever produces, always via a mocked `fetch` response. */
+const V4_COLLATERAL_RISK_FIXTURE = {
+  collateralFactor: 0.8,
+  dynamicConfigKey: 1,
+};
+
+function v4CollateralRiskSuccessBody(
+  canonical: typeof V4_COLLATERAL_RISK_FIXTURE = V4_COLLATERAL_RISK_FIXTURE,
+) {
+  return { ok: true, data: { raw: {}, canonical, display: {} } };
+}
+
+function v4CollateralRiskErrorBody() {
   return {
     ok: false,
     errors: [
@@ -156,22 +190,29 @@ function jsonResponse(body: unknown): Response {
 interface FetchRouterOptions {
   v4: () => Response;
   v3?: () => Response;
+  /** V4 Readiness Audit §12 Stage 23F — defaults to a successful fixture so every pre-existing debt-state-focused test below keeps composing to "Live" without itself having to know about collateral risk; override to test collateral-risk-specific behavior. */
+  v4CollateralRisk?: () => Response;
 }
 
 /**
- * Routes `global.fetch` by URL — both `useAaveLiveSync` (V3, unconditional)
- * and `useAaveV4LiveSync` (V4, opt-in) are mounted together by
- * `PortfolioPageClient`, so any test that renders it must be able to
- * answer both same-origin routes, exactly like a real browser would.
- * Records every call so isolation ("V3 Refresh never calls the V4 route
- * and vice versa") can be asserted directly, not inferred.
+ * Routes `global.fetch` by URL — `useAaveLiveSync` (V3, unconditional),
+ * `useAaveV4LiveSync` (V4 debt, opt-in), and `useAaveV4CollateralRiskLiveSync`
+ * (V4 collateral risk, opt-in, Stage 23F) are all mounted together by
+ * `PortfolioPageClient` (the latter two via `useAaveV4Sync`), so any test
+ * that renders it must be able to answer all three same-origin routes,
+ * exactly like a real browser would. Records every call so isolation
+ * ("V3 Refresh never calls a V4 route and vice versa") can be asserted
+ * directly, not inferred.
  */
 function installFetchRouter(options: FetchRouterOptions): { calls: string[] } {
   const calls: string[] = [];
   const v3 = options.v3 ?? (() => jsonResponse(v3SuccessBody()));
+  const v4CollateralRisk =
+    options.v4CollateralRisk ?? (() => jsonResponse(v4CollateralRiskSuccessBody()));
   global.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     calls.push(url);
+    if (url.includes('/api/aave/v4-collateral-risk')) return Promise.resolve(v4CollateralRisk());
     if (url.includes('/api/aave/v4-position')) return Promise.resolve(options.v4());
     if (url.includes('/api/aave/reserve')) return Promise.resolve(v3());
     return Promise.reject(new Error(`aaveV4LiveFlow.test.tsx: unexpected fetch call to ${url}`));
@@ -183,6 +224,7 @@ beforeEach(() => {
   usePortfolioStore.setState(INITIAL_PORTFOLIO_STATE);
   useAaveLiveDataStore.setState(IDLE_AAVE_V3_STATE);
   useAaveV4LiveDataStore.setState(IDLE_AAVE_V4_STATE);
+  useAaveV4CollateralRiskLiveDataStore.setState(IDLE_AAVE_V4_COLLATERAL_RISK_STATE);
   window.localStorage.clear();
 });
 
@@ -240,6 +282,17 @@ describe('Aave V4 live flow — successful sync through the real component/store
     const v4Call = calls.find((url) => url.includes('/api/aave/v4-position'))!;
     expect(v4Call).toContain(`userAddress=${V4_ADDRESS}`);
     expect(v4Call).toContain('debtAsset=USDC');
+
+    // V4 Readiness Audit §12 Stage 23F — the real collateral-risk sync
+    // fires alongside debt-state sync and lands the exact fixture
+    // `v4CollateralRisk`, closing the Stage 23E blocker: "Aave V4 · Live"
+    // above is only reachable once both are true.
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk).toEqual(
+      V4_COLLATERAL_RISK_FIXTURE,
+    );
+    expect(calls.some((url) => url.includes('/api/aave/v4-collateral-risk'))).toBe(true);
+    const collateralRiskCall = calls.find((url) => url.includes('/api/aave/v4-collateral-risk'))!;
+    expect(collateralRiskCall).toContain(`userAddress=${V4_ADDRESS}`);
   });
 
   /**
@@ -256,6 +309,17 @@ describe('Aave V4 live flow — successful sync through the real component/store
    * `hooks/useAaveV4LiveSync.ts` now tracks which specific `engineInputs`
    * object it has already applied and only acts on a genuinely new one,
    * so a later local edit is never clobbered by a re-run over stale data.
+   *
+   * **V4 Readiness Audit §12 Stage 23F** — `PortfolioPageClient` now mounts
+   * `useAaveV4Sync`, which joins `useAaveV4LiveSync` (debt state) with the
+   * new `useAaveV4CollateralRiskLiveSync` (collateral risk). Every V4
+   * address save below therefore also fires a real `/api/aave/v4-collateral-risk`
+   * request through the same `global.fetch` mock boundary, routed by
+   * `installFetchRouter` alongside the existing V3/V4-debt routes — a real
+   * V4 portfolio's Health Factor/liquidation calculations are unusable
+   * (Stage 23D/23E fail-closed) until this lands too, so "Aave V4 · Live"
+   * below now genuinely means both debt state AND collateral risk are
+   * synced, not just debt state.
    */
   it('the synced v4DebtState feeds a real Stage-12 partial-repayment preview/apply (premium-first allocation)', async () => {
     const created = createAndSelect({ debt: { asset: 'USDC', balance: 20000 } });
@@ -270,12 +334,13 @@ describe('Aave V4 live flow — successful sync through the real component/store
       V4_FIXTURE_DEBT_STATE,
     );
     // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
-    // synced (mirroring the pre-existing `v4DebtState` guard). This flow has
-    // no UI-driven collateral-risk fetch yet, so it's set directly here —
-    // same fixture convention as this file's own `protocol.liquidationThreshold: 0.8`.
-    usePortfolioStore
-      .getState()
-      .setAaveV4CollateralRisk(created.id, { collateralFactor: 0.8, dynamicConfigKey: 1 });
+    // synced (mirroring the pre-existing `v4DebtState` guard). As of Stage
+    // 23F, `useAaveV4Sync`'s real collateral-risk sync already landed it
+    // above (via `installFetchRouter`'s default `v4CollateralRisk` stub) —
+    // no manual Store write needed here any more.
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk).toEqual(
+      V4_COLLATERAL_RISK_FIXTURE,
+    );
 
     // Repay $5,000 — exactly clears the fixture's $5,000 premiumDebt first (premium-first allocation, Stage 12).
     await user.clear(debtSection.getByLabelText('Debt amount', { exact: false }));
@@ -338,6 +403,43 @@ describe('Aave V4 live flow — provider failure preserves last-known-good state
       V4_FIXTURE_DEBT_STATE,
     );
   });
+
+  /**
+   * V4 Readiness Audit §12 Stage 23F — the collateral-risk-specific
+   * failure case: debt-state sync succeeds, but the collateral-risk
+   * fetch itself fails. The composed badge (`utils/protocolStatus.ts`)
+   * must still surface "Provider error" (not silently "Live"), and the
+   * portfolio's last-known-good `v4CollateralRisk` must survive
+   * untouched — never blanked, never replaced by a reserve-current or
+   * fabricated value.
+   */
+  it('a failed collateral-risk fetch alone (debt state succeeds) shows Provider error and never blanks last-known v4CollateralRisk', async () => {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(created.id, { userAddress: V4_ADDRESS });
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, V4_FIXTURE_DEBT_STATE);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(created.id, V4_COLLATERAL_RISK_FIXTURE);
+
+    installFetchRouter({
+      v4: () => jsonResponse(v4SuccessBody()),
+      v4CollateralRisk: () => jsonResponse(v4CollateralRiskErrorBody()),
+    });
+    render(<PortfolioPage />);
+
+    const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+    await debtSection.findByText('Aave V4 · Provider error (showing last known value)');
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRisk).toEqual(
+      V4_COLLATERAL_RISK_FIXTURE,
+    );
+    // The debt-state side, unaffected by the collateral-risk failure, is
+    // also still synced/current — proving the two stores really are
+    // independent (a collateral-risk hiccup never flips debt-state
+    // status, and vice versa).
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
+      V4_FIXTURE_DEBT_STATE,
+    );
+  });
 });
 
 describe('Aave V4 live flow — the production safeguard is not weakened by this test infrastructure', () => {
@@ -352,6 +454,7 @@ describe('Aave V4 live flow — the production safeguard is not weakened by this
     await debtSection.findByText('Aave V3 · Live');
 
     expect(calls.some((url) => url.includes('/api/aave/v4-position'))).toBe(false);
+    expect(calls.some((url) => url.includes('/api/aave/v4-collateral-risk'))).toBe(false);
   });
 
   it('makes zero V4 fetch calls once V4 is selected but no address has been saved yet', async () => {
@@ -366,6 +469,7 @@ describe('Aave V4 live flow — the production safeguard is not weakened by this
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
     await debtSection.findByText('Aave V4 · Waiting for address');
     expect(calls.some((url) => url.includes('/api/aave/v4-position'))).toBe(false);
+    expect(calls.some((url) => url.includes('/api/aave/v4-collateral-risk'))).toBe(false);
   });
 });
 
@@ -391,5 +495,6 @@ describe('Aave V4 live flow — V3 behavior is unaffected', () => {
     });
     expect(calls.some((url) => url.includes('/api/aave/reserve'))).toBe(true);
     expect(calls.some((url) => url.includes('/api/aave/v4-position'))).toBe(false);
+    expect(calls.some((url) => url.includes('/api/aave/v4-collateral-risk'))).toBe(false);
   });
 });

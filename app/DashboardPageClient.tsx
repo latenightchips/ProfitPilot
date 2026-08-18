@@ -31,8 +31,9 @@ import {
   RiskWarningBanner,
 } from '@/features/dashboard';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
-import { useAaveV4LiveSync } from '@/hooks/useAaveV4LiveSync';
+import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { useDeveloperModeStore } from '@/stores/developerModeStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -174,18 +175,23 @@ export function DashboardPageClient() {
   const aaveProtocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
   const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
+  const aaveV4CollateralRiskStatus = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
+  const aaveV4CollateralRiskLastFetchedAt = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.lastFetchedAt,
+  );
 
   // Portfolio Live-State Cleanup batch — fetches and syncs live Aave V3
   // data independently of the Portfolio page, so a user landing directly
   // on the Dashboard (never having visited /portfolio this session) still
   // sees current on-chain values rather than a stale/never-synced record.
   useAaveLiveSync(activePortfolioId);
-  // V4 Readiness Audit §12 Stage 7, wired to a real UI at Stage 13 — same
-  // independence as above, for V4 debt-state sync. Still a strict no-op
-  // for any portfolio that hasn't opted into V4 via
-  // `AaveProtocolVersionForm` (`app/portfolio/PortfolioPageClient.tsx`)
-  // — see that hook's own header comment for the exact gating condition.
-  useAaveV4LiveSync(activePortfolioId);
+  // V4 Readiness Audit §12 Stage 7, wired to a real UI at Stage 13, joined
+  // by V4 collateral-risk sync at Stage 23F via `useAaveV4Sync` — same
+  // independence as above, for both V4 debt-state and collateral-risk
+  // sync. Still a strict no-op for any portfolio that hasn't opted into
+  // V4 via `AaveProtocolVersionForm` (`app/portfolio/PortfolioPageClient.tsx`)
+  // — see `useAaveV4Sync`'s own header comment for the exact gating condition.
+  useAaveV4Sync(activePortfolioId);
 
   useEffect(() => {
     load();
@@ -278,6 +284,9 @@ export function DashboardPageClient() {
                   aaveMarketQuote,
                   aaveV4Status,
                   aaveV4LastFetchedAt,
+                  v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
+                  aaveV4CollateralRiskStatus,
+                  aaveV4CollateralRiskLastFetchedAt,
                   now: new Date().toISOString(),
                 }),
               )}
