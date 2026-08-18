@@ -1105,7 +1105,7 @@ function DebtPositionForm({
     handleSubmit,
     watch,
     reset,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<DebtManagementFormValues, unknown, DebtManagementInput>({
     resolver: zodResolver(debtManagementSchema),
     mode: 'onChange',
@@ -1131,6 +1131,40 @@ function DebtPositionForm({
     });
     return () => subscription.unsubscribe();
   }, [watch]);
+
+  // Stage 25A — `defaultValues` above is only read once, at mount
+  // (React Hook Form's own contract). A manual V4 debt edit made
+  // elsewhere on this page (`ManualAaveV4StateForm`) changes
+  // `portfolio.v4DebtState` — and therefore the real canonical total this
+  // field is supposed to mirror — without this form ever remounting (it
+  // only remounts on a portfolio switch, `key={activePortfolioId}` on the
+  // page's own wrapping `<div>`). Left alone, the field silently drifts
+  // from the real total, and `onPreview`'s `debtDelta` (computed against
+  // the always-fresh `resolveCanonicalDebtBalance(portfolio)`) then reads
+  // the stale displayed value as a genuine, unintended repayment.
+  //
+  // Resyncs `debt.balance` to the fresh canonical total whenever it
+  // changes for a reason OTHER than the user's own edit here — but never
+  // while `dirtyFields.debt.balance` is true, so a real in-progress user
+  // edit is never clobbered by an unrelated re-render (this mirrors the
+  // existing `[portfolio.updatedAt]` effect below, which already clears
+  // preview/risk-ack state on ANY portfolio change but has never touched
+  // field values, for the same "don't erase what the user is doing"
+  // reason). `lastSyncedCanonicalDebtBalance` is only advanced when a
+  // sync actually happens — if the canonical total changes while the
+  // field is dirty, the sync is deferred, not dropped: it fires on the
+  // next render where the field is no longer dirty (e.g. right after
+  // `onApply`'s own `reset()` clears dirty state).
+  const canonicalDebtBalance = resolveCanonicalDebtBalance(portfolio);
+  const isDebtBalanceDirty = dirtyFields.debt?.balance ?? false;
+  const lastSyncedCanonicalDebtBalance = useRef(canonicalDebtBalance);
+
+  useEffect(() => {
+    if (isDebtBalanceDirty) return;
+    if (canonicalDebtBalance === lastSyncedCanonicalDebtBalance.current) return;
+    reset({ debt: { asset: portfolio.debt.asset, balance: canonicalDebtBalance } });
+    lastSyncedCanonicalDebtBalance.current = canonicalDebtBalance;
+  }, [canonicalDebtBalance, isDebtBalanceDirty, portfolio.debt.asset, reset]);
 
   // M4-013 — see `CollateralPositionForm`'s identical note above for the
   // full reasoning: clears a stale preview when a sibling form on this
@@ -1219,6 +1253,11 @@ function DebtPositionForm({
       setV4BorrowBlocked(false);
       setV4DerivedDebtState(undefined);
       reset({ debt: data.debt });
+      // Keeps the Stage 25A sync effect's own baseline in lockstep with
+      // what this reset just displayed, so it doesn't immediately fire
+      // a redundant (harmless, but pointless) second reset on the next
+      // render once the Store write above lands.
+      lastSyncedCanonicalDebtBalance.current = data.debt.balance;
     }
   });
 

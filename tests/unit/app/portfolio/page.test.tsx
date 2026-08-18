@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PortfolioPage from '@/app/portfolio/page';
-import { autoSaveCoordinator } from '@/services';
+import { autoSaveCoordinator, resolveCanonicalDebtBalance } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
@@ -1470,5 +1470,230 @@ describe('PortfolioPage — Debt form canonical V4 seed/delta (Stage 16)', () =>
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
     expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
+  });
+});
+
+/**
+ * Debt form live resynchronization — V4 Readiness Audit §12 Stage 25A.
+ * Closes the Manual/Hypothetical V4 audit's own finding: `defaultValues`
+ * (Stage 16, above) only ever seeds the "Debt amount" field ONCE, at
+ * mount. A manual V4 debt edit made via `ManualAaveV4StateForm` — or a
+ * live sync landing after the Debt form has already mounted — changes
+ * the real canonical total (`resolveCanonicalDebtBalance`) without this
+ * form ever remounting (it only remounts on a portfolio switch), so the
+ * field used to silently drift from the real total. `onPreview`'s own
+ * `debtDelta` is computed against the always-fresh canonical base, so a
+ * stale displayed value used to manufacture a phantom repayment the
+ * moment the user clicked Preview/Apply on an otherwise-untouched field.
+ */
+describe('PortfolioPage — Debt form resyncs to a changed canonical V4 total (Stage 25A)', () => {
+  const externalDebtState = {
+    drawnDebt: 30000,
+    premiumDebt: 500,
+    baseDrawnApr: 0.05,
+    riskPremium: 0.01,
+  };
+
+  function createManualV4Portfolio(initialDebtState?: {
+    drawnDebt: number;
+    premiumDebt: number;
+    baseDrawnApr: number;
+    riskPremium: number;
+  }) {
+    const created = createAndSelect();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    if (initialDebtState !== undefined) {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, initialDebtState, 'manual');
+    }
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(
+        created.id,
+        { collateralFactor: 0.8, dynamicConfigKey: 0 },
+        'manual',
+      );
+    return usePortfolioStore.getState().portfolios[created.id].portfolio;
+  }
+
+  it('syncs "Debt amount" to the fresh canonical total (30,500) after v4DebtState changes externally, with no remount', () => {
+    const created = createManualV4Portfolio();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    // Simulates ManualAaveV4StateForm's own save — a sibling form on this
+    // same page, not a remount of this one.
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(30500);
+  });
+
+  it('Preview immediately after an external sync does not manufacture a repayment (zero delta)', async () => {
+    const created = createManualV4Portfolio();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    expect(
+      screen.queryByText(/Borrowing preview and apply are not available yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it('Apply immediately after an external sync cannot overwrite canonical debt with a stale value', async () => {
+    // Mirrors the exact reported scenario: the field was seeded at mount
+    // from an EARLIER, smaller total (26,000 = 25,500 drawn + 500
+    // premium), then the user enters a larger manual total afterward.
+    const created = createManualV4Portfolio({
+      drawnDebt: 25500,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    // Without the fix, a phantom $4,500 "repayment" (30,500 → 26,000,
+    // premium-first) would land here instead.
+    expect(after.v4DebtState).toEqual(externalDebtState);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it('a genuine user edit made BEFORE an external sync is never clobbered by that sync — the field keeps the user’s typed value', async () => {
+    const created = createManualV4Portfolio({
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    // A real, in-progress user edit — RHF's dirty tracking is keyed off
+    // this, not off the specific typed value.
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '20500');
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20500);
+
+    // An external sync now lands mid-edit — the fix must defer to the
+    // user's own unsaved edit, not overwrite it.
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20500);
+  });
+
+  it('an unrelated portfolio update (e.g. renaming) never erases an in-progress Debt amount edit', async () => {
+    const created = createManualV4Portfolio({
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '9000');
+
+    act(() => {
+      usePortfolioStore.getState().update(created.id, { name: 'Renamed Portfolio' });
+    });
+
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(9000);
+  });
+
+  it('a genuine edit made AFTER an external sync still computes the intended delta and premium-first allocation against the NEW canonical base', async () => {
+    const created = createManualV4Portfolio();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(30500);
+
+    // Repay $5,000 off the NEW 30,500 base — clears the $500 premium
+    // first, then $4,500 of drawn (premium-first allocation, unchanged).
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '25500');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4DebtState).toEqual({
+      drawnDebt: 25500,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('after a successful Apply, the field and canonical debt remain aligned — no redundant/conflicting resync', async () => {
+    const created = createManualV4Portfolio(externalDebtState);
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '30500');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(resolveCanonicalDebtBalance(after)).toBe(30500);
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(30500);
+  });
+
+  it('the effective V4 borrow-rate display is unaffected by the resync fix — still 4.97% for 30,000/500/5%/1%', () => {
+    const created = createManualV4Portfolio();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    act(() => {
+      usePortfolioStore.getState().setAaveV4DebtState(created.id, externalDebtState, 'manual');
+    });
+
+    expect(section.getByText('4.97%')).toBeInTheDocument();
+  });
+
+  it('V3 Debt editor behavior is unaffected: an unrelated portfolio update never disturbs an in-progress edit, and the legacy balance still seeds/applies exactly as before', async () => {
+    const created = createAndSelect({ debt: { asset: 'USDC', balance: 20000 } });
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(20000);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '18000');
+
+    act(() => {
+      usePortfolioStore.getState().update(created.id, { name: 'Renamed Portfolio' });
+    });
+    expect(section.getByLabelText('Debt amount', { exact: false })).toHaveValue(18000);
+
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    await user.click(section.getByRole('button', { name: 'Apply Changes' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(18000);
   });
 });
