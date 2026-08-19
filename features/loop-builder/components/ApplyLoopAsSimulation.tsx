@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 import { formatHealthFactor } from '@/components/strategy/format';
 import {
   type ApplicationPortfolio,
   buildFinalLoopPortfolio,
+  type LoopStopReason,
   resolveCanonicalDebtBalance,
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
@@ -101,16 +103,50 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * `runPortfolioActionSimulation` exactly as it always has, on the exact
  * same code path, byte-for-byte — Stage 18 adds a new path for V4, it
  * does not touch V3's own.
+ *
+ * **"Applied — ..." reads a local snapshot, not a reactive
+ * `portfolioActionPreview` subscription (V4 Readiness Audit §12 Stage 25
+ * follow-up — the exact bug already fixed in
+ * `features/exit-planner/components/ApplyExitPlanAsSimulation.tsx`'s own
+ * Stage 25D, reproduced here too).** The shared Simulation Store's
+ * `portfolioActionPreview` can hold a result from an entirely different
+ * apply — Exit Planner's own apply, Simulation's own Portfolio Action, or
+ * an earlier loop-apply attempt — which a reactive read would show as
+ * "Applied," mixed with a Health Factor that never came from applying
+ * the loop currently on screen. Worse here than the Exit Planner case:
+ * `strategy.stopReason` was read live (always in sync with whatever
+ * strategy is CURRENTLY configured, not necessarily what was actually
+ * last applied), so a stale Health Factor could previously pair with a
+ * Stop Reason from a strategy edited after the apply — two mismatched
+ * halves of the message, neither describing the same real event. Both
+ * values are now snapshotted together, only at the moment `handleApply`
+ * actually runs, and cleared whenever the current strategy's own final
+ * collateral/debt/stop-reason changes.
  */
 export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
-  const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
   const runPortfolioActionSimulation = useSimulationStore(
     (state) => state.runPortfolioActionSimulation,
   );
   const runPortfolioTransitionSimulation = useSimulationStore(
     (state) => state.runPortfolioTransitionSimulation,
   );
+  // Stage 25 follow-up — local snapshot of what THIS button actually
+  // applied; see this component's own header note above for the real,
+  // reproduced bug this closes.
+  const [appliedResult, setAppliedResult] = useState<{
+    healthFactor: number;
+    stopReason: LoopStopReason;
+  } | null>(null);
+
+  const strategy = currentResult?.strategy ?? null;
+
+  // Clears a previously-applied confirmation the moment the underlying
+  // strategy's final state changes — an "Applied" message must never
+  // survive referring to numbers that are no longer what's displayed.
+  useEffect(() => {
+    setAppliedResult(null);
+  }, [strategy?.finalCollateral.quantity, strategy?.finalDebt, strategy?.stopReason]);
 
   if (currentResult === null || currentResult.strategy === null) {
     return (
@@ -120,21 +156,32 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
     );
   }
 
-  const { strategy } = currentResult;
-
   function handleApply() {
     if (currentResult === null || currentResult.strategy === null) return;
 
     if (portfolio.protocolVersion === 'v4') {
       const afterPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
       runPortfolioTransitionSimulation(portfolio, afterPortfolio);
-      return;
+    } else {
+      const collateralDelta =
+        currentResult.strategy.finalCollateral.quantity - portfolio.collateral.quantity;
+      const debtDelta = currentResult.strategy.finalDebt - resolveCanonicalDebtBalance(portfolio);
+      runPortfolioActionSimulation(portfolio, { collateralDelta, debtDelta });
     }
 
-    const collateralDelta =
-      currentResult.strategy.finalCollateral.quantity - portfolio.collateral.quantity;
-    const debtDelta = currentResult.strategy.finalDebt - resolveCanonicalDebtBalance(portfolio);
-    runPortfolioActionSimulation(portfolio, { collateralDelta, debtDelta });
+    // Synchronous store action — reading `getState()` immediately after
+    // it returns the fresh result, not a stale one, without subscribing
+    // this component to the Store's own reactive updates (see this
+    // component's own header note above).
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    setAppliedResult(
+      preview !== null
+        ? {
+            healthFactor: preview.after.healthFactor,
+            stopReason: currentResult.strategy.stopReason,
+          }
+        : null,
+    );
   }
 
   return (
@@ -158,10 +205,10 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
           Open Simulation Workspace
         </Link>
       </div>
-      {portfolioActionPreview !== null && (
+      {appliedResult !== null && (
         <p role="status" className="text-xs text-muted-foreground">
-          Applied — Health Factor {formatHealthFactor(portfolioActionPreview.after.healthFactor)},
-          Stop Reason: {stopReasonLabel(strategy.stopReason)}.
+          Applied — Health Factor {formatHealthFactor(appliedResult.healthFactor)}, Stop Reason:{' '}
+          {stopReasonLabel(appliedResult.stopReason)}.
         </p>
       )}
     </div>

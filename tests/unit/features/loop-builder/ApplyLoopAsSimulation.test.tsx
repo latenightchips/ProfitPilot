@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { formatHealthFactor } from '@/components/strategy/format';
 import { ApplyLoopAsSimulation } from '@/features/loop-builder';
+import { stopReasonLabel } from '@/features/loop-builder/utils/stopReasonLabel';
 import type { ApplicationPortfolio } from '@/services';
 import { buildFinalLoopPortfolio } from '@/services/loop/finalPortfolio';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
@@ -243,5 +245,144 @@ describe('ApplyLoopAsSimulation — V3 debtDelta computation unchanged (Stage 16
     expect(input.debtDelta).toBe(expectedDebtDelta);
 
     runPortfolioActionSimulation.mockRestore();
+  });
+});
+
+/**
+ * "Applied — ..." confirmation message — V4 Readiness Audit §12 Stage 25
+ * follow-up. Closes a real, reproduced bug (the same class already fixed
+ * in `ApplyExitPlanAsSimulation.test.tsx`'s own Stage 25D): the message
+ * used to read `useSimulationStore.portfolioActionPreview` reactively —
+ * a Store shared with Simulation's own Portfolio Action feature and
+ * Exit Planner's `ApplyExitPlanAsSimulation`. A stale result left over
+ * from any of those (or an earlier loop-apply attempt with a different
+ * strategy) showed as "Applied" with the WRONG Health Factor, and —
+ * worse than the Exit Planner case — `strategy.stopReason` was read
+ * LIVE from the currently-configured strategy, so it could show a Stop
+ * Reason that was never actually applied at all if the strategy was
+ * edited after a real apply. Fixed by snapshotting both values locally,
+ * only at the moment `handleApply` actually runs, and clearing that
+ * snapshot whenever the current strategy's own final state changes.
+ */
+describe('ApplyLoopAsSimulation — "Applied" confirmation is never stale (Stage 25 follow-up)', () => {
+  function poisonSimulationStore() {
+    useSimulationStore.setState({
+      portfolioActionPreview: {
+        before: { healthFactor: 1.73 } as never,
+        after: { healthFactor: 1.73 } as never,
+        profitOrLoss: 0,
+      },
+    });
+  }
+
+  it('shows no "Applied" message before the button has ever been clicked, even with a stale portfolioActionPreview already in the Store', () => {
+    poisonSimulationStore();
+
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applied —/)).not.toBeInTheDocument();
+  });
+
+  it('shows the real, freshly-applied Health Factor and Stop Reason after clicking (V3 path), not stale ones already sitting in the Store', () => {
+    poisonSimulationStore();
+
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    const { currentResult } = useLoopBuilderStore.getState();
+    if (currentResult?.strategy === null || currentResult === null) {
+      throw new Error('setup failed: expected a viable strategy');
+    }
+    const realStrategy = currentResult.strategy;
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Loop as Simulation/i }));
+
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    expect(preview).not.toBeNull();
+    const status = screen.getByRole('status');
+    expect(status.textContent).not.toMatch(/1\.73/);
+    expect(status.textContent).toContain(formatHealthFactor(preview!.after.healthFactor));
+    expect(status.textContent).toContain(stopReasonLabel(realStrategy.stopReason));
+  });
+
+  it('shows the real, freshly-applied Health Factor and Stop Reason after clicking on a V4 loop (structured transition path), not stale ones already sitting in the Store', () => {
+    poisonSimulationStore();
+
+    const portfolio = validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    });
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.2 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    const { currentResult } = useLoopBuilderStore.getState();
+    if (currentResult?.strategy === null || currentResult === null) {
+      throw new Error('setup failed: expected a viable strategy');
+    }
+    const realStrategy = currentResult.strategy;
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Loop as Simulation/i }));
+
+    const preview = useSimulationStore.getState().portfolioActionPreview;
+    expect(preview).not.toBeNull();
+    const status = screen.getByRole('status');
+    expect(status.textContent).not.toMatch(/1\.73/);
+    expect(status.textContent).toContain(formatHealthFactor(preview!.after.healthFactor));
+    expect(status.textContent).toContain(stopReasonLabel(realStrategy.stopReason));
+  });
+
+  it('clears a previously-shown "Applied" message once the strategy changes, rather than leaving it referring to a stale Stop Reason', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.2, maxLoops: 1, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    const { rerender } = render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    fireEvent.click(screen.getByRole('button', { name: /Apply Loop as Simulation/i }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // The user edits the strategy settings after applying — a genuinely
+    // different final state, never re-applied.
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    rerender(<ApplyLoopAsSimulation portfolio={portfolio} />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applied —/)).not.toBeInTheDocument();
+  });
+
+  it('does not show a confirmation for a portfolio that has never actually been applied in this render, even with a poisoned shared Simulation store', () => {
+    // Simulates a stale global Store value left over from an entirely
+    // unrelated apply — Exit Planner, Simulation's own Portfolio Action,
+    // or a loop applied for a different portfolio earlier in the
+    // session — never touched by anything in this render.
+    poisonSimulationStore();
+
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
