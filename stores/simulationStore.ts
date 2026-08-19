@@ -267,6 +267,19 @@ export interface SimulationStoreState {
   currentScenario: SimulationScenario | null;
   currentResult: SimulationResult | null;
   portfolioActionPreview: PortfolioActionSimulationResult | null;
+  /**
+   * The `PortfolioActionSimulationInput` that actually produced
+   * `portfolioActionPreview`, if any — `null` whenever `portfolioActionPreview`
+   * is `null`, and also `null` after `runPortfolioTransitionSimulation`
+   * (a before/after portfolio pair has no single delta pair to echo).
+   * Added so `ScenarioBuilder`'s own Collateral Change/Debt Change fields
+   * can reflect a portfolio action applied from outside it (Exit
+   * Planner's `ApplyExitPlanAsSimulation`, Loop Builder's
+   * `ApplyLoopAsSimulation`) instead of silently showing `0`/`0` while a
+   * real, different delta produced the visible result — see
+   * `ScenarioBuilder.tsx`'s own sync effect.
+   */
+  portfolioActionInput: PortfolioActionSimulationInput | null;
   savedScenarios: SavedSimulation[];
   comparisonSelection: string[];
   timelineProjection: TimelinePoint[] | null;
@@ -373,6 +386,7 @@ const INITIAL_STATE: SimulationStoreState = {
   currentScenario: null,
   currentResult: null,
   portfolioActionPreview: null,
+  portfolioActionInput: null,
   savedScenarios: [],
   comparisonSelection: [],
   timelineProjection: null,
@@ -451,6 +465,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
           errors: [v4BorrowSimulationBlockedError()],
           warnings: [],
           portfolioActionPreview: null,
+          portfolioActionInput: null,
           lastMetadata: null,
         });
         return;
@@ -464,6 +479,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
           errors: result.errors,
           warnings: [],
           portfolioActionPreview: null,
+          portfolioActionInput: null,
           lastMetadata: null,
         });
         return;
@@ -474,6 +490,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         errors: [],
         warnings: result.warnings,
         portfolioActionPreview: result.data,
+        portfolioActionInput: input,
         lastMetadata: result.metadata,
       });
     },
@@ -489,6 +506,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
           errors: result.errors,
           warnings: [],
           portfolioActionPreview: null,
+          portfolioActionInput: null,
           lastMetadata: null,
         });
         return;
@@ -499,6 +517,11 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         errors: [],
         warnings: result.warnings,
         portfolioActionPreview: result.data,
+        // No single collateral/debt delta pair exists for a before/after
+        // portfolio-pair transition (used for a V4 Loop apply) — leaving
+        // this `null` is the honest value, not a bug: `ScenarioBuilder`'s
+        // Collateral/Debt Change fields correctly have nothing to echo.
+        portfolioActionInput: null,
         lastMetadata: result.metadata,
       });
     },
@@ -629,6 +652,7 @@ export const useSimulationStore = create<SimulationStoreState & SimulationStoreA
         currentScenario: null,
         currentResult: null,
         portfolioActionPreview: null,
+        portfolioActionInput: null,
         timelineProjection: null,
         lastMetadata: null,
         status: 'idle',

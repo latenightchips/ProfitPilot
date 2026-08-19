@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { ApplicationPortfolio } from '@/services';
+import type { ApplicationPortfolio, PortfolioActionSimulationInput } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
 
 import {
@@ -260,6 +260,7 @@ export function ScenarioBuilder({
   const runTimelineProjection = useSimulationStore((state) => state.runTimelineProjection);
   const resetSimulation = useSimulationStore((state) => state.reset);
   const syncActivePortfolio = useSimulationStore((state) => state.syncActivePortfolio);
+  const portfolioActionInput = useSimulationStore((state) => state.portfolioActionInput);
 
   // 06_TASKS.md M9-012 ("Audit State Management") — "No cross-portfolio
   // contamination." Runs whenever `portfolioId` changes (including this
@@ -271,6 +272,44 @@ export function ScenarioBuilder({
   useEffect(() => {
     syncActivePortfolio(portfolioId);
   }, [portfolioId, syncActivePortfolio]);
+
+  // Tracks the `PortfolioActionSimulationInput` THIS component itself
+  // last sent to the Store (via typing into Collateral Change/Debt
+  // Change below), so the sync effect right after can tell "the Store's
+  // `portfolioActionInput` changed because I typed" apart from "...
+  // because something external applied a portfolio action" — only the
+  // latter should ever overwrite `values` here, and comparing against
+  // this ref (rather than syncing on every Store change unconditionally)
+  // is what keeps this a one-way echo, never a feedback loop.
+  const lastOwnPortfolioActionInputRef = useRef<PortfolioActionSimulationInput | null>(null);
+
+  // Exit Planner's `ApplyExitPlanAsSimulation` and Loop Builder's
+  // `ApplyLoopAsSimulation` call `runPortfolioActionSimulation` directly
+  // on the Store, bypassing this component entirely — before this fix,
+  // Collateral Change/Debt Change kept showing their local `'0'` default
+  // even though a real, non-zero delta had just been applied and was
+  // already driving the visible before/after result (a real, reported
+  // bug: the applied exit plan's numbers were correct everywhere except
+  // these two echo fields). Runs on mount too (not just on change), so
+  // navigating here right after applying from Exit Planner shows the
+  // real applied deltas immediately, not `0`/`0`.
+  useEffect(() => {
+    if (portfolioActionInput === null) return;
+    const last = lastOwnPortfolioActionInputRef.current;
+    if (
+      last !== null &&
+      last.collateralDelta === portfolioActionInput.collateralDelta &&
+      last.debtDelta === portfolioActionInput.debtDelta
+    ) {
+      return;
+    }
+    lastOwnPortfolioActionInputRef.current = portfolioActionInput;
+    setValues((prev) => ({
+      ...prev,
+      collateralDelta: String(portfolioActionInput.collateralDelta),
+      debtDelta: String(portfolioActionInput.debtDelta),
+    }));
+  }, [portfolioActionInput]);
 
   const errors = validateScenarioBuilderInput(values, portfolio);
 
@@ -347,10 +386,16 @@ export function ScenarioBuilder({
     if (field === 'collateralDelta' || field === 'debtDelta') {
       const nextErrors = validateScenarioBuilderInput(nextValues, portfolio);
       if (nextErrors.collateralDelta !== null || nextErrors.debtDelta !== null) return;
-      runPortfolioActionSimulation(portfolio, {
+      const input: PortfolioActionSimulationInput = {
         collateralDelta: Number(nextValues.collateralDelta),
         debtDelta: Number(nextValues.debtDelta),
-      });
+      };
+      // Recorded before the Store call resolves, so the external-apply
+      // sync effect above recognizes the Store's resulting
+      // `portfolioActionInput` as this component's own and does not
+      // re-set `values` with what it already has.
+      lastOwnPortfolioActionInputRef.current = input;
+      runPortfolioActionSimulation(portfolio, input);
       return;
     }
 
@@ -404,6 +449,11 @@ export function ScenarioBuilder({
 
   function handleReset() {
     borrowAprEstablishedRef.current = false;
+    // Cleared so a later re-apply of numerically identical deltas (e.g.
+    // reapplying the same exit plan again after resetting) is still
+    // recognized as external and re-synced, rather than being mistaken
+    // for this component's own prior emission.
+    lastOwnPortfolioActionInputRef.current = null;
     setValues(defaultFormValues(portfolio));
     resetSimulation();
   }

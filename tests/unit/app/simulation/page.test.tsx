@@ -331,3 +331,53 @@ describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
     );
   });
 });
+
+/**
+ * Exit Planner → Simulation handoff — a real, reported bug. Manual
+ * testing found: applying a Target Debt Balance exit plan (funded by
+ * selling collateral) as a simulation showed the correct before/after
+ * result (Debt, Health Factor, Liquidation Price, Profit/Loss all
+ * changed correctly) — but the visible Portfolio Action "Collateral
+ * Change (BTC)"/"Debt Change (USD)" fields kept showing `0`, as if no
+ * action had been configured. Investigation confirmed the underlying
+ * calculation was already correct (the collateral delta genuinely
+ * applied); the bug was that `ScenarioBuilder`'s own local form fields
+ * had no way to learn about a portfolio action applied from outside it
+ * (`ApplyExitPlanAsSimulation.tsx` calls `runPortfolioActionSimulation`
+ * directly on the Store). Fixed by storing the applied
+ * `PortfolioActionSimulationInput` on the Store and syncing
+ * `ScenarioBuilder` from it. This test reproduces the full state/render
+ * round trip end to end, at the page level.
+ */
+describe('SimulationPage — applied-exit-plan state/render round trip (Exit Planner handoff fix)', () => {
+  it('shows the real applied Collateral/Debt Change alongside the already-correct before/after result, not 0/0', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    const portfolio = created.data;
+
+    render(<SimulationPage />);
+
+    // Exactly what ApplyExitPlanAsSimulation's handleApply does for a
+    // Target Debt Balance plan that repays $10,000 by selling 0.2 BTC
+    // (funded at $50,000/BTC) — a self-financed transaction, not a
+    // debt-only reduction.
+    act(() => {
+      useSimulationStore.getState().runPortfolioActionSimulation(portfolio, {
+        collateralDelta: -0.2,
+        debtDelta: -10000,
+      });
+    });
+
+    // The before/after result was already correct pre-fix — still is.
+    // "Portfolio Action" appears twice (the Scenario Controls legend and
+    // the Simulation Results section span — PT-11's own grouping design).
+    expect(screen.getAllByText('Portfolio Action').length).toBeGreaterThan(0);
+    // Debt row renders as "$20,000.00 → $10,000.00" in one combined node.
+    expect(screen.getByText(/\$20,000\.00.*\$10,000\.00/)).toBeInTheDocument();
+
+    // The bug: these used to stay at 0 regardless of the applied deltas.
+    expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(-0.2);
+    expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(-10000);
+  });
+});

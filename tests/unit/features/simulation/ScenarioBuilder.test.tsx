@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -27,6 +27,7 @@ beforeEach(() => {
     currentScenario: null,
     currentResult: null,
     portfolioActionPreview: null,
+    portfolioActionInput: null,
     savedScenarios: [],
     comparisonSelection: [],
     status: 'idle',
@@ -401,6 +402,89 @@ describe('ScenarioBuilder — live Collateral/Debt Change wiring (M6-008, Batch 
     await user.type(collateralInput, '-5');
 
     expect(useSimulationStore.getState().portfolioActionPreview).toBeNull();
+  });
+});
+
+/**
+ * Exit Planner → Simulation handoff — a real, reported bug: `ApplyExitPlanAsSimulation.tsx`
+ * (and Loop Builder's `ApplyLoopAsSimulation.tsx`) call
+ * `runPortfolioActionSimulation` directly on the Store, bypassing this
+ * component entirely, so the before/after result (Debt, Health Factor,
+ * Liquidation Price, Profit/Loss) always reflected the real applied
+ * transaction — but Collateral Change/Debt Change kept showing their
+ * local `'0'` default, since nothing told this component what was
+ * actually applied. Fixed by storing the applied
+ * `PortfolioActionSimulationInput` on the Store alongside
+ * `portfolioActionPreview` and syncing these two fields from it.
+ */
+describe('ScenarioBuilder — external portfolio-action apply sync (Exit Planner / Loop Builder bridge)', () => {
+  it('reflects a portfolio action applied directly on the Store, bypassing this component’s own inputs — the exact reported bug', () => {
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+    expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(0);
+    expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(0);
+
+    // Exactly what ApplyExitPlanAsSimulation's handleApply does: calls
+    // the Store directly with the exit transaction's real deltas.
+    act(() => {
+      useSimulationStore.getState().runPortfolioActionSimulation(PORTFOLIO, {
+        collateralDelta: -0.2,
+        debtDelta: -10000,
+      });
+    });
+
+    expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(-0.2);
+    expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(-10000);
+  });
+
+  it('is already reflected on mount, not only on a later change — the real navigation order (apply, then open Simulation Workspace)', () => {
+    // Simulates arriving at the Simulation page after already applying
+    // from Exit Planner: the Store's `portfolioActionInput` is set
+    // BEFORE `ScenarioBuilder` ever mounts.
+    useSimulationStore.getState().runPortfolioActionSimulation(PORTFOLIO, {
+      collateralDelta: -0.2,
+      debtDelta: -10000,
+    });
+
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(-0.2);
+    expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(-10000);
+  });
+
+  it('does not overwrite a value the user is actively typing — no feedback loop from its own emitted input', async () => {
+    const user = userEvent.setup();
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    const collateralInput = screen.getByLabelText('Collateral Change (BTC)');
+    await user.clear(collateralInput);
+    await user.type(collateralInput, '0.5');
+
+    // This same typing is what set the Store's portfolioActionInput —
+    // the sync effect must recognize it as its own and not re-render the
+    // field with a redundant (or, if timing were wrong, conflicting)
+    // value.
+    expect(useSimulationStore.getState().portfolioActionInput).toEqual({
+      collateralDelta: 0.5,
+      debtDelta: 0,
+    });
+    expect(collateralInput).toHaveValue(0.5);
+  });
+
+  it('has nothing to echo (fields stay at 0) after a transition-based apply, which has no single delta pair', () => {
+    render(<ScenarioBuilder portfolio={PORTFOLIO} portfolioId="portfolio-1" />);
+
+    act(() => {
+      useSimulationStore.getState().runPortfolioTransitionSimulation(PORTFOLIO, {
+        ...PORTFOLIO,
+        collateral: { ...PORTFOLIO.collateral, quantity: 1.7 },
+        debt: { ...PORTFOLIO.debt, balance: 0 },
+      });
+    });
+
+    expect(useSimulationStore.getState().portfolioActionPreview).not.toBeNull();
+    expect(useSimulationStore.getState().portfolioActionInput).toBeNull();
+    expect(screen.getByLabelText('Collateral Change (BTC)')).toHaveValue(0);
+    expect(screen.getByLabelText('Debt Change (USD)')).toHaveValue(0);
   });
 });
 
