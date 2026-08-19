@@ -95,20 +95,17 @@ describe('Engine invariant: Target Health Factor results reproduce the target (M
     expect(checkTargetHealthFactorInvariant(resultingHf.value, targetHealthFactor)).toBe(true);
   });
 
-  it('documents a known exception: calculateTargetExit (healthFactor target, M2-024) does NOT reproduce the target exactly', () => {
-    // This invariant does not hold for calculateTargetExit's 'healthFactor'
-    // branch, and that is a documented finding, not a bug fixed here — see
-    // PROJECT_STATUS.md. F-040 "Target Debt" computes its target assuming
-    // collateral stays fixed, matching the EXIT DEPENDENCY GRAPH's
-    // sequential F-040 -> F-041 -> F-042 chain (02_Formulas.md), but an
-    // actual exit sells BTC to fund the repayment, which reduces
-    // collateral value too. F-040 never accounts for that self-referential
-    // effect (unlike F-045 "Target Price Exit", which explicitly says its
-    // own target is solved "iteratively" — F-040 has no such note). The
-    // Engine implements F-040 exactly as documented rather than inventing
-    // a corrective, undocumented equation; the result is that the actual
-    // post-exit Health Factor falls short of the requested target whenever
-    // a nontrivial sale occurs.
+  it('holds for calculateTargetExit (healthFactor target, M2-024) — Conflict #13 resolved', () => {
+    // Previously a documented exception: calculateTargetExit's
+    // 'healthFactor' branch reused F-040 "Target Debt", which assumes
+    // collateral stays fixed — wrong for an exit, which sells BTC
+    // collateral to fund the very repayment being solved for. That has
+    // been fixed with a self-financed closed-form solve of F-022's Health
+    // Factor equation (see `resolveTargetDebt` in calculateTargetExit.ts),
+    // and `calculateTargetExit` itself now verifies the resulting Health
+    // Factor against the requested target — using this same invariant —
+    // before reporting `feasible: true`. This invariant now holds here
+    // like it does for every other Target Health Factor entry point.
     const portfolio: PortfolioInput = {
       collateral: { asset: 'BTC', quantity: 2 },
       debt: { asset: 'USDC', balance: 60000 },
@@ -124,6 +121,8 @@ describe('Engine invariant: Target Health Factor results reproduce the target (M
     expect(result.ok).toBe(true);
     if (!result.ok || !result.value.exit) return;
 
+    expect(result.value.feasible).toBe(true);
+
     const resultingHf = calculateHealthFactor(
       result.value.exit.remainingCollateralValue,
       protocol.liquidationThreshold,
@@ -132,9 +131,7 @@ describe('Engine invariant: Target Health Factor results reproduce the target (M
     expect(resultingHf.ok).toBe(true);
     if (!resultingHf.ok) return;
 
-    // The invariant is violated here (by design, per the documented
-    // formula chain): actual HF (1.8) undershoots the target (2.0).
-    expect(checkTargetHealthFactorInvariant(resultingHf.value, targetHealthFactor)).toBe(false);
-    expect(resultingHf.value).toBeCloseTo(1.8, 6);
+    expect(checkTargetHealthFactorInvariant(resultingHf.value, targetHealthFactor)).toBe(true);
+    expect(resultingHf.value).toBeCloseTo(2.0, 6);
   });
 });

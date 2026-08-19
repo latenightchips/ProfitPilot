@@ -1,9 +1,10 @@
+import { calculateHealthFactor } from '../health/calculateHealthFactor';
 import { toDecimal, toOutputNumber } from '../shared/decimal';
 import { createFailure, createSuccess, type FormulaResult } from '../shared/result';
 import type { PortfolioInput } from '../shared/types';
+import { checkTargetHealthFactorInvariant } from '../validation/invariants';
 import { validateNonNegative, validatePositive } from '../validation/validate';
 import { calculateExitPosition, type ExitPositionResult } from './calculateExitPosition';
-import { calculateTargetDebt } from './calculateTargetDebt';
 
 const FORMULA_ID = 'F-040';
 const FORMULA_VERSION = '1.0';
@@ -62,25 +63,27 @@ function resolveTargetDebt(
     const targetHf = validatePositive(target.targetHealthFactor, 'target.targetHealthFactor');
     if (!targetHf.ok) return createFailure(targetHf.error, options);
 
-    // KNOWN LIMITATION (found via the M2-027 invariant suite, not fixed
-    // here — see PROJECT_STATUS.md): F-040 computes its target debt
-    // assuming collateral stays fixed, matching 02_Formulas.md's EXIT
-    // DEPENDENCY GRAPH's sequential F-040 -> F-041 -> F-042 chain — but
-    // calculateExitPosition actually sells BTC to fund the repayment,
-    // which reduces collateral value too. F-040 has no note about solving
-    // this iteratively (unlike F-045 "Target Price Exit", which does), so
-    // the Engine follows the documented, non-iterative chain exactly
-    // rather than inventing a corrective equation. The practical effect:
-    // the resulting Health Factor undershoots this target whenever a
-    // nontrivial sale occurs.
+    // Formerly reused F-040 "Target Debt" here (02_Formulas.md), which
+    // assumes collateral stays fixed — wrong for an exit, which sells BTC
+    // collateral to fund the very repayment being solved for (Conflict
+    // #13, resolved). Since repayment = debt0 - debt1 and btcSold x price
+    // = repayment, selling collateral to repay debt shrinks remaining
+    // collateral value by exactly the repayment amount. Substituting that
+    // into F-022's Health Factor equation (02_Formulas.md):
+    //   targetHF = (collateralValue0 - (debt0 - debt1)) x LT / debt1
+    // and solving directly for debt1 (self-financed, closed-form, no
+    // iteration) gives:
+    //   debt1 = LT x (collateralValue0 - debt0) / (targetHF - LT)
+    // The caller rejects targetHF <= liquidationThreshold before this
+    // branch runs, since that makes the denominator zero or negative.
     const collateralValue = toDecimal(portfolio.collateral.quantity).times(
       portfolio.market.btcPriceUsd,
     );
-    return calculateTargetDebt(
-      toOutputNumber(collateralValue),
-      portfolio.protocol.liquidationThreshold,
-      target.targetHealthFactor,
-    );
+    const liquidationThreshold = toDecimal(portfolio.protocol.liquidationThreshold);
+    const numerator = liquidationThreshold.times(collateralValue.minus(portfolio.debt.balance));
+    const denominator = toDecimal(targetHf.value).minus(liquidationThreshold);
+    const resolvedTargetDebt = numerator.dividedBy(denominator);
+    return createSuccess(toOutputNumber(resolvedTargetDebt), options);
   }
 
   // target.type === 'retainedBtc'
@@ -100,10 +103,15 @@ function resolveTargetDebt(
  * Target Exit Calculations — 06_TASKS.md M2-024 ("Implement Target Exit
  * Calculations").
  *
- * Each supported target type resolves to a "Target Debt" — reusing F-040
- * for `healthFactor`, and a direct algebraic inversion of F-041/F-042 for
- * `retainedBtc` (Repayment = BTC Sold × BTC Price, the same equation as
- * F-042 rearranged) — then delegates to `calculateExitPosition` (M2-023).
+ * Each supported target type resolves to a "Target Debt" — a self-financed
+ * closed-form solve of F-022's Health Factor equation for `healthFactor`
+ * (see `resolveTargetDebt`; Conflict #13), and a direct algebraic
+ * inversion of F-041/F-042 for `retainedBtc` (Repayment = BTC Sold × BTC
+ * Price, the same equation as F-042 rearranged) — then delegates to
+ * `calculateExitPosition` (M2-023). The resolved exit is then verified
+ * against the requested target using the same F-022 Health Factor formula
+ * and the M2-027 invariant tolerance, so `feasible: true` is only reported
+ * once the actual resulting Health Factor reproduces the target.
  *
  * DoD ("the Engine reports when a requested target is mathematically
  * infeasible"): a target is infeasible when its resolved debt would fall
@@ -139,6 +147,29 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     );
   }
 
+  if (
+    target.type === 'healthFactor' &&
+    target.targetHealthFactor > 0 &&
+    target.targetHealthFactor <= portfolio.protocol.liquidationThreshold
+  ) {
+    // Below the pre-check: selling collateral to fund repayment reduces
+    // collateral value by exactly the amount it reduces debt, so the
+    // resulting Health Factor can never fall to or below the liquidation
+    // threshold via a self-financed exit — the self-financed equation's
+    // denominator (targetHF - liquidationThreshold) would be zero or
+    // negative here, which is rejected before it is ever evaluated.
+    return createSuccess(
+      {
+        feasible: false,
+        infeasibleReason:
+          'The requested target Health Factor is at or below the liquidation threshold; selling collateral to fund the repayment reduces collateral value by the same amount as the debt it repays, so no self-financed exit can reach a target this low.',
+        resolvedTargetDebt: null,
+        exit: null,
+      },
+      options,
+    );
+  }
+
   const resolvedResult = resolveTargetDebt(portfolio, target, scenarioPrice);
   if (!resolvedResult.ok) return createFailure(resolvedResult.error, options);
 
@@ -148,9 +179,11 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     // A negative resolved target debt arises for a different reason per
     // target type, so it needs a type-specific message rather than one
     // generic one: for 'debtBalance' it is simply an invalid input; for
-    // 'healthFactor' it is mathematically unreachable (F-040's equation
-    // is always positive for valid, positive inputs — kept for defense
-    // in depth); for 'retainedBtc' it means selling down to the
+    // 'healthFactor' this is only reachable when the current position is
+    // already at or under the liquidation threshold (current collateral
+    // value <= current debt) — kept for defense in depth, since the
+    // targetHF <= liquidationThreshold case is already rejected above;
+    // for 'retainedBtc' it means selling down to the
     // requested retained quantity would generate more cash than needed
     // to fully repay debt, which is "Target cash proceeds" territory —
     // not implemented, see PROJECT_STATUS.md.
@@ -189,6 +222,34 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     scenarioBtcPriceUsd: scenarioPrice,
   });
   if (!exitResult.ok) return createFailure(exitResult.error, options);
+
+  if (target.type === 'healthFactor') {
+    // Post-hoc verification (Conflict #13 fix): confirm the actual
+    // resulting state reproduces the requested target, using the same
+    // F-022 Health Factor formula the UI displays as "Resulting Health
+    // Factor" and the same M2-027 invariant tolerance already established
+    // for this exact relationship elsewhere in the Engine
+    // (`checkTargetHealthFactorInvariant`). `feasible: true` must not be
+    // reported unless this holds.
+    const resultingHf = calculateHealthFactor(
+      exitResult.value.remainingCollateralValue,
+      portfolio.protocol.liquidationThreshold,
+      exitResult.value.remainingDebt,
+    );
+    if (!resultingHf.ok) return createFailure(resultingHf.error, options);
+
+    if (!checkTargetHealthFactorInvariant(resultingHf.value, target.targetHealthFactor)) {
+      return createSuccess(
+        {
+          feasible: false,
+          infeasibleReason: `The resolved exit produces a Health Factor of ${resultingHf.value}, not the requested target of ${target.targetHealthFactor}, within tolerance.`,
+          resolvedTargetDebt: null,
+          exit: null,
+        },
+        options,
+      );
+    }
+  }
 
   return createSuccess(
     {

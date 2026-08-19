@@ -12,9 +12,10 @@ import type { ApplicationPortfolio } from '@/services/portfolio/models';
  * borrow/supply APR) — baseline `PortfolioSummary` already known
  * (netEquity 80000, healthFactor 4, interestCost 1000, leverage 1.25).
  *
- * Revisits conflicts #10 and #13 (both already resolved at the Engine
- * layer by scoping/documented approximation, not by inventing behavior
- * — see `plan.ts`'s header comment). Also exercises conflict #20
+ * Revisits conflicts #10 and #13 (#10 resolved at the Engine layer by
+ * scoping; #13 — the 'healthFactor' target's fixed-collateral undershoot —
+ * resolved with a self-financed closed-form solve, not by inventing
+ * behavior — see `plan.ts`'s header comment). Also exercises conflict #20
  * (`calculatePortfolioSummary` could not summarize a zero-debt
  * portfolio): a full exit (`targetDebt: 0`) always produces a zero-debt
  * "after" portfolio, so `planExit` used to fail for full exits
@@ -80,16 +81,18 @@ describe('planExit — partial exits (M3-011)', () => {
     expect(result.data.before.netEquity).toBe(80000);
   });
 
-  it('supports a healthFactor target and demonstrates the documented F-040 undershoot (conflict #13)', () => {
+  it('supports a healthFactor target and reproduces the requested target (Conflict #13 fix)', () => {
+    // Self-financed closed-form solve: debt1 = LT x (collateralValue0 -
+    // debt0) / (targetHF - LT) = 0.8 x 80000 / 4.2 ≈ 15238.10, giving a
+    // repayment of ≈4761.90 — not the old fixed-collateral F-040 value,
+    // which undershot the requested target once collateral was sold.
     const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 5 };
     const result = planExit(basePortfolio(), target, 'live');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.feasible).toBe(true);
-    // F-040 assumes fixed collateral; selling BTC to fund the repayment
-    // reduces collateral too, so the actual resulting Health Factor is
-    // below the requested target of 5 — documented, not a bug.
-    expect(result.data.after?.healthFactor).toBeLessThan(5);
+    expect(result.data.transaction?.repayment).toBeCloseTo(4761.904761904763, 6);
+    expect(result.data.after?.healthFactor).toBeCloseTo(5, 6);
   });
 
   it('supports a retainedBtc target', () => {
@@ -417,24 +420,25 @@ describe('planExit — V4 risk-capacity dispatch for the "healthFactor" target t
     };
   }
 
-  it('resolves the target debt from collateralFactor, not protocol.liquidationThreshold — numerical fixture from the authoritative F-040 formula', () => {
-    // Authoritative formula (F-040, calculateTargetDebt, reused by
-    // resolveTargetDebt): Target Debt = (Collateral Value * risk-capacity
-    // fraction) / Target HF. Collateral: 2 BTC @ $50,000 = $100,000.
-    // collateralFactor: 0.65. targetHealthFactor: 2.6.
-    // Target Debt = 100000 * 0.65 / 2.6 = 25000.
+  it('resolves the target debt from collateralFactor, not protocol.liquidationThreshold — numerical fixture from the self-financed closed-form solve', () => {
+    // Self-financed closed-form solve (`resolveTargetDebt`'s 'healthFactor'
+    // branch, Conflict #13 fix): debt1 = LT x (collateralValue0 - debt0) /
+    // (targetHF - LT). Collateral: 2 BTC @ $50,000 = $100,000.
+    // collateralFactor (LT): 0.65. debt0: 30000 (v4DebtState drawnDebt).
+    // targetHealthFactor: 2.6.
+    // debt1 = 0.65 x (100000 - 30000) / (2.6 - 0.65) = 45500 / 1.95 ≈ 23333.33.
     const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 2.6 };
     const result = planExit(v4Portfolio(), target, 'live');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.feasible).toBe(true);
-    // Repayment = currentDebt (30000) - targetDebt (25000) = 5000.
-    expect(result.data.transaction?.repayment).toBeCloseTo(5000, 6);
-    // BTC sold = repayment / price = 5000 / 50000 = 0.1.
-    expect(result.data.transaction?.btcSold).toBeCloseTo(0.1, 9);
-    expect(result.data.transaction?.btcRetained).toBeCloseTo(1.9, 9);
+    // Repayment = currentDebt (30000) - targetDebt (≈23333.33) ≈ 6666.67.
+    expect(result.data.transaction?.repayment).toBeCloseTo(6666.666666666668, 6);
+    // BTC sold = repayment / price ≈ 6666.67 / 50000 ≈ 0.13333.
+    expect(result.data.transaction?.btcSold).toBeCloseTo(0.13333333333333336, 9);
+    expect(result.data.transaction?.btcRetained).toBeCloseTo(1.8666666666666667, 9);
     // If this had silently used protocol.liquidationThreshold (0.8), the
-    // target debt would be 100000 * 0.8 / 2.6 ≈ 30769.23 — infeasible
+    // target debt would be 0.8 x 70000 / 1.8 ≈ 31111.11 — infeasible
     // (exceeds current debt of 30000) — a completely different outcome.
   });
 
@@ -449,10 +453,10 @@ describe('planExit — V4 risk-capacity dispatch for the "healthFactor" target t
     expect(v3Result.ok).toBe(true);
     expect(v4Result.ok).toBe(true);
     if (!v3Result.ok || !v4Result.ok) return;
-    // V3 uses liquidationThreshold (0.8): target debt = 100000*0.8/2.6 ≈
-    // 30769.23, which EXCEEDS current debt (30000) — infeasible.
+    // V3 uses liquidationThreshold (0.8): target debt = 0.8 x 70000 / 1.8 ≈
+    // 31111.11, which EXCEEDS current debt (30000) — infeasible.
     expect(v3Result.data.feasible).toBe(false);
-    // V4 uses collateralFactor (0.65): target debt = 25000, feasible.
+    // V4 uses collateralFactor (0.65): target debt ≈ 23333.33, feasible.
     expect(v4Result.data.feasible).toBe(true);
   });
 

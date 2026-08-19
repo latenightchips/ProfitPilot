@@ -31,14 +31,17 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  *
  * **"Difference from target" is `after.healthFactor -
  * targetInputs.targetHealthFactor` — a real, computed difference, not
- * hidden.** PROJECT_STATUS.md Conflict #13 (already documented in
- * `services/exit/plan.ts`'s own header comment: "F-040's fixed-collateral
- * approximation... the resulting Health Factor undershoots this target
- * whenever a nontrivial sale occurs") means this difference is
- * routinely non-zero — showing it plainly, with the conflict cited, *is*
- * the "independently verified against the target" DoD in practice: the
- * Engine's own approximation is disclosed, not silently accepted as
- * exact.
+ * hidden.** PROJECT_STATUS.md Conflict #13 (RESOLVED —
+ * `calculateTargetExit`'s 'healthFactor' branch now solves the
+ * self-financed sale/repayment equation directly, see
+ * `engine/exit/calculateTargetExit.ts`) means this difference is now
+ * ~0 for any `feasible: true` result — `calculateTargetExit` itself
+ * verifies the resulting Health Factor against the requested target
+ * within the M2-027 invariant tolerance before ever reporting
+ * `feasible: true`, so a feasible result reaching this component already
+ * satisfies the "independently verified against the target" DoD upstream;
+ * this row still displays the real computed difference rather than
+ * hardcoding zero.
  */
 export function TargetHealthFactorResult() {
   const exitType = useExitPlannerStore((state) => state.exitType);
@@ -90,9 +93,8 @@ export function TargetHealthFactorResult() {
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        A small non-zero difference is expected: this estimate is calculated assuming your
-        collateral amount stays fixed, but selling BTC to exit actually reduces your collateral
-        value too — so the resulting Health Factor can land slightly off the exact target you set.
+        This strategy is solved for the BTC sale and debt repayment together, so the resulting
+        Health Factor matches your target — any difference shown here is negligible rounding.
       </p>
     </div>
   );

@@ -94,8 +94,10 @@ import { deriveProtocolStatus } from '@/utils/protocolStatus';
  * Price all present — `FullExitResult.tsx`/`PartialExitResult.tsx`),
  * Warnings ("Target cannot be achieved" → `toInfeasibleWarning`; "Health
  * Factor remains below target" → `TargetHealthFactorResult.tsx`'s own
- * "Difference from Target" row, which discloses Conflict #13's
- * fixed-collateral approximation rather than hiding it), and
+ * "Difference from Target" row, which discloses the real computed
+ * difference rather than hiding it — now ~0 for feasible results since
+ * Conflict #13's fixed-collateral approximation was replaced with a
+ * self-financed closed-form solve), and
  * Assumptions (`StrategyAssumptionsPanel`) were each spot-checked
  * against this route's real components and found consistent with
  * `06_TASKS.md`'s own task text. Responsive behavior and Accessibility

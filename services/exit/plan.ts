@@ -18,16 +18,16 @@
  * exactly as the Engine defines it, so it inherits the same, already-
  * documented target-type coverage. No new target type is invented here.
  *
- * Conflict #13 (F-040's Target Debt assumes fixed collateral, so a
- * `'healthFactor'` target undershoots once collateral is actually sold):
- * this is a known, already-tested Engine approximation
- * (`calculateTargetExit.ts`'s own code comment,
- * `targetHealthFactorInvariant.test.ts`), not a defect this Service
- * introduces or needs to correct. `planExit` calls `calculateTargetExit`
- * as-is and reports whatever Health Factor the "after" summary actually
- * computes — the discrepancy remains visible in the before/after
- * comparison exactly as it exists in the Engine, not hidden or
- * "corrected" with an undocumented equation.
+ * Conflict #13 (RESOLVED — F-040's Target Debt used to assume fixed
+ * collateral, so a `'healthFactor'` target undershot once collateral was
+ * actually sold): `calculateTargetExit`'s `'healthFactor'` branch now
+ * solves the self-financed equation directly (see
+ * `calculateTargetExit.ts`'s own code comment) and verifies the resulting
+ * Health Factor against the requested target before reporting
+ * `feasible: true` (`targetHealthFactorInvariant.test.ts`). `planExit`
+ * still calls `calculateTargetExit` as-is and reports whatever the "after"
+ * summary actually computes — the fix lives entirely at the Engine layer,
+ * not duplicated or re-derived here.
  *
  * **"Current portfolio baseline" and "Before-and-after comparison" reuse
  * `calculatePortfolioSummary` (M3-005) directly**, called once on the

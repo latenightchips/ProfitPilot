@@ -153,15 +153,19 @@ describe('runExitCalculation', () => {
     expect(state.currentResult?.transaction?.repayment).toBeCloseTo(10000, 10);
   });
 
-  it('resolves Target Health Factor via F-040, reusing calculateTargetDebt', () => {
+  it('resolves Target Health Factor via the self-financed closed-form solve (Conflict #13 fix)', () => {
     useExitPlannerStore.getState().setExitType('targetHealthFactor');
     useExitPlannerStore.getState().setTargetInputs({ targetHealthFactor: 8 });
     useExitPlannerStore.getState().runExitCalculation(validPortfolio());
 
     const state = useExitPlannerStore.getState();
     expect(state.currentResult?.feasible).toBe(true);
-    // CollateralValue (100000) * LiquidationThreshold (0.8) / TargetHF (8) = 10000.
-    expect(state.currentResult?.after?.debtValue).toBeCloseTo(10000, 5);
+    // debt1 = LiquidationThreshold (0.8) x (CollateralValue0 (100000) -
+    // Debt0 (20000)) / (TargetHF (8) - LiquidationThreshold (0.8))
+    //       = 0.8 x 80000 / 7.2 ≈ 8888.89 — the self-financed solve, not
+    // the old fixed-collateral value of 10000.
+    expect(state.currentResult?.after?.debtValue).toBeCloseTo(8888.888888888889, 5);
+    expect(state.currentResult?.after?.healthFactor).toBeCloseTo(8, 6);
   });
 
   it('applies scenarioBtcPriceUsd as a real execution-price override', () => {
