@@ -1,7 +1,9 @@
 import { act, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SimulationPage from '@/app/simulation/page';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -194,5 +196,138 @@ describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
 
     expect(screen.getAllByText('Price / Interest Scenario')).toHaveLength(1);
     expect(screen.getByText('Change a scenario input to see results here.')).toBeInTheDocument();
+  });
+
+  /**
+   * Regression coverage for manually-verified V3/V4 portfolio isolation:
+   * switching between a V4 and a V3 portfolio must clear the stale result
+   * (already covered above for two V3 portfolios), and re-running the
+   * simulation after each switch must recompute its baseline Health
+   * Factor from THAT portfolio's own real protocol parameters — a V4
+   * portfolio's `v4CollateralRisk.collateralFactor`, never
+   * `protocol.liquidationThreshold` (deliberately set to a different
+   * value here so a leak would be numerically visible). Switching back
+   * to the original V4 portfolio must restore its exact original
+   * baseline Health Factor, not a value crossed from V3.
+   */
+  it('switching V4 -> V3 -> back to V4 recomputes the baseline Health Factor from each portfolio’s own protocol and restores the original V4 value on return', () => {
+    const createdV4 = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        debt: { asset: 'USDC', balance: 999999 },
+        market: { btcPriceUsd: 60000 },
+        protocol: {
+          maxLoanToValue: 0.7,
+          liquidationThreshold: 0.9,
+          borrowApr: 0.05,
+          supplyApr: 0.02,
+        },
+      }),
+    );
+    if (!createdV4.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(createdV4.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(createdV4.data.id, {
+      userAddress: '0x1234567890123456789012345678901234567890',
+    });
+    usePortfolioStore.getState().setAaveV4DebtState(createdV4.data.id, {
+      drawnDebt: 30000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(createdV4.data.id, { collateralFactor: 0.75, dynamicConfigKey: 1 });
+    usePortfolioStore.getState().select(createdV4.data.id);
+    const v4 = usePortfolioStore.getState().portfolios[createdV4.data.id].portfolio;
+
+    // V4 Readiness Audit §12 Stage 24 — Simulation gates the entire
+    // Scenario Controls/Results subtree (including the M9-012
+    // `syncActivePortfolio` wiring this test exercises) on canonical V4
+    // live status; a V4 portfolio whose live-sync status is still the
+    // default `'idle'` never mounts `ScenarioBuilder` at all, so it must
+    // be marked live here for this test to observe real user-visible
+    // behavior, exactly as the equivalent Exit Planner test already does.
+    // The fetch actions are also stubbed (not just `status` patched):
+    // `SimulationPageClient` mounts `useAaveV4Sync` unconditionally, and
+    // without a stub its real fetch would flip `status` back to
+    // `'loading'` on every portfolio switch (a real network call in a
+    // jsdom test), re-closing the gate before `syncActivePortfolio` could
+    // ever fire — a test-environment artifact, not real app behavior.
+    useAaveV4LiveDataStore.setState({
+      status: 'ready',
+      lastFetchedAt: new Date().toISOString(),
+      fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+    });
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'ready',
+      lastFetchedAt: new Date().toISOString(),
+      fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<SimulationPage />);
+
+    act(() => {
+      useSimulationStore.getState().setCurrentScenario({
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+      });
+      useSimulationStore.getState().runSimulation(v4);
+    });
+    // (2 BTC x $60,000 x collateralFactor 0.75) / (drawnDebt 30000 +
+    // premiumDebt 500) — never protocol.liquidationThreshold (0.9).
+    expect(useSimulationStore.getState().currentResult?.baseline.healthFactor).toBeCloseTo(
+      (2 * 60000 * 0.75) / 30500,
+      9,
+    );
+
+    const createdV3 = usePortfolioStore.getState().create(
+      validInput({
+        name: 'V3 Portfolio',
+        collateral: { asset: 'BTC', quantity: 1.5 },
+        debt: { asset: 'USDC', balance: 26000 },
+        market: { btcPriceUsd: 50000 },
+        protocol: {
+          maxLoanToValue: 0.7,
+          liquidationThreshold: 0.8,
+          borrowApr: 0.05,
+          supplyApr: 0.02,
+        },
+      }),
+    );
+    if (!createdV3.ok) throw new Error('setup failed');
+    act(() => {
+      usePortfolioStore.getState().select(createdV3.data.id);
+    });
+    expect(useSimulationStore.getState().currentResult).toBeNull();
+
+    act(() => {
+      useSimulationStore.getState().setCurrentScenario({
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      });
+      useSimulationStore.getState().runSimulation(createdV3.data);
+    });
+    expect(useSimulationStore.getState().currentResult?.baseline.healthFactor).toBeCloseTo(
+      (1.5 * 50000 * 0.8) / 26000,
+      9,
+    );
+
+    act(() => {
+      usePortfolioStore.getState().select(v4.id);
+    });
+    expect(useSimulationStore.getState().currentResult).toBeNull();
+
+    act(() => {
+      useSimulationStore.getState().setCurrentScenario({
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+      });
+      useSimulationStore.getState().runSimulation(v4);
+    });
+    expect(useSimulationStore.getState().currentResult?.baseline.healthFactor).toBeCloseTo(
+      (2 * 60000 * 0.75) / 30500,
+      9,
+    );
   });
 });

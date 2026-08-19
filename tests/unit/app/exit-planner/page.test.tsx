@@ -282,6 +282,85 @@ describe('ExitPlannerPage — cross-portfolio contamination (M9-012)', () => {
     expect(screen.queryByText('Full Exit Result')).not.toBeInTheDocument();
     expect(screen.getByText('Select an exit approach above to continue.')).toBeInTheDocument();
   });
+
+  /**
+   * Regression coverage for manually-verified V3/V4 portfolio isolation:
+   * switching between a V4 and a V3 portfolio must clear the stale result
+   * (already covered above for two V3 portfolios), and re-running the
+   * calculation after each switch must use THAT portfolio's own real
+   * protocol parameters — never a leftover value from the other
+   * protocol's math. Switching back to the original V4 portfolio must
+   * restore its exact original result, not a value crossed from V3.
+   */
+  it('switching V4 -> V3 -> back to V4 computes each portfolio’s own real result and restores the original V4 result on return', () => {
+    const v4Portfolio = selectActivePortfolio();
+    usePortfolioStore.getState().setProtocolVersion(v4Portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(v4Portfolio.id, { userAddress: V4_ADDRESS });
+    usePortfolioStore.getState().setAaveV4DebtState(v4Portfolio.id, {
+      drawnDebt: 30000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(v4Portfolio.id, { collateralFactor: 0.75, dynamicConfigKey: 1 });
+    // The up-to-date record (with the V4 fields just set), not the stale
+    // `v4Portfolio` returned by `create` before those fields existed.
+    const v4 = usePortfolioStore.getState().portfolios[v4Portfolio.id].portfolio;
+
+    render(<ExitPlannerPage />);
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(v4);
+    });
+    // Full exit repays the canonical V4 total (drawnDebt + premiumDebt =
+    // 30500), not the legacy `debt.balance` (20000) `validInput()` sets.
+    expect(useExitPlannerStore.getState().currentResult?.feasible).toBe(true);
+    expect(useExitPlannerStore.getState().currentResult?.transaction?.repayment).toBeCloseTo(
+      30500,
+      6,
+    );
+
+    let v3: ReturnType<typeof selectActivePortfolio>;
+    act(() => {
+      const createdV3 = usePortfolioStore
+        .getState()
+        .create(validInput({ name: 'V3 Portfolio', debt: { asset: 'USDC', balance: 26000 } }));
+      if (!createdV3.ok) throw new Error('setup failed');
+      usePortfolioStore.getState().select(createdV3.data.id);
+      v3 = createdV3.data;
+    });
+    // Stale V4 result is cleared by the switch, exactly like the two-V3-
+    // portfolio case above.
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(v3);
+    });
+    expect(useExitPlannerStore.getState().currentResult?.feasible).toBe(true);
+    expect(useExitPlannerStore.getState().currentResult?.transaction?.repayment).toBeCloseTo(
+      26000,
+      6,
+    );
+
+    act(() => {
+      usePortfolioStore.getState().select(v4.id);
+    });
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(v4);
+    });
+    expect(useExitPlannerStore.getState().currentResult?.feasible).toBe(true);
+    expect(useExitPlannerStore.getState().currentResult?.transaction?.repayment).toBeCloseTo(
+      30500,
+      6,
+    );
+  });
 });
 
 /**

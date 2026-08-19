@@ -1568,3 +1568,139 @@ describe('Portfolio identity persistence + canonical debt reconciliation (Stage 
     expect(summary.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_STATE_MISSING' });
   });
 });
+
+/**
+ * V3/V4 multi-portfolio isolation — regression coverage for manually
+ * verified behavior (no implementation change; `portfolios` is already a
+ * `Record<string, PortfolioRecord>` keyed by id with every V4 field living
+ * on the individual record, and `select` only ever reassigns
+ * `activePortfolioId` — see that action's own comment). These tests pin
+ * that two independently-configured portfolios — one V4, one V3 — survive
+ * repeated switching with neither leaking into the other, at both the raw
+ * stored-field level and the cached-summary level.
+ */
+const ISOLATION_V4_DEBT_STATE = {
+  drawnDebt: 30000,
+  premiumDebt: 500,
+  baseDrawnApr: 0.05,
+  riskPremium: 0.01,
+};
+const ISOLATION_V4_COLLATERAL_RISK = { collateralFactor: 0.75, dynamicConfigKey: 1 };
+
+function createIsolationV4Portfolio() {
+  const created = usePortfolioStore.getState().create(
+    validInput({
+      collateral: { asset: 'BTC', quantity: 2 },
+      // Deliberately disagrees with the real canonical V4 debt
+      // (drawnDebt + premiumDebt = 30500) — proves the summary reads the
+      // canonical V4 total, not this stale legacy field.
+      debt: { asset: 'USDC', balance: 999999 },
+      market: { btcPriceUsd: 60000 },
+      // liquidationThreshold (0.9) deliberately disagrees with
+      // v4CollateralRisk.collateralFactor (0.75) below — proves Health
+      // Factor uses the V4-specific fraction, never this V3 field.
+      protocol: {
+        maxLoanToValue: 0.7,
+        liquidationThreshold: 0.9,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    }),
+  );
+  if (!created.ok) throw new Error('setup failed');
+  const id = created.data.id;
+  usePortfolioStore.getState().setProtocolVersion(id, 'v4');
+  usePortfolioStore
+    .getState()
+    .setAaveV4Position(id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+  usePortfolioStore.getState().setAaveV4DebtState(id, ISOLATION_V4_DEBT_STATE);
+  usePortfolioStore.getState().setAaveV4CollateralRisk(id, ISOLATION_V4_COLLATERAL_RISK);
+  return id;
+}
+
+function createIsolationV3Portfolio() {
+  const created = usePortfolioStore.getState().create(
+    validInput({
+      collateral: { asset: 'BTC', quantity: 1.5 },
+      debt: { asset: 'USDC', balance: 26000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.7,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    }),
+  );
+  if (!created.ok) throw new Error('setup failed');
+  return created.data.id;
+}
+
+describe('usePortfolioStore — V3/V4 multi-portfolio isolation (regression)', () => {
+  it('preserves each portfolio’s own V3/V4 fields exactly across repeated switching, with no cross-contamination', () => {
+    const v4Id = createIsolationV4Portfolio();
+    const v3Id = createIsolationV3Portfolio();
+
+    usePortfolioStore.getState().select(v4Id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(v4Id);
+    expect(usePortfolioStore.getState().portfolios[v4Id].portfolio.v4DebtState).toEqual(
+      ISOLATION_V4_DEBT_STATE,
+    );
+
+    usePortfolioStore.getState().select(v3Id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(v3Id);
+    const v3WhileActive = usePortfolioStore.getState().portfolios[v3Id].portfolio;
+    expect(v3WhileActive.debt.balance).toBe(26000);
+    expect(v3WhileActive.protocolVersion).toBeUndefined();
+    expect(v3WhileActive.v4DebtState).toBeUndefined();
+
+    // The V4 portfolio's own record must be completely untouched merely by
+    // switching away from it.
+    const v4WhileInactive = usePortfolioStore.getState().portfolios[v4Id].portfolio;
+    expect(v4WhileInactive.v4DebtState).toEqual(ISOLATION_V4_DEBT_STATE);
+    expect(v4WhileInactive.v4CollateralRisk).toEqual(ISOLATION_V4_COLLATERAL_RISK);
+    expect(v4WhileInactive.protocolVersion).toBe('v4');
+
+    usePortfolioStore.getState().select(v4Id);
+    expect(usePortfolioStore.getState().activePortfolioId).toBe(v4Id);
+    const v4Restored = usePortfolioStore.getState().portfolios[v4Id].portfolio;
+    expect(v4Restored.v4DebtState).toEqual(ISOLATION_V4_DEBT_STATE);
+    expect(v4Restored.v4CollateralRisk).toEqual(ISOLATION_V4_COLLATERAL_RISK);
+    expect(v4Restored.protocolVersion).toBe('v4');
+
+    // The V3 portfolio must likewise be completely untouched by switching
+    // away from it and back to the V4 portfolio.
+    const v3StillInactive = usePortfolioStore.getState().portfolios[v3Id].portfolio;
+    expect(v3StillInactive.debt.balance).toBe(26000);
+  });
+
+  it('recomputes Health Factor/debt from each portfolio’s own protocol parameters, never leaking V4’s collateralFactor into V3 math or vice versa', () => {
+    const v4Id = createIsolationV4Portfolio();
+    const v3Id = createIsolationV3Portfolio();
+
+    const v4Summary = usePortfolioStore.getState().portfolios[v4Id].summary;
+    expect(v4Summary.ok).toBe(true);
+    if (!v4Summary.ok) return;
+    // Canonical V4 debt (drawnDebt + premiumDebt), not the stale legacy
+    // debt.balance (999999) set above.
+    expect(v4Summary.data.debtValue).toBe(30500);
+    // Uses v4CollateralRisk.collateralFactor (0.75), never
+    // protocol.liquidationThreshold (0.9).
+    expect(v4Summary.data.healthFactor).toBeCloseTo((2 * 60000 * 0.75) / 30500, 9);
+
+    const v3Summary = usePortfolioStore.getState().portfolios[v3Id].summary;
+    expect(v3Summary.ok).toBe(true);
+    if (!v3Summary.ok) return;
+    expect(v3Summary.data.debtValue).toBe(26000);
+    expect(v3Summary.data.healthFactor).toBeCloseTo((1.5 * 50000 * 0.8) / 26000, 9);
+
+    // `select` only ever reassigns `activePortfolioId` (see its own
+    // comment) — repeated switching must never recompute or cross either
+    // portfolio's already-cached summary.
+    usePortfolioStore.getState().select(v3Id);
+    usePortfolioStore.getState().select(v4Id);
+    usePortfolioStore.getState().select(v3Id);
+    expect(usePortfolioStore.getState().portfolios[v4Id].summary).toEqual(v4Summary);
+    expect(usePortfolioStore.getState().portfolios[v3Id].summary).toEqual(v3Summary);
+  });
+});
