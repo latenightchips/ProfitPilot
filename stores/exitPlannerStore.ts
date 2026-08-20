@@ -223,7 +223,22 @@ export interface ExitPlannerStoreActions {
   runExitCalculation: (portfolio: ApplicationPortfolio) => void;
   runPriceSensitivity: (portfolio: ApplicationPortfolio) => void;
   saveExitPlan: (input: SaveExitPlanInput) => string | null;
-  loadExitPlan: (id: string) => void;
+  /**
+   * `activePortfolioId` (M9-012 follow-up — cross-portfolio saved-plan
+   * load) — the caller's own currently-active portfolio id, required so
+   * this action can refuse to load a plan saved against a *different*
+   * portfolio into this Store's actionable working state
+   * (`exitType`/`targetInputs`/`currentResult`/...). A saved plan
+   * remains visible/loadable-once-you-switch in `ExitPlanLibrary` (its
+   * own `driftNotice` still flags it), but must never silently become
+   * the active portfolio's `currentResult` — that would let
+   * `ApplyExitPlanAsSimulation`/`SaveExitPlanForm` act on a different
+   * portfolio's numbers as if they were the active one's. Same-portfolio
+   * plans (including ones whose `portfolioUpdatedAt` has drifted — a
+   * legitimate staleness warning, not a block) continue to load exactly
+   * as before.
+   */
+  loadExitPlan: (id: string, activePortfolioId: string) => void;
   duplicateExitPlan: (id: string) => string | null;
   deleteExitPlan: (id: string) => void;
   loadSavedPlans: () => Promise<void>;
@@ -467,9 +482,14 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       return saved.id;
     },
 
-    loadExitPlan: (id) => {
+    loadExitPlan: (id, activePortfolioId) => {
       const saved = get().savedPlans.find((plan) => plan.id === id);
       if (saved === undefined) return;
+      // Never let a plan computed for a different portfolio enter this
+      // Store's actionable working state — see this action's own doc
+      // comment above. Not a recalculation or retag: the load simply
+      // does not happen for a cross-portfolio plan.
+      if (saved.portfolioId !== activePortfolioId) return;
 
       set({
         exitType: saved.exitType,

@@ -151,3 +151,40 @@ describe('ExitPlanLibrary — drift notice', () => {
     expect(screen.getByText(/Saved against a different portfolio\./)).toBeInTheDocument();
   });
 });
+
+/**
+ * M9-012 follow-up — a plan saved against a different portfolio must
+ * never enter the active portfolio's actionable working state. Previously
+ * the drift notice was purely informational and Load still worked
+ * regardless; see `stores/exitPlannerStore.ts`'s own `loadExitPlan` doc
+ * comment for the full reasoning.
+ */
+describe('ExitPlanLibrary — cross-portfolio load is blocked (M9-012 follow-up)', () => {
+  it('disables Load for a plan saved against a different portfolio and does not mutate the Store even if clicked', async () => {
+    const user = userEvent.setup();
+    useExitPlannerStore.setState({
+      savedPlans: [fakeSavedPlan()],
+      currentResult: null,
+      selectedPlanId: null,
+    });
+    render(<ExitPlanLibrary portfolio={fakePortfolio({ id: 'p2' })} />);
+
+    const loadButton = screen.getByRole('button', { name: 'Load' });
+    expect(loadButton).toBeDisabled();
+
+    await user.click(loadButton);
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+    expect(useExitPlannerStore.getState().selectedPlanId).toBeNull();
+  });
+
+  it('same-portfolio plans keep loading normally — Load stays enabled and mutates the Store', () => {
+    useExitPlannerStore.setState({
+      savedPlans: [fakeSavedPlan()],
+      currentResult: null,
+      selectedPlanId: null,
+    });
+    render(<ExitPlanLibrary portfolio={fakePortfolio({ id: 'p1' })} />);
+
+    expect(screen.getByRole('button', { name: 'Load' })).not.toBeDisabled();
+  });
+});

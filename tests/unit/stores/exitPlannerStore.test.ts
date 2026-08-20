@@ -439,7 +439,7 @@ describe('saveExitPlan/loadExitPlan/duplicateExitPlan/deleteExitPlan (M7-029)', 
         },
       ],
     });
-    useExitPlannerStore.getState().loadExitPlan(id);
+    useExitPlannerStore.getState().loadExitPlan(id, 'p1');
 
     const state = useExitPlannerStore.getState();
     expect(state.exitType).toBe('fullExit');
@@ -449,8 +449,34 @@ describe('saveExitPlan/loadExitPlan/duplicateExitPlan/deleteExitPlan (M7-029)', 
   });
 
   it('loadExitPlan no-ops for an unknown id', () => {
-    useExitPlannerStore.getState().loadExitPlan('does-not-exist');
+    useExitPlannerStore.getState().loadExitPlan('does-not-exist', 'p1');
     expect(useExitPlannerStore.getState().currentResult).toBeNull();
+  });
+
+  it('loadExitPlan refuses to load a plan saved against a different portfolio (M9-012 follow-up — never enters the actionable working state for another portfolio)', () => {
+    useExitPlannerStore.setState({
+      savedPlans: [
+        {
+          id: 'plan-b',
+          name: 'Plan for Portfolio B',
+          portfolioId: 'portfolio-b',
+          portfolioUpdatedAt: 't1',
+          exitType: 'fullExit',
+          targetInputs: {},
+          result: { feasible: true, transaction: { btcSold: 99 } } as never,
+          warnings: [],
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    useExitPlannerStore.getState().loadExitPlan('plan-b', 'portfolio-a');
+
+    const state = useExitPlannerStore.getState();
+    expect(state.currentResult).toBeNull();
+    expect(state.exitType).toBeNull();
+    expect(state.selectedPlanId).toBeNull();
   });
 
   it('duplicateExitPlan creates an independent copy with a new id and " (Copy)" suffix', () => {

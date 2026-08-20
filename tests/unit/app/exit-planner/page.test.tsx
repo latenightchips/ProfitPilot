@@ -8,6 +8,7 @@ import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralR
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import { useSimulationStore } from '@/stores/simulationStore';
 
 const V4_ADDRESS = '0x1234567890123456789012345678901234567890';
 
@@ -360,6 +361,99 @@ describe('ExitPlannerPage — cross-portfolio contamination (M9-012)', () => {
       30500,
       6,
     );
+  });
+});
+
+/**
+ * M9-012 follow-up — a saved exit plan's own `portfolioId` must gate
+ * whether Load is even reachable, not just show a text notice
+ * (`ExitPlanLibrary.tsx`'s own `driftNotice`, unchanged). Reproduces the
+ * exact reported bug end-to-end: Plan A (saved while Portfolio A was
+ * active) must never enter Portfolio B's actionable working state, be
+ * appliable as a simulation, or be re-saved as though it were Portfolio
+ * B's own result, once B is the active portfolio.
+ */
+describe('ExitPlannerPage — cross-portfolio saved-plan load is blocked (M9-012 follow-up)', () => {
+  it("a plan saved for a different portfolio cannot be loaded, applied as a simulation, or silently re-saved as the active portfolio's own result", async () => {
+    const user = userEvent.setup();
+    useSimulationStore.getState().reset();
+
+    const portfolioA = selectActivePortfolio();
+    render(<ExitPlannerPage />);
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(portfolioA);
+    });
+    const resultA = useExitPlannerStore.getState().currentResult;
+    expect(resultA?.transaction?.repayment).toBeCloseTo(20000, 6);
+
+    let planIdA: string | null = null;
+    act(() => {
+      planIdA = useExitPlannerStore.getState().saveExitPlan({
+        name: 'Plan A',
+        portfolioId: portfolioA.id,
+        portfolioUpdatedAt: portfolioA.updatedAt,
+      });
+    });
+    expect(planIdA).not.toBeNull();
+
+    let portfolioB!: ReturnType<typeof selectActivePortfolio>;
+    act(() => {
+      const createdB = usePortfolioStore
+        .getState()
+        .create(validInput({ name: 'Portfolio B', debt: { asset: 'USDC', balance: 5000 } }));
+      if (!createdB.ok) throw new Error('setup failed');
+      usePortfolioStore.getState().select(createdB.data.id);
+      portfolioB = createdB.data;
+    });
+    // The portfolio switch already clears the previous (Portfolio A)
+    // working state — pre-existing, unrelated-to-this-fix behavior.
+    expect(useExitPlannerStore.getState().currentResult).toBeNull();
+
+    act(() => {
+      useExitPlannerStore.getState().setExitType('fullExit');
+      useExitPlannerStore.getState().runExitCalculation(portfolioB);
+    });
+    const resultB = useExitPlannerStore.getState().currentResult;
+    expect(resultB?.transaction?.repayment).toBeCloseTo(5000, 6);
+
+    // 1. Same-portfolio saved plans still load normally — covered
+    //    directly in `exitPlannerStore.test.ts`; this route-level test
+    //    focuses on the cross-portfolio case.
+    // 2. Plan A (saved for Portfolio A) must not be loadable while
+    //    Portfolio B is active — the Load control itself is disabled...
+    const loadButton = screen.getByRole('button', { name: 'Load' });
+    expect(loadButton).toBeDisabled();
+    // ...and even a direct, bypassed call into the Store (not just the
+    // disabled button) must refuse the cross-portfolio load — the
+    // invariant lives in the Store, not only the UI.
+    act(() => {
+      useExitPlannerStore.getState().loadExitPlan(planIdA!, portfolioB.id);
+    });
+    expect(useExitPlannerStore.getState().currentResult).toEqual(resultB);
+    expect(useExitPlannerStore.getState().selectedPlanId).toBeNull();
+
+    // 3. Apply Exit Plan as Simulation must use Portfolio B's own real
+    //    result — never Plan A's.
+    await user.click(screen.getByRole('button', { name: 'Apply Exit Plan as Simulation' }));
+    expect(useSimulationStore.getState().portfolioActionInput).toEqual({
+      collateralDelta: -(resultB?.transaction?.btcSold ?? NaN),
+      debtDelta: -(resultB?.transaction?.repayment ?? NaN),
+    });
+    expect(useSimulationStore.getState().portfolioActionInput?.debtDelta).toBeCloseTo(-5000, 6);
+
+    // 4. Saving now must record Portfolio B's own result under Portfolio
+    //    B's own id — never Plan A's blocked-from-loading result.
+    await user.type(screen.getByLabelText('Name'), 'Plan B');
+    await user.click(screen.getByRole('button', { name: 'Save Plan' }));
+
+    const savedPlanB = useExitPlannerStore
+      .getState()
+      .savedPlans.find((plan) => plan.name === 'Plan B');
+    expect(savedPlanB).toBeDefined();
+    expect(savedPlanB?.portfolioId).toBe(portfolioB.id);
+    expect(savedPlanB?.result).toEqual(resultB);
   });
 });
 

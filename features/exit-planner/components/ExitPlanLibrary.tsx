@@ -36,6 +36,16 @@ function driftNotice(
   return null;
 }
 
+// M9-012 follow-up — a cross-portfolio plan is still shown (with the
+// notice above), but Load must never enter this Store's actionable
+// working state for a portfolio other than the one currently active;
+// see `loadExitPlan`'s own doc comment (`stores/exitPlannerStore.ts`).
+// The store itself also refuses the load — this disables the control so
+// a user is never invited to try an action that silently does nothing.
+function isCrossPortfolio(saved: { portfolioId: string }, portfolio: Portfolio): boolean {
+  return saved.portfolioId !== portfolio.id;
+}
+
 function sortByNewest(plans: SavedExitPlan[]): SavedExitPlan[] {
   return [...plans].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -66,6 +76,7 @@ export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
     <div className="flex flex-col gap-1">
       {sorted.map((saved) => {
         const notice = driftNotice(saved, portfolio);
+        const crossPortfolio = isCrossPortfolio(saved, portfolio);
         return (
           <div key={saved.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">
@@ -75,8 +86,15 @@ export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
               </span>
               <button
                 type="button"
-                onClick={() => loadExitPlan(saved.id)}
-                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40"
+                onClick={() => loadExitPlan(saved.id, portfolio.id)}
+                disabled={crossPortfolio}
+                aria-disabled={crossPortfolio}
+                title={
+                  crossPortfolio
+                    ? 'Saved against a different portfolio — switch to that portfolio to load it.'
+                    : undefined
+                }
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
               >
                 Load
               </button>
