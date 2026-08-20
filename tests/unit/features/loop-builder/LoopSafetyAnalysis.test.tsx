@@ -145,3 +145,54 @@ describe('LoopSafetyAnalysis — a triggered safety finding', () => {
     );
   });
 });
+
+/**
+ * BLOCKER #2 fix — "Configured Safety Limits" must report the same
+ * canonical V4 risk-capacity value `services/loop/strategy.ts` actually
+ * dispatched for the strategy shown above it, never the legacy
+ * `portfolio.protocol.maxLoanToValue`. `protocol.maxLoanToValue` here is
+ * deliberately `0.5` (50%) while `v4CollateralRisk.collateralFactor` is
+ * `0.65` (65%) — a different value, so leakage would be numerically
+ * obvious rather than coincidentally matching.
+ */
+describe('LoopSafetyAnalysis — V4 canonical risk-capacity display (BLOCKER #2 fix)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+    });
+  }
+
+  it('reports Maximum LTV as the real V4 collateralFactor (65%) when no override is set — never the legacy protocol.maxLoanToValue (50%)', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    // Guard against a silent Service-level failure making this a
+    // false-positive pass (the "Maximum LTV" row still renders from
+    // `settings` even when `currentResult` reflects an error).
+    expect(useLoopBuilderStore.getState().currentResult?.strategy).not.toBeNull();
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.getByText('Maximum LTV').nextElementSibling?.textContent).toBe('65.00%');
+  });
+
+  it('reports the same Maximum LTV the strategy actually used when an explicit maxLoanToValueOverride is set', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore.getState().setSettings({
+      targetBorrowPercentage: 0.5,
+      maxLoops: 3,
+      minHealthFactor: 1.1,
+      maxLoanToValueOverride: 0.4,
+    });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy).not.toBeNull();
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.getByText('Maximum LTV').nextElementSibling?.textContent).toBe('40.00%');
+  });
+});

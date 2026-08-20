@@ -17,6 +17,7 @@ import {
   LoopStrategyLibrary,
   LoopStrategySummary,
   resolveBorrowRateAssumption,
+  resolveMaxLoanToValueAssumption,
   SaveLoopStrategyForm,
 } from '@/features/loop-builder';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
@@ -195,8 +196,14 @@ export function LoopBuilderPageClient() {
                 `deriveAaveV4EffectiveBorrowRate`) instead of the raw
                 legacy scalar, so a preset click on a V4 portfolio bakes
                 in the real rate rather than an incorrect V3-shaped one.
-                Presets always set a complete, concrete
-                `LoopStrategySettings`, so — unlike
+                BLOCKER #2 fix — `maxLoanToValue` now falls back to the
+                same-shaped `resolveMaxLoanToValueAssumption` (V3's
+                `protocol.maxLoanToValue`, unchanged; V4's real
+                `v4CollateralRisk.collateralFactor`) instead of the raw
+                legacy `protocol.maxLoanToValue` scalar, so a preset click
+                on a V4 portfolio no longer bakes in an unrelated V3
+                number as `maxLoanToValueOverride`. Presets always set a
+                complete, concrete `LoopStrategySettings`, so — unlike
                 `LoopStrategyControls.tsx`'s own field-level
                 "established" tracking — there is no partial-edit case
                 to preserve here; the final `?? 0` only matters before
@@ -205,7 +212,9 @@ export function LoopBuilderPageClient() {
               <LoopPresets
                 portfolio={record.portfolio}
                 maxLoanToValue={
-                  settings?.maxLoanToValueOverride ?? record.portfolio.protocol.maxLoanToValue
+                  settings?.maxLoanToValueOverride ??
+                  resolveMaxLoanToValueAssumption(record.portfolio) ??
+                  0
                 }
                 borrowRateAssumption={
                   settings?.borrowAprOverride ?? resolveBorrowRateAssumption(record.portfolio) ?? 0

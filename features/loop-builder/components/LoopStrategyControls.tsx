@@ -13,6 +13,7 @@ import {
   loopStrategyControlsSchema,
 } from '../types/loopStrategyControls';
 import { resolveBorrowRateAssumption } from '../utils/resolveBorrowRateAssumption';
+import { resolveMaxLoanToValueAssumption } from '../utils/resolveMaxLoanToValueAssumption';
 
 /**
  * Loop Strategy Controls — 06_TASKS.md M7-008 ("Implement Loop Strategy
@@ -55,32 +56,40 @@ import { resolveBorrowRateAssumption } from '../utils/resolveBorrowRateAssumptio
  * — reused, not duplicated as dead inputs here.
  *
  * **"Maximum LTV" and "Borrow-rate assumption" are real, wired
- * overrides**, pre-filled from the portfolio's own current
- * `protocol.maxLoanToValue` and (V3) `protocol.borrowApr` / (V4) the
- * canonical `deriveAaveV4EffectiveBorrowRate` boundary — see
+ * overrides**, pre-filled from the portfolio's own current risk-capacity
+ * value — (V3) `protocol.maxLoanToValue`, (V4) the canonical
+ * `v4CollateralRisk.collateralFactor`, both via `resolveMaxLoanToValueAssumption`
+ * — and (V3) `protocol.borrowApr` / (V4) the canonical
+ * `deriveAaveV4EffectiveBorrowRate` boundary — see
  * `services/loop/strategy.ts`'s own header comment for the Service-
  * layer substitution these two fields drive
  * (`maxLoanToValueOverride`/`borrowAprOverride`, both optional there).
  *
- * **`borrowAprOverride` is submitted only once the rate field has been
- * genuinely established — V4 Readiness Audit §12 Stage 17.** Unlike
- * `maxLoanToValueOverride`, which `services/loop/strategy.ts` always
- * treats as a deliberate override once this form exists at all, the rate
- * field's *default displayed value* is not itself a user override — for
- * a V4 portfolio it is `deriveAaveV4EffectiveBorrowRate`'s own live,
- * canonical rate, which should keep tracking the real synced
- * `v4DebtState` for as long as the user hasn't actually typed a rate.
- * `rateEstablishedRef` (below) tracks exactly that: it flips to `true`
- * only when the rate field's own `onChange` fires, or when an externally
- * pushed `settings` object (a preset click) already carries a concrete
- * `borrowAprOverride`. `handleFieldChange` — shared by every *other*
- * field — omits `borrowAprOverride` from `nextSettings` entirely while
- * the ref is still `false`, so editing, say, Maximum Number of Loops
- * cannot silently freeze the displayed default rate into a permanent
- * override; `services/loop/strategy.ts`'s own Stage 15 fallback
- * (`settings.borrowAprOverride === undefined`) then keeps deriving the
- * real V4 rate on every run, exactly as if this form had never touched
- * the rate field at all.
+ * **`maxLoanToValueOverride` and `borrowAprOverride` are each submitted
+ * only once their own field has been genuinely established — V4
+ * Readiness Audit §12 Stage 17 (rate), BLOCKER #2 fix (LTV, same
+ * mechanism).** Neither field's *default displayed value* is itself a
+ * user override — for a V4 portfolio the LTV field's default is
+ * `v4CollateralRisk.collateralFactor`, which should keep tracking the
+ * real synced collateral risk for as long as the user hasn't actually
+ * typed a value into that field. Before the BLOCKER #2 fix,
+ * `maxLoanToValueOverride` was submitted unconditionally on every field
+ * edit — so touching e.g. Maximum Number of Loops on a V4 portfolio
+ * silently froze the LTV field's *displayed default* (seeded from the
+ * legacy `protocol.maxLoanToValue`, itself also wrong for V4 before this
+ * fix) into a permanent override, which `services/loop/strategy.ts`
+ * always lets win over the correct dispatched risk-capacity fraction.
+ * `maxLoanToValueEstablishedRef`/`rateEstablishedRef` (below) each track
+ * this per field: flips to `true` only when that field's own `onChange`
+ * fires, or when an externally pushed `settings` object (a preset click)
+ * already carries a concrete override. `handleFieldChange` — shared by
+ * every *other* field — omits an override from `nextSettings` entirely
+ * while its ref is still `false`, so editing an unrelated field cannot
+ * silently freeze either displayed default into a permanent override;
+ * `services/loop/strategy.ts`'s own fallback (`settings.maxLoanToValueOverride`/
+ * `settings.borrowAprOverride === undefined`) then keeps deriving the
+ * real value on every run, exactly as if this form had never touched
+ * that field at all.
  *
  * **Per-field validation errors now carry `aria-describedby`/
  * `aria-invalid` (06_TASKS.md M9-026 "Audit Form Accessibility")** —
@@ -163,7 +172,7 @@ function defaultFormValues(portfolio: ApplicationPortfolio): LoopStrategyControl
     borrowPercentagePerStep: 50,
     maxLoops: 3,
     minHealthFactor: 1.5,
-    maxLoanToValue: toPercentInput(portfolio.protocol.maxLoanToValue),
+    maxLoanToValue: toPercentInput(resolveMaxLoanToValueAssumption(portfolio) ?? 0),
     borrowRateAssumption: toPercentInput(resolveBorrowRateAssumption(portfolio) ?? 0),
   };
 }
@@ -203,11 +212,16 @@ export function LoopStrategyControls({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPushedSettingsRef = useRef<LoopStrategySettings | null>(null);
   // V4 Readiness Audit §12 Stage 17 — see this file's own header comment
-  // ("borrowAprOverride is submitted only once...") for the full
-  // reasoning. `false` means the displayed rate is still an auto-seeded
-  // default (V3's `protocol.borrowApr`, or V4's live canonical rate),
-  // never a real user override.
+  // ("...submitted only once...") for the full reasoning. `false` means
+  // the displayed rate is still an auto-seeded default (V3's
+  // `protocol.borrowApr`, or V4's live canonical rate), never a real
+  // user override.
   const rateEstablishedRef = useRef(false);
+  // BLOCKER #2 fix — same mechanism as `rateEstablishedRef`, for the
+  // Maximum LTV field. `false` means the displayed value is still an
+  // auto-seeded default (V3's `protocol.maxLoanToValue`, or V4's real
+  // `v4CollateralRisk.collateralFactor`), never a real user override.
+  const maxLoanToValueEstablishedRef = useRef(false);
 
   const {
     register,
@@ -250,6 +264,7 @@ export function LoopStrategyControls({
     cancelPendingPush();
     lastPushedSettingsRef.current = settings;
     rateEstablishedRef.current = settings.borrowAprOverride !== undefined;
+    maxLoanToValueEstablishedRef.current = settings.maxLoanToValueOverride !== undefined;
     reset(toFormValues(settings));
   }, [settings, reset]);
 
@@ -265,7 +280,9 @@ export function LoopStrategyControls({
         targetBorrowPercentage: fromPercentInput(parsed.data.borrowPercentagePerStep),
         maxLoops: parsed.data.maxLoops,
         minHealthFactor: parsed.data.minHealthFactor,
-        maxLoanToValueOverride: fromPercentInput(parsed.data.maxLoanToValue),
+        ...(maxLoanToValueEstablishedRef.current && {
+          maxLoanToValueOverride: fromPercentInput(parsed.data.maxLoanToValue),
+        }),
         ...(rateEstablishedRef.current && {
           borrowAprOverride: fromPercentInput(parsed.data.borrowRateAssumption),
         }),
@@ -287,10 +304,18 @@ export function LoopStrategyControls({
     handleFieldChange();
   }
 
+  // BLOCKER #2 fix — same wrapping as `handleRateFieldChange`, for the
+  // Maximum LTV field's own `onChange`.
+  function handleMaxLoanToValueFieldChange() {
+    maxLoanToValueEstablishedRef.current = true;
+    handleFieldChange();
+  }
+
   function handleReset() {
     cancelPendingPush();
     lastPushedSettingsRef.current = null;
     rateEstablishedRef.current = false;
+    maxLoanToValueEstablishedRef.current = false;
     reset(defaultFormValues(portfolio));
     resetLoopBuilder();
   }
@@ -373,14 +398,17 @@ export function LoopStrategyControls({
           id="maxLoanToValue"
           type="number"
           step="any"
-          {...register('maxLoanToValue', { valueAsNumber: true, onChange: handleFieldChange })}
+          {...register('maxLoanToValue', {
+            valueAsNumber: true,
+            onChange: handleMaxLoanToValueFieldChange,
+          })}
           aria-invalid={errors.maxLoanToValue ? 'true' : undefined}
           aria-describedby={errors.maxLoanToValue ? 'maxLoanToValue-error' : undefined}
           className="rounded-md border border-border bg-transparent px-3 py-2"
         />
         <span className="text-xs text-muted-foreground">
           The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
-          Pre-filled from your portfolio&apos;s current protocol setting.
+          Pre-filled from your portfolio&apos;s current risk-capacity setting.
         </span>
       </label>
       {errors.maxLoanToValue && (

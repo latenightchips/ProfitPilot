@@ -8,6 +8,7 @@ import {
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
+import { resolveMaxLoanToValueAssumption } from '../utils/resolveMaxLoanToValueAssumption';
 import { stopReasonLabel } from '../utils/stopReasonLabel';
 
 /**
@@ -31,7 +32,14 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * (added this same batch — see `services/loop/strategy.ts`'s own header
  * comment). "Configured safety limits" is a direct, no-calculation
  * display of the Store's own `settings` (the exact values the user
- * configured via `LoopStrategyControls.tsx`, M7-008). "Stop condition"
+ * configured via `LoopStrategyControls.tsx`, M7-008) — its own "Maximum
+ * LTV" row's un-overridden fallback uses `resolveMaxLoanToValueAssumption`
+ * (BLOCKER #2 fix — V3: `protocol.maxLoanToValue`, unchanged; V4: the
+ * real `v4CollateralRisk.collateralFactor`), so this display always
+ * agrees with the real risk-capacity value `services/loop/strategy.ts`
+ * actually used for the strategy shown above it — never an unrelated V3
+ * scalar substituted for a V4 portfolio's real collateral factor. "Stop
+ * condition"
  * reuses the shared `stopReasonLabel` util (extracted this batch from
  * `LoopStrategySummary.tsx`).
  *
@@ -142,7 +150,9 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Maximum LTV</dt>
             <dd className="text-foreground">
-              {formatPercent(settings.maxLoanToValueOverride ?? portfolio.protocol.maxLoanToValue)}
+              {formatPercent(
+                settings.maxLoanToValueOverride ?? resolveMaxLoanToValueAssumption(portfolio) ?? 0,
+              )}
             </dd>
           </div>
         </dl>

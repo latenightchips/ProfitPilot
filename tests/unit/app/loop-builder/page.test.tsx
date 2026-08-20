@@ -369,3 +369,38 @@ describe('LoopBuilderPage — V4 live-sync invocation (Stage 21)', () => {
     expect(protocolParamsValue?.textContent).toContain(borrowRateValue ?? '__unmatched__');
   });
 });
+
+/**
+ * BLOCKER #2 fix — clicking a Loop Builder preset on a V4 portfolio must
+ * bake in the real `v4CollateralRisk.collateralFactor` as
+ * `maxLoanToValueOverride`, never the legacy `protocol.maxLoanToValue`.
+ * `protocol.maxLoanToValue` is deliberately `0.5` (50%, from `validInput()`)
+ * while `collateralFactor` is `0.65` (65%) — a different value, so
+ * leakage between the two is numerically obvious.
+ */
+describe('LoopBuilderPage — V4 preset seeding uses the real collateralFactor (BLOCKER #2 fix)', () => {
+  it('clicking a preset on a V4 portfolio sets maxLoanToValueOverride from collateralFactor (65%), not protocol.maxLoanToValue (50%)', async () => {
+    const portfolio = selectActivePortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, { userAddress: V4_ADDRESS });
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(portfolio.id, { collateralFactor: 0.65, dynamicConfigKey: 1 });
+
+    render(<LoopBuilderPage />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: /Balanced/ }).click();
+    });
+
+    const settings = useLoopBuilderStore.getState().settings;
+    expect(settings?.maxLoanToValueOverride).toBeCloseTo(0.65, 10);
+    expect(settings?.maxLoanToValueOverride).not.toBeCloseTo(0.5, 10);
+  });
+});

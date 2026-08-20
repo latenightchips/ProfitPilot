@@ -526,3 +526,158 @@ describe('LoopStrategyControls — V3 unaffected by the V4 rate-override discipl
     expect(state.currentResult).not.toBeNull();
   });
 });
+
+/**
+ * V4 canonical risk-capacity (collateralFactor) default and override
+ * discipline — BLOCKER #2 fix, same shape and same root-cause class as
+ * the V4 rate discipline block above (Stage 17), applied here to
+ * "Maximum LTV." Before this fix, `defaultFormValues` seeded this field
+ * from the raw legacy `portfolio.protocol.maxLoanToValue` for a V4
+ * portfolio too, and `handleFieldChange` always submitted whatever the
+ * field currently displayed as a permanent `maxLoanToValueOverride` — so
+ * editing e.g. Maximum Number of Loops on a V4 portfolio silently froze
+ * the wrong V3-shaped LTV into `LoopStrategySettings`, permanently
+ * defeating `services/loop/strategy.ts`'s own V4 dispatch
+ * (`settings.maxLoanToValueOverride ?? riskCapacityFraction`), which
+ * always lets a supplied override win.
+ *
+ * `validPortfolio()`'s own `protocol.maxLoanToValue` is `0.5` (50%) —
+ * `v4CollateralRisk.collateralFactor` below is deliberately `0.65` (65%),
+ * a different value, so any leakage between the two is numerically
+ * obvious rather than coincidentally matching.
+ */
+describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor) default and override discipline (BLOCKER #2 fix)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return {
+      ...validPortfolio(),
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+    };
+  }
+
+  it('defaults the Maximum LTV field to the canonical V4 collateralFactor (65%), not the legacy protocol.maxLoanToValue (50%)', () => {
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(65);
+  });
+
+  it('editing an unrelated field (Maximum Number of Loops) does not inject a legacy V3 maxLoanToValueOverride into settings', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(2);
+    expect(state.settings?.maxLoanToValueOverride).toBeUndefined();
+  });
+
+  it('an explicit user edit to the Maximum LTV field still produces a real maxLoanToValueOverride', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    await user.clear(ltvInput);
+    await user.type(ltvInput, '70');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBe(0.7);
+  });
+
+  it('once established, a later unrelated-field edit preserves the explicit LTV override rather than dropping it', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    await user.clear(ltvInput);
+    await user.type(ltvInput, '70');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBe(0.7);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '4');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(4);
+    expect(state.settings?.maxLoanToValueOverride).toBe(0.7);
+  });
+
+  it('a preset-style push (setSettings with a concrete maxLoanToValueOverride) establishes the LTV, so a later unrelated edit preserves it too', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    act(() => {
+      useLoopBuilderStore.getState().setSettings({
+        targetBorrowPercentage: 0.7,
+        maxLoops: 5,
+        minHealthFactor: 1.5,
+        maxLoanToValueOverride: 0.65,
+        borrowAprOverride: 0.09,
+      });
+    });
+    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(65);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBe(0.65);
+  });
+
+  it('Reset Strategy re-derives the canonical V4 collateralFactor again (clears the established-override flag)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    await user.clear(ltvInput);
+    await user.type(ltvInput, '70');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBe(0.7);
+
+    await user.click(screen.getByRole('button', { name: 'Reset Strategy' }));
+    expect(useLoopBuilderStore.getState().settings).toBeNull();
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBeUndefined();
+  });
+});
+
+/**
+ * V3 unaffected — BLOCKER #2 fix. Same "editing an unrelated field"
+ * scenario as the V4 describe block above, proving the
+ * `maxLoanToValueEstablishedRef` gate change has no observable effect on
+ * a V3 (or unset) portfolio's own already-correct behavior:
+ * `maxLoanToValueOverride` comes back `undefined` either way, and
+ * `services/loop/strategy.ts`'s own `mappedInput.protocol.maxLoanToValue`
+ * already falls back to the real portfolio value when it is, so the
+ * calculated result is unchanged.
+ */
+describe('LoopStrategyControls — V3 unaffected by the V4 LTV-override discipline change (BLOCKER #2 fix)', () => {
+  it('editing an unrelated field on a V3 portfolio does not inject a maxLoanToValueOverride, and the field still shows the real protocol.maxLoanToValue (50%)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
+    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(50);
+
+    const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
+    await user.clear(maxLoopsInput);
+    await user.type(maxLoopsInput, '2');
+    await vi.advanceTimersByTimeAsync(500);
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.settings?.maxLoops).toBe(2);
+    expect(state.settings?.maxLoanToValueOverride).toBeUndefined();
+    expect(state.currentResult).not.toBeNull();
+  });
+});
