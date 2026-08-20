@@ -158,10 +158,19 @@ describe('LoopScenarioSensitivity — V4 Rate Increase / Combined actually stres
     });
   }
 
+  // BLOCKER #3 fix — `maxLoops: 0` (not 2): this describe block's own
+  // concern is whether a rate-stress scenario reaches the real V4 debt
+  // projection, independent of whether the loop itself borrows more —
+  // with `maxLoops: 2` (a real borrow), `runSensitivityScenario` now
+  // correctly blocks with `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE`
+  // (see its own dedicated coverage in `loopBuilderStore.test.ts`),
+  // which would make every assertion below observe a blocked `null`
+  // result instead of exercising the rate-stress dispatch this block
+  // actually tests.
   function runViableV4Strategy(portfolio: ApplicationPortfolio) {
     useLoopBuilderStore
       .getState()
-      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.2 });
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 0, minHealthFactor: 1.2 });
     useLoopBuilderStore.getState().runLoopStrategy(portfolio);
   }
 

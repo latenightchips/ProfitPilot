@@ -5,7 +5,7 @@ import { formatHealthFactor } from '@/components/strategy/format';
 import { ApplyLoopAsSimulation } from '@/features/loop-builder';
 import { stopReasonLabel } from '@/features/loop-builder/utils/stopReasonLabel';
 import type { ApplicationPortfolio } from '@/services';
-import { buildFinalLoopPortfolio } from '@/services/loop/finalPortfolio';
+import { buildFinalLoopPortfolio, V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -154,9 +154,58 @@ describe('ApplyLoopAsSimulation — V4 structured Loop → Simulation handoff (S
     useLoopBuilderStore.getState().runLoopStrategy(portfolio);
   }
 
-  it('requirement 1 — preserves the canonical structured V4 debt state, calling runPortfolioTransitionSimulation with the exact buildFinalLoopPortfolio output, not a scalar delta', () => {
+  /**
+   * BLOCKER #3 fix — `runViableV4Strategy` above always borrows more (a
+   * real, positive delta), which is now the exact case
+   * `loopIntroducesAmbiguousV4Borrow` blocks (see
+   * `services/loop/finalPortfolio.ts`'s own header comment). The two
+   * tests below ("requirement 1"/"requirement 2") accordingly now assert
+   * the correct BLOCKED outcome for that same scenario, rather than the
+   * pre-BLOCKER-#3 assumption that a fabricated post-borrow state could
+   * be safely handed to Simulation. `runUnambiguousV4Strategy` (zero
+   * loops, no real borrow) is used separately below to prove the
+   * structured Loop → Simulation handoff mechanism itself still works
+   * correctly for the case it is NOT ambiguous.
+   */
+  function runUnambiguousV4Strategy(portfolio: ApplicationPortfolio) {
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 0, minHealthFactor: 1.2 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+  }
+
+  it('requirement 1 (BLOCKER #3 update) — a real new borrow is blocked: Apply is disabled and runPortfolioTransitionSimulation is never called', () => {
     const portfolio = v4Portfolio();
     runViableV4Strategy(portfolio);
+    const { currentResult } = useLoopBuilderStore.getState();
+    if (currentResult?.strategy === null || currentResult === null) {
+      throw new Error('setup failed: expected a viable strategy');
+    }
+    expect(currentResult.strategy.finalDebt).toBeGreaterThan(15500);
+
+    const runPortfolioTransitionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioTransitionSimulation')
+      .mockImplementation(() => {});
+    const runPortfolioActionSimulation = vi
+      .spyOn(useSimulationStore.getState(), 'runPortfolioActionSimulation')
+      .mockImplementation(() => {});
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    const button = screen.getByRole('button', { name: /Apply Loop as Simulation/i });
+    expect(button).toBeDisabled();
+    button.click();
+
+    expect(runPortfolioTransitionSimulation).not.toHaveBeenCalled();
+    expect(runPortfolioActionSimulation).not.toHaveBeenCalled();
+    expect(screen.getByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).toBeInTheDocument();
+
+    runPortfolioTransitionSimulation.mockRestore();
+    runPortfolioActionSimulation.mockRestore();
+  });
+
+  it('structured handoff mechanism (unaffected by BLOCKER #3) — a non-ambiguous V4 strategy still calls runPortfolioTransitionSimulation with the exact buildFinalLoopPortfolio output, not a scalar delta', () => {
+    const portfolio = v4Portfolio();
+    runUnambiguousV4Strategy(portfolio);
     const { currentResult } = useLoopBuilderStore.getState();
     if (currentResult?.strategy === null || currentResult === null) {
       throw new Error('setup failed: expected a viable strategy');
@@ -185,9 +234,19 @@ describe('ApplyLoopAsSimulation — V4 structured Loop → Simulation handoff (S
     runPortfolioActionSimulation.mockRestore();
   });
 
-  it('requirement 2 — the resulting preview uses real V4 rate/debt semantics, not the legacy debt.balance/protocol.borrowApr fields', () => {
+  it('requirement 2 (BLOCKER #3 update) — a real new borrow is blocked before any preview is computed', () => {
     const portfolio = v4Portfolio();
     runViableV4Strategy(portfolio);
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
+
+    expect(useSimulationStore.getState().portfolioActionPreview).toBeNull();
+  });
+
+  it('the resulting preview uses real V4 rate/debt semantics, not the legacy debt.balance/protocol.borrowApr fields (non-ambiguous case)', () => {
+    const portfolio = v4Portfolio();
+    runUnambiguousV4Strategy(portfolio);
 
     render(<ApplyLoopAsSimulation portfolio={portfolio} />);
     screen.getByRole('button', { name: /Apply Loop as Simulation/i }).click();
@@ -198,7 +257,6 @@ describe('ApplyLoopAsSimulation — V4 structured Loop → Simulation handoff (S
     // Canonical total (15500) must drive debtValue, never the deliberately
     // disagreeing legacy debt.balance (999999).
     expect(preview.before.debtValue).toBe(15500);
-    expect(preview.after.debtValue).not.toBe(preview.before.debtValue);
     expect(preview.after.debtValue).toBeLessThan(999999);
   });
 
@@ -317,6 +375,10 @@ describe('ApplyLoopAsSimulation — "Applied" confirmation is never stale (Stage
   it('shows the real, freshly-applied Health Factor and Stop Reason after clicking on a V4 loop (structured transition path), not stale ones already sitting in the Store', () => {
     poisonSimulationStore();
 
+    // BLOCKER #3 fix — `maxLoops: 0` (not 2) so this scenario is not an
+    // ambiguous real borrow (which BLOCKER #3 now blocks) — this test's
+    // own concern is the Applied-snapshot mechanism, not the borrow
+    // ambiguity itself, which has its own dedicated coverage elsewhere.
     const portfolio = validPortfolio({
       collateral: { asset: 'BTC', quantity: 2 },
       debt: { asset: 'USDC', balance: 999999 },
@@ -327,7 +389,7 @@ describe('ApplyLoopAsSimulation — "Applied" confirmation is never stale (Stage
     });
     useLoopBuilderStore
       .getState()
-      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.2 });
+      .setSettings({ targetBorrowPercentage: 0.3, maxLoops: 0, minHealthFactor: 1.2 });
     useLoopBuilderStore.getState().runLoopStrategy(portfolio);
     const { currentResult } = useLoopBuilderStore.getState();
     if (currentResult?.strategy === null || currentResult === null) {
@@ -384,5 +446,67 @@ describe('ApplyLoopAsSimulation — "Applied" confirmation is never stale (Stage
 
     render(<ApplyLoopAsSimulation portfolio={portfolio} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * BLOCKER #3 fix — dedicated coverage for the Apply button's own
+ * disabled/message state, independent of the "structured handoff" and
+ * "Applied confirmation" describe blocks above (which each cover their
+ * own narrower concern using a non-ambiguous fixture). `riskPremium: 0.13`
+ * is a deliberately distinctive value (unused elsewhere in this file).
+ */
+describe('ApplyLoopAsSimulation — V4 ambiguous borrow disables Apply (BLOCKER #3 fix)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.13 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    });
+  }
+
+  it('disables Apply and shows the risk-premium message for a real new borrow', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeGreaterThan(
+      20000 + 500,
+    );
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    expect(screen.getByRole('button', { name: /Apply Loop as Simulation/i })).toBeDisabled();
+    expect(screen.getByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).toBeInTheDocument();
+  });
+
+  it('keeps Apply enabled, with no risk-premium message, for a zero-loop V4 strategy', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 0, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeCloseTo(
+      20000 + 500,
+      6,
+    );
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    expect(screen.getByRole('button', { name: /Apply Loop as Simulation/i })).not.toBeDisabled();
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it('never shows the risk-premium message or disables Apply for a V3 portfolio', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<ApplyLoopAsSimulation portfolio={portfolio} />);
+    expect(screen.getByRole('button', { name: /Apply Loop as Simulation/i })).not.toBeDisabled();
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
   });
 });

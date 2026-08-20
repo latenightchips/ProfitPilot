@@ -5,6 +5,8 @@ import {
   type ApplicationPortfolio,
   buildFinalLoopPortfolio,
   calculatePortfolioSummary,
+  loopIntroducesAmbiguousV4Borrow,
+  V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
@@ -67,6 +69,15 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * everywhere else. Rendered as an explicit, labeled "Not available"
  * note citing the conflict, the same honest-gap convention M5-008's own
  * Dashboard card already established, not a silently missing row.
+ *
+ * **BLOCKER #3 fix — "Distance to Liquidation" shows
+ * `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE` instead of a bare "—"
+ * for a real new V4 borrow**, since `buildFinalLoopPortfolio` now omits
+ * `v4DebtState` for that case (see its own header comment). "Minimum
+ * Health Factor Reached"/"Maximum LTV Reached" are unaffected — both
+ * come from `currentResult.findings`, computed by the Engine's own
+ * per-step strategy simulation, never by re-summarizing the final
+ * portfolio a second time the way "Distance to Liquidation" does.
  */
 function findingActive(
   findings: { check: string }[],
@@ -87,8 +98,12 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
     );
   }
 
+  const ambiguousV4Borrow =
+    currentResult.strategy !== null &&
+    loopIntroducesAmbiguousV4Borrow(portfolio, currentResult.strategy);
+
   let liquidationDistance: number | null = null;
-  if (currentResult.strategy !== null) {
+  if (!ambiguousV4Borrow && currentResult.strategy !== null) {
     const finalPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
     const afterSummary = calculatePortfolioSummary(finalPortfolio, 'manual');
     if (afterSummary.ok) {
@@ -123,6 +138,11 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
           {liquidationDistance !== null ? formatPercent(liquidationDistance) : '—'}
         </span>
       </div>
+      {ambiguousV4Borrow && (
+        <p className="text-xs text-muted-foreground">
+          {V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE}
+        </p>
+      )}
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">Remaining Borrowing Capacity</span>
         <span className="font-medium text-foreground">

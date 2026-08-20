@@ -13,7 +13,11 @@
  * `LoopCostResult`/`UnavailableLoopCost` (needed by `LoopCostAnalysis.tsx`,
  * M7-014) — see that file's own header comment.
  */
-export { buildFinalLoopPortfolio } from './finalPortfolio';
+export {
+  buildFinalLoopPortfolio,
+  loopIntroducesAmbiguousV4Borrow,
+  V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
+} from './finalPortfolio';
 export { type LoopStrategyPreview, type LoopStrategySettings, planLoopStrategy } from './strategy';
 export {
   type LoopCostResult,

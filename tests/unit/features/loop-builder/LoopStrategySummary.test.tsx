@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { LoopStrategySummary } from '@/features/loop-builder';
 import type { ApplicationPortfolio } from '@/services';
+import { V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
@@ -127,5 +128,67 @@ describe('LoopStrategySummary — comparison (DoD: distinguishes current and pro
     );
     const cells = screen.getAllByText('—');
     expect(cells.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * BLOCKER #3 fix — a real new V4 borrow must never present an exact-
+ * looking post-loop Health Factor/liquidation state built on a silently
+ * carried-forward `riskPremium`. `riskPremium: 0.13` is a deliberately
+ * distinctive value (unused elsewhere in this file) so an accidental
+ * carry-forward into a rendered figure would be numerically obvious.
+ */
+describe('LoopStrategySummary — V4 ambiguous borrow shows the risk-premium message, not a fabricated comparison (BLOCKER #3 fix)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.13 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+      ...overrides,
+    });
+  }
+
+  it('shows the risk-premium message and renders "—" for the proposed column when the strategy actually borrows more', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeGreaterThan(
+      20000 + 500,
+    );
+
+    render(<LoopStrategySummary portfolio={portfolio} />);
+    expect(screen.getByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).toBeInTheDocument();
+    const cells = screen.getAllByText('—');
+    expect(cells.length).toBeGreaterThan(0);
+  });
+
+  it('does not show the risk-premium message for a zero-loop V4 strategy (no real borrow occurred)', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 0, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeCloseTo(
+      20000 + 500,
+      6,
+    );
+
+    render(<LoopStrategySummary portfolio={portfolio} />);
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it('never shows the risk-premium message for a V3 portfolio, regardless of how much the strategy borrows', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<LoopStrategySummary portfolio={portfolio} />);
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
   });
 });

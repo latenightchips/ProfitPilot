@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { LoopSafetyAnalysis } from '@/features/loop-builder';
 import type { ApplicationPortfolio } from '@/services';
+import { V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
@@ -194,5 +195,65 @@ describe('LoopSafetyAnalysis — V4 canonical risk-capacity display (BLOCKER #2 
 
     render(<LoopSafetyAnalysis portfolio={portfolio} />);
     expect(screen.getByText('Maximum LTV').nextElementSibling?.textContent).toBe('40.00%');
+  });
+});
+
+/**
+ * BLOCKER #3 fix — "Distance to Liquidation" must never present an
+ * exact-looking figure built on a silently carried-forward `riskPremium`
+ * after a real new V4 borrow. `riskPremium: 0.13` is a deliberately
+ * distinctive value (unused elsewhere in this file).
+ */
+describe('LoopSafetyAnalysis — V4 ambiguous borrow (BLOCKER #3 fix)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.13 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+    });
+  }
+
+  it('shows "—" and the risk-premium message for Distance to Liquidation when the strategy actually borrows more', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeGreaterThan(
+      15500,
+    );
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.getByText('Distance to Liquidation').nextElementSibling?.textContent).toBe('—');
+    expect(screen.getByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).toBeInTheDocument();
+  });
+
+  it('does not show the risk-premium message for a zero-loop V4 strategy, and Distance to Liquidation is real', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 0, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeCloseTo(15500, 6);
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
+    const distanceValue =
+      screen.getByText('Distance to Liquidation').nextElementSibling?.textContent;
+    expect(distanceValue).not.toBe('—');
+    expect(distanceValue).toMatch(/%/);
+  });
+
+  it('never shows the risk-premium message for a V3 portfolio', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.queryByText(V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE)).not.toBeInTheDocument();
   });
 });

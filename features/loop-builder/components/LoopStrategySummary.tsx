@@ -7,6 +7,8 @@ import {
   buildFinalLoopPortfolio,
   calculatePortfolioExposure,
   calculatePortfolioSummary,
+  loopIntroducesAmbiguousV4Borrow,
+  V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import type { StrategyComparisonResult } from '@/types/strategy';
@@ -93,6 +95,14 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * Milestone 7 Batch 3 once `LoopSafetyAnalysis.tsx` (M7-013) became a
  * second consumer of both** — no behavior change, purely removing what
  * would otherwise become duplicated code between the two components.
+ *
+ * **BLOCKER #3 fix — a real new V4 borrow skips the "after" comparison
+ * entirely and shows `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE`
+ * instead**, rather than letting `buildFinalLoopPortfolio`'s own
+ * (separately fixed) fail-closed `v4DebtState: undefined` silently
+ * degrade the "Proposed" column to a row of unexplained "—" dashes. See
+ * `services/loop/finalPortfolio.ts`'s own header comment for the full
+ * protocol-audited reasoning.
  */
 export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
@@ -114,8 +124,12 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
     );
   }
 
+  const ambiguousV4Borrow =
+    currentResult.strategy !== null &&
+    loopIntroducesAmbiguousV4Borrow(portfolio, currentResult.strategy);
+
   let after: StrategyComparisonResult['after'] = null;
-  if (currentResult.strategy !== null && currentResult.btcExposure !== null) {
+  if (!ambiguousV4Borrow && currentResult.strategy !== null && currentResult.btcExposure !== null) {
     const finalPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
     const afterSummary = calculatePortfolioSummary(finalPortfolio, 'manual');
     if (afterSummary.ok) {
@@ -131,6 +145,11 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
 
   return (
     <div className="flex flex-col gap-4">
+      {ambiguousV4Borrow && (
+        <p className="text-xs text-muted-foreground">
+          {V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE}
+        </p>
+      )}
       <StrategyComparison result={comparison} />
 
       <div className="flex flex-col gap-2 border-t border-border pt-2 text-sm">

@@ -496,7 +496,7 @@ describe('simulatePortfolioTransition — V4 Loop → Simulation, end to end (St
     });
   }
 
-  it('requirement 1 — a real V4 loop strategy applied via buildFinalLoopPortfolio succeeds, where the old debtDelta path would fail closed', () => {
+  it('requirement 1 (BLOCKER #3 update) — a real V4 loop strategy no longer produces a fabricated post-borrow debt state; the new structured path now agrees with the old delta path and also fails closed', () => {
     const portfolio = v4LoopPortfolio();
     const strategyResult = planLoopStrategy(
       portfolio,
@@ -507,10 +507,12 @@ describe('simulatePortfolioTransition — V4 Loop → Simulation, end to end (St
     if (!strategyResult.ok || strategyResult.data.strategy === null) return;
 
     const afterPortfolio = buildFinalLoopPortfolio(portfolio, strategyResult.data.strategy);
-    expect(afterPortfolio.v4DebtState).toBeDefined();
+    // BLOCKER #3 fix — omitted entirely, never carrying the pre-borrow
+    // riskPremium forward as though it were exact.
+    expect(afterPortfolio.v4DebtState).toBeUndefined();
 
-    // The OLD path this replaces: reducing the loop to a scalar delta and
-    // re-deriving through the ambiguous-borrow guard always failed here.
+    // The OLD path (reducing the loop to a scalar delta) still fails
+    // closed for the same real borrow, exactly as before.
     const debtDelta = strategyResult.data.strategy.finalDebt - 20500;
     expect(debtDelta).toBeGreaterThan(0);
     const oldPathResult = simulatePortfolioAction(
@@ -520,16 +522,29 @@ describe('simulatePortfolioTransition — V4 Loop → Simulation, end to end (St
     );
     expect(oldPathResult.ok).toBe(false);
 
-    // The NEW path succeeds, using the real structured final state.
+    // The NEW structured path now ALSO correctly fails closed — the
+    // Stage 17/18 gap this described (structured state bypassing the
+    // ambiguous-borrow rule) is closed by BLOCKER #3, not merely
+    // narrowed. Both paths agree, for the same underlying protocol-audited
+    // reason (`AAVE_V4_DEBT_STATE_MISSING`, since `v4DebtState` is missing
+    // on `afterPortfolio`), rather than the structured path silently
+    // succeeding with a fabricated risk premium.
     const newPathResult = simulatePortfolioTransition(portfolio, afterPortfolio, 'live');
-    expect(newPathResult.ok).toBe(true);
+    expect(newPathResult.ok).toBe(false);
   });
 
-  it('requirement 2 — the resulting after-summary uses real V4 rate/debt semantics, not the legacy scalar fields', () => {
+  it('requirement 2 — the resulting after-summary uses real V4 rate/debt semantics, not the legacy scalar fields (non-ambiguous case — BLOCKER #3 update)', () => {
     const portfolio = v4LoopPortfolio();
+    // BLOCKER #3 fix — `maxLoops: 0` (not 2): a real borrow is now
+    // correctly blocked (see "requirement 1" above), so this test's own
+    // concern (does `simulatePortfolioTransition` use real V4 two-stream
+    // rate/debt semantics rather than a naive V3 calculation?) is now
+    // verified via a non-ambiguous zero-loop final state instead — the
+    // real-vs-naive interestCost comparison below is independent of
+    // whether the loop count is 0 or nonzero.
     const strategyResult = planLoopStrategy(
       portfolio,
-      { targetBorrowPercentage: 0.3, maxLoops: 2, minHealthFactor: 1.3 },
+      { targetBorrowPercentage: 0.3, maxLoops: 0, minHealthFactor: 1.3 },
       'live',
     );
     expect(strategyResult.ok).toBe(true);

@@ -7,8 +7,10 @@ import { formatHealthFactor } from '@/components/strategy/format';
 import {
   type ApplicationPortfolio,
   buildFinalLoopPortfolio,
+  loopIntroducesAmbiguousV4Borrow,
   type LoopStopReason,
   resolveCanonicalDebtBalance,
+  V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
 } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -122,6 +124,18 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * values are now snapshotted together, only at the moment `handleApply`
  * actually runs, and cleared whenever the current strategy's own final
  * collateral/debt/stop-reason changes.
+ *
+ * **BLOCKER #3 fix — Apply is disabled, with an explanatory message,
+ * when the loop introduces a real new V4 borrow.** Before this fix,
+ * `buildFinalLoopPortfolio` silently carried the pre-borrow `riskPremium`
+ * forward, so `runPortfolioTransitionSimulation` would compute and
+ * "Applied" would show an exact-looking post-loop Health Factor that was
+ * not actually knowable. `loopIntroducesAmbiguousV4Borrow` (same shared
+ * check `LoopStrategySummary.tsx`/`LoopSafetyAnalysis.tsx`/
+ * `runSensitivityScenario` each use) is checked here too, so this
+ * assumption cannot diverge between the four surfaces it appears on —
+ * see `services/loop/finalPortfolio.ts`'s own header comment for the
+ * full protocol-audited reasoning.
  */
 export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPortfolio }) {
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
@@ -156,8 +170,12 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
     );
   }
 
+  // BLOCKER #3 fix — see this component's own header comment.
+  const ambiguousV4Borrow = loopIntroducesAmbiguousV4Borrow(portfolio, currentResult.strategy);
+
   function handleApply() {
     if (currentResult === null || currentResult.strategy === null) return;
+    if (ambiguousV4Borrow) return;
 
     if (portfolio.protocolVersion === 'v4') {
       const afterPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
@@ -194,7 +212,10 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
         <button
           type="button"
           onClick={handleApply}
-          className="rounded border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          disabled={ambiguousV4Borrow}
+          aria-disabled={ambiguousV4Borrow}
+          title={ambiguousV4Borrow ? V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE : undefined}
+          className="rounded border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
         >
           Apply Loop as Simulation
         </button>
@@ -205,6 +226,11 @@ export function ApplyLoopAsSimulation({ portfolio }: { portfolio: ApplicationPor
           Open Simulation Workspace
         </Link>
       </div>
+      {ambiguousV4Borrow && (
+        <p className="text-xs text-muted-foreground">
+          {V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE}
+        </p>
+      )}
       {appliedResult !== null && (
         <p role="status" className="text-xs text-muted-foreground">
           Applied — Health Factor {formatHealthFactor(appliedResult.healthFactor)}, Stop Reason:{' '}

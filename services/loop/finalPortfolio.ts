@@ -41,16 +41,81 @@ import type { ApplicationPortfolio } from '../portfolio/models';
  * accrual inside the loop itself). The delta between it and the starting
  * canonical total (`v4DebtState.drawnDebt + v4DebtState.premiumDebt`) is
  * therefore exactly the amount newly borrowed across the strategy's
- * steps — attributed entirely to `drawnDebt`, matching Aave V4's own
- * `borrow()` action (`projectAaveV4Debt.ts`'s own header comment: premium
- * accrues only from time-based interest under the position's risk
- * premium, never from a fresh borrow). `baseDrawnApr`/`riskPremium` are
- * unaffected by borrowing more and carry over unchanged. Ignored (base
- * V3-shaped object only) for a `'v3'`/unset portfolio, or a `'v4'`
- * portfolio with no synced `v4DebtState` — unreachable via `strategy`
- * being non-null, since `planLoopStrategy`'s own fail-closed guard
- * requires `v4DebtState` before it ever produces one.
+ * steps. Ignored (base V3-shaped object only) for a `'v3'`/unset
+ * portfolio, or a `'v4'` portfolio with no synced `v4DebtState` —
+ * unreachable via `strategy` being non-null, since `planLoopStrategy`'s
+ * own fail-closed guard requires `v4DebtState` before it ever produces
+ * one.
+ *
+ * **BLOCKER #3 fix — a real new borrow no longer carries the pre-borrow
+ * `riskPremium` forward as though it were exact.** Before this fix, any
+ * `newlyBorrowed > 0` still set `riskPremium: portfolio.v4DebtState.riskPremium`
+ * unchanged, presenting the resulting Health Factor/liquidation figures
+ * as exact throughout Loop Builder and Apply Loop as Simulation. This
+ * directly contradicted this codebase's own protocol-audited doctrine,
+ * documented at `services/portfolio/mapping.ts`'s `deriveV4DebtStateAfterDelta`
+ * (Stage 12): Aave V4's `Spoke.sol.borrow()` calls `_notifyRiskPremiumUpdate`,
+ * driven by a fresh Risk Premium recomputation over the user's ENTIRE
+ * multi-collateral set — data this codebase's single-BTC domain model has
+ * never captured — so "a post-borrow `riskPremium`... is not knowable
+ * from this codebase's persisted state alone, so it is not guessed. This
+ * is hierarchy option D: keep it fail-closed... not a lower-confidence
+ * shortcut." A loop strategy IS a sequence of borrows — exactly the
+ * triggering action that doctrine already covers for the generic
+ * position-change path (`deriveV4DebtStateAfterDelta` returns
+ * `value: undefined` for any `debtDelta > 0`) — so this function now
+ * applies the identical rule: `loopIntroducesAmbiguousV4Borrow` below
+ * detects it, and this function omits `v4DebtState` entirely (mirroring
+ * `deriveV4DebtStateAfterDelta`'s own `undefined` signal) rather than
+ * guessing. Every downstream `calculatePortfolioSummary`/`planLoopStrategy`/
+ * `simulatePortfolioTransition` call already fails closed on a missing
+ * `v4DebtState` via the existing `checkAaveV4DebtStateAvailable` guard —
+ * this is defense in depth; each of the four UI consumers
+ * (`LoopStrategySummary.tsx`, `LoopSafetyAnalysis.tsx`,
+ * `stores/loopBuilderStore.ts`'s `runSensitivityScenario`,
+ * `ApplyLoopAsSimulation.tsx`) also calls `loopIntroducesAmbiguousV4Borrow`
+ * proactively, so the user sees this file's own
+ * `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE` — not the generic,
+ * wrong-context "sync a live position or enter it manually" guard text,
+ * which would misleadingly imply the STARTING portfolio's own data is
+ * what's missing, when it is specifically the POST-borrow state that
+ * cannot be derived.
+ *
+ * **A zero-loop (or otherwise no-op) result is unaffected.** When
+ * `newlyBorrowed <= 0` (the strategy made no loops — e.g. immediately
+ * blocked by a safety limit), no borrow actually happened, so carrying
+ * `riskPremium` forward unchanged is not an assumption at all — it is
+ * the literal correct value, the same reasoning `deriveV4DebtStateAfterDelta`
+ * already applies for `debtDelta === 0`.
+ *
+ * **`v4CollateralRisk`/`v4Position` are unaffected by this fix** — Stage
+ * 23D's own reasoning (below) already established a loop borrows against
+ * the same collateral-risk config; that is a separate on-chain fact from
+ * the risk-premium refresh and remains correct regardless of whether a
+ * borrow occurred.
  */
+export const V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE =
+  'This strategy adds new Aave V4 borrowing, which triggers an on-chain Risk Premium refresh whose new value cannot be computed from currently available data — Health Factor, LTV, and liquidation figures for the resulting position are not shown. Loop count, BTC purchased, total debt, and estimated interest cost (based on the current rate) remain accurate.';
+
+/**
+ * Detects the one case `buildFinalLoopPortfolio` cannot resolve exactly
+ * — see this file's own header comment (BLOCKER #3 fix) for the full
+ * protocol-audited reasoning. Exported so every UI consumer can check
+ * this same condition proactively, before ever calling
+ * `buildFinalLoopPortfolio`, and show `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE`
+ * directly rather than surfacing a generic downstream Service failure.
+ */
+export function loopIntroducesAmbiguousV4Borrow(
+  portfolio: ApplicationPortfolio,
+  strategy: LoopStrategyResult,
+): boolean {
+  if (portfolio.protocolVersion !== 'v4' || portfolio.v4DebtState === undefined) {
+    return false;
+  }
+  const startingCanonicalDebt = portfolio.v4DebtState.drawnDebt + portfolio.v4DebtState.premiumDebt;
+  return strategy.finalDebt - startingCanonicalDebt > 0;
+}
+
 export function buildFinalLoopPortfolio(
   portfolio: ApplicationPortfolio,
   strategy: LoopStrategyResult,
@@ -66,10 +131,7 @@ export function buildFinalLoopPortfolio(
     return finalPortfolio;
   }
 
-  const startingCanonicalDebt = portfolio.v4DebtState.drawnDebt + portfolio.v4DebtState.premiumDebt;
-  const newlyBorrowed = strategy.finalDebt - startingCanonicalDebt;
-
-  return {
+  const withV4Identity: ApplicationPortfolio = {
     ...finalPortfolio,
     protocolVersion: portfolio.protocolVersion,
     v4Position: portfolio.v4Position,
@@ -84,6 +146,20 @@ export function buildFinalLoopPortfolio(
     // AAVE_V4_COLLATERAL_RISK_MISSING even when the starting portfolio's
     // collateral risk was fully synced.
     v4CollateralRisk: portfolio.v4CollateralRisk,
+  };
+
+  // BLOCKER #3 fix — a real new borrow's post-borrow riskPremium is not
+  // knowable; omit `v4DebtState` entirely rather than guess. See this
+  // file's own header comment.
+  if (loopIntroducesAmbiguousV4Borrow(portfolio, strategy)) {
+    return withV4Identity;
+  }
+
+  const startingCanonicalDebt = portfolio.v4DebtState.drawnDebt + portfolio.v4DebtState.premiumDebt;
+  const newlyBorrowed = strategy.finalDebt - startingCanonicalDebt;
+
+  return {
+    ...withV4Identity,
     v4DebtState: {
       drawnDebt: portfolio.v4DebtState.drawnDebt + newlyBorrowed,
       premiumDebt: portfolio.v4DebtState.premiumDebt,

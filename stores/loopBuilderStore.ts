@@ -5,6 +5,8 @@ import {
   type ApplicationPortfolio,
   autoSaveCoordinator,
   buildFinalLoopPortfolio,
+  createApplicationError,
+  loopIntroducesAmbiguousV4Borrow,
   type LoopSafetyCheck,
   type LoopStrategyPreview,
   type LoopStrategySettings,
@@ -14,6 +16,7 @@ import {
   simulateScenario,
   type SimulationResult,
   type SimulationScenario,
+  V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
 } from '@/services';
 import type { StrategyWarning, StrategyWarningCategory } from '@/types/strategy';
 
@@ -184,6 +187,22 @@ export interface LoopBuilderStoreActions {
 
 const SOURCE_STATUS = 'manual';
 
+// BLOCKER #3 fix — mirrors `stores/simulationStore.ts`'s own Stage 25C
+// `v4BorrowSimulationBlockedError` shape exactly, reusing the shared
+// message text from `services/loop/finalPortfolio.ts` so this Store's
+// own error and every UI consumer's inline copy read identically. See
+// that file's own header comment for the full protocol-audited
+// reasoning this proactively intercepts before `simulateScenario` would
+// otherwise fail closed on the generic (differently-worded)
+// `AAVE_V4_DEBT_STATE_MISSING` guard.
+function v4LoopBorrowAmbiguousError(): ApplicationError {
+  return createApplicationError(
+    'calculation',
+    'AAVE_V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN',
+    V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
+  );
+}
+
 const INITIAL_STATE: LoopBuilderStoreState = {
   settings: null,
   currentResult: null,
@@ -245,6 +264,15 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
     runSensitivityScenario: (portfolio, scenario) => {
       const { currentResult } = get();
       if (currentResult === null || currentResult.strategy === null) return;
+
+      // BLOCKER #3 fix — see `v4LoopBorrowAmbiguousError`'s own comment
+      // above. Intercepted here, before `buildFinalLoopPortfolio`, so the
+      // user sees this Store's own specific reason rather than the
+      // generic guard failure `simulateScenario` would otherwise produce.
+      if (loopIntroducesAmbiguousV4Borrow(portfolio, currentResult.strategy)) {
+        set({ sensitivityErrors: [v4LoopBorrowAmbiguousError()], sensitivityResult: null });
+        return;
+      }
 
       const finalPortfolio = buildFinalLoopPortfolio(portfolio, currentResult.strategy);
       const result = simulateScenario(finalPortfolio, scenario, 'Loop Sensitivity', SOURCE_STATUS);

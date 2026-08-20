@@ -256,6 +256,83 @@ describe('runSensitivityScenario (M7-015)', () => {
   });
 });
 
+/**
+ * BLOCKER #3 fix — `runSensitivityScenario` must never run a sensitivity
+ * scenario against a final V4 portfolio whose `riskPremium` was silently
+ * carried forward across a real new borrow. `riskPremium: 0.13` is a
+ * deliberately distinctive value (unused elsewhere in this file).
+ */
+describe('runSensitivityScenario — V4 ambiguous borrow (BLOCKER #3 fix)', () => {
+  function v4Portfolio(): ApplicationPortfolio {
+    return validPortfolio({
+      collateral: { asset: 'BTC', quantity: 2 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.13 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    });
+  }
+
+  it('sets a clear, specific error and no result when the proposed loop actually borrows more', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeGreaterThan(
+      20000 + 500,
+    );
+
+    useLoopBuilderStore.getState().runSensitivityScenario(portfolio, {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityResult).toBeNull();
+    expect(state.sensitivityErrors).toHaveLength(1);
+    expect(state.sensitivityErrors[0].message).toMatch(/Risk Premium refresh/);
+    expect(state.sensitivityErrors[0].code).toBe('AAVE_V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN');
+  });
+
+  it('computes a real sensitivity result for a zero-loop V4 strategy (no real borrow occurred)', () => {
+    const portfolio = v4Portfolio();
+    const zeroLoopSettings: LoopStrategySettings = {
+      targetBorrowPercentage: 0.5,
+      maxLoops: 0,
+      minHealthFactor: 1.1,
+    };
+    useLoopBuilderStore.getState().setSettings(zeroLoopSettings);
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+    expect(useLoopBuilderStore.getState().currentResult?.strategy?.finalDebt).toBeCloseTo(
+      20000 + 500,
+      6,
+    );
+
+    useLoopBuilderStore.getState().runSensitivityScenario(portfolio, {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityErrors).toEqual([]);
+    expect(state.sensitivityResult).not.toBeNull();
+  });
+
+  it('a V3 portfolio is completely unaffected, even borrowing heavily', () => {
+    const portfolio = validPortfolio();
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    useLoopBuilderStore.getState().runSensitivityScenario(portfolio, {
+      type: 'price',
+      priceScenario: { type: 'percentageChange', percentageChange: -0.25 },
+    });
+
+    const state = useLoopBuilderStore.getState();
+    expect(state.sensitivityErrors).toEqual([]);
+    expect(state.sensitivityResult).not.toBeNull();
+  });
+});
+
 describe('saveStrategy/loadStrategy/duplicateStrategy/deleteStrategy (M7-017)', () => {
   it('saveStrategy returns null and saves nothing without a current result', () => {
     const id = useLoopBuilderStore
