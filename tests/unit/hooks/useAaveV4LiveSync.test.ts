@@ -433,3 +433,128 @@ describe('useAaveV4LiveSync — manual/hypothetical mode (Stage 25)', () => {
     expect(after.v4DebtStateSource).toBe('manual');
   });
 });
+
+/**
+ * "Clears on identity removal" — mirrors
+ * `tests/unit/hooks/useAaveV4CollateralRiskLiveSync.test.ts`'s own suite
+ * of the same name for the identical fix applied here. Without this, a
+ * stale `'live'`-sourced `v4DebtState` would keep feeding
+ * `services/portfolio/mapping.ts`'s total-debt derivation (and therefore
+ * Health Factor/liquidation/borrow-capacity) even after the wallet
+ * address it was read from was removed.
+ */
+describe('useAaveV4LiveSync — clears a stale v4DebtState when the V4 identity is removed', () => {
+  it('clears v4DebtState when v4Position is removed while still protocolVersion "v4"', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS);
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState,
+      ).toBeUndefined();
+    });
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtStateSource,
+    ).toBeUndefined();
+  });
+
+  it('clears v4DebtState when the portfolio switches from V4 back to V3', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS);
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState,
+      ).toBeUndefined();
+    });
+  });
+
+  it('is a genuine no-op (no Store write) for a V3 portfolio that never had v4DebtState set', async () => {
+    const portfolio = createPortfolio();
+    const updatedAtBefore = portfolio.updatedAt;
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.updatedAt).toBe(
+      updatedAtBefore,
+    );
+  });
+
+  it('does not clear v4DebtState while the identity is still present (only removal triggers the clear)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS);
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+      VALID_ENGINE_INPUTS,
+    );
+  });
+
+  it('never clears a MANUAL v4DebtState for a portfolio with no address at all', async () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(VALID_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it('never clears a MANUAL v4DebtState when the v4Position address is removed (manual has no address dependency)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(VALID_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it("clearing one portfolio's stale live v4DebtState never touches another portfolio's v4DebtState", async () => {
+    const first = createV4Portfolio(VALID_ADDRESS);
+    const second = createV4Portfolio(OTHER_ADDRESS);
+    usePortfolioStore.getState().setAaveV4DebtState(first.id, VALID_ENGINE_INPUTS);
+    const secondInputs = { ...VALID_ENGINE_INPUTS, drawnDebt: 9999 };
+    usePortfolioStore.getState().setAaveV4DebtState(second.id, secondInputs);
+
+    const { rerender } = renderHook(({ id }) => useAaveV4LiveSync(id), {
+      initialProps: { id: first.id },
+    });
+
+    // Remove the first portfolio's identity while the hook is mounted on
+    // it — must clear only the first portfolio's v4DebtState.
+    usePortfolioStore.getState().setAaveV4Position(first.id, undefined);
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[first.id].portfolio.v4DebtState,
+      ).toBeUndefined();
+    });
+    expect(usePortfolioStore.getState().portfolios[second.id].portfolio.v4DebtState).toEqual(
+      secondInputs,
+    );
+
+    // Switching the mounted hook to the second portfolio must not clear
+    // it either — it still has a valid, present identity.
+    rerender({ id: second.id });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(usePortfolioStore.getState().portfolios[second.id].portfolio.v4DebtState).toEqual(
+      secondInputs,
+    );
+  });
+});

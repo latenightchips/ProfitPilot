@@ -70,10 +70,9 @@ import { aaveV4CollateralRiskEqual, usePortfolioStore } from '@/stores/portfolio
  * result (a fresh object, by identity) is ever written.
  *
  * **Clears on identity removal (V4 Readiness Audit §12 Stage 23F's own
- * explicit requirement) — the one structural difference from
- * `useAaveV4LiveSync`.** That hook leaves a stale `v4DebtState` in place
- * if `v4Position` is later cleared (an accepted, pre-existing gap this
- * stage does not touch — see the Stage 23F report). For collateral risk
+ * explicit requirement).** `useAaveV4LiveSync` now carries the identical
+ * fix for `v4DebtState`, added later once the same staleness risk was
+ * found there too — see that hook's own header comment. For collateral risk
  * specifically, a stale `collateralFactor` left behind after the address
  * is removed is not just a cosmetic staleness concern: `resolveRiskCapacityFraction`
  * (`services/portfolio/mapping.ts`) reads `v4CollateralRisk.collateralFactor`

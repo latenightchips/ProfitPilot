@@ -69,6 +69,22 @@ import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore
  * `v4DebtState` and still fail closed with
  * `AAVE_V4_SIMULATION_UNSUPPORTED`, unchanged from Stage 6.
  *
+ * **Clears on identity removal.** Mirrors
+ * `hooks/useAaveV4CollateralRiskLiveSync.ts`'s own fix for the identical
+ * problem: `services/portfolio/mapping.ts`'s total-debt derivation reads
+ * `v4DebtState.drawnDebt + v4DebtState.premiumDebt` whenever
+ * `protocolVersion === 'v4'`, with no dependency on `v4Position` being
+ * currently set — so a stale `v4DebtState` left behind after the wallet
+ * address is removed would silently keep feeding a REAL Health
+ * Factor/liquidation/borrow-capacity calculation. When this hook's own
+ * fetch-gating condition is false (no `userAddress`/`debtAsset` to sync
+ * against — either `protocolVersion` left `'v4'`, or `v4Position` was
+ * cleared) AND the portfolio still carries a `v4DebtState`, this hook
+ * clears it via `setAaveV4DebtState(portfolioId, undefined)` — but only
+ * when `v4DebtStateSource === 'live'`. A `'manual'` value has no
+ * dependency on a wallet address at all, by design, and must never be
+ * cleared by this logic.
+ *
  * **Never re-applies an already-consumed fetch result (V4 Readiness
  * Audit §12 Stage 14 fix).** The write effect below lists `portfolio` as
  * a dependency (needed so it re-evaluates after a *fetch* lands, since
@@ -112,7 +128,25 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
 
   useEffect(() => {
     if (portfolioId === null || portfolio === undefined) return;
-    if (userAddress === undefined || debtAsset === undefined) return;
+
+    if (userAddress === undefined || debtAsset === undefined) {
+      // No identity to sync against — see this hook's own "Clears on
+      // identity removal" header comment. Only clears a previously
+      // `'live'`-sourced value that is now orphaned by the identity's
+      // removal — NEVER a `'manual'` one (same invariant
+      // `useAaveV4CollateralRiskLiveSync` already establishes): manual
+      // entries have no dependency on a wallet address at all, by
+      // design, so a portfolio with no address and a valid manual
+      // `v4DebtState` must be left completely untouched here. Genuine
+      // no-op (no Store write, no updatedAt bump) for every portfolio
+      // that never had `v4DebtState` set in the first place — V3
+      // portfolios never reach this branch's write.
+      if (portfolio.v4DebtState !== undefined && portfolio.v4DebtStateSource === 'live') {
+        setAaveV4DebtState(portfolioId, undefined);
+      }
+      return;
+    }
+
     if (status !== 'ready' || engineInputs === null) return;
     if (fetchedUserAddress !== userAddress || fetchedDebtAsset !== debtAsset) return;
     if (lastAppliedEngineInputs.current === engineInputs) return;
