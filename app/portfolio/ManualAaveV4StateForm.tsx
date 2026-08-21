@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
@@ -78,6 +79,27 @@ import { aaveV4CollateralRiskConfigSchema, aaveV4DebtStateSchema } from '@/types
  * own schedule (`hooks/useAaveV4LiveSync.ts`/`useAaveV4CollateralRiskLiveSync.ts`'s
  * own "always transition to live on a successful fetch" fix, this same
  * stage) — this form does not need to prevent or warn about that.
+ *
+ * **BLOCKER #4 fix — both sub-forms now resync their displayed values
+ * when the canonical portfolio field changes from OUTSIDE this
+ * component**, e.g. `DebtPositionForm` applying a repayment while this
+ * form is also mounted. Before this fix, `defaultValues` above was only
+ * read once at mount (React Hook Form's own contract) — a genuinely
+ * different `portfolio.v4DebtState`/`v4CollateralRisk` arriving later
+ * left the displayed fields silently stale, so saving even an unrelated
+ * field (e.g. only editing `riskPremium`) would resubmit the OTHER,
+ * now-stale fields (`drawnDebt`/`premiumDebt`) too, silently reverting
+ * the externally-applied change — the exact same stale-echo bug class
+ * already fixed for `DebtPositionForm`'s own `debt.balance` field (see
+ * that component's own "Stage 25A" comment in `PortfolioPageClient.tsx`,
+ * whose `lastSynced`-ref + dirty-gated `reset()` pattern is reused here
+ * verbatim, not reinvented). Each sub-form tracks its OWN dirty state
+ * across its own field group — resync is skipped entirely while ANY of
+ * that sub-form's fields are actively being edited (never clobbers
+ * in-progress typing), and a successful submit calls `reset()` with the
+ * just-saved values so the sync effect's own baseline advances too,
+ * keeping the form resyncable for the NEXT external change rather than
+ * getting permanently stuck "dirty" after the first save.
  */
 function fromPercentInput(percent: number): number {
   return percent / 100;
@@ -111,7 +133,8 @@ function ManualDebtStateForm({
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitSuccessful },
+    reset,
+    formState: { errors, isSubmitSuccessful, dirtyFields },
   } = useForm<ManualDebtStateFormValues, unknown, z.infer<typeof manualDebtStateSchema>>({
     resolver: zodResolver(manualDebtStateSchema),
     defaultValues: {
@@ -122,8 +145,30 @@ function ManualDebtStateForm({
     },
   });
 
+  // BLOCKER #4 fix — mirrors `PortfolioPageClient.tsx`'s `DebtPositionForm`
+  // own Stage 25A sync effect exactly; see this file's own header comment.
+  const isDirty = Boolean(
+    dirtyFields.drawnDebt ||
+    dirtyFields.premiumDebt ||
+    dirtyFields.baseDrawnApr ||
+    dirtyFields.riskPremium,
+  );
+  const lastSyncedV4DebtState = useRef(portfolio.v4DebtState);
+
+  useEffect(() => {
+    if (isDirty) return;
+    if (portfolio.v4DebtState === lastSyncedV4DebtState.current) return;
+    reset({
+      drawnDebt: portfolio.v4DebtState?.drawnDebt ?? 0,
+      premiumDebt: portfolio.v4DebtState?.premiumDebt ?? 0,
+      baseDrawnApr: toPercentInput(portfolio.v4DebtState?.baseDrawnApr) ?? 0,
+      riskPremium: toPercentInput(portfolio.v4DebtState?.riskPremium) ?? 0,
+    });
+    lastSyncedV4DebtState.current = portfolio.v4DebtState;
+  }, [isDirty, portfolio.v4DebtState, reset]);
+
   const onSubmit = handleSubmit((data) => {
-    setAaveV4DebtState(
+    const result = setAaveV4DebtState(
       portfolioId,
       {
         drawnDebt: data.drawnDebt,
@@ -133,6 +178,21 @@ function ManualDebtStateForm({
       },
       'manual',
     );
+    if (result.ok) {
+      // Keeps the sync effect's own baseline in lockstep with what this
+      // submit just wrote, and clears dirty state so a genuinely later
+      // external change (e.g. `DebtPositionForm` applying a repayment)
+      // can resync this form again — without this, `isDirty` would stay
+      // permanently true after the first save and this form could never
+      // resync again.
+      lastSyncedV4DebtState.current = result.data.v4DebtState;
+      reset({
+        drawnDebt: data.drawnDebt,
+        premiumDebt: data.premiumDebt,
+        baseDrawnApr: toPercentInput(data.baseDrawnApr),
+        riskPremium: toPercentInput(data.riskPremium),
+      });
+    }
   });
 
   return (
@@ -255,7 +315,8 @@ function ManualCollateralFactorForm({
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitSuccessful },
+    reset,
+    formState: { errors, isSubmitSuccessful, dirtyFields },
   } = useForm<
     ManualCollateralFactorFormValues,
     unknown,
@@ -267,14 +328,34 @@ function ManualCollateralFactorForm({
     },
   });
 
+  // BLOCKER #4 fix — same pattern as `ManualDebtStateForm` above.
+  const isDirty = Boolean(dirtyFields.collateralFactor);
+  const lastSyncedCollateralFactor = useRef(portfolio.v4CollateralRisk?.collateralFactor);
+
+  useEffect(() => {
+    if (isDirty) return;
+    if (portfolio.v4CollateralRisk?.collateralFactor === lastSyncedCollateralFactor.current) {
+      return;
+    }
+    reset({
+      collateralFactor: toPercentInput(portfolio.v4CollateralRisk?.collateralFactor) ?? 0,
+    });
+    lastSyncedCollateralFactor.current = portfolio.v4CollateralRisk?.collateralFactor;
+  }, [isDirty, portfolio.v4CollateralRisk?.collateralFactor, reset]);
+
   const onSubmit = handleSubmit((data) => {
     // `dynamicConfigKey: 0` — never a real on-chain key for a manual
     // entry, see this file's own header comment.
-    setAaveV4CollateralRisk(
+    const result = setAaveV4CollateralRisk(
       portfolioId,
       { collateralFactor: data.collateralFactor, dynamicConfigKey: 0 },
       'manual',
     );
+    if (result.ok) {
+      // See `ManualDebtStateForm`'s own identical comment above.
+      lastSyncedCollateralFactor.current = result.data.v4CollateralRisk?.collateralFactor;
+      reset({ collateralFactor: data.collateralFactor });
+    }
   });
 
   return (
