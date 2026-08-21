@@ -271,6 +271,23 @@ export interface PortfolioStoreState {
   saveStatus: PortfolioSaveStatus;
   errors: ApplicationError[];
   lastSynchronizedAt: string | null;
+  /**
+   * V4 Readiness Audit §12 — P0-1 (manual/live conflict handling). A
+   * live fetch whose value differs from an existing MANUAL
+   * `v4DebtState` is held here, keyed by portfolio id, until the user
+   * explicitly accepts or dismisses it via
+   * `acceptAaveV4DebtStateCandidate`/`dismissAaveV4DebtStateCandidate` —
+   * it never becomes canonical on its own. Deliberately NOT part of
+   * `Portfolio`/the persistence schema (no schema change was needed or
+   * made for this stage): this is ephemeral, session-only UI state,
+   * exactly like `errors` above — a hard reload discards it and the
+   * next live fetch simply re-evaluates the conflict from scratch. See
+   * `hooks/useAaveV4LiveSync.ts`'s own header comment for the full
+   * manual-vs-live decision this backs.
+   */
+  v4DebtStateCandidates: Record<string, AaveV4DebtState | undefined>;
+  /** Same role as `v4DebtStateCandidates` above, independently, for `v4CollateralRisk`. See `hooks/useAaveV4CollateralRiskLiveSync.ts`. */
+  v4CollateralRiskCandidates: Record<string, AaveV4CollateralRiskConfig | undefined>;
 }
 
 export interface PortfolioStoreActions {
@@ -317,6 +334,41 @@ export interface PortfolioStoreActions {
     v4CollateralRisk: AaveV4CollateralRiskConfig | undefined,
     source?: AaveV4DataSource,
   ) => MappingResult<Portfolio>;
+  /**
+   * V4 Readiness Audit §12 — P0-1. Registers (or clears, via `undefined`)
+   * a pending manual/live conflict candidate for one portfolio's
+   * `v4DebtState` — called only by `hooks/useAaveV4LiveSync.ts`'s own
+   * write effect when a fresh live fetch differs from an existing
+   * MANUAL value. Never touches `portfolios`/canonical state itself.
+   */
+  setAaveV4DebtStateCandidate: (id: string, candidate: AaveV4DebtState | undefined) => void;
+  /**
+   * The "Use Live Data" action: writes the portfolio's currently pending
+   * `v4DebtState` candidate as the new canonical `'live'` value (via
+   * `setAaveV4DebtState`, which also clears the candidate as part of its
+   * own write — see that action's own comment) and returns the same
+   * `MappingResult` shape. Fails with a validation error if no candidate
+   * is currently pending for this portfolio — defensive: the UI only
+   * ever renders this action when one exists.
+   */
+  acceptAaveV4DebtStateCandidate: (id: string) => MappingResult<Portfolio>;
+  /**
+   * The "Keep Manual" action: discards the pending `v4DebtState`
+   * candidate without writing anything. Canonical state (manual or
+   * otherwise) is left completely untouched. Does not disable future
+   * live synchronization — the next genuinely new fetch is free to
+   * surface a new candidate on its own schedule.
+   */
+  dismissAaveV4DebtStateCandidate: (id: string) => void;
+  /** Same role as `setAaveV4DebtStateCandidate` above, independently, for `v4CollateralRisk`. */
+  setAaveV4CollateralRiskCandidate: (
+    id: string,
+    candidate: AaveV4CollateralRiskConfig | undefined,
+  ) => void;
+  /** Same role as `acceptAaveV4DebtStateCandidate` above, independently, for `v4CollateralRisk`. */
+  acceptAaveV4CollateralRiskCandidate: (id: string) => MappingResult<Portfolio>;
+  /** Same role as `dismissAaveV4DebtStateCandidate` above, independently, for `v4CollateralRisk`. */
+  dismissAaveV4CollateralRiskCandidate: (id: string) => void;
 }
 
 export type PortfolioStore = PortfolioStoreState & PortfolioStoreActions;
@@ -340,6 +392,18 @@ function notFoundError(id: string): ApplicationError {
     'validation',
     'PORTFOLIO_NOT_FOUND',
     `No portfolio exists with id "${id}".`,
+  );
+}
+
+/** V4 Readiness Audit §12 — P0-1. Defensive: the UI only ever calls an accept action when a candidate is actually pending. */
+function noPendingCandidateError(
+  id: string,
+  dimension: 'v4DebtState' | 'v4CollateralRisk',
+): ApplicationError {
+  return createApplicationError(
+    'validation',
+    'AAVE_V4_NO_PENDING_CANDIDATE',
+    `No pending live ${dimension} candidate exists for portfolio "${id}".`,
   );
 }
 
@@ -471,6 +535,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   saveStatus: 'idle',
   errors: [],
   lastSynchronizedAt: null,
+  v4DebtStateCandidates: {},
+  v4CollateralRiskCandidates: {},
 
   load: async () => {
     set({ loadStatus: 'loading' });
@@ -850,6 +916,15 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     set((state) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       errors: [],
+      // V4 Readiness Audit §12 — P0-1. ANY explicit write to canonical
+      // `v4DebtState` — a manual submit, the hook's own auto-adopt/live
+      // refresh, or `acceptAaveV4DebtStateCandidate` itself — makes a
+      // previously-pending candidate stale relative to the new baseline
+      // it was computed against (or, if this write IS the acceptance,
+      // the candidate has just become canonical). Clearing it centrally
+      // here, rather than at every call site, is what keeps this the
+      // smallest correct change: no caller needs to remember to do it.
+      v4DebtStateCandidates: { ...state.v4DebtStateCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
 
@@ -892,10 +967,58 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     set((state) => ({
       portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
       errors: [],
+      // Same reasoning as `setAaveV4DebtState`'s own identical clear above.
+      v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
 
     return { ok: true, data: portfolio };
+  },
+
+  setAaveV4DebtStateCandidate: (id, candidate) => {
+    set((state) => ({
+      v4DebtStateCandidates: { ...state.v4DebtStateCandidates, [id]: candidate },
+    }));
+  },
+
+  acceptAaveV4DebtStateCandidate: (id) => {
+    const candidate = get().v4DebtStateCandidates[id];
+    if (candidate === undefined) {
+      const errors = [noPendingCandidateError(id, 'v4DebtState')];
+      set({ errors });
+      return { ok: false, errors };
+    }
+    // `setAaveV4DebtState` itself clears the candidate as part of its
+    // own write (see its own comment) — no separate clear needed here.
+    return get().setAaveV4DebtState(id, candidate, 'live');
+  },
+
+  dismissAaveV4DebtStateCandidate: (id) => {
+    set((state) => ({
+      v4DebtStateCandidates: { ...state.v4DebtStateCandidates, [id]: undefined },
+    }));
+  },
+
+  setAaveV4CollateralRiskCandidate: (id, candidate) => {
+    set((state) => ({
+      v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: candidate },
+    }));
+  },
+
+  acceptAaveV4CollateralRiskCandidate: (id) => {
+    const candidate = get().v4CollateralRiskCandidates[id];
+    if (candidate === undefined) {
+      const errors = [noPendingCandidateError(id, 'v4CollateralRisk')];
+      set({ errors });
+      return { ok: false, errors };
+    }
+    return get().setAaveV4CollateralRisk(id, candidate, 'live');
+  },
+
+  dismissAaveV4CollateralRiskCandidate: (id) => {
+    set((state) => ({
+      v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: undefined },
+    }));
   },
 }));
 

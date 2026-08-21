@@ -451,3 +451,268 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
     expect(after.v4CollateralRiskSource).toBe('manual');
   });
 });
+
+/**
+ * P0-1 — manual/live conflict confirmation (V4 Readiness Audit §12).
+ * Mirrors `tests/unit/hooks/useAaveV4LiveSync.test.ts`'s own identically-named
+ * suite for the identical mechanism applied here. Deliberately distinct
+ * fixture values throughout.
+ */
+const MANUAL_RISK = { collateralFactor: 0.55, dynamicConfigKey: 9 };
+const DIFFERING_LIVE_CANONICAL = { collateralFactor: 0.71, dynamicConfigKey: 3 };
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: a differing MANUAL value is never auto-overwritten, becomes a pending candidate', () => {
+  it('canonical v4CollateralRisk/source stay manual and unchanged; the fetched value is registered as a candidate instead', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: identical manual value auto-adopts silently, no candidate', () => {
+  it('numerically identical manual and fetched values transition to live directly, never creating a candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: VALID_CANONICAL }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
+      ).toBe('live');
+    });
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: live→live refresh remains fully automatic (unchanged freshness model)', () => {
+  it('a changed refresh of an already-live value auto-applies with no candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'live');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    const freshFromChain = { collateralFactor: 0.88, dynamicConfigKey: 4 };
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: freshFromChain }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
+      ).toEqual(freshFromChain);
+    });
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: a failed fetch never creates a candidate; manual state stays untouched', () => {
+  it('an error status leaves the manual value and source alone, and creates no candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'error',
+      canonical: null,
+      userAddress: null,
+      errorMessage: 'Live Aave V4 collateral-risk data is temporarily unavailable.',
+      lastFetchedAt: null,
+      fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pending candidate', () => {
+  it('accepting writes the candidate as the new canonical live value and clears the candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+
+    const result = usePortfolioStore.getState().acceptAaveV4CollateralRiskCandidate(portfolio.id);
+    expect(result.ok).toBe(true);
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(DIFFERING_LIVE_CANONICAL);
+    expect(after.v4CollateralRiskSource).toBe('live');
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('accepting with no pending candidate returns a validation error and touches nothing', () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+
+    const result = usePortfolioStore.getState().acceptAaveV4CollateralRiskCandidate(portfolio.id);
+    expect(result.ok).toBe(false);
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+  });
+
+  it('"Keep Manual" (dismiss) clears the candidate and leaves canonical manual state completely untouched', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+
+    usePortfolioStore.getState().dismissAaveV4CollateralRiskCandidate(portfolio.id);
+
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+  });
+
+  it('a dismissed candidate does not instantly reappear from an unrelated portfolio update without a genuinely new fetch', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+    usePortfolioStore.getState().dismissAaveV4CollateralRiskCandidate(portfolio.id);
+
+    usePortfolioStore.getState().update(portfolio.id, { name: 'Renamed' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('a genuinely new fetch after a dismissal can surface a new conflict', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+    usePortfolioStore.getState().dismissAaveV4CollateralRiskCandidate(portfolio.id);
+
+    const anotherDifferingFetch = { collateralFactor: 0.63, dynamicConfigKey: 5 };
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: anotherDifferingFetch }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        anotherDifferingFetch,
+      );
+    });
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
+    ).toBe('manual');
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: cross-portfolio candidate isolation', () => {
+  it('a candidate created for one portfolio is never visible to, or actionable from, another portfolio', async () => {
+    const first = createV4Portfolio(VALID_ADDRESS);
+    const second = createV4Portfolio(OTHER_ADDRESS);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(first.id, MANUAL_RISK, 'manual');
+    const secondManual = { collateralFactor: 0.33, dynamicConfigKey: 7 };
+    usePortfolioStore.getState().setAaveV4CollateralRisk(second.id, secondManual, 'manual');
+
+    const { rerender } = renderHook(({ id }) => useAaveV4CollateralRiskLiveSync(id), {
+      initialProps: { id: first.id },
+    });
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[first.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[second.id]).toBeUndefined();
+
+    const result = usePortfolioStore.getState().acceptAaveV4CollateralRiskCandidate(second.id);
+    expect(result.ok).toBe(false);
+    expect(usePortfolioStore.getState().portfolios[second.id].portfolio.v4CollateralRisk).toEqual(
+      secondManual,
+    );
+
+    rerender({ id: second.id });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[first.id]).toEqual(
+      DIFFERING_LIVE_CANONICAL,
+    );
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: identity removal invalidates the pending candidate', () => {
+  it('removing v4Position while a candidate is pending clears the candidate (canonical manual value untouched)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, MANUAL_RISK, 'manual');
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(
+      readyState({ canonical: DIFFERING_LIVE_CANONICAL }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_CANONICAL,
+      );
+    });
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4CollateralRiskLiveSync — P0-1: V3 remains unaffected', () => {
+  it('a V3 portfolio never populates a candidate even if the V4 live store happens to hold ready data', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+});

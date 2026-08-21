@@ -69,6 +69,32 @@ import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore
  * `v4DebtState` and still fail closed with
  * `AAVE_V4_SIMULATION_UNSUPPORTED`, unchanged from Stage 6.
  *
+ * **Manual → live conflict confirmation (V4 Readiness Audit §12 P0-1).**
+ * A successful live fetch auto-adopts as `'live'` immediately — no
+ * confirmation — in exactly two cases: (1) the portfolio has no existing
+ * `v4DebtState` at all (nothing to protect), or (2) the existing value is
+ * already `'live'`-sourced (the established, automatic live→live
+ * refresh model, unchanged) or is `'manual'`-sourced but numerically
+ * identical to the fetched value (`aaveV4DebtStateEqual`) — the Stage 25
+ * rule that identical values transition silently, still true. The one
+ * case that is NOT automatic: an existing `'manual'` value that
+ * genuinely differs from the fetched value. There, canonical
+ * `v4DebtState` is left completely untouched (calculations keep using
+ * the manual value) and the fetched value is instead registered as a
+ * pending candidate via `setAaveV4DebtStateCandidate`
+ * (`stores/portfolioStore.ts`) — reusing `useAaveV4LiveDataStore`'s own
+ * already-fetched `engineInputs` object directly, no duplicate copy. The
+ * candidate only becomes canonical once the user explicitly calls
+ * `acceptAaveV4DebtStateCandidate` (the "Use Live Data" action,
+ * `app/portfolio/AaveV4ConflictConfirmation.tsx`) — never automatically.
+ * `dismissAaveV4DebtStateCandidate` ("Keep Manual") clears the candidate
+ * without writing anything; because `lastAppliedEngineInputs` below is
+ * set at candidate-creation time (not just at write time), the same
+ * fetched object is never re-offered as a candidate again after being
+ * dismissed — only a genuinely NEW fetch (a new `engineInputs` object)
+ * can surface a new conflict, satisfying "dismissal must not permanently
+ * disable future live synchronization."
+ *
  * **Clears on identity removal.** Mirrors
  * `hooks/useAaveV4CollateralRiskLiveSync.ts`'s own fix for the identical
  * problem: `services/portfolio/mapping.ts`'s total-debt derivation reads
@@ -111,6 +137,9 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
   const fetchedDebtAsset = useAaveV4LiveDataStore((state) => state.debtAsset);
   const fetchAaveV4LiveData = useAaveV4LiveDataStore((state) => state.fetchAaveV4LiveData);
   const setAaveV4DebtState = usePortfolioStore((state) => state.setAaveV4DebtState);
+  const setAaveV4DebtStateCandidate = usePortfolioStore(
+    (state) => state.setAaveV4DebtStateCandidate,
+  );
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
@@ -144,31 +173,49 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
       if (portfolio.v4DebtState !== undefined && portfolio.v4DebtStateSource === 'live') {
         setAaveV4DebtState(portfolioId, undefined);
       }
+      // V4 Readiness Audit §12 — P0-1. An identity that goes away
+      // invalidates any pending confirmation candidate that was
+      // computed against it — never left actionable/displayed once the
+      // wallet it came from is gone. Independent of the branch above:
+      // this must clear even when the canonical value is `'manual'`
+      // (left untouched by the branch above) and a candidate was still
+      // pending against it.
+      setAaveV4DebtStateCandidate(portfolioId, undefined);
       return;
     }
 
     if (status !== 'ready' || engineInputs === null) return;
     if (fetchedUserAddress !== userAddress || fetchedDebtAsset !== debtAsset) return;
     if (lastAppliedEngineInputs.current === engineInputs) return;
+    lastAppliedEngineInputs.current = engineInputs;
 
-    // V4 Readiness Audit §12 Stage 25 — a successful live fetch must
-    // ALWAYS transition `v4DebtStateSource` to `'live'`, even when the
-    // fetched values happen to numerically match an existing MANUAL
-    // entry (a real, if coincidental, possibility once manual mode
-    // exists). The equality short-circuit below is therefore only safe
-    // to take when the stored value is already `'live'` — otherwise a
-    // manual→live transition with coincidentally-equal numbers would be
-    // silently skipped, leaving the portfolio mislabeled as manual.
-    if (
-      portfolio.v4DebtStateSource === 'live' &&
-      aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)
-    ) {
-      lastAppliedEngineInputs.current = engineInputs;
+    if (portfolio.v4DebtStateSource === 'live') {
+      // Established live→live refresh model, unchanged: an unchanged
+      // refresh is a no-op (avoids needlessly clearing an open
+      // Preview); a genuinely different refresh auto-applies, no
+      // confirmation — the freshness model your own audit asked to keep
+      // as-is.
+      if (aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)) return;
+      setAaveV4DebtState(portfolioId, engineInputs, 'live');
       return;
     }
 
-    lastAppliedEngineInputs.current = engineInputs;
-    setAaveV4DebtState(portfolioId, engineInputs, 'live');
+    // No existing value (nothing to protect) OR an existing MANUAL value
+    // that happens to numerically match the fetch (Stage 25's own "identical
+    // values transition silently" rule) — auto-adopt, no confirmation.
+    if (
+      portfolio.v4DebtState === undefined ||
+      aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)
+    ) {
+      setAaveV4DebtState(portfolioId, engineInputs, 'live');
+      return;
+    }
+
+    // An existing MANUAL value that genuinely differs from the fetch —
+    // the one case this stage gates. Canonical state is NOT written;
+    // the fetched value becomes a pending candidate instead, actionable
+    // only via `acceptAaveV4DebtStateCandidate`/`dismissAaveV4DebtStateCandidate`.
+    setAaveV4DebtStateCandidate(portfolioId, engineInputs);
   }, [
     portfolioId,
     portfolio,
@@ -179,5 +226,6 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     fetchedUserAddress,
     fetchedDebtAsset,
     setAaveV4DebtState,
+    setAaveV4DebtStateCandidate,
   ]);
 }

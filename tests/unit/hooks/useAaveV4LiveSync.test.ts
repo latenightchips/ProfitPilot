@@ -558,3 +558,275 @@ describe('useAaveV4LiveSync — clears a stale v4DebtState when the V4 identity 
     );
   });
 });
+
+/**
+ * P0-1 — manual/live conflict confirmation (V4 Readiness Audit §12).
+ * Deliberately distinct fixture values throughout (never a value reused
+ * from elsewhere in this file with coincidentally-matching numbers), so
+ * an accidental equality could never make an "these differ" assertion
+ * pass by chance.
+ */
+const MANUAL_DEBT_STATE = {
+  drawnDebt: 40000,
+  premiumDebt: 1200,
+  baseDrawnApr: 0.09,
+  riskPremium: 0.04,
+};
+const DIFFERING_LIVE_ENGINE_INPUTS = {
+  drawnDebt: 22222,
+  premiumDebt: 777,
+  baseDrawnApr: 0.061,
+  riskPremium: 0.017,
+};
+
+describe('useAaveV4LiveSync — P0-1: a differing MANUAL value is never auto-overwritten, becomes a pending candidate', () => {
+  it('canonical v4DebtState/source stay manual and unchanged; the fetched value is registered as a candidate instead', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: identical manual value auto-adopts silently, no candidate', () => {
+  it('numerically identical manual and fetched values transition to live directly, never creating a candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: VALID_ENGINE_INPUTS }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtStateSource,
+      ).toBe('live');
+    });
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: live→live refresh remains fully automatic (unchanged freshness model)', () => {
+  it('a changed refresh of an already-live value auto-applies with no candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'live');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    const freshFromChain = { ...VALID_ENGINE_INPUTS, drawnDebt: 99999 };
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: freshFromChain }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        freshFromChain,
+      );
+    });
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: a failed fetch never creates a candidate; manual state stays untouched', () => {
+  it('an error status leaves the manual value and source alone, and creates no candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState({
+      status: 'error',
+      engineInputs: null,
+      userAddress: null,
+      debtAsset: null,
+      errorMessage: 'Live Aave V4 data is temporarily unavailable.',
+      fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: accepting/dismissing a pending candidate', () => {
+  it('accepting writes the candidate as the new canonical live value and clears the candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+
+    const result = usePortfolioStore.getState().acceptAaveV4DebtStateCandidate(portfolio.id);
+    expect(result.ok).toBe(true);
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(DIFFERING_LIVE_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('live');
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('accepting with no pending candidate returns a validation error and touches nothing', () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+
+    const result = usePortfolioStore.getState().acceptAaveV4DebtStateCandidate(portfolio.id);
+    expect(result.ok).toBe(false);
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it('"Keep Manual" (dismiss) clears the candidate and leaves canonical manual state completely untouched', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+
+    usePortfolioStore.getState().dismissAaveV4DebtStateCandidate(portfolio.id);
+
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+
+  it('a dismissed candidate does not instantly reappear from an unrelated portfolio update without a genuinely new fetch', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+    usePortfolioStore.getState().dismissAaveV4DebtStateCandidate(portfolio.id);
+
+    // An unrelated portfolio update (e.g. renaming) re-triggers the write
+    // effect's dependency array — the SAME `engineInputs` object is still
+    // sitting in the live-data store (no new fetch happened).
+    usePortfolioStore.getState().update(portfolio.id, { name: 'Renamed' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('a genuinely new fetch after a dismissal can surface a new conflict', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+    usePortfolioStore.getState().dismissAaveV4DebtStateCandidate(portfolio.id);
+
+    // A genuinely NEW fetch result (a fresh object) lands.
+    const anotherDifferingFetch = { ...DIFFERING_LIVE_ENGINE_INPUTS, drawnDebt: 31313 };
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: anotherDifferingFetch }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        anotherDifferingFetch,
+      );
+    });
+    // Canonical is still untouched — still manual.
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtStateSource).toBe(
+      'manual',
+    );
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: cross-portfolio candidate isolation', () => {
+  it('a candidate created for one portfolio is never visible to, or actionable from, another portfolio', async () => {
+    const first = createV4Portfolio(VALID_ADDRESS);
+    const second = createV4Portfolio(OTHER_ADDRESS);
+    usePortfolioStore.getState().setAaveV4DebtState(first.id, MANUAL_DEBT_STATE, 'manual');
+    const secondManual = { ...MANUAL_DEBT_STATE, drawnDebt: 55555 };
+    usePortfolioStore.getState().setAaveV4DebtState(second.id, secondManual, 'manual');
+
+    const { rerender } = renderHook(({ id }) => useAaveV4LiveSync(id), {
+      initialProps: { id: first.id },
+    });
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[first.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+    // The second portfolio never had a fetch land against it — no candidate.
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[second.id]).toBeUndefined();
+
+    // Accepting the SECOND portfolio's (nonexistent) candidate must fail,
+    // never pulling in the first portfolio's pending value.
+    const result = usePortfolioStore.getState().acceptAaveV4DebtStateCandidate(second.id);
+    expect(result.ok).toBe(false);
+    expect(usePortfolioStore.getState().portfolios[second.id].portfolio.v4DebtState).toEqual(
+      secondManual,
+    );
+
+    // Switching the mounted hook to the second portfolio and back must
+    // not leak or destroy either portfolio's own candidate bookkeeping.
+    rerender({ id: second.id });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[first.id]).toEqual(
+      DIFFERING_LIVE_ENGINE_INPUTS,
+    );
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: identity removal invalidates the pending candidate', () => {
+  it('removing v4Position while a candidate is pending clears the candidate (canonical manual value untouched)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4LiveSync — P0-1: V3 remains unaffected', () => {
+  it('a V3 portfolio never populates a candidate even if the V4 live store happens to hold ready data', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+});

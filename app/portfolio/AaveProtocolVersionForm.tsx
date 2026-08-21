@@ -11,6 +11,7 @@ import type { Portfolio } from '@/types/portfolio';
 import { aaveV4PositionIdentitySchema } from '@/types/portfolio.schema';
 import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStatus';
 
+import { AaveV4ConflictConfirmation } from './AaveV4ConflictConfirmation';
 import { ManualAaveV4StateForm } from './ManualAaveV4StateForm';
 
 /**
@@ -62,6 +63,11 @@ import { ManualAaveV4StateForm } from './ManualAaveV4StateForm';
  * can still fully model a V4 portfolio; live sync (the address form
  * above) stays optional enrichment, never a prerequisite. See that
  * component's own header comment for the full manual/live design.
+ *
+ * **`AaveV4ConflictConfirmation` renders above `ManualAaveV4StateForm`,
+ * same visibility gate (V4 Readiness Audit §12 P0-1)** — the inline
+ * confirmation panel(s) that appear only when a live fetch differs from
+ * an existing manual value; see that component's own header comment.
  */
 type V4AddressFormValues = z.input<typeof aaveV4PositionIdentitySchema>;
 
@@ -190,6 +196,8 @@ export function AaveProtocolVersionForm({
               {formatProtocolStatus(status)}
             </span>
           </p>
+
+          <AaveV4ConflictConfirmation portfolioId={portfolioId} portfolio={portfolio} />
 
           <ManualAaveV4StateForm portfolioId={portfolioId} portfolio={portfolio} />
         </div>

@@ -90,6 +90,20 @@ import { aaveV4CollateralRiskEqual, usePortfolioStore } from '@/stores/portfolio
  * for an address-only removal (still `protocolVersion: 'v4'`), it is the
  * necessary fix — there is no future fetch that would ever overwrite a
  * permanently-removed identity's stale value otherwise.
+ *
+ * **Manual → live conflict confirmation (V4 Readiness Audit §12 P0-1).**
+ * Identical mechanism to `useAaveV4LiveSync.ts`'s own identical addition
+ * — see that hook's own header comment for the full reasoning. A
+ * successful fetch auto-adopts as `'live'` immediately when there is no
+ * existing `v4CollateralRisk`, when the existing value is already
+ * `'live'`, or when an existing `'manual'` value numerically matches the
+ * fetch (`aaveV4CollateralRiskEqual`). Only a `'manual'` value that
+ * genuinely differs is gated: canonical state stays untouched and the
+ * fetched `canonical` becomes a pending candidate via
+ * `setAaveV4CollateralRiskCandidate`, actionable only through
+ * `acceptAaveV4CollateralRiskCandidate`/`dismissAaveV4CollateralRiskCandidate`
+ * — independent of `v4DebtState`'s own candidate, by construction (each
+ * dimension has its own candidate map, keyed by portfolio id).
  */
 export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): void {
   const status = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
@@ -99,6 +113,9 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     (state) => state.fetchAaveV4CollateralRiskLiveData,
   );
   const setAaveV4CollateralRisk = usePortfolioStore((state) => state.setAaveV4CollateralRisk);
+  const setAaveV4CollateralRiskCandidate = usePortfolioStore(
+    (state) => state.setAaveV4CollateralRiskCandidate,
+  );
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
@@ -130,29 +147,40 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
       if (portfolio.v4CollateralRisk !== undefined && portfolio.v4CollateralRiskSource === 'live') {
         setAaveV4CollateralRisk(portfolioId, undefined);
       }
+      // V4 Readiness Audit §12 — P0-1. See `useAaveV4LiveSync.ts`'s own
+      // identical comment: an identity that goes away invalidates any
+      // pending confirmation candidate, independent of whether the
+      // branch above fired (canonical may still be `'manual'`).
+      setAaveV4CollateralRiskCandidate(portfolioId, undefined);
       return;
     }
 
     if (status !== 'ready' || canonical === null) return;
     if (fetchedUserAddress !== userAddress) return;
     if (lastAppliedCanonical.current === canonical) return;
+    lastAppliedCanonical.current = canonical;
 
-    // V4 Readiness Audit §12 Stage 25 — same reasoning as
-    // `hooks/useAaveV4LiveSync.ts`'s own identical fix: a successful live
-    // fetch must always transition `v4CollateralRiskSource` to `'live'`,
-    // even when the fetched value coincidentally matches an existing
-    // manual entry's numbers. Only skip the write when the stored value
-    // is already `'live'`.
-    if (
-      portfolio.v4CollateralRiskSource === 'live' &&
-      aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)
-    ) {
-      lastAppliedCanonical.current = canonical;
+    if (portfolio.v4CollateralRiskSource === 'live') {
+      // Established live→live refresh model, unchanged.
+      if (aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)) return;
+      setAaveV4CollateralRisk(portfolioId, canonical, 'live');
       return;
     }
 
-    lastAppliedCanonical.current = canonical;
-    setAaveV4CollateralRisk(portfolioId, canonical, 'live');
+    // No existing value, or an existing MANUAL value that numerically
+    // matches the fetch — auto-adopt, no confirmation (Stage 25's own
+    // "identical values transition silently" rule).
+    if (
+      portfolio.v4CollateralRisk === undefined ||
+      aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)
+    ) {
+      setAaveV4CollateralRisk(portfolioId, canonical, 'live');
+      return;
+    }
+
+    // An existing MANUAL value that genuinely differs — gate behind
+    // confirmation instead of overwriting canonical state.
+    setAaveV4CollateralRiskCandidate(portfolioId, canonical);
   }, [
     portfolioId,
     portfolio,
@@ -161,5 +189,6 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     canonical,
     fetchedUserAddress,
     setAaveV4CollateralRisk,
+    setAaveV4CollateralRiskCandidate,
   ]);
 }
