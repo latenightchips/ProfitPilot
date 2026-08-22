@@ -95,6 +95,26 @@ import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore
  * can surface a new conflict, satisfying "dismissal must not permanently
  * disable future live synchronization."
  *
+ * **Classified live-fetch error surfacing (V4 Readiness Audit §12
+ * P0-4).** `useAaveV4LiveDataStore`'s own `errorMessage`/`errorCode`
+ * already carry the real classified `AAVE_V4_*` failure (timeout,
+ * network error, unsupported asset, missing position, etc. — see that
+ * store's own header comment) — this hook is what makes that reach the
+ * UI, via `setAaveV4DebtStateError` (`stores/portfolioStore.ts`),
+ * portfolio-scoped exactly like the candidate mechanism above. Recorded
+ * ONLY when the store's own `attemptedUserAddress`/`attemptedDebtAsset`
+ * (the identity the FAILED fetch was actually for, set at the start of
+ * every attempt — unlike `userAddress`/`debtAsset`, which only update on
+ * a SUCCESS) match this portfolio's CURRENT identity — never a
+ * stale/foreign identity's error. Cleared in two places: (1) the
+ * identity-removal branch below, alongside the candidate clear; (2)
+ * whenever a genuinely new fetch SUCCEEDS for this portfolio (whether it
+ * auto-applies, no-ops on equality, or creates a candidate — the fetch
+ * itself still succeeded). Manual canonical state and any pending P0-1
+ * candidate are completely unaffected by an error either appearing or
+ * clearing, since this uses its own separate Store map, never touching
+ * `v4DebtState`/`v4DebtStateCandidates`.
+ *
  * **Clears on identity removal.** Mirrors
  * `hooks/useAaveV4CollateralRiskLiveSync.ts`'s own fix for the identical
  * problem: `services/portfolio/mapping.ts`'s total-debt derivation reads
@@ -130,16 +150,23 @@ import { aaveV4DebtStateEqual, usePortfolioStore } from '@/stores/portfolioStore
  * — the only way `engineInputs` actually changes — still always wins,
  * exactly as before.
  */
+const FALLBACK_ERROR_MESSAGE = 'Live Aave V4 data is temporarily unavailable.';
+
 export function useAaveV4LiveSync(portfolioId: string | null): void {
   const status = useAaveV4LiveDataStore((state) => state.status);
   const engineInputs = useAaveV4LiveDataStore((state) => state.engineInputs);
   const fetchedUserAddress = useAaveV4LiveDataStore((state) => state.userAddress);
   const fetchedDebtAsset = useAaveV4LiveDataStore((state) => state.debtAsset);
+  const errorMessage = useAaveV4LiveDataStore((state) => state.errorMessage);
+  const errorCode = useAaveV4LiveDataStore((state) => state.errorCode);
+  const attemptedUserAddress = useAaveV4LiveDataStore((state) => state.attemptedUserAddress);
+  const attemptedDebtAsset = useAaveV4LiveDataStore((state) => state.attemptedDebtAsset);
   const fetchAaveV4LiveData = useAaveV4LiveDataStore((state) => state.fetchAaveV4LiveData);
   const setAaveV4DebtState = usePortfolioStore((state) => state.setAaveV4DebtState);
   const setAaveV4DebtStateCandidate = usePortfolioStore(
     (state) => state.setAaveV4DebtStateCandidate,
   );
+  const setAaveV4DebtStateError = usePortfolioStore((state) => state.setAaveV4DebtStateError);
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
@@ -181,6 +208,31 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
       // (left untouched by the branch above) and a candidate was still
       // pending against it.
       setAaveV4DebtStateCandidate(portfolioId, undefined);
+      // V4 Readiness Audit §12 — P0-4. Same reasoning as the candidate
+      // clear immediately above: an identity that goes away invalidates
+      // any error that was surfaced for it, regardless of the canonical
+      // source branch above.
+      setAaveV4DebtStateError(portfolioId, undefined);
+      return;
+    }
+
+    if (status === 'error') {
+      // V4 Readiness Audit §12 — P0-4. Only attribute this error to the
+      // CURRENT portfolio's identity if the failed attempt was actually
+      // FOR it — `attemptedUserAddress`/`attemptedDebtAsset` are set at
+      // the start of every fetch attempt (success or failure), unlike
+      // `userAddress`/`debtAsset` (only updated on success), so this is
+      // the one reliable way to guard a failure the same way a success
+      // is already guarded. A mismatch means this error belongs to a
+      // different, now-irrelevant identity (e.g. a fetch that was
+      // already superseded by a newer one for a different portfolio) —
+      // never displayed.
+      if (attemptedUserAddress === userAddress && attemptedDebtAsset === debtAsset) {
+        setAaveV4DebtStateError(portfolioId, {
+          code: errorCode,
+          message: errorMessage ?? FALLBACK_ERROR_MESSAGE,
+        });
+      }
       return;
     }
 
@@ -188,6 +240,12 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     if (fetchedUserAddress !== userAddress || fetchedDebtAsset !== debtAsset) return;
     if (lastAppliedEngineInputs.current === engineInputs) return;
     lastAppliedEngineInputs.current = engineInputs;
+
+    // A genuinely new fetch just succeeded for this portfolio — clear
+    // any previously-displayed error regardless of what happens next
+    // (auto-apply, no-op-on-equal, or a new candidate all mean the fetch
+    // itself worked).
+    setAaveV4DebtStateError(portfolioId, undefined);
 
     if (portfolio.v4DebtStateSource === 'live') {
       // Established live→live refresh model, unchanged: an unchanged
@@ -225,7 +283,12 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     engineInputs,
     fetchedUserAddress,
     fetchedDebtAsset,
+    errorMessage,
+    errorCode,
+    attemptedUserAddress,
+    attemptedDebtAsset,
     setAaveV4DebtState,
     setAaveV4DebtStateCandidate,
+    setAaveV4DebtStateError,
   ]);
 }

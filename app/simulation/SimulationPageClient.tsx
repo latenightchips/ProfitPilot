@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 
+import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import {
   ExportSimulation,
   SaveSimulationForm,
@@ -261,6 +262,7 @@ export function SimulationPageClient() {
           <p className="mt-2 text-xs text-muted-foreground">
             {formatProtocolStatus(protocolStatus)}
           </p>
+          {activePortfolioId !== null && <AaveV4LiveErrorNotice portfolioId={activePortfolioId} />}
           <p className="mt-3">
             <Link href="/portfolio" className="underline">
               Go to Portfolio

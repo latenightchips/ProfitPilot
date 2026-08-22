@@ -288,6 +288,22 @@ export interface PortfolioStoreState {
   v4DebtStateCandidates: Record<string, AaveV4DebtState | undefined>;
   /** Same role as `v4DebtStateCandidates` above, independently, for `v4CollateralRisk`. See `hooks/useAaveV4CollateralRiskLiveSync.ts`. */
   v4CollateralRiskCandidates: Record<string, AaveV4CollateralRiskConfig | undefined>;
+  /**
+   * V4 Readiness Audit §12 — P0-4 (classified live-fetch error
+   * surfacing). The classified `AAVE_V4_*` code/message behind the most
+   * recent FAILED `v4DebtState` live fetch for one portfolio, keyed by
+   * portfolio id — `undefined` whenever there is no current error to
+   * show (no attempt yet, last attempt succeeded, or the V4 identity
+   * that produced it has since been removed/switched). Set only by
+   * `hooks/useAaveV4LiveSync.ts`'s own write effect, strictly guarded
+   * against that portfolio's CURRENT identity (never a stale/foreign
+   * one — see that hook's own header comment). Deliberately NOT part of
+   * `Portfolio`/the persistence schema, exactly like
+   * `v4DebtStateCandidates` above — ephemeral, session-only UI state.
+   */
+  v4DebtStateErrors: Record<string, { code: string | null; message: string } | undefined>;
+  /** Same role as `v4DebtStateErrors` above, independently, for `v4CollateralRisk`. See `hooks/useAaveV4CollateralRiskLiveSync.ts`. */
+  v4CollateralRiskErrors: Record<string, { code: string | null; message: string } | undefined>;
 }
 
 export interface PortfolioStoreActions {
@@ -369,6 +385,22 @@ export interface PortfolioStoreActions {
   acceptAaveV4CollateralRiskCandidate: (id: string) => MappingResult<Portfolio>;
   /** Same role as `dismissAaveV4DebtStateCandidate` above, independently, for `v4CollateralRisk`. */
   dismissAaveV4CollateralRiskCandidate: (id: string) => void;
+  /**
+   * V4 Readiness Audit §12 — P0-4. Sets (or clears, via `undefined`) the
+   * classified error currently displayed for one portfolio's
+   * `v4DebtState` live sync. Called only by `hooks/useAaveV4LiveSync.ts`'s
+   * own write effect — never touches `portfolios`/canonical state, and
+   * never interacts with `v4DebtStateCandidates`.
+   */
+  setAaveV4DebtStateError: (
+    id: string,
+    error: { code: string | null; message: string } | undefined,
+  ) => void;
+  /** Same role as `setAaveV4DebtStateError` above, independently, for `v4CollateralRisk`. */
+  setAaveV4CollateralRiskError: (
+    id: string,
+    error: { code: string | null; message: string } | undefined,
+  ) => void;
 }
 
 export type PortfolioStore = PortfolioStoreState & PortfolioStoreActions;
@@ -537,6 +569,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   lastSynchronizedAt: null,
   v4DebtStateCandidates: {},
   v4CollateralRiskCandidates: {},
+  v4DebtStateErrors: {},
+  v4CollateralRiskErrors: {},
 
   load: async () => {
     set({ loadStatus: 'loading' });
@@ -1018,6 +1052,18 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   dismissAaveV4CollateralRiskCandidate: (id) => {
     set((state) => ({
       v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: undefined },
+    }));
+  },
+
+  setAaveV4DebtStateError: (id, error) => {
+    set((state) => ({
+      v4DebtStateErrors: { ...state.v4DebtStateErrors, [id]: error },
+    }));
+  },
+
+  setAaveV4CollateralRiskError: (id, error) => {
+    set((state) => ({
+      v4CollateralRiskErrors: { ...state.v4CollateralRiskErrors, [id]: error },
     }));
   },
 }));

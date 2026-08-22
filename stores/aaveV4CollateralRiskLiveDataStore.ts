@@ -51,6 +51,10 @@ export interface AaveV4CollateralRiskLiveDataState {
   canonical: AaveV4CollateralRiskCanonicalData | null;
   userAddress: `0x${string}` | null;
   errorMessage: string | null;
+  /** V4 Readiness Audit §12 — P0-4. Same role as `AaveV4LiveDataState.errorCode` (`./aaveV4LiveDataStore.ts`), one concern over. */
+  errorCode: string | null;
+  /** V4 Readiness Audit §12 — P0-4. Same role as `AaveV4LiveDataState.attemptedUserAddress`, one concern over — no `debtAsset` dimension here (this store is keyed by `userAddress` alone). */
+  attemptedUserAddress: `0x${string}` | null;
   /** ISO 8601 instant of the last successful fetch — see header comment. */
   lastFetchedAt: string | null;
   fetchAaveV4CollateralRiskLiveData: (userAddress: `0x${string}`) => Promise<void>;
@@ -66,11 +70,13 @@ export const useAaveV4CollateralRiskLiveDataStore = create<AaveV4CollateralRiskL
     canonical: null,
     userAddress: null,
     errorMessage: null,
+    errorCode: null,
+    attemptedUserAddress: null,
     lastFetchedAt: null,
 
     fetchAaveV4CollateralRiskLiveData: async (userAddress: `0x${string}`) => {
       const requestId = ++latestRequestId;
-      set({ status: 'loading' });
+      set({ status: 'loading', attemptedUserAddress: userAddress });
 
       let body: AaveV4CollateralRiskApiResponse;
       try {
@@ -80,14 +86,18 @@ export const useAaveV4CollateralRiskLiveDataStore = create<AaveV4CollateralRiskL
         body = (await response.json()) as AaveV4CollateralRiskApiResponse;
       } catch {
         if (requestId !== latestRequestId) return;
-        set({ status: 'error', errorMessage: GENERIC_ERROR_MESSAGE });
+        set({ status: 'error', errorMessage: GENERIC_ERROR_MESSAGE, errorCode: null });
         return;
       }
 
       if (requestId !== latestRequestId) return;
 
       if (!body.ok || body.data === undefined) {
-        set({ status: 'error', errorMessage: body.errors?.[0]?.message ?? GENERIC_ERROR_MESSAGE });
+        set({
+          status: 'error',
+          errorMessage: body.errors?.[0]?.message ?? GENERIC_ERROR_MESSAGE,
+          errorCode: body.errors?.[0]?.code ?? null,
+        });
         return;
       }
 
@@ -96,6 +106,7 @@ export const useAaveV4CollateralRiskLiveDataStore = create<AaveV4CollateralRiskL
         canonical: body.data.canonical,
         userAddress,
         errorMessage: null,
+        errorCode: null,
         lastFetchedAt: new Date().toISOString(),
       });
     },

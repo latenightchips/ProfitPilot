@@ -104,17 +104,36 @@ import { aaveV4CollateralRiskEqual, usePortfolioStore } from '@/stores/portfolio
  * `acceptAaveV4CollateralRiskCandidate`/`dismissAaveV4CollateralRiskCandidate`
  * — independent of `v4DebtState`'s own candidate, by construction (each
  * dimension has its own candidate map, keyed by portfolio id).
+ *
+ * **Classified live-fetch error surfacing (V4 Readiness Audit §12
+ * P0-4).** Identical mechanism to `useAaveV4LiveSync.ts`'s own identical
+ * addition — see that hook's own header comment for the full reasoning.
+ * `setAaveV4CollateralRiskError` records the store's classified
+ * `errorMessage`/`errorCode`, guarded against `attemptedUserAddress`
+ * (this store has no `debtAsset` dimension to also check), and is
+ * cleared on identity removal and on any genuinely new successful fetch
+ * — independent of `v4DebtState`'s own error, by construction.
  */
+const FALLBACK_ERROR_MESSAGE = 'Live Aave V4 collateral-risk data is temporarily unavailable.';
+
 export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): void {
   const status = useAaveV4CollateralRiskLiveDataStore((state) => state.status);
   const canonical = useAaveV4CollateralRiskLiveDataStore((state) => state.canonical);
   const fetchedUserAddress = useAaveV4CollateralRiskLiveDataStore((state) => state.userAddress);
+  const errorMessage = useAaveV4CollateralRiskLiveDataStore((state) => state.errorMessage);
+  const errorCode = useAaveV4CollateralRiskLiveDataStore((state) => state.errorCode);
+  const attemptedUserAddress = useAaveV4CollateralRiskLiveDataStore(
+    (state) => state.attemptedUserAddress,
+  );
   const fetchAaveV4CollateralRiskLiveData = useAaveV4CollateralRiskLiveDataStore(
     (state) => state.fetchAaveV4CollateralRiskLiveData,
   );
   const setAaveV4CollateralRisk = usePortfolioStore((state) => state.setAaveV4CollateralRisk);
   const setAaveV4CollateralRiskCandidate = usePortfolioStore(
     (state) => state.setAaveV4CollateralRiskCandidate,
+  );
+  const setAaveV4CollateralRiskError = usePortfolioStore(
+    (state) => state.setAaveV4CollateralRiskError,
   );
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
@@ -152,6 +171,22 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
       // pending confirmation candidate, independent of whether the
       // branch above fired (canonical may still be `'manual'`).
       setAaveV4CollateralRiskCandidate(portfolioId, undefined);
+      // V4 Readiness Audit §12 — P0-4. Same reasoning as the candidate
+      // clear immediately above.
+      setAaveV4CollateralRiskError(portfolioId, undefined);
+      return;
+    }
+
+    if (status === 'error') {
+      // V4 Readiness Audit §12 — P0-4. See `useAaveV4LiveSync.ts`'s own
+      // identical guard — only attribute this error to the CURRENT
+      // portfolio's identity if the failed attempt was actually FOR it.
+      if (attemptedUserAddress === userAddress) {
+        setAaveV4CollateralRiskError(portfolioId, {
+          code: errorCode,
+          message: errorMessage ?? FALLBACK_ERROR_MESSAGE,
+        });
+      }
       return;
     }
 
@@ -159,6 +194,10 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     if (fetchedUserAddress !== userAddress) return;
     if (lastAppliedCanonical.current === canonical) return;
     lastAppliedCanonical.current = canonical;
+
+    // A genuinely new fetch just succeeded for this portfolio — clear
+    // any previously-displayed error regardless of what happens next.
+    setAaveV4CollateralRiskError(portfolioId, undefined);
 
     if (portfolio.v4CollateralRiskSource === 'live') {
       // Established live→live refresh model, unchanged.
@@ -188,7 +227,11 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     status,
     canonical,
     fetchedUserAddress,
+    errorMessage,
+    errorCode,
+    attemptedUserAddress,
     setAaveV4CollateralRisk,
     setAaveV4CollateralRiskCandidate,
+    setAaveV4CollateralRiskError,
   ]);
 }

@@ -830,3 +830,246 @@ describe('useAaveV4LiveSync — P0-1: V3 remains unaffected', () => {
     expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
   });
 });
+
+/**
+ * P0-4 — classified live-fetch error surfacing (V4 Readiness Audit §12).
+ * `errorState()` mirrors `readyState()`'s own shape, adding
+ * `attemptedUserAddress`/`attemptedDebtAsset` (defaulted to match
+ * `VALID_ADDRESS`/`'USDC'`, the identity `createV4Portfolio()` sets up)
+ * since the real `fetchAaveV4LiveData` sets those at the START of every
+ * attempt — a detail these direct-`setState` tests must reproduce
+ * themselves, exactly like `readyState()` already reproduces the
+ * post-success shape.
+ */
+function errorState(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 'error' as const,
+    engineInputs: null,
+    userAddress: null,
+    debtAsset: null,
+    errorMessage: 'The Aave V4 data request timed out. Please try again.',
+    errorCode: 'AAVE_V4_RPC_TIMEOUT',
+    attemptedUserAddress: VALID_ADDRESS,
+    attemptedDebtAsset: 'USDC',
+    fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+describe('useAaveV4LiveSync — P0-4: a classified failure for the CURRENT identity is recorded', () => {
+  it('records the exact code/message when the attempted identity matches the current portfolio', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toEqual({
+        code: 'AAVE_V4_RPC_TIMEOUT',
+        message: 'The Aave V4 data request timed out. Please try again.',
+      });
+    });
+  });
+
+  it('a network-catch failure with no classified code still records with code: null', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(
+      errorState({
+        errorMessage: 'Live Aave V4 data is temporarily unavailable.',
+        errorCode: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toEqual({
+        code: null,
+        message: 'Live Aave V4 data is temporarily unavailable.',
+      });
+    });
+  });
+
+  it('does NOT record an error whose attempted identity does not match this portfolio (a stale/foreign failure)', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState({ attemptedUserAddress: OTHER_ADDRESS }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+  });
+
+  it('does NOT record an error whose attempted debt asset does not match this portfolio', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState({ attemptedDebtAsset: 'USDT' }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: manual canonical state remains usable while a live error is visible', () => {
+  it('the manual v4DebtState/source are completely unaffected by an error being recorded', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: a later successful fetch clears the previously displayed error', () => {
+  it('clears the error once a genuinely new fetch succeeds (auto-adopt case)', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+
+    useAaveV4LiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        VALID_ENGINE_INPUTS,
+      );
+    });
+    expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+  });
+
+  it('clears the error even when the success turns into a P0-1 candidate rather than an auto-apply', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+    expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: a P0-1 pending candidate survives a later fetch error', () => {
+  it('a later failed fetch does not clear or alter an already-pending candidate', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: DIFFERING_LIVE_ENGINE_INPUTS }));
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+        DIFFERING_LIVE_ENGINE_INPUTS,
+      );
+    });
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+
+    // The candidate from the earlier successful-but-differing fetch must
+    // still be exactly as it was — a later error neither clears nor
+    // corrupts it.
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toEqual(
+      DIFFERING_LIVE_ENGINE_INPUTS,
+    );
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: identity removal invalidates a displayed error', () => {
+  it('removing v4Position while an error is displayed clears it', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+    });
+  });
+
+  it('removing the identity clears the error even when canonical state is manual (untouched by the candidate-clearing branch)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeDefined();
+    });
+
+    usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(MANUAL_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('manual');
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: cross-portfolio error isolation', () => {
+  it("an error recorded for one portfolio is never visible under another portfolio's key, including across a hook remount/switch", async () => {
+    const first = createV4Portfolio(VALID_ADDRESS);
+    const second = createV4Portfolio(OTHER_ADDRESS);
+
+    const { rerender } = renderHook(({ id }) => useAaveV4LiveSync(id), {
+      initialProps: { id: first.id },
+    });
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().v4DebtStateErrors[first.id]).toBeDefined();
+    });
+    expect(usePortfolioStore.getState().v4DebtStateErrors[second.id]).toBeUndefined();
+
+    // Switching the mounted hook to the second portfolio must not import
+    // the first portfolio's error, nor clear it.
+    rerender({ id: second.id });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(usePortfolioStore.getState().v4DebtStateErrors[second.id]).toBeUndefined();
+    expect(usePortfolioStore.getState().v4DebtStateErrors[first.id]).toEqual({
+      code: 'AAVE_V4_RPC_TIMEOUT',
+      message: 'The Aave V4 data request timed out. Please try again.',
+    });
+  });
+});
+
+describe('useAaveV4LiveSync — P0-4: V3 remains unaffected', () => {
+  it('a V3 portfolio never populates an error even if the V4 live store happens to hold error data', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    useAaveV4LiveDataStore.setState(errorState());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().v4DebtStateErrors[portfolio.id]).toBeUndefined();
+  });
+});

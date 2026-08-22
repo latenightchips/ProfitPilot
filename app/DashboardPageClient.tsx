@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import {
   buildDashboardViewModel,
   buildDataFreshnessIndicators,
@@ -294,6 +295,7 @@ export function DashboardPageClient() {
               )}
             </span>
           </p>
+          <AaveV4LiveErrorNotice portfolioId={activePortfolioId} />
           {dataFreshnessIndicators !== null && (
             <DataFreshnessSection indicators={dataFreshnessIndicators} />
           )}

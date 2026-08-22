@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
 import {
   RecommendationDetailPanel,
@@ -145,6 +146,7 @@ export function RecommendationsPageClient() {
                 now: new Date().toISOString(),
               })}
             />
+            <AaveV4LiveErrorNotice portfolioId={record.portfolio.id} />
           </section>
 
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">

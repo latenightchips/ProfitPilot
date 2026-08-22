@@ -171,6 +171,57 @@ describe('useAaveV4LiveDataStore — identity-switch race protection', () => {
     expect(state.status).toBe('ready');
     expect(state.debtAsset).toBe('USDT');
   });
+
+  /**
+   * V4 Readiness Audit §12 — P0-4 final review. The mirror image of "a
+   * stale in-flight failure cannot overwrite a newer success" above: an
+   * older, slower SUCCESS resolving after a newer request has already
+   * landed a real, classified ERROR must not silently erase that error
+   * (`errorCode`/`errorMessage`/`attemptedUserAddress`) — the same
+   * `latestRequestId` guard already proven for the other three orderings
+   * (different-identity success-after-success, failure-after-success),
+   * now proven for this specific ordering too.
+   */
+  it('a stale in-flight success cannot overwrite a newer error that resolves first', async () => {
+    const resolvers: Array<(value: Response) => void> = [];
+    global.fetch = vi.fn(
+      () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+    ) as unknown as typeof fetch;
+
+    const firstPromise = useAaveV4LiveDataStore
+      .getState()
+      .fetchAaveV4LiveData(VALID_ADDRESS, 'USDC');
+    const secondPromise = useAaveV4LiveDataStore
+      .getState()
+      .fetchAaveV4LiveData(VALID_ADDRESS, 'USDC');
+
+    // The newer request resolves first, as a classified error.
+    resolvers[1](
+      jsonResponse({
+        ok: false,
+        errors: [
+          {
+            category: 'provider',
+            code: 'AAVE_V4_RPC_TIMEOUT',
+            message: 'The Aave V4 data request timed out. Please try again.',
+          },
+        ],
+      }),
+    );
+    await secondPromise;
+    expect(useAaveV4LiveDataStore.getState().status).toBe('error');
+
+    // The stale, OLDER request resolves after — with a SUCCESS. Must be
+    // discarded entirely, never clearing the newer, still-current error.
+    resolvers[0](jsonResponse(successBody()));
+    await firstPromise;
+
+    const state = useAaveV4LiveDataStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errorCode).toBe('AAVE_V4_RPC_TIMEOUT');
+    expect(state.errorMessage).toBe('The Aave V4 data request timed out. Please try again.');
+    expect(state.engineInputs).toBeNull();
+  });
 });
 
 describe('useAaveV4LiveDataStore — failure / fallback (never erases prior good data)', () => {

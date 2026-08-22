@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 
+import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
 import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
@@ -252,6 +253,7 @@ export function LoopBuilderPageClient() {
                   now: new Date().toISOString(),
                 })}
               />
+              <AaveV4LiveErrorNotice portfolioId={record.portfolio.id} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Results Summary</h2>

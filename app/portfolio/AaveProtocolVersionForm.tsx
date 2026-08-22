@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -68,6 +69,11 @@ import { ManualAaveV4StateForm } from './ManualAaveV4StateForm';
  * same visibility gate (V4 Readiness Audit §12 P0-1)** — the inline
  * confirmation panel(s) that appear only when a live fetch differs from
  * an existing manual value; see that component's own header comment.
+ *
+ * **`AaveV4LiveErrorNotice` renders above `AaveV4ConflictConfirmation`,
+ * same visibility gate (V4 Readiness Audit §12 P0-4)** — the shared
+ * classified live-fetch error notice, mounted here and at five other
+ * pages; see that component's own header comment.
  */
 type V4AddressFormValues = z.input<typeof aaveV4PositionIdentitySchema>;
 
@@ -196,6 +202,8 @@ export function AaveProtocolVersionForm({
               {formatProtocolStatus(status)}
             </span>
           </p>
+
+          <AaveV4LiveErrorNotice portfolioId={portfolioId} />
 
           <AaveV4ConflictConfirmation portfolioId={portfolioId} portfolio={portfolio} />
 

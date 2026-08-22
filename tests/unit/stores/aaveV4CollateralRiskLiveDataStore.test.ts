@@ -190,6 +190,50 @@ describe('useAaveV4CollateralRiskLiveDataStore — identity-switch race protecti
     expect(state.status).toBe('ready');
     expect(state.userAddress).toBe(OTHER_ADDRESS);
   });
+
+  /**
+   * V4 Readiness Audit §12 — P0-4 final review. Mirrors
+   * `tests/unit/stores/aaveV4LiveDataStore.test.ts`'s own identical
+   * addition: a stale, older SUCCESS resolving after a newer request has
+   * already landed a real classified ERROR must not silently erase it.
+   */
+  it('a stale in-flight success cannot overwrite a newer error that resolves first', async () => {
+    const resolvers: Array<(value: Response) => void> = [];
+    global.fetch = vi.fn(
+      () => new Promise<Response>((resolve) => resolvers.push(resolve)),
+    ) as unknown as typeof fetch;
+
+    const firstPromise = useAaveV4CollateralRiskLiveDataStore
+      .getState()
+      .fetchAaveV4CollateralRiskLiveData(VALID_ADDRESS);
+    const secondPromise = useAaveV4CollateralRiskLiveDataStore
+      .getState()
+      .fetchAaveV4CollateralRiskLiveData(VALID_ADDRESS);
+
+    resolvers[1](
+      jsonResponse({
+        ok: false,
+        errors: [
+          {
+            category: 'provider',
+            code: 'AAVE_V4_RPC_NETWORK_ERROR',
+            message: 'Could not reach the Ethereum RPC endpoint. Please try again.',
+          },
+        ],
+      }),
+    );
+    await secondPromise;
+    expect(useAaveV4CollateralRiskLiveDataStore.getState().status).toBe('error');
+
+    resolvers[0](jsonResponse(successBody()));
+    await firstPromise;
+
+    const state = useAaveV4CollateralRiskLiveDataStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errorCode).toBe('AAVE_V4_RPC_NETWORK_ERROR');
+    expect(state.errorMessage).toBe('Could not reach the Ethereum RPC endpoint. Please try again.');
+    expect(state.canonical).toBeNull();
+  });
 });
 
 describe('useAaveV4CollateralRiskLiveDataStore — failure / fallback (never erases prior good data, fail closed)', () => {
