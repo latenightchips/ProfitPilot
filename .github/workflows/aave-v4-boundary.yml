@@ -1,0 +1,75 @@
+name: Aave V4 Boundary Verification
+
+# V4 Readiness Audit §12 — P0-3. A SEPARATE workflow from ci.yml on
+# purpose: ci.yml's single `on:` block (pull_request/push) applies to
+# every job it contains, so adding schedule/workflow_dispatch triggers
+# there would also fire the existing build job on every tick — this file
+# adds a new, independent trigger surface without touching that one.
+#
+# Deliberately NOT a required check on any pull_request — this job makes
+# a real network call to a live Ethereum RPC endpoint outside this
+# repo's control, so it must never be able to block a merge on transient
+# RPC flakiness. It runs on a schedule (to catch deployment/ABI/decimals
+# drift even when nobody happens to touch V4 code) and on
+# workflow_dispatch (to check on demand). Read-only: no wallet, no
+# transaction execution, no private keys anywhere in this file.
+#
+# **RPC_URL policy — CI requires the repository secret; the SCRIPT
+# ITSELF keeps its own separate public-RPC fallback for local/manual
+# developer runs (`pnpm verify:aave-v4-boundary` with no env var set).**
+# Free public RPC endpoints are rate-limited and shared with everyone
+# else using them, which is fine for an occasional manual check but not
+# for a scheduled job expected to run reliably every day without a human
+# there to notice "this failed because of rate-limiting, not real
+# drift." Requiring `AAVE_V4_RPC_URL` here — and failing immediately,
+# loudly, if it is unset — keeps this job's own signal trustworthy.
+
+on:
+  schedule:
+    # Once a day — deployment/ABI/decimals drift is not a fast-moving
+    # target; there is no need to poll more often than this.
+    - cron: '17 6 * * *'
+  workflow_dispatch: {}
+
+# Minimal privileges — this job only reads the repository to run a
+# read-only script; it never writes anything back to GitHub.
+permissions:
+  contents: read
+
+jobs:
+  verify-aave-v4-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Aave V4 wire boundary (RPC/ABI/address/decimals/normalization)
+        # AAVE_V4_RPC_URL is passed ONLY to this one step, via `env:` —
+        # never referenced directly inside a shell string anywhere else
+        # in this file, and never echoed. The presence check below reads
+        # it back from the shell's own environment ($AAVE_V4_RPC_URL),
+        # never re-interpolating the `${{ secrets.* }}` expression a
+        # second time, so its value is never woven into a shell command
+        # line more than once. GitHub Actions also automatically masks
+        # any secret value that happened to reach the log, as a second
+        # layer, but this step's own logging never attempts to print it
+        # in the first place.
+        env:
+          AAVE_V4_RPC_URL: ${{ secrets.AAVE_V4_RPC_URL }}
+        run: |
+          if [ -z "$AAVE_V4_RPC_URL" ]; then
+            echo "::error::AAVE_V4_RPC_URL is not configured for the scheduled V4 boundary verification."
+            exit 1
+          fi
+          pnpm verify:aave-v4-boundary
