@@ -4,6 +4,7 @@ import {
   assetUnitsToDecimal,
   basisPointsToDecimal,
   bpsNumberToDecimal,
+  oraclePriceToUsd,
   rayToDecimal,
 } from '@/infrastructure/protocols/aave/v4/scale';
 
@@ -68,5 +69,23 @@ describe('assetUnitsToDecimal', () => {
 
   it('converts 0 raw units to 0 regardless of decimals', () => {
     expect(assetUnitsToDecimal(0n, 6)).toBe(0);
+  });
+});
+
+describe('oraclePriceToUsd', () => {
+  it('converts an 8-decimal oracle price (the reference implementation default) to a plain USD number', () => {
+    expect(oraclePriceToUsd(6_900_000_000_000n, 8)).toBe(69000);
+  });
+
+  it('converts an 18-decimal oracle price to the same USD number, proving decimals is not hardcoded', () => {
+    expect(oraclePriceToUsd(69_000_000_000_000_000_000_000n, 18)).toBe(69000);
+  });
+
+  it('converts a 6-decimal oracle price to the same USD number', () => {
+    expect(oraclePriceToUsd(69_000_000_000n, 6)).toBe(69000);
+  });
+
+  it('converts 0 to 0 regardless of decimals', () => {
+    expect(oraclePriceToUsd(0n, 8)).toBe(0);
   });
 });

@@ -12,9 +12,12 @@ import {
   fetchAssetDrawnRate,
   fetchAssetId,
   fetchDynamicReserveConfig,
+  fetchOracleAddress,
+  fetchOracleDecimals,
   fetchPinnedBlock,
   fetchReserve,
   fetchReserveId,
+  fetchReservePrice,
   fetchTokenDecimals,
   fetchUserDebt,
   fetchUserLastRiskPremium,
@@ -316,9 +319,25 @@ export type AaveV4CollateralRiskSnapshotResult =
  *    real `collateralFactor` bound to the user's position. Never called
  *    with any key other than the one read in step 1.
  *
- * Any failure at any step — reserve resolution, either RPC read —
- * produces `ok: false`; there is no partial/placeholder result and no
- * fallback to V3 risk parameters.
+ * **Oracle price boundary (V4 Readiness Audit §12 P1-B).** Alongside the
+ * two reads above, this also resolves the collateral asset's V4-native
+ * oracle price — verified against primary source
+ * (`aave/aave-v4@2524fe4018a42750300e114f2a8c4355df62a878`) to require
+ * `ISpoke.ORACLE()` (this Spoke's own bound oracle — oracles are
+ * Spoke-specific in V4, never a single pool-wide contract the way V3's
+ * is; see `./abi.ts`'s `spokeOracleAbi` header comment) →
+ * `IPriceOracle.getReservePrice(collateralReserveId)`, using the exact
+ * same `reserveId` already resolved above, no separate resolution — plus
+ * `IPriceOracle.decimals()`, read live rather than hardcoded. This is an
+ * infrastructure boundary only: `AaveV4CollateralRiskCanonical.collateralPriceUsd`
+ * is populated, but nothing downstream consumes it yet (no change to
+ * `portfolio.market.btcPriceUsd`, any live-sync hook, or any Engine
+ * formula).
+ *
+ * Any failure at any step — reserve resolution, either risk-config read,
+ * or any of the three oracle reads — produces `ok: false`; there is no
+ * partial/placeholder result, no fallback to V3's oracle, and no
+ * fabricated price (never silently 0, $1, or a cached unrelated value).
  */
 export async function fetchAaveV4CollateralRiskSnapshot(
   client: AaveV4RpcClient,
@@ -348,23 +367,30 @@ export async function fetchAaveV4CollateralRiskSnapshot(
   }
   const { reserveId } = resolution.data;
 
-  const userPositionResult = await fetchUserPosition(
-    client,
-    spoke,
-    reserveId,
-    userAddress,
-    blockNumber,
-  );
+  const [userPositionResult, oracleAddressResult] = await Promise.all([
+    fetchUserPosition(client, spoke, reserveId, userAddress, blockNumber),
+    fetchOracleAddress(client, spoke, blockNumber),
+  ]);
   if (!userPositionResult.ok) return { ok: false, error: userPositionResult.error };
+  if (!oracleAddressResult.ok) return { ok: false, error: oracleAddressResult.error };
+  const oracle = oracleAddressResult.data;
 
-  const dynamicConfigResult = await fetchDynamicReserveConfig(
-    client,
-    spoke,
-    reserveId,
-    userPositionResult.data.dynamicConfigKey,
-    blockNumber,
-  );
+  const [dynamicConfigResult, oracleDecimalsResult, reservePriceResult] = await Promise.all([
+    fetchDynamicReserveConfig(
+      client,
+      spoke,
+      reserveId,
+      userPositionResult.data.dynamicConfigKey,
+      blockNumber,
+    ),
+    fetchOracleDecimals(client, oracle, blockNumber),
+    // Reuses `reserveId` exactly as resolved above — no separate reserve
+    // resolution for the price read.
+    fetchReservePrice(client, oracle, reserveId, blockNumber),
+  ]);
   if (!dynamicConfigResult.ok) return { ok: false, error: dynamicConfigResult.error };
+  if (!oracleDecimalsResult.ok) return { ok: false, error: oracleDecimalsResult.error };
+  if (!reservePriceResult.ok) return { ok: false, error: reservePriceResult.error };
 
   const snapshot: RawAaveV4CollateralRiskSnapshot = {
     blockNumber,
@@ -373,6 +399,9 @@ export async function fetchAaveV4CollateralRiskSnapshot(
     collateralReserveId: reserveId,
     userDynamicConfigKey: userPositionResult.data.dynamicConfigKey,
     dynamicReserveConfig: dynamicConfigResult.data,
+    oracle,
+    oraclePriceRaw: reservePriceResult.data,
+    oracleDecimals: oracleDecimalsResult.data,
   };
 
   const data = mapAaveV4CollateralRiskSnapshot(snapshot, {

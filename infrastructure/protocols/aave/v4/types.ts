@@ -132,6 +132,16 @@ export interface RawAaveV4CollateralRiskSnapshot {
   userDynamicConfigKey: number;
   /** `ISpoke.getDynamicReserveConfig(collateralReserveId, userDynamicConfigKey)` — fetched using the exact key above, never the reserve's current one. */
   dynamicReserveConfig: DynamicReserveConfig;
+  /**
+   * `ISpoke.ORACLE()` — V4 Readiness Audit §12 P1-B. This Spoke's own
+   * bound oracle, discovered fresh on every fetch, never hardcoded or
+   * assumed shared with another Spoke/V3.
+   */
+  oracle: `0x${string}`;
+  /** `IPriceOracle.getReservePrice(collateralReserveId)` — the SAME `collateralReserveId` above, no separate resolution. Raw, `oracleDecimals`-precision integer, not yet normalized. */
+  oraclePriceRaw: bigint;
+  /** `IPriceOracle.decimals()` — read live from `oracle`, never hardcoded (the reference implementation currently uses 8, but this is not assumed). */
+  oracleDecimals: number;
 }
 
 /**
@@ -146,6 +156,16 @@ export interface AaveV4CollateralRiskCanonical {
   collateralFactor: number;
   /** The exact dynamic-config key `collateralFactor` was read at — carried through unchanged from `RawAaveV4CollateralRiskSnapshot.userDynamicConfigKey`. */
   dynamicConfigKey: number;
+  /**
+   * V4 Readiness Audit §12 P1-B — the collateral asset's V4-authoritative
+   * oracle price, a plain USD decimal (e.g. `69000`), scaled from
+   * `RawAaveV4CollateralRiskSnapshot.oraclePriceRaw` via
+   * `./scale.ts`'s `oraclePriceToUsd`, using that same raw snapshot's own
+   * `oracleDecimals` — never a hardcoded precision. This is an
+   * infrastructure-boundary field only: no consumer (Store, Engine,
+   * `market.btcPriceUsd`) reads it yet.
+   */
+  collateralPriceUsd: number;
 }
 
 /** Layer 3 — human-readable/display metadata, not consumed by any calculation. */

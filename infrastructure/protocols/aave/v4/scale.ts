@@ -34,3 +34,17 @@ export function assetUnitsToDecimal(raw: bigint, decimals: number): number {
 export function bpsNumberToDecimal(raw: number): number {
   return raw / 10000;
 }
+
+/**
+ * V4 oracle price (`IPriceOracle.getReservePrice`'s raw `uint256`, at
+ * `IPriceOracle.decimals()` precision) -> a plain USD decimal number, e.g.
+ * `69000` for one WBTC. Same `Number(raw) / 10 ** decimals` pattern as
+ * `assetUnitsToDecimal` above — deliberately not a new precision
+ * strategy, just applied to a price instead of an asset amount. Named to
+ * mirror `../v3/scale.ts`'s own `oraclePriceToUsd`, adapted to V4's
+ * `decimals()`-based signature (V4 has no V3-style `baseCurrencyUnit`
+ * bigint — see `./abi.ts`'s `priceOracleAbi` header comment).
+ */
+export function oraclePriceToUsd(raw: bigint, decimals: number): number {
+  return Number(raw) / 10 ** decimals;
+}

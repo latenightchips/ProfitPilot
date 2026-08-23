@@ -267,6 +267,86 @@ export const spokeGetDynamicReserveConfigAbi = [
   },
 ] as const;
 
+/**
+ * `ISpoke.ORACLE()` — the address of the Spoke's own bound price oracle
+ * (V4 Readiness Audit §12 P1-B). Verified directly against `ISpoke.sol`
+ * (`function ORACLE() external view returns (address);`) and
+ * `AaveOracle.sol`'s `setSpoke` (`require(ISpoke(spoke_).ORACLE() ==
+ * address(this), OracleMismatch())`) at the same pinned commit as every
+ * other ABI fragment in this file.
+ *
+ * **Oracles are Spoke-specific, not global — verified from primary
+ * source, not assumed from V3.** `AaveOracle.sol`'s own doc comment:
+ * "Oracles are spoke-specific, due to the usage of reserve id as index of
+ * the `_sources` mapping." Each Spoke is bound to exactly one `AaveOracle`
+ * instance at deployment (`setSpoke` is callable only once, by the
+ * deployer) — there is no single pool-wide oracle the way V3's
+ * `AaveOracle` is shared across the whole V3 Pool. This is why the
+ * adapter must read `ORACLE()` from the Spoke it already has, rather than
+ * being handed (or hardcoding) an oracle address.
+ */
+export const spokeOracleAbi = [
+  {
+    name: 'ORACLE',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+] as const;
+
+/**
+ * `IPriceOracle.decimals()` / `IPriceOracle.getReservePrice(uint256)` —
+ * verified directly against `IPriceOracle.sol` (V4 Readiness Audit §12
+ * P1-B, same pinned commit). `IPriceOracle`'s own doc comment: "All
+ * prices must use the same number of decimals as the oracle and should be
+ * returned in the same currency" — `decimals()` is read live rather than
+ * assumed, per this stage's own instruction not to hardcode the reference
+ * implementation's `SpokeUtils.ORACLE_DECIMALS = 8` constant into
+ * production logic.
+ *
+ * **`getReservePrice` takes a `reserveId`, not an asset address** — a
+ * genuinely different signature from V3's `AaveOracle.getAssetPrice(address)`
+ * (`../v3/abi.ts`'s `aaveOracleAbi`), not a renamed copy of it. This
+ * adapter already resolves the collateral reserve's `reserveId` via
+ * `resolveV4Reserve` (`./index.ts`) for `getUserPosition`/
+ * `getDynamicReserveConfig` — the oracle price read reuses that exact
+ * same `reserveId`, no separate resolution.
+ *
+ * **`InvalidPrice`/`InvalidSource` (from `IAaveOracle.sol`, the concrete
+ * interface `AaveOracle.sol` implements) are included deliberately**,
+ * mirroring this file's existing `AssetNotListed`/`ReserveNotListed`
+ * inclusion (see this file's own header comment) — so a revert here
+ * decodes to a real error name instead of an opaque short message.
+ * Verified directly against `AaveOracle.sol`'s `_getSourcePrice`:
+ * `require(address(source) != address(0), InvalidSource(reserveId))` and
+ * `require(price > 0, InvalidPrice(reserveId))` — a non-positive feed
+ * answer REVERTS, it is never returned as a sentinel zero. Neither error
+ * is treated as a "not listed here" discovery signal (unlike
+ * `AssetNotListed`/`ReserveNotListed`) — both fall through to this
+ * adapter's generic `AAVE_V4_RPC_CONTRACT_ERROR` classification, which is
+ * the correct outcome: an invalid/missing price source is a genuine
+ * failure, never a signal to silently continue.
+ */
+export const priceOracleAbi = [
+  {
+    name: 'decimals',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }],
+  },
+  {
+    name: 'getReservePrice',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'reserveId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  { name: 'InvalidSource', type: 'error', inputs: [{ name: 'reserveId', type: 'uint256' }] },
+  { name: 'InvalidPrice', type: 'error', inputs: [{ name: 'reserveId', type: 'uint256' }] },
+] as const;
+
 /** Standard ERC20 `decimals()` — used to cross-check hardcoded asset decimals, mirroring `../v3/abi.ts`. */
 export const erc20Abi = [
   {

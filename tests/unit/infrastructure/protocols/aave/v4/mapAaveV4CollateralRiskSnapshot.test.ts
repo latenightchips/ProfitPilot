@@ -6,6 +6,8 @@ import type { RawAaveV4CollateralRiskSnapshot } from '@/infrastructure/protocols
 const USER = '0x1111111111111111111111111111111111111111' as const;
 const SPOKE = '0x94e7A5dCbE816e498b89aB752661904E2F56c485' as const;
 
+const ORACLE = '0x2222222222222222222222222222222222222222' as const;
+
 function baseSnapshot(): RawAaveV4CollateralRiskSnapshot {
   return {
     blockNumber: 21_000_000n,
@@ -14,6 +16,9 @@ function baseSnapshot(): RawAaveV4CollateralRiskSnapshot {
     collateralReserveId: 11n,
     userDynamicConfigKey: 3,
     dynamicReserveConfig: { collateralFactor: 7500 }, // 75%
+    oracle: ORACLE,
+    oraclePriceRaw: 6_900_000_000_000n, // $69,000 at 8 decimals
+    oracleDecimals: 8,
   };
 }
 
@@ -85,5 +90,49 @@ describe('mapAaveV4CollateralRiskSnapshot — pure unit conversion, no accrual m
       userAddress: USER,
     });
     expect(data.display.blockTimestamp).toBe(new Date(1_650_000_000 * 1000).toISOString());
+  });
+});
+
+/**
+ * V4 Readiness Audit §12 P1-B — `collateralPriceUsd` normalization.
+ * Infrastructure boundary only: this mapper has no opinion on who
+ * consumes the value, only that it is scaled correctly using the raw
+ * snapshot's OWN `oracleDecimals`, never a hardcoded precision.
+ */
+describe('mapAaveV4CollateralRiskSnapshot — collateralPriceUsd normalization', () => {
+  it('normalizes an 8-decimal oracle price (the reference implementation default) to a plain USD number', () => {
+    const raw = baseSnapshot();
+    raw.oraclePriceRaw = 6_900_000_000_000n; // $69,000 at 8 decimals
+    raw.oracleDecimals = 8;
+    const data = mapAaveV4CollateralRiskSnapshot(raw, {
+      network: 'Ethereum Mainnet',
+      collateralSymbol: 'WBTC',
+      userAddress: USER,
+    });
+    expect(data.canonical.collateralPriceUsd).toBe(69000);
+  });
+
+  it('normalizes correctly at a different decimal precision, proving decimals is never hardcoded', () => {
+    const raw = baseSnapshot();
+    raw.oraclePriceRaw = 69_000_000_000_000_000_000_000n; // $69,000 at 18 decimals
+    raw.oracleDecimals = 18;
+    const data = mapAaveV4CollateralRiskSnapshot(raw, {
+      network: 'Ethereum Mainnet',
+      collateralSymbol: 'WBTC',
+      userAddress: USER,
+    });
+    expect(data.canonical.collateralPriceUsd).toBe(69000);
+  });
+
+  it('normalizes correctly at 6-decimal precision too', () => {
+    const raw = baseSnapshot();
+    raw.oraclePriceRaw = 69_000_000_000n; // $69,000 at 6 decimals
+    raw.oracleDecimals = 6;
+    const data = mapAaveV4CollateralRiskSnapshot(raw, {
+      network: 'Ethereum Mainnet',
+      collateralSymbol: 'WBTC',
+      userAddress: USER,
+    });
+    expect(data.canonical.collateralPriceUsd).toBe(69000);
   });
 });

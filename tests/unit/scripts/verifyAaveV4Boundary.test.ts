@@ -24,7 +24,7 @@ const VALID_ENGINE_INPUTS = {
   riskPremium: 0.01,
 };
 
-const VALID_CANONICAL = { collateralFactor: 0.8, dynamicConfigKey: 1 };
+const VALID_CANONICAL = { collateralFactor: 0.8, dynamicConfigKey: 1, collateralPriceUsd: 69000 };
 
 describe('classifyDebtBoundaryResult — AAVE_V4_NO_BORROW_POSITION is the expected PASS signal', () => {
   it('treats AAVE_V4_NO_BORROW_POSITION as a pass, not a failure', () => {

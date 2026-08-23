@@ -2,7 +2,10 @@ import { ContractFunctionRevertedError } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import { fetchAaveV4CollateralRiskSnapshot } from '@/infrastructure/protocols/aave/v4';
-import { AAVE_V4_ETHEREUM_HUBS } from '@/infrastructure/protocols/aave/v4/addresses';
+import {
+  AAVE_V4_ETHEREUM_HUBS,
+  AAVE_V4_ETHEREUM_SPOKE,
+} from '@/infrastructure/protocols/aave/v4/addresses';
 import type { AaveV4RpcClient } from '@/infrastructure/protocols/aave/v4/client';
 
 const USER = '0x1111111111111111111111111111111111111111' as const;
@@ -14,6 +17,8 @@ const USER = '0x1111111111111111111111111111111111111111' as const;
  * asset's reserve; this one fetches the COLLATERAL asset's — genuinely
  * different RPC calls, verified below never to overlap).
  */
+const ORACLE = '0x9999999999999999999999999999999999999999' as const;
+
 interface MockConfig {
   blockNumber?: bigint;
   blockTimestamp?: bigint;
@@ -23,6 +28,12 @@ interface MockConfig {
   /** `ISpoke.getUserPosition`'s `dynamicConfigKey` — the user's own bound snapshot. Deliberately distinct from any reserve-level key so a substitution bug is directly observable. */
   userDynamicConfigKey?: number;
   collateralFactor?: number;
+  /** `ISpoke.ORACLE()` — V4 Readiness Audit §12 P1-B. */
+  oracle?: `0x${string}`;
+  /** `IPriceOracle.decimals()`. */
+  oracleDecimals?: number;
+  /** `IPriceOracle.getReservePrice(reserveId)`, raw integer at `oracleDecimals` precision. */
+  oraclePriceRaw?: bigint;
 }
 
 function notListedError(): ContractFunctionRevertedError {
@@ -45,6 +56,9 @@ function buildClient(overrides?: MockConfig): {
   const reserveId = overrides?.reserveId ?? 11n;
   const userDynamicConfigKey = overrides?.userDynamicConfigKey ?? 3;
   const collateralFactor = overrides?.collateralFactor ?? 7500; // 75%
+  const oracle = overrides?.oracle ?? ORACLE;
+  const oracleDecimals = overrides?.oracleDecimals ?? 8;
+  const oraclePriceRaw = overrides?.oraclePriceRaw ?? 6_900_000_000_000n; // $69,000 at 8 decimals
 
   const getBlock = vi.fn().mockImplementation(async (params?: { blockNumber?: bigint }) => {
     if (params?.blockNumber !== undefined) {
@@ -78,6 +92,23 @@ function buildClient(overrides?: MockConfig): {
       expect(args[1]).toBe(userDynamicConfigKey);
       return { collateralFactor, maxLiquidationBonus: 105_00, liquidationFee: 500 };
     }
+    if (functionName === 'ORACLE') {
+      return oracle;
+    }
+    if (functionName === 'decimals') {
+      // `IPriceOracle.decimals()` — only ever called on the oracle
+      // address, never the ERC20 debt token (this path has no debt
+      // token at all).
+      expect(String(address).toLowerCase()).toBe(oracle.toLowerCase());
+      return oracleDecimals;
+    }
+    if (functionName === 'getReservePrice') {
+      // Proves the price read reuses the exact same reserveId already
+      // resolved for getUserPosition/getDynamicReserveConfig above — no
+      // separate reserve resolution.
+      expect(args[0]).toBe(reserveId);
+      return oraclePriceRaw;
+    }
     throw new Error(`Unexpected functionName in test: ${functionName}`);
   });
 
@@ -99,6 +130,7 @@ describe('fetchAaveV4CollateralRiskSnapshot — happy path', () => {
     if (!result.ok) return;
     expect(result.data.canonical.collateralFactor).toBeCloseTo(0.75, 10);
     expect(result.data.canonical.dynamicConfigKey).toBe(3);
+    expect(result.data.canonical.collateralPriceUsd).toBe(69000);
     expect(result.data.display.collateralSymbol).toBe('WBTC');
     expect(result.data.display.blockNumber).toBe('21000000');
   });
@@ -117,13 +149,16 @@ describe('fetchAaveV4CollateralRiskSnapshot — happy path', () => {
     const { client, readContract } = buildClient();
     await fetchAaveV4CollateralRiskSnapshot(client, USER);
 
+    // `decimals` is deliberately NOT in this list (V4 Readiness Audit §12
+    // P1-B) — it is now genuinely called here, but on the ORACLE
+    // contract (`IPriceOracle.decimals()`), never the ERC20 debt token;
+    // see the dedicated oracle-address assertion below.
     const calledFunctionNames = new Set(readContract.mock.calls.map(([a]) => a.functionName));
     for (const debtOnlyFn of [
       'getUserDebt',
       'getAssetDrawnRate',
       'getUserLastRiskPremium',
       'getUserReserveStatus',
-      'decimals',
       'getReserve',
     ]) {
       expect(calledFunctionNames.has(debtOnlyFn)).toBe(false);
@@ -235,5 +270,129 @@ describe('fetchAaveV4CollateralRiskSnapshot — same-block enforcement', () => {
     if (!result.ok) return;
     expect(result.data.display.blockNumber).toBe('18500000');
     expect(getBlock).toHaveBeenCalledWith({ blockNumber: 18_500_000n });
+  });
+});
+
+/**
+ * V4 Readiness Audit §12 P1-B — oracle price boundary. Proves the
+ * `Spoke → ORACLE() → getReservePrice(collateralReserveId) → normalized
+ * USD price` path this stage adds, and that it fails closed exactly like
+ * every other read in this function (never a fabricated 0/$1/cached
+ * price).
+ */
+describe('fetchAaveV4CollateralRiskSnapshot — oracle price boundary', () => {
+  it('obtains the oracle address from the Spoke via ORACLE(), not a hardcoded address', async () => {
+    const customOracle = '0x3333333333333333333333333333333333333333' as const;
+    const { client, readContract } = buildClient({ oracle: customOracle });
+    const result = await fetchAaveV4CollateralRiskSnapshot(client, USER);
+    expect(result.ok).toBe(true);
+
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: AAVE_V4_ETHEREUM_SPOKE, functionName: 'ORACLE' }),
+    );
+    // decimals()/getReservePrice() are then called against THAT
+    // discovered address, not the Spoke and not a hardcoded one.
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: customOracle, functionName: 'decimals' }),
+    );
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: customOracle, functionName: 'getReservePrice' }),
+    );
+  });
+
+  it('passes the exact same collateralReserveId already resolved for getUserPosition/getDynamicReserveConfig to getReservePrice', async () => {
+    const { client, readContract } = buildClient({ reserveId: 42n });
+    const result = await fetchAaveV4CollateralRiskSnapshot(client, USER);
+    expect(result.ok).toBe(true);
+
+    const getReservePriceCall = readContract.mock.calls.find(
+      ([a]) => a.functionName === 'getReservePrice',
+    );
+    expect(getReservePriceCall?.[0].args).toEqual([42n]);
+    if (result.ok) expect(result.data.raw.collateralReserveId).toBe(42n);
+  });
+
+  it('reads oracle decimals live rather than assuming a fixed precision', async () => {
+    const { client, readContract } = buildClient({ oracleDecimals: 18 });
+    const result = await fetchAaveV4CollateralRiskSnapshot(client, USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.raw.oracleDecimals).toBe(18);
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'decimals' }),
+    );
+  });
+
+  it('normalizes the raw oracle price into collateralPriceUsd using the price just read, at 8-decimal precision', async () => {
+    const { client } = buildClient({ oracleDecimals: 8, oraclePriceRaw: 6_900_000_000_000n });
+    const result = await fetchAaveV4CollateralRiskSnapshot(client, USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.canonical.collateralPriceUsd).toBe(69000);
+  });
+
+  it('normalizes correctly at a different decimal precision, proving decimals is never hardcoded', async () => {
+    const { client } = buildClient({
+      oracleDecimals: 18,
+      oraclePriceRaw: 69_000_000_000_000_000_000_000n,
+    });
+    const result = await fetchAaveV4CollateralRiskSnapshot(client, USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.canonical.collateralPriceUsd).toBe(69000);
+  });
+
+  it('fails closed, with no fabricated price, when ORACLE() itself fails', async () => {
+    const { client } = buildClient();
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string }) => {
+        if (params.functionName === 'ORACLE') throw new Error('reverted');
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4CollateralRiskSnapshot(failingClient, USER);
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('fails closed, with no fabricated price, when decimals() fails', async () => {
+    const { client } = buildClient();
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string }) => {
+        if (params.functionName === 'decimals') throw new Error('reverted');
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4CollateralRiskSnapshot(failingClient, USER);
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('fails closed, with no fabricated price, when getReservePrice() fails (e.g. AaveOracle.InvalidPrice for a non-positive feed answer)', async () => {
+    const { client } = buildClient();
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string }) => {
+        if (params.functionName === 'getReservePrice') throw new Error('InvalidPrice reverted');
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4CollateralRiskSnapshot(failingClient, USER);
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('never involves any V3 oracle call — V3’s getAssetPrice/BASE_CURRENCY_UNIT are never called by this V4 path', async () => {
+    const { client, readContract } = buildClient();
+    await fetchAaveV4CollateralRiskSnapshot(client, USER);
+
+    const calledFunctionNames = new Set(readContract.mock.calls.map(([a]) => a.functionName));
+    expect(calledFunctionNames.has('getAssetPrice')).toBe(false);
+    expect(calledFunctionNames.has('BASE_CURRENCY_UNIT')).toBe(false);
   });
 });

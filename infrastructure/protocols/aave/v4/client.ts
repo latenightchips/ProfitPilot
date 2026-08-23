@@ -13,6 +13,7 @@ import {
   erc20Abi,
   hubGetAssetDrawnRateAbi,
   hubGetAssetIdAbi,
+  priceOracleAbi,
   spokeGetDynamicReserveConfigAbi,
   spokeGetReserveAbi,
   spokeGetReserveIdAbi,
@@ -20,6 +21,7 @@ import {
   spokeGetUserLastRiskPremiumAbi,
   spokeGetUserPositionAbi,
   spokeGetUserReserveStatusAbi,
+  spokeOracleAbi,
 } from './abi';
 
 const TIMEOUT_MS = 10_000;
@@ -403,6 +405,74 @@ export async function fetchTokenDecimals(
       address: tokenAddress,
       abi: erc20Abi,
       functionName: 'decimals',
+      blockNumber,
+    }),
+  );
+}
+
+/**
+ * `ISpoke.ORACLE()` — the address of the Spoke's own bound price oracle
+ * (V4 Readiness Audit §12 P1-B). See `./abi.ts`'s `spokeOracleAbi` header
+ * comment for why this must be read per-Spoke rather than hardcoded or
+ * assumed shared with V3.
+ */
+export async function fetchOracleAddress(
+  client: AaveV4RpcClient,
+  spoke: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<AaveV4RpcResult<`0x${string}`>> {
+  return readOrClassify(() =>
+    client.readContract({
+      address: spoke,
+      abi: spokeOracleAbi,
+      functionName: 'ORACLE',
+      blockNumber,
+    }),
+  );
+}
+
+/**
+ * `IPriceOracle.decimals()` — read live, never hardcoded, per this
+ * stage's own instruction not to bake in the reference implementation's
+ * `SpokeUtils.ORACLE_DECIMALS = 8` constant.
+ */
+export async function fetchOracleDecimals(
+  client: AaveV4RpcClient,
+  oracle: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<AaveV4RpcResult<number>> {
+  return readOrClassify(() =>
+    client.readContract({
+      address: oracle,
+      abi: priceOracleAbi,
+      functionName: 'decimals',
+      blockNumber,
+    }),
+  );
+}
+
+/**
+ * `IPriceOracle.getReservePrice(reserveId)` — the caller supplies the
+ * SAME `reserveId` already resolved by `resolveV4Reserve` (`./index.ts`)
+ * for `getUserPosition`/`getDynamicReserveConfig`; this function performs
+ * no reserve resolution of its own. Reverts (never returns a sentinel
+ * zero) if the price is not greater than 0, or if no price feed source is
+ * configured for this reserve — both fall through `classifyError` to
+ * `AAVE_V4_RPC_CONTRACT_ERROR`, a genuine failure, never silently
+ * substituted with 0/$1/a cached value.
+ */
+export async function fetchReservePrice(
+  client: AaveV4RpcClient,
+  oracle: `0x${string}`,
+  reserveId: bigint,
+  blockNumber?: bigint,
+): Promise<AaveV4RpcResult<bigint>> {
+  return readOrClassify(() =>
+    client.readContract({
+      address: oracle,
+      abi: priceOracleAbi,
+      functionName: 'getReservePrice',
+      args: [reserveId],
       blockNumber,
     }),
   );
