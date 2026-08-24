@@ -77,6 +77,7 @@ describe('classifyDebtBoundaryResult — AAVE_V4_NO_BORROW_POSITION is the expec
         raw: {} as never,
         engineInputs: VALID_ENGINE_INPUTS,
         display: {} as never,
+        debtAssetPriceUsd: 0.9998,
       },
     });
     expect(result.ok).toBe(true);
@@ -92,6 +93,7 @@ describe('classifyDebtBoundaryResult — AAVE_V4_NO_BORROW_POSITION is the expec
         // proves a real shape drift, not a coincidental false positive.
         engineInputs: { ...VALID_ENGINE_INPUTS, drawnDebt: -1 },
         display: {} as never,
+        debtAssetPriceUsd: 0.9998,
       },
     });
     expect(result.ok).toBe(false);

@@ -48,7 +48,15 @@ interface MockConfig {
   borrowed?: boolean;
   usingAsCollateral?: boolean;
   collateralRisk?: number;
+  /** `ISpoke.ORACLE()` — V4 Readiness Audit §12 P1-D1. */
+  oracle?: `0x${string}`;
+  /** `IPriceOracle.decimals()`. */
+  oracleDecimals?: number;
+  /** `IPriceOracle.getReservePrice(reserveId)`, raw integer at `oracleDecimals` precision. */
+  debtAssetPriceRaw?: bigint;
 }
+
+const DEFAULT_ORACLE = '0x9999999999999999999999999999999999999999' as const;
 
 /**
  * Routes readContract calls by functionName + address, mirroring
@@ -80,6 +88,9 @@ function buildClient(overrides?: MockConfig): {
   const borrowed = overrides?.borrowed ?? true;
   const usingAsCollateral = overrides?.usingAsCollateral ?? true;
   const collateralRisk = overrides?.collateralRisk ?? 500;
+  const oracle = overrides?.oracle ?? DEFAULT_ORACLE;
+  const oracleDecimals = overrides?.oracleDecimals ?? 8;
+  const debtAssetPriceRaw = overrides?.debtAssetPriceRaw ?? 99_980_000n; // $0.9998 at 8 decimals
 
   const getBlock = vi.fn().mockImplementation(async (params?: { blockNumber?: bigint }) => {
     if (params?.blockNumber !== undefined) {
@@ -88,7 +99,7 @@ function buildClient(overrides?: MockConfig): {
     return { number: blockNumber, timestamp: blockTimestamp };
   });
 
-  const readContract = vi.fn().mockImplementation(async ({ functionName, address }) => {
+  const readContract = vi.fn().mockImplementation(async ({ functionName, address, args }) => {
     if (functionName === 'getAssetId') {
       if (String(address).toLowerCase() === assetIdListedOnHub.toLowerCase()) {
         return assetId;
@@ -121,8 +132,26 @@ function buildClient(overrides?: MockConfig): {
     if (functionName === 'getUserReserveStatus') {
       return [usingAsCollateral, borrowed];
     }
+    if (functionName === 'ORACLE') {
+      return oracle;
+    }
     if (functionName === 'decimals') {
+      // Two DIFFERENT contracts both expose `decimals()`: the ERC20
+      // underlying (`fetchTokenDecimals`, `liveDecimals`) and the oracle
+      // (`fetchOracleDecimals`, V4 Readiness Audit §12 P1-D1) —
+      // distinguished by address, never conflated.
+      if (String(address).toLowerCase() === oracle.toLowerCase()) {
+        return oracleDecimals;
+      }
       return liveDecimals;
+    }
+    if (functionName === 'getReservePrice') {
+      // Proves the price read reuses the exact same (DEBT) reserveId
+      // already resolved for getUserDebt/getReserve/etc. above — never
+      // the collateral reserveId, which this test suite never resolves
+      // at all.
+      expect(args[0]).toBe(reserveId);
+      return debtAssetPriceRaw;
     }
     throw new Error(`Unexpected functionName in test: ${functionName}`);
   });
@@ -150,6 +179,7 @@ describe('fetchAaveV4DebtSnapshot — WBTC collateral / USDC debt', () => {
     expect(result.data.display.debtSymbol).toBe('USDC');
     expect(result.data.display.collateralSymbol).toBe('WBTC');
     expect(result.data.display.blockNumber).toBe('21000000');
+    expect(result.data.debtAssetPriceUsd).toBeCloseTo(0.9998, 8);
   });
 });
 
@@ -331,7 +361,9 @@ describe('fetchAaveV4DebtSnapshot — Hub discovery: "not found" vs. genuine RPC
       if (functionName === 'getAssetDrawnRate') return 50_000_000_000_000_000_000_000_000n;
       if (functionName === 'getUserLastRiskPremium') return 0n;
       if (functionName === 'getUserReserveStatus') return [true, true];
+      if (functionName === 'ORACLE') return DEFAULT_ORACLE;
       if (functionName === 'decimals') return 6;
+      if (functionName === 'getReservePrice') return 99_980_000n; // $0.9998 at 8 decimals
       throw new Error(`Unexpected functionName in test: ${functionName}`);
     });
     const getBlock = vi.fn().mockResolvedValue({ number: 21_000_000n, timestamp: 1_700_000_000n });
@@ -456,5 +488,182 @@ describe('fetchAaveV4DebtSnapshot — block timestamp handling (Stage 3 hardenin
     expect(typeof result.data.display.blockNumber).toBe('string');
     expect(typeof result.data.display.blockTimestamp).toBe('string');
     expect(() => JSON.stringify(result.data.display)).not.toThrow();
+  });
+});
+
+/**
+ * V4 Readiness Audit §12 P1-D1 — the debt-asset oracle price boundary.
+ * Mirrors `collateralRiskSnapshot.test.ts`'s own P1-B oracle-boundary
+ * suite. Deliberately non-$1 prices throughout (0.9973, 1.0041) so an
+ * accidental fixed-`1` implementation cannot pass. This stage only
+ * ESTABLISHES `debtAssetPriceUsd` — nothing consumes it yet, so these
+ * tests check the field directly, never `engineInputs`/HF/etc.
+ */
+describe('fetchAaveV4DebtSnapshot — debt oracle price boundary (P1-D1)', () => {
+  it('reuses the exact DEBT reserveId already resolved for getUserDebt/getReserve/etc. when calling getReservePrice', async () => {
+    const { client, readContract } = buildClient({ reserveId: 77n });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+
+    const getReservePriceCall = readContract.mock.calls.find(
+      ([a]) => a.functionName === 'getReservePrice',
+    );
+    expect(getReservePriceCall?.[0].args).toEqual([77n]);
+    if (result.ok) expect(result.data.raw.reserveId).toBe(77n);
+  });
+
+  it('returns the correct, non-$1 normalized debt-asset price for USDC', async () => {
+    const { client } = buildClient({
+      debtAssetPriceRaw: 99_730_000n, // $0.9973 at 8 decimals
+      oracleDecimals: 8,
+    });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtAssetPriceUsd).toBeCloseTo(0.9973, 8);
+  });
+
+  it('USDC and USDT can produce deliberately different oracle prices — proves no shared/hardcoded value', async () => {
+    const { client: usdcClient } = buildClient({ debtAssetPriceRaw: 99_730_000n }); // $0.9973
+    const usdcResult = await fetchAaveV4DebtSnapshot(usdcClient, 'USDC', USER);
+    expect(usdcResult.ok).toBe(true);
+    if (!usdcResult.ok) return;
+    expect(usdcResult.data.debtAssetPriceUsd).toBeCloseTo(0.9973, 8);
+
+    const { client: usdtClient } = buildClient({ debtAssetPriceRaw: 100_410_000n }); // $1.0041
+    const usdtResult = await fetchAaveV4DebtSnapshot(usdtClient, 'USDT', USER);
+    expect(usdtResult.ok).toBe(true);
+    if (!usdtResult.ok) return;
+    expect(usdtResult.data.debtAssetPriceUsd).toBeCloseTo(1.0041, 8);
+
+    expect(usdcResult.data.debtAssetPriceUsd).not.toBe(usdtResult.data.debtAssetPriceUsd);
+  });
+
+  it('reads oracle decimals live rather than assuming a fixed precision', async () => {
+    const { client, readContract } = buildClient({ oracleDecimals: 18 });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.raw.debtAssetPriceDecimals).toBe(18);
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: DEFAULT_ORACLE, functionName: 'decimals' }),
+    );
+  });
+
+  it('normalizes correctly at 18-decimal precision (not just the reference 8-decimal default)', async () => {
+    const { client } = buildClient({
+      oracleDecimals: 18,
+      debtAssetPriceRaw: 997_300_000_000_000_000n, // $0.9973 at 18 decimals
+    });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtAssetPriceUsd).toBeCloseTo(0.9973, 8);
+  });
+
+  it('normalizes correctly at 6-decimal precision too', async () => {
+    const { client } = buildClient({ oracleDecimals: 6, debtAssetPriceRaw: 997_300n }); // $0.9973
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtAssetPriceUsd).toBeCloseTo(0.9973, 8);
+  });
+
+  it('rejects a zero raw oracle price with AAVE_V4_INVALID_ORACLE_PRICE rather than fabricating a value', async () => {
+    const { client } = buildClient({ debtAssetPriceRaw: 0n });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('AAVE_V4_INVALID_ORACLE_PRICE');
+  });
+
+  it('rejects a non-finite normalized price (decimals large enough to overflow 10**decimals) with AAVE_V4_INVALID_ORACLE_PRICE', async () => {
+    const { client } = buildClient({ oracleDecimals: 400, debtAssetPriceRaw: 1n });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('AAVE_V4_INVALID_ORACLE_PRICE');
+  });
+
+  it('fails closed, with no fabricated price, when ORACLE() (oracle discovery) fails', async () => {
+    const { client } = buildClient();
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string }) => {
+        if (params.functionName === 'ORACLE') throw new Error('reverted');
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4DebtSnapshot(failingClient, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('fails closed, with no fabricated price, when the oracle decimals() read fails', async () => {
+    const { client } = buildClient();
+    let oracleDecimalsCallSeen = false;
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string; address: string }) => {
+        if (
+          params.functionName === 'decimals' &&
+          String(params.address).toLowerCase() === DEFAULT_ORACLE.toLowerCase()
+        ) {
+          oracleDecimalsCallSeen = true;
+          throw new Error('reverted');
+        }
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4DebtSnapshot(failingClient, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    expect(oracleDecimalsCallSeen).toBe(true);
+  });
+
+  it('fails closed, with no fabricated price, when getReservePrice() fails (e.g. AaveOracle.InvalidPrice for a non-positive feed answer)', async () => {
+    const { client } = buildClient();
+    const failingClient: AaveV4RpcClient = {
+      getBlock: client.getBlock,
+      readContract: (async (params: { functionName: string }) => {
+        if (params.functionName === 'getReservePrice') throw new Error('InvalidPrice reverted');
+        return (client.readContract as unknown as (p: unknown) => Promise<unknown>)(params);
+      }) as unknown as AaveV4RpcClient['readContract'],
+    };
+
+    const result = await fetchAaveV4DebtSnapshot(failingClient, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    expect('data' in result).toBe(false);
+  });
+
+  it('never uses a collateral reserveId for the debt price — this adapter path never resolves a collateral reserve at all', async () => {
+    const { client, readContract } = buildClient({ reserveId: 55n });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(true);
+
+    // Every reserveId-scoped call in this entire fetch used the same,
+    // single (debt) reserveId — there is no second reserve resolution
+    // anywhere in this function.
+    for (const call of readContract.mock.calls) {
+      const args = call[0].args as unknown[] | undefined;
+      if (call[0].functionName === 'getReservePrice' || call[0].functionName === 'getUserDebt') {
+        expect(args?.[0]).toBe(55n);
+      }
+    }
+  });
+
+  it('AAVE_V4_NO_BORROW_POSITION remains the last possible failure — a valid oracle price is still resolved even for a non-borrowing address before that check runs', async () => {
+    const { client, readContract } = buildClient({ borrowed: false });
+    const result = await fetchAaveV4DebtSnapshot(client, 'USDC', USER);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('AAVE_V4_NO_BORROW_POSITION');
+    // The oracle price read still happened before the borrowed check
+    // rejected the request — proving oracle discovery/price/decimals
+    // cannot become a NEW failure mode reachable only after this one.
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'getReservePrice' }),
+    );
   });
 });

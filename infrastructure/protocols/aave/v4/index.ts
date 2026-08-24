@@ -26,6 +26,7 @@ import {
 } from './client';
 import { mapAaveV4CollateralRiskSnapshot } from './mapAaveV4CollateralRiskSnapshot';
 import { mapAaveV4Snapshot } from './mapAaveV4Snapshot';
+import { oraclePriceToUsd } from './scale';
 import type {
   AaveV4CollateralRiskSnapshot,
   AaveV4DebtSnapshot,
@@ -199,6 +200,7 @@ export async function fetchAaveV4DebtSnapshot(
     riskPremiumResult,
     statusResult,
     decimalsResult,
+    oracleAddressResult,
   ] = await Promise.all([
     fetchReserve(client, spoke, reserveId, blockNumber),
     fetchUserDebt(client, spoke, reserveId, userAddress, blockNumber),
@@ -206,6 +208,15 @@ export async function fetchAaveV4DebtSnapshot(
     fetchUserLastRiskPremium(client, spoke, userAddress, blockNumber),
     fetchUserReserveStatus(client, spoke, reserveId, userAddress, blockNumber),
     fetchTokenDecimals(client, underlying, blockNumber),
+    // V4 Readiness Audit §12 P1-D1 — discovered independently from THIS
+    // Spoke, never reused from the collateral-risk path's own store/hook
+    // (deliberate non-coupling, see this function's own doc comment
+    // addition below). Placed in this SAME initial parallel batch (not
+    // after the borrowed-position check) so it can never become a NEW
+    // failure mode reachable only after `AAVE_V4_NO_BORROW_POSITION` —
+    // preserving that error's existing "last possible failure" property,
+    // which `scripts/verifyAaveV4Boundary.ts` (P0-3) relies on.
+    fetchOracleAddress(client, spoke, blockNumber),
   ]);
 
   if (!reserveResult.ok) return { ok: false, error: reserveResult.error };
@@ -214,6 +225,19 @@ export async function fetchAaveV4DebtSnapshot(
   if (!riskPremiumResult.ok) return { ok: false, error: riskPremiumResult.error };
   if (!statusResult.ok) return { ok: false, error: statusResult.error };
   if (!decimalsResult.ok) return { ok: false, error: decimalsResult.error };
+  if (!oracleAddressResult.ok) return { ok: false, error: oracleAddressResult.error };
+  const oracle = oracleAddressResult.data;
+
+  // Reuses the exact `reserveId` already resolved above for this DEBT
+  // reserve — no separate reserve resolution, and never the collateral
+  // reserveId (`fetchAaveV4CollateralRiskSnapshot` resolves that
+  // independently, in its own, unrelated function call).
+  const [oracleDecimalsResult, debtAssetPriceResult] = await Promise.all([
+    fetchOracleDecimals(client, oracle, blockNumber),
+    fetchReservePrice(client, oracle, reserveId, blockNumber),
+  ]);
+  if (!oracleDecimalsResult.ok) return { ok: false, error: oracleDecimalsResult.error };
+  if (!debtAssetPriceResult.ok) return { ok: false, error: debtAssetPriceResult.error };
 
   if (reserveResult.data.decimals !== debtAsset.decimals) {
     return {
@@ -235,6 +259,28 @@ export async function fetchAaveV4DebtSnapshot(
         message: `${debtAsset.symbol} on-chain ERC20 decimals (${decimalsResult.data}) do not match the configured value (${debtAsset.decimals}).`,
         userMessage:
           'Aave V4 asset configuration has changed unexpectedly. Please try again later.',
+        retryable: false,
+      },
+    };
+  }
+
+  // V4 Readiness Audit §12 P1-D1 — defense in depth. `AaveOracle.sol`'s
+  // own `_getSourcePrice` already reverts (never returns) a non-positive
+  // price (verified during P1-A's primary-source trace), so this branch
+  // should be unreachable in practice; it exists for the same reason
+  // `AAVE_V4_DECIMALS_MISMATCH` does — an on-chain configuration this
+  // adapter did not anticipate (e.g. `oracleDecimals` large enough that
+  // `10 ** decimals` overflows to `Infinity`, silently normalizing any
+  // raw price to `0`) must fail closed, never be silently accepted as a
+  // real $0/negative/NaN debt-asset price.
+  const debtAssetPriceUsd = oraclePriceToUsd(debtAssetPriceResult.data, oracleDecimalsResult.data);
+  if (!Number.isFinite(debtAssetPriceUsd) || debtAssetPriceUsd <= 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_V4_INVALID_ORACLE_PRICE',
+        message: `${debtAsset.symbol} oracle price normalized to a non-finite/non-positive value (raw=${debtAssetPriceResult.data.toString()}, decimals=${oracleDecimalsResult.data}, normalized=${debtAssetPriceUsd}).`,
+        userMessage: 'Aave V4 returned an unexpected response. Please try again later.',
         retryable: false,
       },
     };
@@ -265,6 +311,9 @@ export async function fetchAaveV4DebtSnapshot(
     userLastRiskPremiumBps: riskPremiumResult.data,
     userReserveStatus: statusResult.data,
     liveDecimals: decimalsResult.data,
+    oracle,
+    debtAssetPriceRaw: debtAssetPriceResult.data,
+    debtAssetPriceDecimals: oracleDecimalsResult.data,
   };
 
   const data = mapAaveV4Snapshot(snapshot, {
@@ -274,7 +323,14 @@ export async function fetchAaveV4DebtSnapshot(
     userAddress,
   });
 
-  return { ok: true, data };
+  // V4 Readiness Audit §12 P1-D1 — attached directly, not routed through
+  // `mapAaveV4Snapshot` (which stays exactly as it was): already
+  // normalized and validated above, and this stage's own boundary is
+  // "establish the authoritative input; nothing consumes it yet" —
+  // `data.engineInputs` is type-linked to the Engine's own
+  // `AaveV4DebtProjectionRequest` (see `./types.ts`), which has no price
+  // field and must not gain one merely to transport this value.
+  return { ok: true, data: { ...data, debtAssetPriceUsd } };
 }
 
 export type AaveV4CollateralRiskSnapshotResult =

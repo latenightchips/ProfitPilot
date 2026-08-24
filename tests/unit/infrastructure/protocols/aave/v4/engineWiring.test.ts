@@ -7,6 +7,7 @@ import type { RawAaveV4Snapshot } from '@/infrastructure/protocols/aave/v4/types
 const USER = '0x1111111111111111111111111111111111111111' as const;
 const HUB = '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' as const;
 const SPOKE = '0x94e7A5dCbE816e498b89aB752661904E2F56c485' as const;
+const ORACLE = '0x9999999999999999999999999999999999999999' as const;
 
 /**
  * Stage 3 completion audit (Medium finding: "no automated integration
@@ -62,6 +63,9 @@ function realisticSnapshot(): RawAaveV4Snapshot {
     userLastRiskPremiumBps: 1000n, // 10%
     userReserveStatus: { usingAsCollateral: false, borrowed: true },
     liveDecimals: 6,
+    oracle: ORACLE,
+    debtAssetPriceRaw: 99_980_000n, // $0.9998 at 8 decimals
+    debtAssetPriceDecimals: 8,
   };
 }
 

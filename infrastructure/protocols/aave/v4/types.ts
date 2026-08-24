@@ -46,6 +46,19 @@ export interface RawAaveV4Snapshot {
   userReserveStatus: UserReserveStatus;
   /** ERC20 `decimals()`, read live and cross-checked against the hardcoded asset registry (mirrors `../v3/index.ts`'s own cross-check). */
   liveDecimals: number;
+  /**
+   * `ISpoke.ORACLE()` — V4 Readiness Audit §12 P1-D1, the debt equivalent
+   * of P1-B's collateral-risk `oracle` field. Discovered independently
+   * from THIS Spoke on every fetch — never reused from
+   * `fetchAaveV4CollateralRiskSnapshot`'s own already-fetched oracle
+   * (deliberate non-coupling between the two independent fetches; see
+   * `./index.ts`'s own header comment).
+   */
+  oracle: `0x${string}`;
+  /** `IPriceOracle.getReservePrice(reserveId)` — the SAME `reserveId` above (the DEBT reserve), no separate resolution. Raw, `debtAssetPriceDecimals`-precision integer, not yet normalized. */
+  debtAssetPriceRaw: bigint;
+  /** `IPriceOracle.decimals()` — read live from `oracle`, never hardcoded. */
+  debtAssetPriceDecimals: number;
 }
 
 /**
@@ -100,6 +113,18 @@ export interface AaveV4DebtSnapshot {
   raw: RawAaveV4Snapshot;
   engineInputs: AaveV4EngineDebtInputs;
   display: AaveV4SnapshotDisplay;
+  /**
+   * V4 Readiness Audit §12 P1-D1 — the debt asset's V4-authoritative
+   * oracle price, a plain USD decimal (e.g. `0.9998`), normalized from
+   * `raw.debtAssetPriceRaw`/`raw.debtAssetPriceDecimals`. Deliberately a
+   * top-level sibling field, not inside `engineInputs` — that shape is
+   * type-linked to the Engine's own `AaveV4DebtProjectionRequest` (see
+   * this file's own comment above `AaveV4EngineDebtInputs`), which has no
+   * price field and is not being widened by this stage. This is an
+   * infrastructure-boundary field only: no consumer (`resolveCanonicalDebtBalance`,
+   * `calculateDebtValue`, Store, Engine) reads it yet.
+   */
+  debtAssetPriceUsd: number;
 }
 
 /**

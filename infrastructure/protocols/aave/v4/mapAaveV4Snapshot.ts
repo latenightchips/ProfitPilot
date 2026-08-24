@@ -26,11 +26,17 @@ export interface MapAaveV4SnapshotConfig {
  * review) — this mapper does not re-derive drawn/premium debt from
  * `drawnShares`/`premiumShares`/`premiumOffsetRay` itself; it only
  * rescales the Spoke's own already-correct output.
+ *
+ * **Does not map `debtAssetPriceUsd`** (V4 Readiness Audit §12 P1-D1) —
+ * `./index.ts` computes and attaches that field itself, after calling
+ * this function, since it also owns that value's validation (fail-closed
+ * on a non-finite/non-positive normalized price). Return type omits it
+ * for that reason, not by oversight.
  */
 export function mapAaveV4Snapshot(
   snapshot: RawAaveV4Snapshot,
   config: MapAaveV4SnapshotConfig,
-): AaveV4DebtSnapshot {
+): Omit<AaveV4DebtSnapshot, 'debtAssetPriceUsd'> {
   const decimals = snapshot.liveDecimals;
 
   return {
