@@ -44,6 +44,15 @@ export type AaveV4CollateralRiskLiveDataStatus = 'idle' | 'loading' | 'ready' | 
 export interface AaveV4CollateralRiskCanonicalData {
   collateralFactor: number;
   dynamicConfigKey: number;
+  /**
+   * V4 Readiness Audit §12 P1-C — the collateral asset's V4-authoritative
+   * oracle price (`AaveV4CollateralRiskCanonical.collateralPriceUsd`,
+   * `infrastructure/protocols/aave/v4/index.ts`'s P1-B addition), carried
+   * through this store unchanged. `hooks/useAaveV4CollateralRiskLiveSync.ts`
+   * is what actually writes it into `portfolio.market.btcPriceUsd` — this
+   * store itself has no opinion on who consumes it.
+   */
+  collateralPriceUsd: number;
 }
 
 export interface AaveV4CollateralRiskLiveDataState {

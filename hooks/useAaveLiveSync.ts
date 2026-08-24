@@ -42,8 +42,7 @@ import {
  * blanked or zeroed.
  *
  * **V4 Readiness Audit §12 Stage 23A — never writes `protocol` for a V4
- * portfolio.** `market` (BTC price) is genuinely protocol-agnostic and
- * keeps syncing for V3 and V4 alike, unchanged. `protocol`
+ * portfolio.** `protocol`
  * (`maxLoanToValue`/`liquidationThreshold`/`borrowApr`/`supplyApr`) is
  * the V3 Aave pool's own risk parameters — Stage 23's own audit found
  * this hook previously wrote them into a V4 portfolio's shared
@@ -69,6 +68,24 @@ import {
  * 23B). `protocol.liquidationThreshold`/`maxLoanToValue` remain
  * V3-shaped and are not reinterpreted as V4 semantics anywhere by this
  * change.
+ *
+ * **V4 Readiness Audit §12 P1-C — never writes `market` (BTC price) for
+ * a V4 portfolio either, as of this stage.** This header comment
+ * previously called `market` "genuinely protocol-agnostic" — that was
+ * inaccurate, not a deliberate design: this hook's V3 Aave-oracle price
+ * was silently being reused for V4 portfolios too, with no verification
+ * V3 and V4 oracle prices are equivalent (they are architecturally
+ * independent — V4 Readiness Audit §12 P1-A). `syncsMarketPrice` below
+ * mirrors `syncsProtocolParameters` exactly, same live re-evaluation
+ * against the current `portfolio.protocolVersion`: a V4 portfolio's
+ * `market` field now stops being written by this hook, exactly the same
+ * "does not clear/migrate/fabricate" discipline as `protocol` above —
+ * whatever `market.btcPriceUsd` already held stays as-is until
+ * `hooks/useAaveV4CollateralRiskLiveSync.ts`'s own V4-oracle-sourced
+ * write (added the same stage) lands. That hook is now the sole writer
+ * of `market` for a V4 portfolio, exactly as this hook is the sole
+ * writer for a V3 one — ownership is protocol-aware by construction, not
+ * by execution order, so a V3 refresh can never race a V4 oracle write.
  */
 const DEFAULT_BORROW_ASSET = 'USDC';
 
@@ -104,18 +121,23 @@ export function useAaveLiveSync(portfolioId: string | null): void {
     const nextMarket = { btcPriceUsd: marketQuote.price };
     const nextProtocol = protocolQuote.parameters;
 
-    // V4 Readiness Audit §12 Stage 23A — read fresh off `portfolio` (an
-    // effect dependency below), never cached, so a version switch that
-    // lands mid-flight is honored on this very effect run.
+    // V4 Readiness Audit §12 Stage 23A / P1-C — read fresh off
+    // `portfolio` (an effect dependency below), never cached, so a
+    // version switch that lands mid-flight is honored on this very
+    // effect run. Both gates share the identical condition today
+    // (neither `protocol` nor `market` is V3-sourced-appropriate for a
+    // V4 portfolio) but are named separately since they answer distinct
+    // ownership questions.
     const syncsProtocolParameters = portfolio.protocolVersion !== 'v4';
+    const syncsMarketPrice = portfolio.protocolVersion !== 'v4';
 
-    const marketChanged = !marketPricesEqual(nextMarket, portfolio.market);
+    const marketChanged = syncsMarketPrice && !marketPricesEqual(nextMarket, portfolio.market);
     const protocolChanged =
       syncsProtocolParameters && !protocolParametersEqual(nextProtocol, portfolio.protocol);
     if (!marketChanged && !protocolChanged) return;
 
     update(portfolioId, {
-      market: nextMarket,
+      ...(syncsMarketPrice && { market: nextMarket }),
       ...(syncsProtocolParameters && { protocol: nextProtocol }),
     });
   }, [portfolioId, portfolio, status, marketQuote, protocolQuote, update]);

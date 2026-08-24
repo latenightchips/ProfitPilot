@@ -73,7 +73,15 @@ function createV4Portfolio(address: `0x${string}` = VALID_ADDRESS) {
   return result.data;
 }
 
-const VALID_CANONICAL = { collateralFactor: 0.8, dynamicConfigKey: 1 };
+// V4 Readiness Audit §12 P1-C — `VALID_CANONICAL` is the FETCH-STORE
+// shape (`AaveV4CollateralRiskCanonicalData`, includes the P1-B oracle
+// price); `VALID_RISK_CONFIG` is the narrowed shape the hook actually
+// writes into `portfolio.v4CollateralRisk` (price is written to
+// `market.btcPriceUsd` separately — see the hook's own header comment).
+// Same numbers throughout so existing collateralFactor/dynamicConfigKey
+// assertions are unaffected by this split.
+const VALID_CANONICAL = { collateralFactor: 0.8, dynamicConfigKey: 1, collateralPriceUsd: 69000 };
+const VALID_RISK_CONFIG = { collateralFactor: 0.8, dynamicConfigKey: 1 };
 
 function readyState(overrides: Record<string, unknown> = {}) {
   return {
@@ -151,19 +159,38 @@ describe('useAaveV4CollateralRiskLiveSync — successful sync for an opted-in V4
 
     await waitFor(() => {
       const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.v4CollateralRisk).toEqual(VALID_CANONICAL);
+      expect(updated.v4CollateralRisk).toEqual(VALID_RISK_CONFIG);
+    });
+  });
+
+  it('also syncs market.btcPriceUsd from the V4 oracle price (collateralPriceUsd), independent of collateralFactor', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(updated.market.btcPriceUsd).toBe(69000);
     });
   });
 });
 
 describe('useAaveV4CollateralRiskLiveSync — identical data causes no portfolio update (equality gate)', () => {
-  it('does not bump updatedAt when the fetched canonical value already matches the stored v4CollateralRisk', async () => {
+  it('does not bump updatedAt when the fetched canonical value (collateralFactor/dynamicConfigKey AND price) already matches stored state', async () => {
     const portfolio = createV4Portfolio();
     const withRisk = usePortfolioStore
       .getState()
-      .setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL);
+      .setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG);
     if (!withRisk.ok) throw new Error('setup failed');
-    const updatedAtBefore = withRisk.data.updatedAt;
+    // Also pre-set market to the fetch's collateralPriceUsd — otherwise
+    // the P1-C market write below would itself bump updatedAt, which is
+    // not what this test is isolating.
+    const withMarket = usePortfolioStore
+      .getState()
+      .update(portfolio.id, { market: { btcPriceUsd: VALID_CANONICAL.collateralPriceUsd } });
+    if (!withMarket.ok) throw new Error('setup failed');
+    const updatedAtBefore = withMarket.data.updatedAt;
 
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
     useAaveV4CollateralRiskLiveDataStore.setState(readyState());
@@ -182,7 +209,9 @@ describe('useAaveV4CollateralRiskLiveSync — identical data causes no portfolio
 
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
     useAaveV4CollateralRiskLiveDataStore.setState(
-      readyState({ canonical: { collateralFactor: 0.8, dynamicConfigKey: 2 } }),
+      readyState({
+        canonical: { collateralFactor: 0.8, dynamicConfigKey: 2, collateralPriceUsd: 69000 },
+      }),
     );
 
     await waitFor(() => {
@@ -196,7 +225,7 @@ describe('useAaveV4CollateralRiskLiveSync — identical data causes no portfolio
 describe('useAaveV4CollateralRiskLiveSync — RPC failure preserves last-known v4CollateralRisk (fail closed, never fabricated)', () => {
   it('leaves v4CollateralRisk untouched when the store is in an error state', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG);
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     useAaveV4CollateralRiskLiveDataStore.setState({
@@ -212,7 +241,28 @@ describe('useAaveV4CollateralRiskLiveSync — RPC failure preserves last-known v
 
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-    ).toEqual(VALID_CANONICAL);
+    ).toEqual(VALID_RISK_CONFIG);
+  });
+
+  it('leaves market.btcPriceUsd untouched (no fallback to $0/$1/V3) when the V4 oracle fetch is in an error state', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().update(portfolio.id, { market: { btcPriceUsd: 50000 } });
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'error',
+      canonical: null,
+      userAddress: null,
+      errorMessage: 'Live Aave V4 collateral-risk data is temporarily unavailable.',
+      lastFetchedAt: null,
+      fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd).toBe(
+      50000,
+    );
   });
 
   it('does nothing while still idle/loading (no fetch has resolved yet)', async () => {
@@ -255,8 +305,31 @@ describe('useAaveV4CollateralRiskLiveSync — identity boundary: fetched data is
     await waitFor(() => {
       expect(
         usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-      ).toEqual(VALID_CANONICAL);
+      ).toEqual(VALID_RISK_CONFIG);
     });
+  });
+
+  it("switching the active portfolio to a different V4 wallet never leaks the first portfolio's fetched market price into the second", async () => {
+    const first = createV4Portfolio(VALID_ADDRESS);
+    const second = createV4Portfolio(OTHER_ADDRESS);
+
+    const { rerender } = renderHook(({ id }) => useAaveV4CollateralRiskLiveSync(id), {
+      initialProps: { id: first.id },
+    });
+    rerender({ id: second.id });
+
+    // A late response for the FIRST portfolio's address now lands —
+    // must never be written into the now-active second portfolio's
+    // market price either.
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ userAddress: VALID_ADDRESS }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(usePortfolioStore.getState().portfolios[second.id].portfolio.market.btcPriceUsd).toBe(
+      50000,
+    );
+    expect(usePortfolioStore.getState().portfolios[first.id].portfolio.market.btcPriceUsd).toBe(
+      50000,
+    );
   });
 
   it("switching the active portfolio to a different V4 wallet never leaks the first portfolio's fetched data into the second", async () => {
@@ -294,13 +367,35 @@ describe('useAaveV4CollateralRiskLiveSync — does not fabricate or infer data',
     const portfolio = createV4Portfolio();
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
-    const distinctive = { collateralFactor: 0.7314, dynamicConfigKey: 42 };
+    const distinctive = {
+      collateralFactor: 0.7314,
+      dynamicConfigKey: 42,
+      collateralPriceUsd: 71234,
+    };
     useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: distinctive }));
 
     await waitFor(() => {
       expect(
         usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-      ).toEqual(distinctive);
+      ).toEqual({ collateralFactor: 0.7314, dynamicConfigKey: 42 });
+    });
+  });
+
+  it('never writes market.btcPriceUsd from anything other than the exact collateralPriceUsd the store received', async () => {
+    const portfolio = createV4Portfolio();
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    const distinctive = {
+      collateralFactor: 0.7314,
+      dynamicConfigKey: 42,
+      collateralPriceUsd: 71234,
+    };
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: distinctive }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd,
+      ).toBe(71234);
     });
   });
 });
@@ -319,7 +414,7 @@ describe('useAaveV4CollateralRiskLiveSync — does not fabricate or infer data',
 describe('useAaveV4CollateralRiskLiveSync — clears a stale v4CollateralRisk when the V4 identity is removed', () => {
   it('clears v4CollateralRisk when v4Position is removed while still protocolVersion "v4"', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG);
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
@@ -333,7 +428,7 @@ describe('useAaveV4CollateralRiskLiveSync — clears a stale v4CollateralRisk wh
 
   it('clears v4CollateralRisk when the portfolio switches from V4 back to V3', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG);
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
@@ -359,14 +454,14 @@ describe('useAaveV4CollateralRiskLiveSync — clears a stale v4CollateralRisk wh
 
   it('does not clear v4CollateralRisk while the identity is still present (only removal triggers the clear)', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL);
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG);
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-    ).toEqual(VALID_CANONICAL);
+    ).toEqual(VALID_RISK_CONFIG);
   });
 });
 
@@ -384,14 +479,14 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
   it('never clears a MANUAL v4CollateralRisk for a portfolio with no address at all', async () => {
     const portfolio = createPortfolio();
     usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'manual');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-    ).toEqual(VALID_CANONICAL);
+    ).toEqual(VALID_RISK_CONFIG);
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
     ).toBe('manual');
@@ -399,7 +494,7 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
 
   it('never clears a MANUAL v4CollateralRisk when the v4Position address is removed (manual has no address dependency)', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'manual');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     usePortfolioStore.getState().setAaveV4Position(portfolio.id, undefined);
@@ -408,12 +503,12 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
 
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-    ).toEqual(VALID_CANONICAL);
+    ).toEqual(VALID_RISK_CONFIG);
   });
 
   it('a successful live fetch still transitions a manual value to "live", even with coincidentally-equal numbers', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'manual');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     // The live store resolves with the EXACT SAME numbers already stored
@@ -427,12 +522,12 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
     });
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-    ).toEqual(VALID_CANONICAL);
+    ).toEqual(VALID_RISK_CONFIG);
   });
 
   it('a failed live fetch preserves the manual value and its "manual" source untouched', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'manual');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     useAaveV4CollateralRiskLiveDataStore.setState({
@@ -447,7 +542,7 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-    expect(after.v4CollateralRisk).toEqual(VALID_CANONICAL);
+    expect(after.v4CollateralRisk).toEqual(VALID_RISK_CONFIG);
     expect(after.v4CollateralRiskSource).toBe('manual');
   });
 });
@@ -459,7 +554,16 @@ describe('useAaveV4CollateralRiskLiveSync — manual/hypothetical mode (Stage 25
  * fixture values throughout.
  */
 const MANUAL_RISK = { collateralFactor: 0.55, dynamicConfigKey: 9 };
-const DIFFERING_LIVE_CANONICAL = { collateralFactor: 0.71, dynamicConfigKey: 3 };
+// `DIFFERING_LIVE_CANONICAL` is the FETCH-STORE shape (includes price);
+// `DIFFERING_LIVE_RISK_CONFIG` is what actually lands in
+// `portfolio.v4CollateralRisk`/candidates — same split as
+// `VALID_CANONICAL`/`VALID_RISK_CONFIG` above, same reason.
+const DIFFERING_LIVE_CANONICAL = {
+  collateralFactor: 0.71,
+  dynamicConfigKey: 3,
+  collateralPriceUsd: 82000,
+};
+const DIFFERING_LIVE_RISK_CONFIG = { collateralFactor: 0.71, dynamicConfigKey: 3 };
 
 describe('useAaveV4CollateralRiskLiveSync — P0-1: a differing MANUAL value is never auto-overwritten, becomes a pending candidate', () => {
   it('canonical v4CollateralRisk/source stay manual and unchanged; the fetched value is registered as a candidate instead', async () => {
@@ -473,7 +577,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: a differing MANUAL value is 
 
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
@@ -485,7 +589,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: a differing MANUAL value is 
 describe('useAaveV4CollateralRiskLiveSync — P0-1: identical manual value auto-adopts silently, no candidate', () => {
   it('numerically identical manual and fetched values transition to live directly, never creating a candidate', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'manual');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'manual');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
     useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: VALID_CANONICAL }));
@@ -502,18 +606,42 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: identical manual value auto-
 describe('useAaveV4CollateralRiskLiveSync — P0-1: live→live refresh remains fully automatic (unchanged freshness model)', () => {
   it('a changed refresh of an already-live value auto-applies with no candidate', async () => {
     const portfolio = createV4Portfolio();
-    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_CANONICAL, 'live');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'live');
     renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
 
-    const freshFromChain = { collateralFactor: 0.88, dynamicConfigKey: 4 };
+    const freshFromChain = {
+      collateralFactor: 0.88,
+      dynamicConfigKey: 4,
+      collateralPriceUsd: 91000,
+    };
     useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: freshFromChain }));
 
     await waitFor(() => {
       expect(
         usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-      ).toEqual(freshFromChain);
+      ).toEqual({ collateralFactor: 0.88, dynamicConfigKey: 4 });
     });
     expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('also updates market.btcPriceUsd on a live→live refresh (a genuine V4 price change, no candidate involved)', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'live');
+    usePortfolioStore.getState().update(portfolio.id, { market: { btcPriceUsd: 69000 } });
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+
+    const freshFromChain = {
+      collateralFactor: 0.88,
+      dynamicConfigKey: 4,
+      collateralPriceUsd: 91000,
+    };
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: freshFromChain }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd,
+      ).toBe(91000);
+    });
   });
 });
 
@@ -551,7 +679,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pendi
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
 
@@ -559,7 +687,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pendi
     expect(result.ok).toBe(true);
 
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-    expect(after.v4CollateralRisk).toEqual(DIFFERING_LIVE_CANONICAL);
+    expect(after.v4CollateralRisk).toEqual(DIFFERING_LIVE_RISK_CONFIG);
     expect(after.v4CollateralRiskSource).toBe('live');
     expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
   });
@@ -585,7 +713,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pendi
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
 
@@ -606,7 +734,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pendi
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
     usePortfolioStore.getState().dismissAaveV4CollateralRiskCandidate(portfolio.id);
@@ -626,18 +754,23 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: accepting/dismissing a pendi
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
     usePortfolioStore.getState().dismissAaveV4CollateralRiskCandidate(portfolio.id);
 
-    const anotherDifferingFetch = { collateralFactor: 0.63, dynamicConfigKey: 5 };
+    const anotherDifferingFetch = {
+      collateralFactor: 0.63,
+      dynamicConfigKey: 5,
+      collateralPriceUsd: 55000,
+    };
     useAaveV4CollateralRiskLiveDataStore.setState(readyState({ canonical: anotherDifferingFetch }));
 
     await waitFor(() => {
-      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        anotherDifferingFetch,
-      );
+      expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual({
+        collateralFactor: 0.63,
+        dynamicConfigKey: 5,
+      });
     });
     expect(
       usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRiskSource,
@@ -661,7 +794,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: cross-portfolio candidate is
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[first.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
     expect(usePortfolioStore.getState().v4CollateralRiskCandidates[second.id]).toBeUndefined();
@@ -675,7 +808,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: cross-portfolio candidate is
     rerender({ id: second.id });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(usePortfolioStore.getState().v4CollateralRiskCandidates[first.id]).toEqual(
-      DIFFERING_LIVE_CANONICAL,
+      DIFFERING_LIVE_RISK_CONFIG,
     );
   });
 });
@@ -690,7 +823,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-1: identity removal invalidates
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
 
@@ -815,7 +948,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-4: a later successful fetch cle
     await waitFor(() => {
       expect(
         usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4CollateralRisk,
-      ).toEqual(VALID_CANONICAL);
+      ).toEqual(VALID_RISK_CONFIG);
     });
     expect(usePortfolioStore.getState().v4CollateralRiskErrors[portfolio.id]).toBeUndefined();
   });
@@ -835,7 +968,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-4: a later successful fetch cle
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
     expect(usePortfolioStore.getState().v4CollateralRiskErrors[portfolio.id]).toBeUndefined();
@@ -853,7 +986,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-4: a P0-1 pending candidate sur
     );
     await waitFor(() => {
       expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-        DIFFERING_LIVE_CANONICAL,
+        DIFFERING_LIVE_RISK_CONFIG,
       );
     });
 
@@ -863,7 +996,7 @@ describe('useAaveV4CollateralRiskLiveSync — P0-4: a P0-1 pending candidate sur
     });
 
     expect(usePortfolioStore.getState().v4CollateralRiskCandidates[portfolio.id]).toEqual(
-      DIFFERING_LIVE_CANONICAL,
+      DIFFERING_LIVE_RISK_CONFIG,
     );
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
     expect(after.v4CollateralRisk).toEqual(MANUAL_RISK);

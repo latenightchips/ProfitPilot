@@ -4,7 +4,11 @@ import { useEffect, useRef } from 'react';
 
 import type { AaveV4CollateralRiskCanonicalData } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
-import { aaveV4CollateralRiskEqual, usePortfolioStore } from '@/stores/portfolioStore';
+import {
+  aaveV4CollateralRiskEqual,
+  marketPricesEqual,
+  usePortfolioStore,
+} from '@/stores/portfolioStore';
 
 /**
  * V4 Readiness Audit §12 Stage 23F — the production data path that
@@ -113,6 +117,35 @@ import { aaveV4CollateralRiskEqual, usePortfolioStore } from '@/stores/portfolio
  * (this store has no `debtAsset` dimension to also check), and is
  * cleared on identity removal and on any genuinely new successful fetch
  * — independent of `v4DebtState`'s own error, by construction.
+ *
+ * **`market.btcPriceUsd` ownership (V4 Readiness Audit §12 P1-C).** This
+ * hook is now the SOLE writer of `market` for a V4 portfolio —
+ * `hooks/useAaveLiveSync.ts`'s own V3-sourced write is structurally
+ * gated off for `protocolVersion === 'v4'` (see that hook's own header
+ * comment), never merely by execution order, so a V3 refresh can never
+ * overwrite a V4 oracle price. The write uses
+ * `canonical.collateralPriceUsd` (P1-B's V4-authoritative Spoke-oracle
+ * read), equality-gated via `marketPricesEqual` like every other
+ * `market` writer, and runs unconditionally whenever a genuinely new
+ * fetch result lands (the same `lastAppliedCanonical` guard below) —
+ * deliberately BEFORE and INDEPENDENT of `collateralFactor`'s own
+ * manual/live candidate gating further down: `market` has no
+ * manual/live provenance dimension of its own (unlike `v4CollateralRisk`),
+ * so a differing manual `collateralFactor` must never block a genuine
+ * V4 price update. On fetch failure (`status === 'error'`, handled in
+ * the branch above, returning before this code ever runs), `market` is
+ * left exactly as it was — never substituted with 0, $1, a V3 price, or
+ * silently relabeled. On identity removal (V4 address cleared, or
+ * switched back to V3), `market` is deliberately NOT actively cleared
+ * here either, mirroring `useAaveLiveSync.ts`'s own established
+ * "does not clear/migrate/fabricate" precedent for `protocol`: a V3
+ * switch hands ownership back to `useAaveLiveSync` immediately (its own
+ * gate re-opens the moment `protocolVersion` changes), which then
+ * overwrites the stale V4 price on its own next successful fetch: no
+ * explicit hand-off logic is needed. A V4→no-address transition (still
+ * `protocolVersion: 'v4'`) simply freezes `market` at its last
+ * successfully-fetched V4 value, matching how `protocol` already freezes
+ * for the identical scenario.
  */
 const FALLBACK_ERROR_MESSAGE = 'Live Aave V4 collateral-risk data is temporarily unavailable.';
 
@@ -135,6 +168,7 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
   const setAaveV4CollateralRiskError = usePortfolioStore(
     (state) => state.setAaveV4CollateralRiskError,
   );
+  const update = usePortfolioStore((state) => state.update);
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
@@ -199,10 +233,31 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     // any previously-displayed error regardless of what happens next.
     setAaveV4CollateralRiskError(portfolioId, undefined);
 
+    // V4 Readiness Audit §12 P1-C — `market.btcPriceUsd` ownership.
+    // Independent of collateralFactor's own manual/live gating below:
+    // market has no such dimension, so this always applies a genuinely
+    // new V4 oracle price, equality-gated like every other market write.
+    const nextMarket = { btcPriceUsd: canonical.collateralPriceUsd };
+    if (!marketPricesEqual(nextMarket, portfolio.market)) {
+      update(portfolioId, { market: nextMarket });
+    }
+
+    // `v4CollateralRisk` stays exactly `{collateralFactor,
+    // dynamicConfigKey}` — `canonical.collateralPriceUsd` is P1-C's
+    // `market` field, not part of this shape (the same "duplicate
+    // independently, never cross-import" boundary `AaveV4CollateralRiskConfig`
+    // already establishes against the adapter's own canonical type).
+    // Narrowed once here so it is never accidentally leaked into
+    // `v4CollateralRisk`/the candidate map below.
+    const riskConfig = {
+      collateralFactor: canonical.collateralFactor,
+      dynamicConfigKey: canonical.dynamicConfigKey,
+    };
+
     if (portfolio.v4CollateralRiskSource === 'live') {
       // Established live→live refresh model, unchanged.
-      if (aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)) return;
-      setAaveV4CollateralRisk(portfolioId, canonical, 'live');
+      if (aaveV4CollateralRiskEqual(riskConfig, portfolio.v4CollateralRisk)) return;
+      setAaveV4CollateralRisk(portfolioId, riskConfig, 'live');
       return;
     }
 
@@ -211,15 +266,15 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     // "identical values transition silently" rule).
     if (
       portfolio.v4CollateralRisk === undefined ||
-      aaveV4CollateralRiskEqual(canonical, portfolio.v4CollateralRisk)
+      aaveV4CollateralRiskEqual(riskConfig, portfolio.v4CollateralRisk)
     ) {
-      setAaveV4CollateralRisk(portfolioId, canonical, 'live');
+      setAaveV4CollateralRisk(portfolioId, riskConfig, 'live');
       return;
     }
 
     // An existing MANUAL value that genuinely differs — gate behind
     // confirmation instead of overwriting canonical state.
-    setAaveV4CollateralRiskCandidate(portfolioId, canonical);
+    setAaveV4CollateralRiskCandidate(portfolioId, riskConfig);
   }, [
     portfolioId,
     portfolio,
@@ -233,5 +288,6 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     setAaveV4CollateralRisk,
     setAaveV4CollateralRiskCandidate,
     setAaveV4CollateralRiskError,
+    update,
   ]);
 }

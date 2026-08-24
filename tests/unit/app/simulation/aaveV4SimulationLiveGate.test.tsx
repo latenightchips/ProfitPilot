@@ -73,7 +73,11 @@ const V4_DEBT_STATE_FIXTURE = {
   riskPremium: 0.01,
 };
 
-const V4_COLLATERAL_RISK_FIXTURE = { collateralFactor: 0.8, dynamicConfigKey: 1 };
+const V4_COLLATERAL_RISK_FIXTURE = {
+  collateralFactor: 0.8,
+  dynamicConfigKey: 1,
+  collateralPriceUsd: 69000,
+};
 
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_PORTFOLIO_STATE);
