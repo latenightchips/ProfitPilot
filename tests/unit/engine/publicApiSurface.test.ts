@@ -51,6 +51,7 @@ describe('Public Engine API surface (M2-031)', () => {
     'projectProtocolDebt',
     // Portfolio
     'calculateCollateralValue',
+    'calculateDebtAssetValue',
     'calculateDebtRatio',
     'calculateDebtValue',
     'calculateEffectiveLeverage',

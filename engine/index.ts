@@ -146,9 +146,16 @@ export { projectVariableDebt } from './protocols/aaveV3';
  */
 export { type AaveV4RepaymentInput, deriveAaveV4DebtAfterRepayment } from './protocols';
 
-/** Portfolio Metrics — F-001–F-004, F-006, F-010, F-011, F-020; M2-006–M2-008. */
+/**
+ * Portfolio Metrics — F-001–F-004, F-006, F-010, F-011, F-020;
+ * M2-006–M2-008. `calculateDebtAssetValue` (V4 Readiness Audit §12
+ * P1-D2) is not one of these — a protocol-neutral post-spec addition,
+ * same "descriptive string ID, not a new F-XXX" convention as the
+ * `AAVE-V4-*`-prefixed formulas above.
+ */
 export {
   calculateCollateralValue,
+  calculateDebtAssetValue,
   calculateDebtRatio,
   calculateDebtValue,
   calculateEffectiveLeverage,

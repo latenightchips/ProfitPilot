@@ -1,4 +1,5 @@
 export { calculateCollateralValue } from './calculateCollateralValue';
+export { calculateDebtAssetValue } from './calculateDebtAssetValue';
 export { calculateDebtRatio } from './calculateDebtRatio';
 export { calculateDebtValue } from './calculateDebtValue';
 export { calculateEffectiveLeverage } from './calculateEffectiveLeverage';
