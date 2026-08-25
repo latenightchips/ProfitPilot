@@ -70,7 +70,9 @@ function buildOkV4(
     userAddress: '0x1234567890123456789012345678901234567890',
   });
   if (v4DebtState !== undefined) {
-    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, v4DebtState);
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.data.id, { ...v4DebtState, debtAssetPriceUsd: 1.0 });
     // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
     // synced (mirroring this same `v4DebtState` guard) — set alongside it
     // whenever a test needs the calculation to actually succeed.
@@ -233,6 +235,7 @@ describe('buildPortfolioComposition — V4 risk-capacity display (Stage 23E)', (
       premiumDebt: 0,
       baseDrawnApr: 0.05,
       riskPremium: 0,
+      debtAssetPriceUsd: 1.0,
     });
     usePortfolioStore
       .getState()

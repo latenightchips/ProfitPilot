@@ -318,7 +318,20 @@ describe('simulatePortfolioAction — manual/live provenance parity (Stage 25C)'
   ): ApplicationPortfolio {
     return basePortfolio({
       protocolVersion: 'v4',
-      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtState: {
+        drawnDebt: 30000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        // V4 Readiness Audit §12 P1-D3 — $1.00 so every pre-existing dollar
+        // amount in this describe block's own expectations (e.g. 30,500,
+        // 25,500) stays exactly correct; a 'live'-sourced v4DebtState now
+        // requires this field (`checkAaveV4DebtAssetPriceAvailable`), and
+        // the calculation itself uses it whenever present regardless of
+        // source, so supplying it for both 'manual' and 'live' preserves
+        // this suite's own manual/live parity claim.
+        debtAssetPriceUsd: 1.0,
+      },
       v4DebtStateSource: source,
       v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
       v4CollateralRiskSource: source,

@@ -118,6 +118,34 @@ describe('calculateDebtInterestBreakdown — V4 rate fix via the real accrual en
     expect(result.data.daily).not.toBeCloseTo((15500 * 0.05) / 365, 5);
   });
 
+  /**
+   * USD conversion at a non-$1 price — V4 Readiness Audit §12 P1-D3, a
+   * genuine defect found while reviewing that stage. `projectAaveV4InterestCost`'s
+   * own raw output (a debt-TOKEN quantity delta) was being assigned
+   * directly as `daily`/`monthly` (USD figures) with no price conversion.
+   * `calculateDebtInterestBreakdown` now uses `projectAaveV4InterestCostUsd`.
+   */
+  it('converts the raw V4 daily/monthly projections to USD at a non-$1 live price', () => {
+    const raw = calculateDebtInterestBreakdown(v4Portfolio(), 'manual');
+    expect(raw.ok).toBe(true);
+    if (!raw.ok) return;
+
+    const priced = calculateDebtInterestBreakdown(
+      {
+        ...v4Portfolio(),
+        v4DebtState: { ...v4Portfolio().v4DebtState!, debtAssetPriceUsd: 0.9973 },
+        v4DebtStateSource: 'live',
+      },
+      'live',
+    );
+    expect(priced.ok).toBe(true);
+    if (!priced.ok) return;
+
+    expect(priced.data.daily).toBeCloseTo(raw.data.daily * 0.9973, 9);
+    expect(priced.data.monthly).toBeCloseTo(raw.data.monthly * 0.9973, 9);
+    expect(priced.data.daily).not.toBeCloseTo(raw.data.daily, 6);
+  });
+
   it('ignores protocol.borrowApr entirely for a V4 portfolio with synced v4DebtState', () => {
     const withLowLegacyRate = calculateDebtInterestBreakdown(
       {

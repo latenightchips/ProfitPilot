@@ -107,7 +107,32 @@ export interface AaveV4PositionIdentity {
  * discipline as `v4Position`: setting this does not imply or require
  * `protocolVersion: 'v4'` or a set `v4Position`, and vice versa.
  */
-export type AaveV4DebtState = Omit<AaveV4DebtProjectionRequest, 'protocolVersion' | 'elapsedDays'>;
+export type AaveV4DebtState = Omit<
+  AaveV4DebtProjectionRequest,
+  'protocolVersion' | 'elapsedDays'
+> & {
+  /**
+   * V4 Readiness Audit §12 P1-D3 — the debt asset's V4-authoritative
+   * oracle price, consumed by `services/portfolio/mapping.ts`'s
+   * `resolveCanonicalDebtBalance` to compute live debt USD value via the
+   * canonical `calculateDebtAssetValue` (P1-D2), instead of the legacy
+   * implicit-$1 raw-quantity sum. Added via intersection, not folded into
+   * the `Omit<AaveV4DebtProjectionRequest, ...>` base — that base stays
+   * exactly what `engine/protocols/aaveV4/projectAaveV4Debt.ts` accepts,
+   * unwidened; every existing consumer of `v4DebtState` reads named
+   * fields explicitly (never spreads the whole object into a
+   * stricter-typed call), so this extra field is inert everywhere except
+   * the one place that now reads it.
+   *
+   * **`undefined` for every MANUAL `v4DebtState`** — manual/hypothetical
+   * V4 mode has no oracle to read from and, per this stage's own
+   * explicit scope, deliberately RETAINS the existing implicit-$1
+   * assumption unchanged (see `resolveCanonicalDebtBalance`'s own
+   * comment). Only `hooks/useAaveV4LiveSync.ts`'s live sync ever
+   * populates this field.
+   */
+  debtAssetPriceUsd?: number;
+};
 
 /**
  * The application-layer Portfolio shape, as far as M3-004 defines it.

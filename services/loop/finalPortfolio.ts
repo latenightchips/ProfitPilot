@@ -1,5 +1,6 @@
 import type { LoopStrategyResult } from '@/engine';
 
+import { resolveCanonicalDebtBalance } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
 
 /**
@@ -36,16 +37,29 @@ import type { ApplicationPortfolio } from '../portfolio/models';
  *
  * `strategy.finalDebt` is Engine-computed purely as scalar borrow
  * arithmetic (`engine/loop/calculateLoopStrategy.ts`'s own `currentDebt`,
- * seeded from the canonical starting total and incremented once per
- * step's `borrowedAmount` — no protocol-version branching, no interest
- * accrual inside the loop itself). The delta between it and the starting
- * canonical total (`v4DebtState.drawnDebt + v4DebtState.premiumDebt`) is
- * therefore exactly the amount newly borrowed across the strategy's
- * steps. Ignored (base V3-shaped object only) for a `'v3'`/unset
- * portfolio, or a `'v4'` portfolio with no synced `v4DebtState` —
- * unreachable via `strategy` being non-null, since `planLoopStrategy`'s
- * own fail-closed guard requires `v4DebtState` before it ever produces
- * one.
+ * seeded from `mapApplicationPortfolioToEngineInput`'s already-priced
+ * `debt.balance` and incremented once per step's `borrowedAmount` — no
+ * protocol-version branching, no interest accrual inside the loop
+ * itself). It is therefore a USD figure, not a raw token quantity.
+ * Ignored (base V3-shaped object only) for a `'v3'`/unset portfolio, or a
+ * `'v4'` portfolio with no synced `v4DebtState` — unreachable via
+ * `strategy` being non-null, since `planLoopStrategy`'s own fail-closed
+ * guard requires `v4DebtState` before it ever produces one.
+ *
+ * **USD vs. raw quantity (V4 Readiness Audit §12 P1-D3, a genuine defect
+ * found while implementing that stage).** Before this fix,
+ * `loopIntroducesAmbiguousV4Borrow` compared `strategy.finalDebt` (USD)
+ * directly against `v4DebtState.drawnDebt + v4DebtState.premiumDebt` (raw
+ * token quantity) and, when not ambiguous, used the same mismatched
+ * subtraction to derive a "newly borrowed" quantity added to `drawnDebt`.
+ * This was only ever safe under the old implicit-$1-per-debt-token
+ * assumption P1-D3 removed — for a live V4 portfolio with a real oracle
+ * price, comparing/subtracting USD against raw quantity silently
+ * corrupted the loop-final `v4DebtState` even when zero loop steps
+ * actually committed (e.g. `maxLoops: 0`, or an immediate
+ * `NO_AVAILABLE_BORROW`). Both functions below now compare in USD via
+ * `resolveCanonicalDebtBalance` — the same canonical chokepoint the
+ * Engine input itself was priced through — never the raw sum directly.
  *
  * **BLOCKER #3 fix — a real new borrow no longer carries the pre-borrow
  * `riskPremium` forward as though it were exact.** Before this fix, any
@@ -82,11 +96,15 @@ import type { ApplicationPortfolio } from '../portfolio/models';
  * cannot be derived.
  *
  * **A zero-loop (or otherwise no-op) result is unaffected.** When
- * `newlyBorrowed <= 0` (the strategy made no loops — e.g. immediately
- * blocked by a safety limit), no borrow actually happened, so carrying
- * `riskPremium` forward unchanged is not an assumption at all — it is
- * the literal correct value, the same reasoning `deriveV4DebtStateAfterDelta`
- * already applies for `debtDelta === 0`.
+ * `loopIntroducesAmbiguousV4Borrow` is false, the strategy made no loops
+ * (e.g. immediately blocked by a safety limit) — `calculateLoopStrategy`'s
+ * `currentDebt` only ever increases per committed step and starts at the
+ * Engine's own already-priced `debt.balance`, so a non-ambiguous result
+ * means `strategy.finalDebt` is EXACTLY the starting USD balance, not
+ * merely close to it. No borrow actually happened, so the starting
+ * `v4DebtState` — quantity, rates, AND `debtAssetPriceUsd` alike — is
+ * carried through byte-identical, the same reasoning
+ * `deriveV4DebtStateAfterDelta` already applies for `debtDelta === 0`.
  *
  * **`v4CollateralRisk`/`v4Position` are unaffected by this fix** — Stage
  * 23D's own reasoning (below) already established a loop borrows against
@@ -112,8 +130,12 @@ export function loopIntroducesAmbiguousV4Borrow(
   if (portfolio.protocolVersion !== 'v4' || portfolio.v4DebtState === undefined) {
     return false;
   }
-  const startingCanonicalDebt = portfolio.v4DebtState.drawnDebt + portfolio.v4DebtState.premiumDebt;
-  return strategy.finalDebt - startingCanonicalDebt > 0;
+  // V4 Readiness Audit §12 P1-D3 — compare in USD (via the same canonical
+  // chokepoint `strategy.finalDebt` was itself priced through), never the
+  // raw `drawnDebt + premiumDebt` sum directly. See this file's own
+  // header comment.
+  const startingCanonicalDebtUsd = resolveCanonicalDebtBalance(portfolio);
+  return strategy.finalDebt - startingCanonicalDebtUsd > 0;
 }
 
 export function buildFinalLoopPortfolio(
@@ -155,16 +177,16 @@ export function buildFinalLoopPortfolio(
     return withV4Identity;
   }
 
-  const startingCanonicalDebt = portfolio.v4DebtState.drawnDebt + portfolio.v4DebtState.premiumDebt;
-  const newlyBorrowed = strategy.finalDebt - startingCanonicalDebt;
-
+  // V4 Readiness Audit §12 P1-D3 — `loopIntroducesAmbiguousV4Borrow` above
+  // already proved, via the USD-consistent comparison, that no step
+  // committed a real borrow: a non-ambiguous result means
+  // `strategy.finalDebt` is exactly the starting USD balance. Nothing
+  // about quantity, rates, or the authoritative price changed, so the
+  // starting `v4DebtState` is carried through unchanged — no
+  // reconstruction, no unit conversion, no risk of the raw-quantity/USD
+  // mismatch that previously corrupted this branch (see header comment).
   return {
     ...withV4Identity,
-    v4DebtState: {
-      drawnDebt: portfolio.v4DebtState.drawnDebt + newlyBorrowed,
-      premiumDebt: portfolio.v4DebtState.premiumDebt,
-      baseDrawnApr: portfolio.v4DebtState.baseDrawnApr,
-      riskPremium: portfolio.v4DebtState.riskPremium,
-    },
+    v4DebtState: portfolio.v4DebtState,
   };
 }

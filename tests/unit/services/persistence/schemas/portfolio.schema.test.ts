@@ -306,3 +306,69 @@ describe('persistedPortfolioPayloadSchema (Stage 25: v4DebtStateSource/v4Collate
     expect(result.success).toBe(false);
   });
 });
+
+/**
+ * `v4DebtState.debtAssetPriceUsd` — V4 Readiness Audit §12 P1-D3. Reuses
+ * `aaveV4DebtStateSchema` directly (see this file's own header comment),
+ * so widening that one shared schema is sufficient for persistence — no
+ * separate change needed here. Covers the review's own explicit
+ * backward-compatibility requirements: old saved data (pre-P1-D3, no
+ * price field at all) still loads; a manual `v4DebtState` is never
+ * required to carry one; a live one may; nothing here silently fabricates
+ * a `$1` price for data that never had one.
+ */
+describe('persistedPortfolioPayloadSchema (P1-D3: v4DebtState.debtAssetPriceUsd)', () => {
+  it('accepts a payload with v4DebtState but no debtAssetPriceUsd (backward compatibility — same fixture Stage 6 already used, still valid post-P1-D3)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE, v4DebtStateSource: 'live' }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtState?.debtAssetPriceUsd).toBeUndefined();
+  });
+
+  it('accepts and preserves a real debtAssetPriceUsd through a round trip', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        v4DebtState: { ...VALID_DEBT_STATE, debtAssetPriceUsd: 0.9973 },
+        v4DebtStateSource: 'live',
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtState?.debtAssetPriceUsd).toBe(0.9973);
+    // The rest of the debt state round-trips unchanged alongside it.
+    expect(result.data.v4DebtState?.drawnDebt).toBe(15000);
+    expect(result.data.v4DebtState?.premiumDebt).toBe(500);
+  });
+
+  it('a manual v4DebtState is never required to carry a price — omitting it is valid, not a validation gap', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: VALID_DEBT_STATE, v4DebtStateSource: 'manual' }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateSource).toBe('manual');
+    expect(result.data.v4DebtState?.debtAssetPriceUsd).toBeUndefined();
+  });
+
+  it('rejects a non-positive debtAssetPriceUsd (zero or negative), never silently coercing or dropping it to become a valid $1-like state', () => {
+    const zero = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: { ...VALID_DEBT_STATE, debtAssetPriceUsd: 0 } }),
+    );
+    const negative = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtState: { ...VALID_DEBT_STATE, debtAssetPriceUsd: -1 } }),
+    );
+    expect(zero.success).toBe(false);
+    expect(negative.success).toBe(false);
+  });
+
+  it('rejects a non-finite debtAssetPriceUsd', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        v4DebtState: { ...VALID_DEBT_STATE, debtAssetPriceUsd: Number.POSITIVE_INFINITY },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+});

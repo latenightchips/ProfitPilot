@@ -221,6 +221,151 @@ describe('calculatePortfolioSummary — canonical V4 debt (Stage 9)', () => {
 });
 
 /**
+ * Authoritative V4 debt-asset USD valuation — V4 Readiness Audit §12
+ * P1-D3. `calculatePortfolioSummary` is where `resolveCanonicalDebtBalance`'s
+ * corrected USD balance is actually consumed by every other summary field
+ * — this proves the price correction propagates end-to-end into debt
+ * value, health factor, liquidation price, leverage and net equity, not
+ * just the isolated `resolveCanonicalDebtBalance` helper (see
+ * `tests/unit/services/portfolio/mapping.test.ts` for that unit-level
+ * proof).
+ */
+describe('calculatePortfolioSummary — authoritative V4 debt-asset pricing (P1-D3)', () => {
+  function v4CollateralRisk() {
+    return { collateralFactor: 0.8, dynamicConfigKey: 1 };
+  }
+
+  it('a non-$1 V4 debt price propagates consistently into debtValue, healthFactor, liquidation price, leverage and netEquity', () => {
+    const atOneDollar = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0,
+      },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: v4CollateralRisk(),
+    });
+    const repriced = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: v4CollateralRisk(),
+    });
+
+    const base = calculatePortfolioSummary(atOneDollar, 'live');
+    const priced = calculatePortfolioSummary(repriced, 'live');
+    expect(base.ok).toBe(true);
+    expect(priced.ok).toBe(true);
+    if (!base.ok || !priced.ok) return;
+
+    // Collateral: 2 BTC @ $50,000 = $100,000, unaffected by debt repricing.
+    const expectedDebt = 15500 * 0.9973;
+    expect(priced.data.debtValue).toBeCloseTo(expectedDebt, 6);
+    expect(priced.data.debtValue).not.toBe(base.data.debtValue);
+    expect(priced.data.netEquity).toBeCloseTo(100000 - expectedDebt, 6);
+    expect(priced.data.netEquity).not.toBe(base.data.netEquity);
+    expect(priced.data.healthFactor).toBeCloseTo((100000 * 0.8) / expectedDebt, 6);
+    expect(priced.data.healthFactor).not.toBe(base.data.healthFactor);
+    expect(priced.data.liquidation).not.toBeNull();
+    expect(base.data.liquidation).not.toBeNull();
+    expect(priced.data.liquidation?.price).not.toBe(base.data.liquidation?.price);
+    expect(priced.data.leverage).not.toBe(base.data.leverage);
+  });
+
+  it('fails closed with AAVE_V4_DEBT_ASSET_PRICE_MISSING for a live-sourced v4DebtState with no debtAssetPriceUsd, never silently valuing debt at $1', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: v4CollateralRisk(),
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({
+      category: 'calculation',
+      code: 'AAVE_V4_DEBT_ASSET_PRICE_MISSING',
+    });
+    expect('data' in result).toBe(false);
+  });
+
+  it('manual V4 (v4DebtStateSource unset/"manual") retains the existing implicit-$1 behavior unchanged, even with no debtAssetPriceUsd', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: v4CollateralRisk(),
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(15500);
+  });
+
+  it('V3 remains completely unaffected by any debtAssetPriceUsd machinery', () => {
+    const result = calculatePortfolioSummary(basePortfolio(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debtValue).toBe(20000);
+    expect(result.data.healthFactor).toBe(4);
+    expect(result.data.liquidation).toEqual({ price: 12500, distance: 3, buffer: 75 });
+  });
+
+  /**
+   * Directional sanity check (V4 Readiness Audit §12 P1-D3 review) — the
+   * test above only proves the numbers move, not that they move the
+   * economically correct WAY. A lower debt-asset price means the same
+   * token quantity is worth fewer real dollars, so the position must
+   * become safer (higher Health Factor, higher/farther liquidation price
+   * is not applicable here — lower liquidation-trigger collateral price
+   * needed — see below); a higher price makes it riskier, the reverse.
+   */
+  it('a lower debt price makes the position safer (higher HF, lower liquidation-trigger price); a higher price makes it riskier', () => {
+    function portfolioAtPrice(debtAssetPriceUsd: number) {
+      return basePortfolio({
+        protocolVersion: 'v4',
+        v4DebtState: {
+          drawnDebt: 15000,
+          premiumDebt: 500,
+          baseDrawnApr: 0.05,
+          riskPremium: 0.01,
+          debtAssetPriceUsd,
+        },
+        v4DebtStateSource: 'live',
+        v4CollateralRisk: v4CollateralRisk(),
+      });
+    }
+
+    const cheaper = calculatePortfolioSummary(portfolioAtPrice(0.9973), 'live');
+    const par = calculatePortfolioSummary(portfolioAtPrice(1.0), 'live');
+    const pricier = calculatePortfolioSummary(portfolioAtPrice(1.0041), 'live');
+    expect(cheaper.ok).toBe(true);
+    expect(par.ok).toBe(true);
+    expect(pricier.ok).toBe(true);
+    if (!cheaper.ok || !par.ok || !pricier.ok) return;
+
+    // Lower debt price -> less real debt -> safer -> higher HF; higher
+    // debt price -> more real debt -> riskier -> lower HF.
+    expect(cheaper.data.healthFactor).toBeGreaterThan(par.data.healthFactor);
+    expect(par.data.healthFactor).toBeGreaterThan(pricier.data.healthFactor);
+
+    // Less real debt also means BTC can fall further before liquidation
+    // (a lower liquidation-trigger BTC price is safer); more real debt
+    // means liquidation triggers at a higher, closer BTC price.
+    expect(cheaper.data.liquidation?.price).toBeLessThan(par.data.liquidation?.price ?? Infinity);
+    expect(par.data.liquidation?.price).toBeLessThan(pricier.data.liquidation?.price ?? Infinity);
+  });
+});
+
+/**
  * V4 rate semantics hardening — V4 Readiness Audit §12 Stage 10.
  * `interestCost` for a V4 portfolio with synced `v4DebtState` now comes
  * from the real V4 accrual engine (`projectAaveV4AnnualInterestCost`),
@@ -245,6 +390,38 @@ describe('calculatePortfolioSummary — V4 interestCost via the real accrual eng
     // give 20500 * 0.05 = 1025 — a genuinely different, wrong-for-V4 answer.
     expect(result.data.interestCost).toBeCloseTo(1100, 6);
     expect(result.data.interestCost).not.toBeCloseTo(1025, 6);
+  });
+
+  /**
+   * USD conversion of interestCost at a non-$1 price — V4 Readiness
+   * Audit §12 P1-D3, a genuine defect found while reviewing that stage.
+   * `projectAaveV4AnnualInterestCost`'s own raw output (a debt-TOKEN
+   * quantity delta, `21600 - 20500 = 1100` per the test above) was being
+   * assigned directly as `interestCost` (a USD figure everywhere else in
+   * this codebase) with no price conversion. `calculatePortfolioSummary`
+   * now uses `projectAaveV4AnnualInterestCostUsd` instead.
+   */
+  it('converts the raw V4 interest projection to USD at a non-$1 live price', () => {
+    const portfolio = basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: {
+        drawnDebt: 20000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.1,
+        debtAssetPriceUsd: 0.9973,
+      },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Raw accrual is unaffected by price: totalDebt(365d) = 21,600 (same
+    // as the unpriced test above). USD: (21,600 - 20,500) x 0.9973 =
+    // 1,097.03 — never the raw 1,100 delta.
+    expect(result.data.interestCost).toBeCloseTo(1100 * 0.9973, 6);
+    expect(result.data.interestCost).not.toBeCloseTo(1100, 6);
   });
 
   it('ignores protocol.borrowApr entirely for a V4 portfolio with synced v4DebtState', () => {

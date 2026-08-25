@@ -257,7 +257,9 @@ describe('SimulationWarnings — V4 High Borrowing Cost rate source (Stage 20)',
     usePortfolioStore.getState().setAaveV4Position(portfolio.id, {
       userAddress: '0x1234567890123456789012345678901234567890',
     });
-    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, v4DebtState);
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(portfolio.id, { ...v4DebtState, debtAssetPriceUsd: 1.0 });
     // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
     // synced (mirroring this same `v4DebtState` guard).
     usePortfolioStore

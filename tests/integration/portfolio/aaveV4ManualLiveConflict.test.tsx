@@ -74,12 +74,16 @@ const DIFFERING_LIVE_DEBT_STATE = {
   premiumDebt: 777,
   baseDrawnApr: 0.061,
   riskPremium: 0.017,
+  debtAssetPriceUsd: 1.0,
 };
 const MANUAL_COLLATERAL_RISK = { collateralFactor: 0.55, dynamicConfigKey: 9 };
 const DIFFERING_LIVE_COLLATERAL_RISK = { collateralFactor: 0.71, dynamicConfigKey: 3 };
 
 function v4PositionBody(debtState: typeof DIFFERING_LIVE_DEBT_STATE) {
-  return { ok: true, data: { raw: {}, engineInputs: debtState, display: {} } };
+  return {
+    ok: true,
+    data: { raw: {}, engineInputs: debtState, display: {}, debtAssetPriceUsd: 1.0 },
+  };
 }
 
 function v4CollateralRiskBody(canonical: typeof DIFFERING_LIVE_COLLATERAL_RISK) {
@@ -337,6 +341,7 @@ describe('P0-1 — remount/manual-override regression: an intentional manual ove
       premiumDebt: 100,
       baseDrawnApr: 0.03,
       riskPremium: 0.005,
+      debtAssetPriceUsd: 1.0,
     };
     usePortfolioStore.getState().setAaveV4DebtState(created.id, initialLiveDebtState, 'live');
     usePortfolioStore

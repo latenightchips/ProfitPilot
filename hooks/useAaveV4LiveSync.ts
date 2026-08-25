@@ -253,7 +253,23 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
       // Preview); a genuinely different refresh auto-applies, no
       // confirmation — the freshness model your own audit asked to keep
       // as-is.
-      if (aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState)) return;
+      //
+      // V4 Readiness Audit §12 P1-D3 — a genuine defect found while
+      // reviewing that stage: `aaveV4DebtStateEqual` deliberately never
+      // compares `debtAssetPriceUsd` (see its own doc comment — it also
+      // gates the manual↔live numeric-match case below, where excluding
+      // price is required, not a gap). Used alone here, a refresh that
+      // changed ONLY the oracle price (quantity/rates unchanged) was
+      // wrongly treated as a no-op — the stale price would never reach
+      // canonical state until quantity or a rate also happened to change.
+      // A live-sourced comparison additionally requires the price itself
+      // to match; a manual-sourced portfolio never reaches this branch
+      // (guarded by `v4DebtStateSource === 'live'` above), so this never
+      // manufactures a spurious manual-vs-live conflict.
+      const unchanged =
+        aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState) &&
+        engineInputs.debtAssetPriceUsd === portfolio.v4DebtState?.debtAssetPriceUsd;
+      if (unchanged) return;
       setAaveV4DebtState(portfolioId, engineInputs, 'live');
       return;
     }

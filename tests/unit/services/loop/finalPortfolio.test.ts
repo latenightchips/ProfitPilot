@@ -188,3 +188,73 @@ describe('buildFinalLoopPortfolio — ambiguous V4 borrow fails closed on riskPr
     expect(finalPortfolio.protocolVersion).toBeUndefined();
   });
 });
+
+/**
+ * USD-vs-raw-quantity comparison — V4 Readiness Audit §12 P1-D3, a genuine
+ * defect found during that stage's own review (see this file's
+ * `loopIntroducesAmbiguousV4Borrow`/`buildFinalLoopPortfolio` header
+ * comments). `strategy.finalDebt` is USD; before this fix it was compared
+ * against/subtracted from the raw `drawnDebt + premiumDebt` sum directly
+ * — only safe under the old implicit-$1 assumption. A live V4 portfolio
+ * with a real (non-$1) `debtAssetPriceUsd` exposes the mismatch: a
+ * zero-loop (no real borrow) result would previously compute a spurious
+ * nonzero "newly borrowed" quantity purely from the price gap and corrupt
+ * `drawnDebt`, even though nothing was actually borrowed.
+ */
+describe('buildFinalLoopPortfolio — USD-consistent comparison with a non-$1 debt price (P1-D3)', () => {
+  function pricedV4Portfolio(debtAssetPriceUsd: number): ApplicationPortfolio {
+    return {
+      ...healthyPortfolio(),
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 999999 },
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: {
+        drawnDebt: 20000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.13,
+        debtAssetPriceUsd,
+      },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    };
+  }
+
+  it('a zero-loop result at a non-$1 price is never flagged ambiguous, and carries v4DebtState — including the price — through byte-identical', () => {
+    const portfolio = pricedV4Portfolio(0.9973);
+    const zeroLoopSettings: LoopStrategySettings = {
+      targetBorrowPercentage: 0.5,
+      maxLoops: 0,
+      minHealthFactor: 1.1,
+    };
+    const result = planLoopStrategy(portfolio, zeroLoopSettings, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    // strategy.finalDebt is the USD-priced starting balance (20,500 x
+    // 0.9973), never the raw 20,500 quantity.
+    expect(result.data.strategy.finalDebt).toBeCloseTo(20500 * 0.9973, 6);
+    expect(result.data.strategy.finalDebt).not.toBeCloseTo(20500, 6);
+
+    expect(loopIntroducesAmbiguousV4Borrow(portfolio, result.data.strategy)).toBe(false);
+
+    const finalPortfolio = buildFinalLoopPortfolio(portfolio, result.data.strategy);
+    expect(finalPortfolio.v4DebtState).toEqual(portfolio.v4DebtState);
+    expect(finalPortfolio.v4DebtState?.drawnDebt).toBe(20000);
+    expect(finalPortfolio.v4DebtState?.debtAssetPriceUsd).toBe(0.9973);
+  });
+
+  it('a real new borrow is still correctly flagged ambiguous at a non-$1 price (the fix does not weaken genuine-borrow detection)', () => {
+    const portfolio = pricedV4Portfolio(0.9973);
+    const result = planLoopStrategy(portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    expect(result.data.strategy.finalDebt).toBeGreaterThan(20500 * 0.9973);
+    expect(loopIntroducesAmbiguousV4Borrow(portfolio, result.data.strategy)).toBe(true);
+
+    const finalPortfolio = buildFinalLoopPortfolio(portfolio, result.data.strategy);
+    expect(finalPortfolio.v4DebtState).toBeUndefined();
+  });
+});

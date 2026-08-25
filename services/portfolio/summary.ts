@@ -111,11 +111,14 @@
  * `checkAaveV4DebtStateAvailable` (previously an inline check local to
  * this file), and `interestCost` below no longer reads the V3-shaped
  * `engineInput.protocol.borrowApr` for a V4 portfolio with synced
- * `v4DebtState` — it uses `projectAaveV4AnnualInterestCost` instead,
+ * `v4DebtState` — it uses `projectAaveV4AnnualInterestCostUsd` instead,
  * which projects the portfolio's own real V4 rates through the same
  * validated Engine accrual math `services/simulation/scenario.ts` already
- * uses for V4 debt projection. See that file's own header comment for the
- * full V4 rate-stress design this stage also introduces.
+ * uses for V4 debt projection, then converts the resulting raw
+ * debt-token-quantity delta to USD (V4 Readiness Audit §12 P1-D3 — see
+ * that function's own doc comment in `services/portfolio/mapping.ts`).
+ * See this header's own earlier mention of `scenario.ts` for its full V4
+ * rate-stress design this stage also introduces.
  */
 import {
   calculateAnnualInterest,
@@ -135,9 +138,10 @@ import { formulaStep as step, optionsFromTracked as optionsFrom } from '../share
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 import {
   checkAaveV4CollateralRiskAvailable,
+  checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   mapApplicationPortfolioToEngineInput,
-  projectAaveV4AnnualInterestCost,
+  projectAaveV4AnnualInterestCostUsd,
   resolveRiskCapacityFraction,
 } from './mapping';
 import type { ApplicationPortfolio } from './models';
@@ -194,6 +198,16 @@ export function calculatePortfolioSummary(
     sourceStatus,
   );
   if (v4GuardFailure !== null) return v4GuardFailure;
+
+  // V4 Readiness Audit §12 P1-D3 — same fail-closed discipline as the
+  // guard above, now for a 'live'-sourced `v4DebtState` that is missing
+  // its authoritative debt-asset oracle price (never fires for manual V4).
+  const v4PriceGuardFailure = checkAaveV4DebtAssetPriceAvailable(
+    portfolio,
+    collateralValueStep.tracked,
+    sourceStatus,
+  );
+  if (v4PriceGuardFailure !== null) return v4PriceGuardFailure;
 
   // V4 Readiness Audit §12 Stage 23D — the same fail-closed discipline as
   // the debt-state guard above, now for `v4CollateralRisk` (Stage 23C).
@@ -311,13 +325,14 @@ export function calculatePortfolioSummary(
   // (`baseDrawnApr` + `riskPremium`) — using it for a V4 portfolio would be
   // amount-correct but rate-questionable. When the guard above has already
   // confirmed `v4DebtState` is present for a V4 portfolio, `interestCost`
-  // instead comes from `projectAaveV4AnnualInterestCost`, which projects
+  // instead comes from `projectAaveV4AnnualInterestCostUsd`, which projects
   // that same real, currently-effective V4 rate state forward through the
   // Engine's own validated V4 accrual math (`services/portfolio/mapping.ts`)
-  // rather than reading a rate that was never V4's own.
+  // rather than reading a rate that was never V4's own, then converts the
+  // raw debt-token-quantity result to USD (V4 Readiness Audit §12 P1-D3).
   const interestCostStep =
     portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
-      ? step(projectAaveV4AnnualInterestCost(portfolio.v4DebtState), tracked, sourceStatus)
+      ? step(projectAaveV4AnnualInterestCostUsd(portfolio.v4DebtState), tracked, sourceStatus)
       : step(
           calculateAnnualInterest(debtValue, engineInput.protocol.borrowApr),
           tracked,

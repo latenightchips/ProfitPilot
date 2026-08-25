@@ -51,6 +51,19 @@ export interface AaveV4EngineDebtInputsData {
   premiumDebt: number;
   baseDrawnApr: number;
   riskPremium: number;
+  /**
+   * V4 Readiness Audit §12 P1-D3 — the debt asset's V4-authoritative
+   * oracle price (`AaveV4DebtSnapshot.debtAssetPriceUsd`, P1-D1's
+   * top-level sibling field, never part of the adapter's own
+   * Engine-type-linked `engineInputs`). Attached here, alongside
+   * `drawnDebt`/etc., purely because this store's own
+   * `AaveV4EngineDebtInputsData` is an independently-declared shape (not
+   * type-linked to the Engine the way the adapter's own type is) — so
+   * carrying it through this one extra field costs nothing and lets
+   * `hooks/useAaveV4LiveSync.ts` write it onto `portfolio.v4DebtState`
+   * with no further plumbing.
+   */
+  debtAssetPriceUsd: number;
 }
 
 export interface AaveV4LiveDataState {
@@ -135,7 +148,12 @@ export const useAaveV4LiveDataStore = create<AaveV4LiveDataState>((set) => ({
 
     set({
       status: 'ready',
-      engineInputs: body.data.engineInputs,
+      // V4 Readiness Audit §12 P1-D3 — `debtAssetPriceUsd` is attached
+      // alongside `engineInputs` here, not inside the adapter's own
+      // response shape (P1-D1 deliberately keeps it a top-level sibling
+      // of `engineInputs`, not part of it — see that field's own
+      // comment).
+      engineInputs: { ...body.data.engineInputs, debtAssetPriceUsd: body.data.debtAssetPriceUsd },
       userAddress,
       debtAsset,
       errorMessage: null,

@@ -644,6 +644,141 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
     });
   });
 
+  /**
+   * USD-vs-raw-quantity projection — V4 Readiness Audit §12 P1-D3, a
+   * genuine defect found while reviewing that stage. `AaveV4DebtProjection.totalDebt`
+   * (the real Engine accrual formula's own output) is a raw debt-TOKEN
+   * quantity, never USD — accrual is fundamentally a quantity-scaling
+   * operation. Before this fix, `projectedDebtBalance` returned that raw
+   * quantity unchanged and every caller subtracted/assigned it against the
+   * portfolio's now-correctly-priced `currentTotalDebt` (USD) as if they
+   * were the same unit — only safe under the old implicit-$1 assumption.
+   * The block above (`v4DebtPortfolio`) never sets `debtAssetPriceUsd`, so
+   * it cannot catch this: raw quantity and USD were numerically
+   * indistinguishable there. This block sets a real non-$1 price to prove
+   * the projected debt is correctly converted to USD before use.
+   */
+  describe('V4 — projected debt is converted to USD at a non-$1 price, not treated as raw quantity (P1-D3)', () => {
+    function pricedV4DebtPortfolio(
+      overrides: Partial<ApplicationPortfolio> = {},
+    ): ApplicationPortfolio {
+      return debtPortfolio({
+        protocolVersion: 'v4',
+        v4DebtState: {
+          drawnDebt: 20000,
+          premiumDebt: 500,
+          baseDrawnApr: 0.05,
+          riskPremium: 0.1,
+          debtAssetPriceUsd: 0.9973,
+        },
+        v4DebtStateSource: 'live',
+        v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+        ...overrides,
+      });
+    }
+
+    const oneYearInterestScenario: SimulationScenario = {
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.09,
+    };
+
+    it('debtCost reflects the USD-converted projection (21,600 raw x $0.9973), not the raw-quantity delta', () => {
+      const result = simulateScenario(
+        pricedV4DebtPortfolio(),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Raw accrual is unaffected by price: totalDebt(t) = 21,600 (same as
+      // the unpriced block above). USD: 21,600 x 0.9973 - 20,500 x 0.9973
+      // = (21,600 - 20,500) x 0.9973 = 1,097.03 — never the raw-quantity
+      // 1,100 delta (which would leak through if totalDebt were used
+      // unconverted).
+      expect(result.data.scenario.debtCost).toBeCloseTo(1097.03, 2);
+      expect(result.data.scenario.debtCost).not.toBeCloseTo(1100, 2);
+    });
+
+    it('baseline and scenario debtCost still coincide at a non-$1 price (both go through the same USD conversion)', () => {
+      const result = simulateScenario(
+        pricedV4DebtPortfolio(),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.baseline.debtCost).toBeCloseTo(result.data.scenario.debtCost, 9);
+    });
+
+    it('equity reflects the USD-converted projected total debt ($21,541.68), never the raw quantity ($21,600)', () => {
+      const result = simulateScenario(
+        pricedV4DebtPortfolio(),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Collateral: 2 BTC @ $50,000 = $100,000. Projected total debt (USD):
+      // 21,600 x 0.9973 = 21,541.68.
+      expect(result.data.scenario.equity).toBeCloseTo(100000 - 21600 * 0.9973, 2);
+      expect(result.data.scenario.equity).not.toBeCloseTo(100000 - 21600, 2);
+    });
+
+    it('a missing live price fails the whole simulation closed (via the baseline summary guard), never silently valuing the projection at raw quantity', () => {
+      const result = simulateScenario(
+        pricedV4DebtPortfolio({
+          v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+        }),
+        oneYearInterestScenario,
+        '1 year',
+        'live',
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_DEBT_ASSET_PRICE_MISSING' });
+    });
+
+    it('a "price" scenario\'s own debtCost is also converted to USD at a non-$1 price (projectAaveV4AnnualInterestCostUsd, not the raw Engine delta)', () => {
+      const priceScenario: SimulationScenario = {
+        type: 'price',
+        priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+      };
+      const priced = simulateScenario(
+        pricedV4DebtPortfolio(),
+        priceScenario,
+        'BTC to $60k',
+        'live',
+      );
+      const atOneDollar = simulateScenario(
+        pricedV4DebtPortfolio({
+          v4DebtState: {
+            drawnDebt: 20000,
+            premiumDebt: 500,
+            baseDrawnApr: 0.05,
+            riskPremium: 0.1,
+            debtAssetPriceUsd: 1.0,
+          },
+        }),
+        priceScenario,
+        'BTC to $60k',
+        'live',
+      );
+      expect(priced.ok).toBe(true);
+      expect(atOneDollar.ok).toBe(true);
+      if (!priced.ok || !atOneDollar.ok) return;
+      expect(priced.data.scenario.debtCost).toBeCloseTo(
+        atOneDollar.data.scenario.debtCost * 0.9973,
+        6,
+      );
+      expect(priced.data.scenario.debtCost).not.toBeCloseTo(atOneDollar.data.scenario.debtCost, 3);
+    });
+  });
+
   describe('V4 — dispatch is keyed strictly by protocolVersion, never inferred from v4DebtState presence alone (Stage 8)', () => {
     const V4_DEBT_STATE = {
       drawnDebt: 20000,

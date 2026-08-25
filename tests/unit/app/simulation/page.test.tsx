@@ -234,6 +234,7 @@ describe('SimulationPage — cross-portfolio contamination (M9-012)', () => {
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
     usePortfolioStore
       .getState()

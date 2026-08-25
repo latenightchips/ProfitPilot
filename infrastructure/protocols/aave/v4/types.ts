@@ -120,9 +120,12 @@ export interface AaveV4DebtSnapshot {
    * top-level sibling field, not inside `engineInputs` — that shape is
    * type-linked to the Engine's own `AaveV4DebtProjectionRequest` (see
    * this file's own comment above `AaveV4EngineDebtInputs`), which has no
-   * price field and is not being widened by this stage. This is an
-   * infrastructure-boundary field only: no consumer (`resolveCanonicalDebtBalance`,
-   * `calculateDebtValue`, Store, Engine) reads it yet.
+   * price field and is not being widened by this stage. At P1-D1 this was
+   * infrastructure-boundary only; as of **P1-D3** it flows through
+   * `stores/aaveV4LiveDataStore.ts` and `AaveV4DebtState`
+   * (`services/portfolio/models.ts`) to `resolveCanonicalDebtBalance`
+   * (`services/portfolio/mapping.ts`), the one place it is actually
+   * consumed, via the canonical `calculateDebtAssetValue` Engine formula.
    */
   debtAssetPriceUsd: number;
 }

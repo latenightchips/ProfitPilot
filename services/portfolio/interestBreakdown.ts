@@ -18,12 +18,14 @@
  * **V4 rate fix (V4 Readiness Audit §12 Stage 11)** — for a V4 portfolio
  * with synced `v4DebtState`, Daily/Monthly no longer read the V3-shaped
  * `protocol.borrowApr` (Stage 10 flagged this as open for this file
- * specifically). Both now come from `projectAaveV4InterestCost`
+ * specifically). Both now come from `projectAaveV4InterestCostUsd`
  * (`services/portfolio/mapping.ts`) with `elapsedDays: 1`/`30` —
  * projecting the portfolio's own real V4 rates the exact `elapsedDays`
  * this Service needs through the same validated Engine accrual math
  * `calculatePortfolioSummary`'s own `interestCost` (Stage 10) already
- * uses for 365 days, not a hand-derived "daily figure × 30" scaling.
+ * uses for 365 days, not a hand-derived "daily figure × 30" scaling, then
+ * converting the raw debt-token-quantity result to USD (V4 Readiness
+ * Audit §12 P1-D3 — see that function's own doc comment).
  */
 import { calculateDailyInterest, calculateDebtValue, calculateMonthlyInterest } from '@/engine';
 
@@ -34,9 +36,10 @@ import {
 } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 import {
+  checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   mapApplicationPortfolioToEngineInput,
-  projectAaveV4InterestCost,
+  projectAaveV4InterestCostUsd,
 } from './mapping';
 import type { ApplicationPortfolio } from './models';
 
@@ -72,11 +75,17 @@ export function calculateDebtInterestBreakdown(
   const v4GuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
   if (v4GuardFailure !== null) return v4GuardFailure;
 
+  // V4 Readiness Audit §12 P1-D3 — same fail-closed discipline as the
+  // guard above, now for a 'live'-sourced `v4DebtState` that is missing
+  // its authoritative debt-asset oracle price (never fires for manual V4).
+  const v4PriceGuardFailure = checkAaveV4DebtAssetPriceAvailable(portfolio, tracked, sourceStatus);
+  if (v4PriceGuardFailure !== null) return v4PriceGuardFailure;
+
   // V4 Readiness Audit §12 Stage 11 — the guard above already proved
   // `v4DebtState` is defined whenever `protocolVersion === 'v4'`.
   const dailyStep =
     portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
-      ? step(projectAaveV4InterestCost(portfolio.v4DebtState, 1), tracked, sourceStatus)
+      ? step(projectAaveV4InterestCostUsd(portfolio.v4DebtState, 1), tracked, sourceStatus)
       : step(
           calculateDailyInterest(debtValue, engineInput.protocol.borrowApr),
           tracked,
@@ -88,7 +97,7 @@ export function calculateDebtInterestBreakdown(
 
   const monthlyStep =
     portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
-      ? step(projectAaveV4InterestCost(portfolio.v4DebtState, 30), tracked, sourceStatus)
+      ? step(projectAaveV4InterestCostUsd(portfolio.v4DebtState, 30), tracked, sourceStatus)
       : step(
           calculateMonthlyInterest(debtValue, engineInput.protocol.borrowApr),
           tracked,

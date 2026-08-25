@@ -362,7 +362,17 @@ describe('planExit — transaction.v4DebtBreakdown (Stage 25D)', () => {
   it('is identical for a live-sourced V4 portfolio — provenance never changes the breakdown', () => {
     const target: ExitTarget = { type: 'debtBalance', targetDebt: 20500 };
     const result = planExit(
-      manualV4Portfolio({ v4DebtStateSource: 'live', v4CollateralRiskSource: 'live' }),
+      manualV4Portfolio({
+        v4DebtState: {
+          drawnDebt: 30000,
+          premiumDebt: 500,
+          baseDrawnApr: 0.05,
+          riskPremium: 0.01,
+          debtAssetPriceUsd: 1.0,
+        },
+        v4DebtStateSource: 'live',
+        v4CollateralRiskSource: 'live',
+      }),
       target,
       'live',
     );

@@ -206,6 +206,20 @@ export const aaveV4DebtStateSchema = z.object({
     .number({ error: 'Enter a valid risk premium.' })
     .finite('Enter a valid risk premium.')
     .nonnegative('Risk premium cannot be negative.'),
+  /**
+   * V4 Readiness Audit §12 P1-D3 — optional, never required: manual
+   * `v4DebtState` entries have no oracle to read a price from and are
+   * never expected to supply one (see `AaveV4DebtState`'s own doc
+   * comment in `services/portfolio/models.ts`). Only
+   * `hooks/useAaveV4LiveSync.ts`'s live sync ever sets it. `.positive()`
+   * mirrors the Engine's own `validatePrice` — a genuine price is never
+   * zero or negative.
+   */
+  debtAssetPriceUsd: z
+    .number({ error: 'Enter a valid debt asset price.' })
+    .finite('Enter a valid debt asset price.')
+    .positive('Debt asset price must be greater than zero.')
+    .optional(),
 });
 
 export type AaveV4DebtStateInput = z.infer<typeof aaveV4DebtStateSchema>;

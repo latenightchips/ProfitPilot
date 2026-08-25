@@ -36,6 +36,7 @@
  * this module's public API needs to change.
  */
 import {
+  calculateDebtAssetValue,
   deriveAaveV4DebtAfterRepayment,
   type FormulaResult,
   type PortfolioInput,
@@ -270,6 +271,31 @@ export function mapPersistencePortfolioToApplicationPortfolio(
  * no guard at all — `calculateExposure` only reads `collateral`/`market`,
  * never `debt`.
  *
+ * **Authoritative V4 debt USD valuation (V4 Readiness Audit §12 P1-D3).**
+ * The V4 branch no longer treats `drawnDebt + premiumDebt` (a raw token
+ * quantity) as USD directly — that was the implicit "1 debt token = $1"
+ * assumption this whole stage exists to remove. When `v4DebtState.debtAssetPriceUsd`
+ * (P1-D1's authoritative Spoke-oracle price, threaded through by
+ * `hooks/useAaveV4LiveSync.ts`) is present, this calls the canonical
+ * `calculateDebtAssetValue` (P1-D2) — `quantity × price`, the ONLY place
+ * in this codebase that arithmetic happens — and returns its USD result.
+ * `DebtPosition.balance`'s MEANING is unchanged by this: it is still "the
+ * portfolio's current total debt, in USD," for every downstream Engine
+ * consumer, V3 and V4 alike; only how V4 arrives at that number changed.
+ *
+ * **Manual V4 mode is deliberately exempt, unchanged.** `debtAssetPriceUsd`
+ * is `undefined` for every manual `v4DebtState` (no UI ever sets it — see
+ * `AaveV4DebtState`'s own doc comment) — this function falls back to the
+ * raw quantity sum in that case, exactly its pre-P1-D3 behavior, per this
+ * stage's own explicit scope ("manual V4 retains the existing $1
+ * assumption for now"). The same fallback also covers the structurally
+ * unreachable case where `calculateDebtAssetValue` itself fails despite a
+ * defined price (P1-D1 already validates positivity/finiteness before
+ * ever storing `debtAssetPriceUsd`, and `checkAaveV4DebtAssetPriceAvailable`
+ * below fails the calculation closed at every real call site before this
+ * function ever runs for a `'live'`-sourced portfolio) — kept as defense
+ * in depth, not a designed behavior.
+ *
  * **`resolveCanonicalDebtBalance` (V4 Readiness Audit §12 Stage 16)** —
  * the sum below was extracted into its own named, exported function so
  * every OTHER place in the codebase that needs "the portfolio's real
@@ -293,9 +319,19 @@ export function mapPersistencePortfolioToApplicationPortfolio(
  * chokepoint already does.
  */
 export function resolveCanonicalDebtBalance(application: ApplicationPortfolio): number {
-  return application.protocolVersion === 'v4' && application.v4DebtState !== undefined
-    ? application.v4DebtState.drawnDebt + application.v4DebtState.premiumDebt
-    : application.debt.balance;
+  if (application.protocolVersion !== 'v4' || application.v4DebtState === undefined) {
+    return application.debt.balance;
+  }
+
+  const { v4DebtState } = application;
+  const quantity = v4DebtState.drawnDebt + v4DebtState.premiumDebt;
+
+  if (v4DebtState.debtAssetPriceUsd === undefined) {
+    return quantity;
+  }
+
+  const valued = calculateDebtAssetValue(quantity, v4DebtState.debtAssetPriceUsd);
+  return valued.ok ? valued.value : quantity;
 }
 
 export function mapApplicationPortfolioToEngineInput(
@@ -336,6 +372,51 @@ export function checkAaveV4DebtStateAvailable(
     'calculation',
     'AAVE_V4_DEBT_STATE_MISSING',
     'This calculation requires Aave V4 debt data (drawn debt, premium debt, base rate, risk premium) for this portfolio, but none is available yet — sync a live position or enter it manually.',
+  );
+  return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
+}
+
+/**
+ * V4 authoritative debt-price fail-closed guard (V4 Readiness Audit §12
+ * P1-D3) — same shape and same calling convention as
+ * `checkAaveV4DebtStateAvailable` above (called immediately after it, at
+ * the same 5 production entry points), for a narrower condition: a
+ * `'live'`-sourced `v4DebtState` that is missing its authoritative
+ * `debtAssetPriceUsd`. This should only be reachable for a live sync that
+ * has not yet completed a P1-D3-era fetch (e.g. a portfolio whose
+ * `v4DebtState` was written before this stage shipped, or a live sync
+ * that is still loading) — never a designed steady state, so it fails
+ * closed rather than letting `resolveCanonicalDebtBalance` silently fall
+ * back to the raw-quantity (implicit-$1) sum for data that claims to be
+ * live-authoritative.
+ *
+ * **Deliberately does NOT fire for `'manual'` (or unset) `v4DebtStateSource`.**
+ * Manual/hypothetical V4 mode has no oracle to read a price from and, per
+ * this stage's own explicit scope, keeps its existing implicit-$1
+ * behavior unchanged — failing this calculation closed for every manual
+ * V4 portfolio would be a real behavior regression, not a safety
+ * improvement (manual mode was never claiming live-protocol accuracy in
+ * the first place). Checking `v4DebtStateSource` — not just "is a price
+ * present" — is what distinguishes "a live sync is expected to have
+ * supplied one and hasn't" from "this was always manual, by design."
+ */
+export function checkAaveV4DebtAssetPriceAvailable(
+  application: ApplicationPortfolio,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+): ServiceFailure | null {
+  if (
+    application.protocolVersion !== 'v4' ||
+    application.v4DebtState === undefined ||
+    application.v4DebtStateSource !== 'live' ||
+    application.v4DebtState.debtAssetPriceUsd !== undefined
+  ) {
+    return null;
+  }
+  const error: ApplicationError = createApplicationError(
+    'calculation',
+    'AAVE_V4_DEBT_ASSET_PRICE_MISSING',
+    'This calculation requires the authoritative Aave V4 debt-asset oracle price for this portfolio, but the live-synced debt data does not include one yet — refresh the live position.',
   );
   return createServiceFailure([error], optionsFromTracked(sourceStatus, tracked));
 }
@@ -493,15 +574,61 @@ export function projectAaveV4InterestCost(
 
 /**
  * The Stage 10 entry point, unchanged — a thin `elapsedDays: 365`
- * specialization of `projectAaveV4InterestCost` above. Kept as its own
- * named export so `services/portfolio/summary.ts`'s `interestCost` and
- * `services/simulation/scenario.ts`'s price-branch `debtCost` (both
- * Stage 10) don't need to change.
+ * specialization of `projectAaveV4InterestCost` above.
+ *
+ * **Stays a raw debt-token-quantity delta, deliberately (V4 Readiness
+ * Audit §12 P1-D3).** `deriveAaveV4EffectiveBorrowRate` below divides
+ * this value by the also-raw `drawnDebt + premiumDebt` sum to compute a
+ * price-independent RATE ratio — converting this function's own output to
+ * USD would silently scale that rate by `debtAssetPriceUsd`, corrupting
+ * it. Callers that need a USD dollar figure (`services/portfolio/summary.ts`'s
+ * `interestCost`, `services/simulation/scenario.ts`'s price-branch
+ * `debtCost`) use `projectAaveV4AnnualInterestCostUsd` below instead — a
+ * genuine defect found while reviewing that stage: before this fix, both
+ * used this function's raw output directly as a dollar figure.
  */
 export function projectAaveV4AnnualInterestCost(
   v4DebtState: AaveV4DebtState,
 ): FormulaResult<number> {
   return projectAaveV4InterestCost(v4DebtState, 365);
+}
+
+/**
+ * V4 Readiness Audit §12 P1-D3 — USD-denominated wrapper around
+ * `projectAaveV4InterestCost`. That function's own return value is a raw
+ * debt-TOKEN quantity delta (interest accrued in the debt asset's own
+ * native units); every consumer of an Interest Cost figure elsewhere in
+ * this codebase (`calculateAnnualInterest`/`calculateDailyInterest`/
+ * `calculateMonthlyInterest`, all taking a USD `debtValue`) expects a
+ * dollar figure. Converts via the canonical `calculateDebtAssetValue`
+ * (P1-D2) — the same single place arithmetic happens, never duplicated —
+ * with the same manual-mode fallback `resolveCanonicalDebtBalance`
+ * (`services/portfolio/mapping.ts`) uses: the raw delta unchanged when no
+ * authoritative price is available (`debtAssetPriceUsd` is `undefined`
+ * for every manual `v4DebtState`, by design). Used by
+ * `services/portfolio/interestBreakdown.ts`'s Daily/Monthly breakdown.
+ */
+export function projectAaveV4InterestCostUsd(
+  v4DebtState: AaveV4DebtState,
+  elapsedDays: number,
+): FormulaResult<number> {
+  const costStep = projectAaveV4InterestCost(v4DebtState, elapsedDays);
+  if (!costStep.ok) return costStep;
+  if (v4DebtState.debtAssetPriceUsd === undefined) return costStep;
+  const valued = calculateDebtAssetValue(costStep.value, v4DebtState.debtAssetPriceUsd);
+  return valued.ok ? { ...costStep, value: valued.value } : costStep;
+}
+
+/**
+ * The USD counterpart to `projectAaveV4AnnualInterestCost` above — a thin
+ * `elapsedDays: 365` specialization of `projectAaveV4InterestCostUsd`.
+ * Used by `services/portfolio/summary.ts`'s `interestCost` and
+ * `services/simulation/scenario.ts`'s price-branch `debtCost`.
+ */
+export function projectAaveV4AnnualInterestCostUsd(
+  v4DebtState: AaveV4DebtState,
+): FormulaResult<number> {
+  return projectAaveV4InterestCostUsd(v4DebtState, 365);
 }
 
 /**
@@ -630,6 +757,28 @@ export function deriveAaveV4EffectiveBorrowRate(
  * (`debtDelta === 0`) and `value: undefined` for an ambiguous borrow both
  * pass the caller's own `tracked` straight through unchanged (no new
  * Engine call happened in either case, so nothing new to track or fail).
+ *
+ * **`debtDelta` is USD; `deriveAaveV4DebtAfterRepayment` needs a
+ * debt-token-QUANTITY repayment amount — a genuine defect found during
+ * this stage's own final pre-commit review, not part of the original four
+ * fixes.** Every call site computes `debtDelta` the same way V3 always
+ * has: against `resolveCanonicalDebtBalance`/`engineInput.debt.balance`
+ * (both USD — the Debt form's "Debt amount" field, Simulation's
+ * `debtDelta`, and Exit Planner's `targetExit.exit.repayment` are all
+ * dollar figures). `deriveAaveV4DebtAfterRepayment` in turn operates on
+ * `drawnDebt`/`premiumDebt` in the debt asset's own native token units
+ * (P1-D1's real on-chain quantities). Passing the USD amount straight
+ * through as a token-quantity repayment — as this function did before
+ * this fix — misapplies a $X repayment as an X-TOKEN repayment,
+ * mis-splitting premium-first/drawn-remainder by the price factor and
+ * leaving the position's canonical USD debt away from the user's actual
+ * target by exactly that gap. Converted below via division by the
+ * authoritative `debtAssetPriceUsd` — the inverse of `calculateDebtAssetValue`'s
+ * own `quantity × price`, not a duplication of it — with the same
+ * manual-mode fallback established elsewhere in this file: the raw USD
+ * delta is used directly as the quantity delta when no price is
+ * available, exactly reproducing this function's pre-P1-D3 behavior for
+ * manual V4.
  */
 export function deriveV4DebtStateAfterDelta(
   v4DebtState: AaveV4DebtState,
@@ -646,11 +795,17 @@ export function deriveV4DebtStateAfterDelta(
     return { ok: true, value: undefined, tracked, warnings: [] };
   }
 
+  const repaymentAmountUsd = -debtDelta;
+  const repaymentAmountQuantity =
+    v4DebtState.debtAssetPriceUsd === undefined
+      ? repaymentAmountUsd
+      : repaymentAmountUsd / v4DebtState.debtAssetPriceUsd;
+
   const repaymentStep = formulaStep(
     deriveAaveV4DebtAfterRepayment({
       drawnDebt: v4DebtState.drawnDebt,
       premiumDebt: v4DebtState.premiumDebt,
-      repaymentAmount: -debtDelta,
+      repaymentAmount: repaymentAmountQuantity,
     }),
     tracked,
     sourceStatus,
@@ -664,6 +819,15 @@ export function deriveV4DebtStateAfterDelta(
       premiumDebt: repaymentStep.value.premiumDebt,
       baseDrawnApr: v4DebtState.baseDrawnApr,
       riskPremium: v4DebtState.riskPremium,
+      // V4 Readiness Audit §12 P1-D3 — a repayment changes the outstanding
+      // debt *quantity*, never the debt asset's own oracle price, so the
+      // authoritative price (when the source state carried one) is carried
+      // through unchanged to the derived after-state. Omitting it here
+      // would make every live-sourced repayment preview fail
+      // `checkAaveV4DebtAssetPriceAvailable` on the after-state for no
+      // real reason — the price this derived state should be valued at is
+      // exactly the one it started with.
+      debtAssetPriceUsd: v4DebtState.debtAssetPriceUsd,
     },
     tracked: repaymentStep.tracked,
     warnings: repaymentStep.warnings,

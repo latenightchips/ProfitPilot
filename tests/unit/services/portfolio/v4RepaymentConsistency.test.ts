@@ -85,3 +85,97 @@ describe('V4 partial repayment — Exit Plan / Portfolio Action / Action Preview
     expect(previewResult.data.after.debtValue).toBe(0);
   });
 });
+
+/**
+ * Same cross-service agreement, at a non-$1 live debt price — found
+ * during the final pre-commit review of V4 Readiness Audit §12 P1-D3, not
+ * part of the original four fixes. All three call sites compute
+ * `debtDelta`/`repayment` in USD (matching V3's own shared semantics);
+ * `deriveV4DebtStateAfterDelta` must convert that USD amount to a
+ * token-quantity repayment before delegating to
+ * `deriveAaveV4DebtAfterRepayment`, which operates on raw
+ * `drawnDebt`/`premiumDebt`. The block above (no `debtAssetPriceUsd` set)
+ * cannot catch a broken conversion, since USD and token quantity are
+ * numerically identical at $1.00.
+ */
+describe('V4 partial repayment — cross-service agreement at a non-$1 live debt price (final review)', () => {
+  // 20,000 tokens (15,000 drawn + 5,000 premium) x $0.9973 = $19,946.00
+  // exactly — chosen so the starting USD figure has no rounding noise.
+  function pricedV4Portfolio(): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 5000,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+      v4DebtStateSource: 'live',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    };
+  }
+
+  it('a $5,000 USD partial repayment lands all three services at the identical $14,946.00 result, not the raw-quantity-mismatched figure', () => {
+    const exitTarget: ExitTarget = { type: 'debtBalance', targetDebt: 19946 - 5000 };
+    const exitResult = planExit(pricedV4Portfolio(), exitTarget, 'live');
+
+    const simulationResult = simulatePortfolioAction(
+      pricedV4Portfolio(),
+      { collateralDelta: 0, debtDelta: -5000 },
+      'live',
+    );
+
+    const repayAction: PortfolioAction = { type: 'repay', amount: 5000 };
+    const previewResult = previewPortfolioAction(pricedV4Portfolio(), repayAction, 'live');
+
+    expect(exitResult.ok).toBe(true);
+    expect(simulationResult.ok).toBe(true);
+    expect(previewResult.ok).toBe(true);
+    if (!exitResult.ok || !simulationResult.ok || !previewResult.ok) return;
+
+    expect(exitResult.data.after?.debtValue).toBeCloseTo(14946, 1);
+    expect(simulationResult.data.after.debtValue).toBeCloseTo(14946, 1);
+    expect(previewResult.data.after.debtValue).toBeCloseTo(14946, 1);
+
+    // All three agree with each other exactly, not just approximately
+    // with the expected figure.
+    expect(exitResult.data.after?.debtValue).toBeCloseTo(simulationResult.data.after.debtValue, 6);
+    expect(simulationResult.data.after.debtValue).toBeCloseTo(
+      previewResult.data.after.debtValue,
+      6,
+    );
+  });
+
+  it('a full repayment produces the identical zero-debt post-state via all three services at a non-$1 price', () => {
+    const exitTarget: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const exitResult = planExit(pricedV4Portfolio(), exitTarget, 'live');
+
+    const simulationResult = simulatePortfolioAction(
+      pricedV4Portfolio(),
+      { collateralDelta: 0, debtDelta: -19946 },
+      'live',
+    );
+
+    const repayAction: PortfolioAction = { type: 'repay', amount: 19946 };
+    const previewResult = previewPortfolioAction(pricedV4Portfolio(), repayAction, 'live');
+
+    expect(exitResult.ok).toBe(true);
+    expect(simulationResult.ok).toBe(true);
+    expect(previewResult.ok).toBe(true);
+    if (!exitResult.ok || !simulationResult.ok || !previewResult.ok) return;
+
+    expect(exitResult.data.after?.debtValue).toBeCloseTo(0, 6);
+    expect(simulationResult.data.after.debtValue).toBeCloseTo(0, 6);
+    expect(previewResult.data.after.debtValue).toBeCloseTo(0, 6);
+  });
+});

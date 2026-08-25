@@ -56,6 +56,7 @@ import {
 
 import {
   checkAaveV4CollateralRiskAvailable,
+  checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   mapApplicationPortfolioToEngineInput,
@@ -134,6 +135,12 @@ export function generateRecommendationSet(
   // observable behavior change, only less wasted computation.
   const v4DebtGuardFailure = checkAaveV4DebtStateAvailable(portfolio, tracked, sourceStatus);
   if (v4DebtGuardFailure !== null) return v4DebtGuardFailure;
+
+  // V4 Readiness Audit §12 P1-D3 — same fail-closed discipline as the
+  // guard above, now for a 'live'-sourced `v4DebtState` that is missing
+  // its authoritative debt-asset oracle price (never fires for manual V4).
+  const v4PriceGuardFailure = checkAaveV4DebtAssetPriceAvailable(portfolio, tracked, sourceStatus);
+  if (v4PriceGuardFailure !== null) return v4PriceGuardFailure;
 
   // V4 Readiness Audit §12 Stage 23E — `calculateBorrowRecommendation`
   // (F-061, via `calculateAvailableBorrow`/`calculateHealthFactor`) and

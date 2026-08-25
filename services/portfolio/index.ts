@@ -85,6 +85,7 @@ export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
   checkAaveV4CollateralRiskAvailable,
+  checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,

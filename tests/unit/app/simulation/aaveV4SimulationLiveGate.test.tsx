@@ -71,6 +71,7 @@ const V4_DEBT_STATE_FIXTURE = {
   premiumDebt: 500,
   baseDrawnApr: 0.05,
   riskPremium: 0.01,
+  debtAssetPriceUsd: 1.0,
 };
 
 const V4_COLLATERAL_RISK_FIXTURE = {

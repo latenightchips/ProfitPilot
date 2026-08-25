@@ -216,7 +216,13 @@ describe('useSimulationStore — V4 borrow-blocked pre-check (Stage 25C)', () =>
   ): ApplicationPortfolio {
     return validPortfolio({
       protocolVersion: 'v4',
-      v4DebtState: { drawnDebt: 30000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtState: {
+        drawnDebt: 30000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0,
+      },
       v4DebtStateSource: source,
       v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 0 },
       v4CollateralRiskSource: source,

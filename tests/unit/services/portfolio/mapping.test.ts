@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkAaveV4CollateralRiskAvailable,
+  checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
   deriveV4DebtStateAfterDelta,
@@ -407,6 +408,165 @@ describe('resolveCanonicalDebtBalance (Stage 16)', () => {
 });
 
 /**
+ * `resolveCanonicalDebtBalance` — authoritative V4 debt-asset USD pricing
+ * (V4 Readiness Audit §12 P1-D3). The raw quantity computed above
+ * (`drawnDebt + premiumDebt`) is now multiplied by `v4DebtState.debtAssetPriceUsd`
+ * via the canonical Engine formula `calculateDebtAssetValue` (P1-D2) when
+ * that field is present, replacing the old implicit-$1-per-debt-token
+ * assumption. When it is absent, this infallible helper still returns the
+ * raw quantity unchanged (exactly the pre-P1-D3 behavior) — the Service
+ * layer's `checkAaveV4DebtAssetPriceAvailable` guard (below) is what fails
+ * a live sync closed instead of letting that fallback reach a real
+ * financial output; see `checkAaveV4DebtAssetPriceAvailable`'s own tests.
+ */
+describe('resolveCanonicalDebtBalance — authoritative V4 debt-asset pricing (P1-D3)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      ...overrides,
+    };
+  }
+
+  it('quantity 10,000 x price $1.00 = $10,000', () => {
+    const application = v4Application({
+      v4DebtState: {
+        drawnDebt: 10000,
+        premiumDebt: 0,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0,
+      },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(10000);
+  });
+
+  it('quantity 10,000 x price $0.9973 = $9,973', () => {
+    const application = v4Application({
+      v4DebtState: {
+        drawnDebt: 10000,
+        premiumDebt: 0,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(9973);
+  });
+
+  it('quantity 10,000 x price $1.0041 = $10,041', () => {
+    const application = v4Application({
+      v4DebtState: {
+        drawnDebt: 10000,
+        premiumDebt: 0,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0041,
+      },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(10041);
+  });
+
+  it('no longer implicitly assumes the debt token is $1 — a non-$1 price moves the mapped balance away from the raw quantity', () => {
+    const application = v4Application({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    const balance = resolveCanonicalDebtBalance(application);
+    expect(balance).not.toBe(15500);
+    expect(balance).toBeCloseTo(15500 * 0.9973, 9);
+  });
+
+  it('changing only debtAssetPriceUsd changes the mapped USD balance while the raw quantity fields stay unchanged', () => {
+    const atOneDollar = v4Application({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0,
+      },
+    });
+    const repriced = v4Application({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0041,
+      },
+    });
+    expect(atOneDollar.v4DebtState?.drawnDebt).toBe(repriced.v4DebtState?.drawnDebt);
+    expect(atOneDollar.v4DebtState?.premiumDebt).toBe(repriced.v4DebtState?.premiumDebt);
+    expect(resolveCanonicalDebtBalance(atOneDollar)).toBe(15500);
+    expect(resolveCanonicalDebtBalance(repriced)).toBeCloseTo(15500 * 1.0041, 9);
+    expect(resolveCanonicalDebtBalance(atOneDollar)).not.toBe(
+      resolveCanonicalDebtBalance(repriced),
+    );
+  });
+
+  it('collateral oracle price (market.btcPriceUsd) cannot affect the debt valuation', () => {
+    const cheapCollateral = v4Application({
+      market: { btcPriceUsd: 10000 },
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    const expensiveCollateral = v4Application({
+      market: { btcPriceUsd: 90000 },
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    expect(resolveCanonicalDebtBalance(cheapCollateral)).toBe(
+      resolveCanonicalDebtBalance(expensiveCollateral),
+    );
+  });
+
+  it('missing debtAssetPriceUsd falls back to the raw quantity sum unchanged (the pre-P1-D3 behavior of this infallible helper)', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(15500);
+  });
+
+  it('V3 remains completely unchanged, even with a priced v4DebtState present (no cross-inference)', () => {
+    const application = v4Application({
+      protocolVersion: 'v3',
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.5,
+      },
+    });
+    expect(resolveCanonicalDebtBalance(application)).toBe(20000);
+  });
+});
+
+/**
  * V4 fail-closed guard — V4 Readiness Audit §12 Stage 10. Promoted from
  * `services/portfolio/summary.ts`'s own original Stage 9 inline check so
  * `services/loop/strategy.ts`/`services/portfolio/interestBreakdown.ts`/
@@ -476,6 +636,109 @@ describe('checkAaveV4DebtStateAvailable (Stage 10)', () => {
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
     });
     expect(checkAaveV4DebtStateAvailable(application, tracked, 'live')).toBeNull();
+  });
+});
+
+/**
+ * V4 authoritative debt-price fail-closed guard — V4 Readiness Audit §12
+ * P1-D3. Same shape/calling convention as `checkAaveV4DebtStateAvailable`
+ * above (called immediately after it, at the same 5 production entry
+ * points), but only fires for a `'live'`-sourced `v4DebtState` that is
+ * missing `debtAssetPriceUsd` — never for `'manual'`/unset source, which
+ * deliberately keeps the pre-P1-D3 implicit-$1 behavior.
+ */
+describe('checkAaveV4DebtAssetPriceAvailable (P1-D3)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      ...overrides,
+    };
+  }
+
+  it('returns null when a live-sourced v4DebtState carries debtAssetPriceUsd', () => {
+    const application = v4Application({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1.0041,
+      },
+      v4DebtStateSource: 'live',
+    });
+    expect(checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns an AAVE_V4_DEBT_ASSET_PRICE_MISSING failure for a live-sourced v4DebtState missing debtAssetPriceUsd', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+    });
+    const failure = checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live');
+    expect(failure).not.toBeNull();
+    expect(failure?.ok).toBe(false);
+    expect(failure?.errors[0]).toMatchObject({
+      category: 'calculation',
+      code: 'AAVE_V4_DEBT_ASSET_PRICE_MISSING',
+    });
+  });
+
+  it('a missing live debt price never silently becomes $1 — the guard blocks the value rather than letting it through', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 10000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+    });
+    expect(checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live')).not.toBeNull();
+  });
+
+  it('returns null (does not fire) for manual v4DebtStateSource even with no debtAssetPriceUsd — manual V4 keeps the existing $1 assumption by design', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'manual',
+    });
+    expect(checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns null (does not fire) when v4DebtStateSource is unset entirely', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    expect(checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('returns null for a "v3" portfolio even with a live source and a missing price (no cross-inference)', () => {
+    const application = v4Application({
+      protocolVersion: 'v3',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+    });
+    expect(checkAaveV4DebtAssetPriceAvailable(application, tracked, 'live')).toBeNull();
+  });
+
+  it('threads sourceStatus and the caller-supplied tracked metadata through, never fabricating it', () => {
+    const application = v4Application({
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+    });
+    const failure = checkAaveV4DebtAssetPriceAvailable(
+      application,
+      { engineVersion: '9.9.9', formulaVersion: '2.0' },
+      'manual',
+    );
+    expect(failure?.metadata.sourceStatus).toBe('manual');
+    expect(failure?.metadata.engineVersion).toBe('9.9.9');
+    expect(failure?.metadata.formulaVersion).toBe('2.0');
   });
 });
 
@@ -866,6 +1129,40 @@ describe('deriveAaveV4EffectiveBorrowRate (Stage 15)', () => {
     expect(result.value).not.toBeCloseTo(0.05, 3);
   });
 
+  /**
+   * V4 Readiness Audit §12 P1-D3 — a rate (dimensionless: dollars accrued
+   * per dollar of principal) must not be affected by `debtAssetPriceUsd`
+   * at all: both `costResult.value` (numerator) and `totalDebt`
+   * (denominator) would scale by the same price factor if converted, so
+   * they must stay in the SAME raw-quantity domain and price cancels out.
+   * `deriveAaveV4EffectiveBorrowRate` deliberately still calls the raw
+   * `projectAaveV4AnnualInterestCost` (never `...CostUsd`) for exactly
+   * this reason — this proves it, since a regression here would corrupt
+   * every V4 "Borrow Rate" display (Dashboard, Debt form, Loop Builder,
+   * Recommendation Center) by a `debtAssetPriceUsd` factor.
+   */
+  it('is completely unaffected by debtAssetPriceUsd — the rate is identical whether the price is $1.00, absent, or a real non-$1 value', () => {
+    const base = { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 };
+    const noPrice = deriveAaveV4EffectiveBorrowRate(base, tracked, 'live');
+    const atOneDollar = deriveAaveV4EffectiveBorrowRate(
+      { ...base, debtAssetPriceUsd: 1.0 },
+      tracked,
+      'live',
+    );
+    const priced = deriveAaveV4EffectiveBorrowRate(
+      { ...base, debtAssetPriceUsd: 0.9973 },
+      tracked,
+      'live',
+    );
+    expect(noPrice.ok).toBe(true);
+    expect(atOneDollar.ok).toBe(true);
+    expect(priced.ok).toBe(true);
+    if (!noPrice.ok || !atOneDollar.ok || !priced.ok) return;
+    expect(priced.value).toBe(noPrice.value);
+    expect(priced.value).toBe(atOneDollar.value);
+    expect(priced.value).toBeCloseTo(0.05365853658536585, 10);
+  });
+
   it('matches an independently-computed annualCost/totalDebt exactly for a drawn-only position (no premium)', () => {
     const v4DebtState: AaveV4DebtState = {
       drawnDebt: 10000,
@@ -1046,5 +1343,110 @@ describe('deriveV4DebtStateAfterDelta (Stage 11, resolved for repay at Stage 12)
     };
     const result = deriveV4DebtStateAfterDelta(invalidState, -100, tracked, 'live');
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * USD-to-quantity conversion for the repayment amount — found during the
+ * final pre-commit review of V4 Readiness Audit §12 P1-D3, not part of
+ * the original four fixes. `debtDelta` is USD at every call site (see
+ * `deriveV4DebtStateAfterDelta`'s own doc comment); `deriveAaveV4DebtAfterRepayment`
+ * needs the repayment expressed in the debt asset's own raw token
+ * quantity. Before this fix, a $X repayment was misapplied directly as an
+ * X-token repayment — correct only when price happens to be exactly
+ * $1.00, which is why the describe block above (no `debtAssetPriceUsd`
+ * set) never caught it.
+ */
+describe('deriveV4DebtStateAfterDelta — USD repayment amount converted to token quantity at a non-$1 price (final review)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  it('a $5,458.15 USD repayment at $0.9973/token reduces the position by ~5,473.94 tokens, not 5,458.15', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 0.9973,
+    };
+    // debtDelta is USD: user wants canonical USD debt to move from
+    // 15,500 x 0.9973 = 15,458.15 down to $10,000 -> debtDelta = -5,458.15.
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -5458.15, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value === undefined) return;
+
+    // Premium (500 tokens) fully cleared first; remainder
+    // (5458.15 / 0.9973 - 500 = 4973.94...) reduces drawnDebt.
+    const expectedQuantityRepaid = 5458.15 / 0.9973;
+    expect(result.value.premiumDebt).toBe(0);
+    expect(result.value.drawnDebt).toBeCloseTo(15000 - (expectedQuantityRepaid - 500), 2);
+
+    // The resulting canonical USD debt lands back at the user's intended
+    // $10,000 target (small floating rounding only) — not $10,014.72,
+    // which is what the pre-fix bug (treating $5,458.15 as 5,458.15
+    // tokens) would have produced.
+    const resultingQuantity = result.value.drawnDebt + result.value.premiumDebt;
+    const resultingUsd = resultingQuantity * 0.9973;
+    expect(resultingUsd).toBeCloseTo(10000, 1);
+    expect(resultingUsd).not.toBeCloseTo(10014.72, 1);
+  });
+
+  it('preserves the exact pre-fix behavior when no price is available (manual V4) — the USD delta is used directly as the quantity delta', () => {
+    const manualState: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 5000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const result = deriveV4DebtStateAfterDelta(manualState, -12000, tracked, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      drawnDebt: 8000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('at exactly $1.00, the USD delta and the token-quantity delta coincide — byte-identical to the unpriced case', () => {
+    const atOneDollar: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 5000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
+    };
+    const unpriced: AaveV4DebtState = {
+      drawnDebt: 15000,
+      premiumDebt: 5000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const pricedResult = deriveV4DebtStateAfterDelta(atOneDollar, -12000, tracked, 'live');
+    const unpricedResult = deriveV4DebtStateAfterDelta(unpriced, -12000, tracked, 'live');
+    expect(pricedResult.ok).toBe(true);
+    expect(unpricedResult.ok).toBe(true);
+    if (!pricedResult.ok || !unpricedResult.ok) return;
+    expect(pricedResult.value?.drawnDebt).toBe(unpricedResult.value?.drawnDebt);
+    expect(pricedResult.value?.premiumDebt).toBe(unpricedResult.value?.premiumDebt);
+  });
+
+  it('a higher-than-$1 price means the same USD repayment removes FEWER tokens than the raw USD amount', () => {
+    const v4DebtState: AaveV4DebtState = {
+      drawnDebt: 20000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0041,
+    };
+    // $10,000 USD repayment at $1.0041/token removes 10,000 / 1.0041 =
+    // 9,959.16... tokens, LESS than the naive (pre-fix) 10,000-token
+    // reduction a $1.0041 price should never produce.
+    const result = deriveV4DebtStateAfterDelta(v4DebtState, -10000, tracked, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const expectedQuantityRepaid = 10000 / 1.0041;
+    expect(result.value?.drawnDebt).toBeCloseTo(20000 - expectedQuantityRepaid, 6);
+    expect(result.value?.drawnDebt).not.toBeCloseTo(10000, 1);
   });
 });

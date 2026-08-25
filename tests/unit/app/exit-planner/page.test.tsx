@@ -302,6 +302,7 @@ describe('ExitPlannerPage — cross-portfolio contamination (M9-012)', () => {
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
     usePortfolioStore
       .getState()
@@ -496,6 +497,7 @@ describe('ExitPlannerPage — V4 live-sync invocation (Stage 21)', () => {
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
     useAaveV4LiveDataStore.setState({ status: 'ready' });
     // V4 Readiness Audit §12 Stage 23F — "Live" now also requires
@@ -532,6 +534,7 @@ describe('ExitPlannerPage — V4 live-sync invocation (Stage 21)', () => {
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
     useAaveV4LiveDataStore.setState({ status: 'ready' });
 

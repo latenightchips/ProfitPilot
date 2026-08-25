@@ -63,6 +63,7 @@ const V4_FIXTURE_DEBT_STATE = {
   premiumDebt: 5000,
   baseDrawnApr: 0.05,
   riskPremium: 0.01,
+  debtAssetPriceUsd: 1.0,
 };
 const V4_COLLATERAL_RISK_FIXTURE = { collateralFactor: 0.8, dynamicConfigKey: 1 };
 
@@ -71,7 +72,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function v4SuccessBody() {
-  return { ok: true, data: { raw: {}, engineInputs: V4_FIXTURE_DEBT_STATE, display: {} } };
+  return {
+    ok: true,
+    data: { raw: {}, engineInputs: V4_FIXTURE_DEBT_STATE, display: {}, debtAssetPriceUsd: 1.0 },
+  };
 }
 
 function v4CollateralRiskSuccessBody() {

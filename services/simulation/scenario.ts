@@ -160,6 +160,7 @@ import {
   type AaveV4DebtProjection,
   calculateAnnualInterest,
   calculateCollateralValue,
+  calculateDebtAssetValue,
   calculateEffectiveLeverage,
   calculateHealthFactor,
   calculateLiquidationDistance,
@@ -176,7 +177,7 @@ import {
 
 import {
   mapApplicationPortfolioToEngineInput,
-  projectAaveV4AnnualInterestCost,
+  projectAaveV4AnnualInterestCostUsd,
   resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
@@ -274,8 +275,31 @@ function toScenarioSummary(
  * (`engine/protocols/aaveV4/projectAaveV4Debt.ts`'s own
  * `newDrawnDebtRay + newPremiumDebtRay`), read, not recomputed.
  */
-function projectedDebtBalance(value: number | AaveV4DebtProjection): number {
-  return typeof value === 'number' ? value : value.totalDebt;
+/**
+ * V4 Readiness Audit §12 P1-D3 — a genuine defect found while reviewing
+ * that stage: `AaveV4DebtProjection.totalDebt` is the V4 accrual formula's
+ * own post-projection debt-TOKEN quantity (native units — accrual is a
+ * quantity-scaling operation, correctly never re-derived here), not USD.
+ * Before this fix, this function returned that raw quantity unchanged and
+ * every caller below subtracted/assigned it as if it were already USD —
+ * only safe under the old implicit-$1-per-debt-token assumption P1-D3
+ * removed. For a live V4 portfolio with a real oracle price, this raw
+ * quantity is converted to USD via the canonical `calculateDebtAssetValue`
+ * (P1-D2) — the same single place arithmetic happens, never duplicated —
+ * with the same manual-mode fallback `resolveCanonicalDebtBalance`
+ * (`services/portfolio/mapping.ts`) uses: raw quantity unchanged when no
+ * authoritative price is available (`debtAssetPriceUsd` is `undefined` for
+ * every manual `v4DebtState`, by design). A plain V3 `number` (already
+ * USD, never raw quantity) passes through this function untouched.
+ */
+function projectedDebtBalance(
+  value: number | AaveV4DebtProjection,
+  debtAssetPriceUsd: number | undefined,
+): number {
+  if (typeof value === 'number') return value;
+  if (debtAssetPriceUsd === undefined) return value.totalDebt;
+  const valued = calculateDebtAssetValue(value.totalDebt, debtAssetPriceUsd);
+  return valued.ok ? valued.value : value.totalDebt;
 }
 
 function finalize(
@@ -369,14 +393,19 @@ export function simulateScenario(
     // here): a price scenario never moves debt, so `priceResult.debtValue`
     // is the same canonical current total `engineInput.debt.balance`
     // already is. For a V4 portfolio with synced `v4DebtState`, `debtCost`
-    // now comes from `projectAaveV4AnnualInterestCost` — the real V4 rate
-    // model projected through the Engine's own validated accrual math —
-    // instead of the V3-shaped `engineInput.protocol.borrowApr`, which was
+    // now comes from `projectAaveV4AnnualInterestCostUsd` — the real V4
+    // rate model projected through the Engine's own validated accrual
+    // math, converted to USD (V4 Readiness Audit §12 P1-D3) — instead of
+    // the V3-shaped `engineInput.protocol.borrowApr`, which was
     // amount-correct but rate-questionable for V4 (same fix as
     // `calculatePortfolioSummary`'s own `interestCost`).
     const debtCostStep =
       protocolVersion === 'v4' && portfolio.v4DebtState !== undefined
-        ? formulaStep(projectAaveV4AnnualInterestCost(portfolio.v4DebtState), tracked, sourceStatus)
+        ? formulaStep(
+            projectAaveV4AnnualInterestCostUsd(portfolio.v4DebtState),
+            tracked,
+            sourceStatus,
+          )
         : formulaStep(
             calculateAnnualInterest(priceResult.debtValue, engineInput.protocol.borrowApr),
             tracked,
@@ -518,7 +547,10 @@ export function simulateScenario(
   if (!projectedDebtStep.ok) return projectedDebtStep.failure;
   tracked = projectedDebtStep.tracked;
   warnings.push(...projectedDebtStep.warnings);
-  const projectedDebt = projectedDebtBalance(projectedDebtStep.value);
+  const projectedDebt = projectedDebtBalance(
+    projectedDebtStep.value,
+    v4DebtState?.debtAssetPriceUsd,
+  );
   const accruedInterest = projectedDebt - currentTotalDebt;
 
   const projectedPortfolio = {
@@ -593,7 +625,9 @@ export function simulateScenario(
   warnings.push(...baselineProjectedDebtStep.warnings);
   const proratedBaselineSummary: ScenarioSummary = {
     ...baselineSummary,
-    debtCost: projectedDebtBalance(baselineProjectedDebtStep.value) - currentTotalDebt,
+    debtCost:
+      projectedDebtBalance(baselineProjectedDebtStep.value, v4DebtState?.debtAssetPriceUsd) -
+      currentTotalDebt,
   };
 
   // V4 Readiness Audit §12 Stage 23D — same dispatch as the Health Factor

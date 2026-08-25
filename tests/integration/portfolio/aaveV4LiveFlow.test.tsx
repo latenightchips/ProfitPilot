@@ -103,10 +103,14 @@ const V4_FIXTURE_DEBT_STATE = {
   premiumDebt: 5000,
   baseDrawnApr: 0.05,
   riskPremium: 0.01,
+  debtAssetPriceUsd: 1.0,
 };
 
 function v4SuccessBody(debtState: typeof V4_FIXTURE_DEBT_STATE = V4_FIXTURE_DEBT_STATE) {
-  return { ok: true, data: { raw: {}, engineInputs: debtState, display: {} } };
+  return {
+    ok: true,
+    data: { raw: {}, engineInputs: debtState, display: {}, debtAssetPriceUsd: 1.0 },
+  };
 }
 
 function v4ErrorBody() {
@@ -358,6 +362,7 @@ describe('Aave V4 live flow — successful sync through the real component/store
       premiumDebt: 0,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
   });
 });

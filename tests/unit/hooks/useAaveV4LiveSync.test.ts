@@ -76,6 +76,7 @@ const VALID_ENGINE_INPUTS = {
   premiumDebt: 500,
   baseDrawnApr: 0.05,
   riskPremium: 0.01,
+  debtAssetPriceUsd: 1.0,
 };
 
 function readyState(overrides: Record<string, unknown> = {}) {
@@ -613,6 +614,37 @@ describe('useAaveV4LiveSync — P0-1: identical manual value auto-adopts silentl
     });
     expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
   });
+
+  /**
+   * V4 Readiness Audit §12 P1-D3 — proves `aaveV4DebtStateEqual`'s own
+   * deliberate exclusion of `debtAssetPriceUsd` (see its doc comment in
+   * `stores/portfolioStore.ts`): a REALISTIC manual entry (no price field
+   * at all — `MANUAL_DEBT_STATE` below, unlike `VALID_ENGINE_INPUTS`
+   * above, never sets one) whose quantity/rates exactly match a live
+   * fetch that DOES carry a real oracle price must still auto-adopt
+   * silently. If price were included in this comparison, the mere
+   * presence of `debtAssetPriceUsd` on the live side (impossible to match
+   * on the manual side by construction) would manufacture a spurious
+   * conflict for every manual entry that is otherwise numerically
+   * identical to live data.
+   */
+  it('a realistic price-less manual entry matching a PRICED live fetch on every other field still auto-adopts, never a spurious price-presence conflict', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, MANUAL_DEBT_STATE, 'manual');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    const pricedMatch = { ...MANUAL_DEBT_STATE, debtAssetPriceUsd: 0.9973 };
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: pricedMatch }));
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtStateSource,
+      ).toBe('live');
+    });
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(pricedMatch);
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
 });
 
 describe('useAaveV4LiveSync — P0-1: live→live refresh remains fully automatic (unchanged freshness model)', () => {
@@ -629,6 +661,37 @@ describe('useAaveV4LiveSync — P0-1: live→live refresh remains fully automati
         freshFromChain,
       );
     });
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  /**
+   * Price-only refresh — V4 Readiness Audit §12 P1-D3, a genuine defect
+   * found while reviewing that stage. `aaveV4DebtStateEqual` (used to gate
+   * this branch) deliberately never compares `debtAssetPriceUsd` (see its
+   * own doc comment), so a refresh that changed ONLY the oracle price
+   * previously looked identical to this equality gate and was silently
+   * dropped — the stale price would persist indefinitely until quantity or
+   * a rate also happened to change. The live→live branch now additionally
+   * compares `debtAssetPriceUsd` itself, alongside (not instead of)
+   * `aaveV4DebtStateEqual`.
+   */
+  it('a refresh that changes ONLY debtAssetPriceUsd (quantity/rates identical) still auto-applies, updating the mapped USD debt', async () => {
+    const portfolio = createV4Portfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'live');
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+
+    const repricedOnly = { ...VALID_ENGINE_INPUTS, debtAssetPriceUsd: 0.9973 };
+    useAaveV4LiveDataStore.setState(readyState({ engineInputs: repricedOnly }));
+
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState).toEqual(
+        repricedOnly,
+      );
+    });
+    expect(
+      usePortfolioStore.getState().portfolios[portfolio.id].portfolio.v4DebtState
+        ?.debtAssetPriceUsd,
+    ).toBe(0.9973);
     expect(usePortfolioStore.getState().v4DebtStateCandidates[portfolio.id]).toBeUndefined();
   });
 });

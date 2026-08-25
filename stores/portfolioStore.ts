@@ -469,6 +469,25 @@ export function protocolParametersEqual(
  * `market`/`protocol` (always-present fields), `v4DebtState` is
  * optional, so both "undefined" sides are handled explicitly rather than
  * assuming a caller already narrowed them.
+ *
+ * **Deliberately excludes `debtAssetPriceUsd` (V4 Readiness Audit §12
+ * P1-D3).** This function answers two different questions for its two
+ * call sites in `useAaveV4LiveSync.ts`: "did a live refresh actually
+ * change anything" (live→live), and "does an existing MANUAL value
+ * numerically match a live fetch" (manual→live, Stage 25's "identical
+ * values transition silently" rule). A manual `v4DebtState` never carries
+ * a price at all (no UI collects one — see `AaveV4DebtState`'s own doc
+ * comment), so if this function compared `debtAssetPriceUsd`, EVERY
+ * manual entry that otherwise exactly matches live data would register as
+ * "different" purely because manual has no price field to compare —
+ * manufacturing a spurious manual-vs-live conflict confirmation for a
+ * case Stage 25 explicitly says must transition silently. Excluding it
+ * here keeps that comparison meaning "do the actual debt assumptions
+ * agree," not "does one side happen to carry a field the other never can."
+ * The live→live call site needs the stricter, price-INCLUDING check (a
+ * price-only refresh must still apply) — it performs that check itself,
+ * alongside this function, rather than requiring one here that would
+ * break the other call site. See that call site's own comment.
  */
 export function aaveV4DebtStateEqual(
   a: AaveV4DebtState | undefined,

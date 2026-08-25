@@ -1512,6 +1512,7 @@ describe('Portfolio identity persistence + canonical debt reconciliation (Stage 
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
     usePortfolioStore.getState().setAaveV4CollateralRisk(created.data.id, VALID_V4_COLLATERAL_RISK);
     await autoSaveCoordinator.flushAll();
@@ -1527,6 +1528,7 @@ describe('Portfolio identity persistence + canonical debt reconciliation (Stage 
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
 
     const summary = calculatePortfolioSummary(reloaded, 'live');
@@ -1584,6 +1586,7 @@ const ISOLATION_V4_DEBT_STATE = {
   premiumDebt: 500,
   baseDrawnApr: 0.05,
   riskPremium: 0.01,
+  debtAssetPriceUsd: 1.0,
 };
 const ISOLATION_V4_COLLATERAL_RISK = { collateralFactor: 0.75, dynamicConfigKey: 1 };
 

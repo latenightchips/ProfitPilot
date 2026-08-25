@@ -186,7 +186,9 @@ function createAndSelectV4(
   usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
   usePortfolioStore.getState().setAaveV4Position(created.id, { userAddress: V4_ADDRESS });
   if (v4DebtState !== undefined) {
-    usePortfolioStore.getState().setAaveV4DebtState(created.id, v4DebtState);
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, { ...v4DebtState, debtAssetPriceUsd: 1.0 });
     // Stage 23C: the calculation now also requires `v4CollateralRisk` to be
     // synced (mirroring this same `v4DebtState` guard). Set alongside it
     // whenever a test needs the calculation to actually succeed — same
@@ -1154,6 +1156,7 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
       premiumDebt: 500,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
   });
 
@@ -1410,7 +1413,13 @@ describe('PortfolioPage — Debt form Borrow rate stat (Stage 15)', () => {
  */
 describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
   function v4DebtStateFixture() {
-    return { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 };
+    return {
+      drawnDebt: 15000,
+      premiumDebt: 5000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
+    };
   }
 
   it('blocks a debt increase (a borrow) with a clear, non-fabricated explanation, without ever calling Apply on a broken preview', async () => {
@@ -1467,6 +1476,10 @@ describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
       premiumDebt: 0,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      // V4 Readiness Audit §12 P1-D3 — a repayment changes debt quantity,
+      // never the debt asset's own oracle price; `deriveV4DebtStateAfterDelta`
+      // carries the fixture's `debtAssetPriceUsd` through unchanged.
+      debtAssetPriceUsd: 1.0,
     });
   });
 
@@ -1492,6 +1505,7 @@ describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
       premiumDebt: 0,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
   });
 
@@ -1546,7 +1560,13 @@ describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
  */
 describe('PortfolioPage — Debt form canonical V4 seed/delta (Stage 16)', () => {
   function disagreeingV4DebtState() {
-    return { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 };
+    return {
+      drawnDebt: 15000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
+    };
   }
 
   it('seeds the "Debt amount" field from the canonical total (15,500), not the deliberately-disagreeing legacy debt.balance (999,999)', () => {
@@ -1605,6 +1625,7 @@ describe('PortfolioPage — Debt form canonical V4 seed/delta (Stage 16)', () =>
       premiumDebt: 0,
       baseDrawnApr: 0.05,
       riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
     });
   });
 
