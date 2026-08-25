@@ -1,6 +1,6 @@
 import { Decimal, type DecimalInput, toDecimal } from '../shared/decimal';
 import type { FormulaError } from '../shared/result';
-import type { ProtocolParameters } from '../shared/types';
+import type { ExecutionCostAssumptions, ProtocolParameters } from '../shared/types';
 
 /**
  * Engine validation utilities — 06_TASKS.md M2-005 ("Implement Engine
@@ -83,6 +83,72 @@ export function validateThreshold(value: DecimalInput, field: string): Validatio
 
 export function validateTimePeriod(value: DecimalInput, field: string): ValidationResult {
   return validateNonNegative(value, field);
+}
+
+/**
+ * Execution-cost friction rate (Swap Fee Rate / Slippage Rate) —
+ * 02_Formulas.md F-070/F-071 (V4 Readiness Audit §12 P1-5). Decimal
+ * fraction in [0, 1) — strictly less than 1, unlike `validatePercentage`'s
+ * [0, 1] (a rate at exactly 1 would mean 100% friction on that one leg,
+ * which `resolveEffectiveExecutionRate` below must reject rather than let
+ * silently collapse Effective Rate toward zero).
+ */
+export function validateExecutionCostRate(value: DecimalInput, field: string): ValidationResult {
+  const nonNegative = validateNonNegative(value, field);
+  if (!nonNegative.ok) return nonNegative;
+  if (nonNegative.value.greaterThanOrEqualTo(1)) {
+    return fail(
+      'INVALID_EXECUTION_COST_RATE',
+      `${field} must be expressed as a decimal fraction in [0, 1) — a value of 1 or greater would imply 100% or more execution friction on its own.`,
+    );
+  }
+  return nonNegative;
+}
+
+/**
+ * The single, shared implementation of 02_Formulas.md's F-070/F-071
+ * "Effective Rate" — `(1 - swapFeeRate) * (1 - slippageRate)`, the
+ * canonical MULTIPLICATIVE composition (not additive — see
+ * 02_Formulas.md's "RATE COMPOSITION" section). Every consumer of
+ * execution-cost friction (`calculateBtcPurchasedPerLoop`/F-070,
+ * `calculateBtcSaleRequired`/F-071) calls this instead of re-deriving the
+ * composition itself, so the two rates can never drift into two different
+ * formulas by accident.
+ *
+ * `assumptions` is optional — omitted is treated identically to
+ * `{ swapFeeRate: 0, slippageRate: 0 }`, which yields Effective Rate
+ * exactly `1` (a true Decimal `1`, not a floating-point approximation),
+ * preserving byte-for-byte backward compatibility with every pre-P1-5
+ * caller that never supplies execution-cost assumptions at all.
+ *
+ * The zero-lower-bound defense-in-depth check below is mathematically
+ * unreachable given `validateExecutionCostRate`'s own [0, 1) domain on
+ * each individual rate (the product of two factors each in (0, 1] can
+ * never reach zero or go negative) — kept anyway, the same "unreachable
+ * given already-validated inputs, kept for defense in depth" convention
+ * `calculateLoopStep.ts`/`calculateExitPosition.ts` already established
+ * elsewhere in this Engine.
+ */
+export function resolveEffectiveExecutionRate(
+  assumptions: ExecutionCostAssumptions | undefined,
+): ValidationResult {
+  const swapFeeRate = assumptions?.swapFeeRate ?? 0;
+  const slippageRate = assumptions?.slippageRate ?? 0;
+
+  const fee = validateExecutionCostRate(swapFeeRate, 'swapFeeRate');
+  if (!fee.ok) return fee;
+
+  const slippage = validateExecutionCostRate(slippageRate, 'slippageRate');
+  if (!slippage.ok) return slippage;
+
+  const effectiveRate = Decimal.sub(1, fee.value).times(Decimal.sub(1, slippage.value));
+  if (effectiveRate.lessThanOrEqualTo(0)) {
+    return fail(
+      'INVALID_EFFECTIVE_EXECUTION_RATE',
+      'The combined execution-cost Effective Rate must be greater than zero.',
+    );
+  }
+  return succeed(effectiveRate);
 }
 
 export interface ValidatedProtocolParameters {

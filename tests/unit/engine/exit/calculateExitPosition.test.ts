@@ -24,6 +24,43 @@ function baseInput(overrides: Partial<ExitPositionInput> = {}): ExitPositionInpu
   };
 }
 
+/**
+ * Execution-cost friction propagation — V4 Readiness Audit §12 P1-5.
+ * `calculateExitPosition` must pass `executionCostAssumptions` straight
+ * through to `calculateBtcSaleRequired` (F-071), never reimplement the
+ * friction arithmetic itself.
+ */
+describe('calculateExitPosition — execution-cost friction propagation (P1-5)', () => {
+  it('omitted executionCostAssumptions reproduces the exact pre-P1-5 frictionless btcSold', () => {
+    const result = calculateExitPosition(baseInput({ targetDebt: 24000 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.btcSold).toBeCloseTo(0.4, 8);
+  });
+
+  it('non-zero friction increases btcSold, reducing btcRetained/remainingCollateralValue/remainingEquity accordingly', () => {
+    const frictionless = calculateExitPosition(baseInput({ targetDebt: 24000 }));
+    const frictioned = calculateExitPosition(
+      baseInput({
+        targetDebt: 24000,
+        executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005 },
+      }),
+    );
+    expect(frictionless.ok && frictioned.ok).toBe(true);
+    if (!frictionless.ok || !frictioned.ok) return;
+
+    expect(frictioned.value.btcSold).toBeGreaterThan(frictionless.value.btcSold);
+    expect(frictioned.value.btcRetained).toBeLessThan(frictionless.value.btcRetained);
+    expect(frictioned.value.remainingCollateralValue).toBeLessThan(
+      frictionless.value.remainingCollateralValue,
+    );
+    expect(frictioned.value.remainingEquity).toBeLessThan(frictionless.value.remainingEquity);
+    // Repayment and remaining debt are untouched by friction — only the
+    // BTC-sale leg is affected.
+    expect(frictioned.value.repayment).toBe(frictionless.value.repayment);
+    expect(frictioned.value.remainingDebt).toBe(frictionless.value.remainingDebt);
+  });
+});
+
 describe('calculateExitPosition (M2-023, F-042)', () => {
   it('computes a full-exit result (targetDebt 0) that reconciles with portfolio balances', () => {
     const result = calculateExitPosition(baseInput());

@@ -11,6 +11,7 @@ import {
 import type {
   CollateralPosition,
   DebtPosition,
+  ExecutionCostAssumptions,
   MarketPrices,
   PercentageDecimal,
   PortfolioInput,
@@ -34,6 +35,15 @@ export interface LoopStrategyInput {
   targetBorrowPercentage: PercentageDecimal;
   maxLoops: number;
   minHealthFactor: number;
+  /**
+   * Optional execution-cost friction assumptions (02_Formulas.md F-070,
+   * V4 Readiness Audit §12 P1-5) — passed identically to every step's own
+   * `calculateLoopStep` call, so a later step's `availableBorrow` is
+   * computed from the ALREADY-frictioned collateral the prior step
+   * produced. Omitted (or both rates zero) reproduces the pre-P1-5
+   * frictionless behavior exactly.
+   */
+  executionCostAssumptions?: ExecutionCostAssumptions;
 }
 
 export interface LoopStepRecord extends LoopStepResult {
@@ -130,6 +140,7 @@ export function calculateLoopStrategy(input: LoopStrategyInput): FormulaResult<L
       market: input.market,
       protocol: input.protocol,
       borrowPercentage: targetBorrowPercentage.value.toNumber(),
+      executionCostAssumptions: input.executionCostAssumptions,
     });
     if (!stepResult.ok) return createFailure(stepResult.error, options);
 

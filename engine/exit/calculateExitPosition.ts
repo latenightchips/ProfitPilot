@@ -7,7 +7,7 @@ import {
   type FormulaResult,
   type FormulaWarning,
 } from '../shared/result';
-import type { PortfolioInput } from '../shared/types';
+import type { ExecutionCostAssumptions, PortfolioInput } from '../shared/types';
 import { validateNonNegative, validatePrice } from '../validation/validate';
 import { calculateBtcSaleRequired } from './calculateBtcSaleRequired';
 import { calculateRequiredDebtRepayment } from './calculateRequiredDebtRepayment';
@@ -41,6 +41,14 @@ export interface ExitPositionInput {
   targetDebt: number;
   /** Optional scenario BTC price to execute the exit at — defaults to portfolio.market.btcPriceUsd. */
   scenarioBtcPriceUsd?: number;
+  /**
+   * Optional execution-cost friction assumptions (02_Formulas.md F-071,
+   * V4 Readiness Audit §12 P1-5) — passed straight through to
+   * `calculateBtcSaleRequired` for the sale-quantity leg, never
+   * re-derived here. Omitted (or both rates zero) reproduces the
+   * pre-P1-5 frictionless behavior exactly.
+   */
+  executionCostAssumptions?: ExecutionCostAssumptions;
 }
 
 export interface ExitPositionResult {
@@ -68,12 +76,19 @@ export interface ExitPositionResult {
  * pattern used throughout the Loop and Simulation chapters (M2-015,
  * M2-020, M2-021), rather than two separate functions.
  *
- * Composes F-041 (Required Debt Repayment) and F-042 (BTC Sale Required),
- * then F-002 (Collateral Value) and F-004 (Net Equity) on the resulting
- * retained-BTC / remaining-debt position — satisfying "Remaining equity"
- * and reconciling with current portfolio balances per the DoD. "BTC
- * quantity retained" (M2-023) is current holdings minus BTC sold, a plain
- * subtraction with no dedicated Formula ID, computed directly.
+ * Composes F-041 (Required Debt Repayment) and F-071 (BTC Sale Required
+ * After Execution Friction — V4 Readiness Audit §12 P1-5, generalizing
+ * F-042; `executionCostAssumptions` omitted reproduces F-042's own
+ * frictionless equation exactly), then F-002 (Collateral Value) and F-004
+ * (Net Equity) on the resulting retained-BTC / remaining-debt position —
+ * satisfying "Remaining equity" and reconciling with current portfolio
+ * balances per the DoD. "BTC quantity retained" (M2-023) is current
+ * holdings minus BTC sold, a plain subtraction with no dedicated Formula
+ * ID, computed directly. This function's own primary Formula ID stays
+ * F-042 (the orchestration-level label for the whole operation, the same
+ * "one primary ID for a composed function" convention `calculateLoopStep`
+ * (F-014) already established) — only the internal BTC-sale sub-step's
+ * own tag changed, from F-042 to F-071.
  *
  * `scenarioBtcPriceUsd` is optional and defaults to the portfolio's
  * current market price — this is how "Target BTC price" (a 06_TASKS.md
@@ -128,7 +143,11 @@ export function calculateExitPosition(input: ExitPositionInput): FormulaResult<E
   const repaymentResult = calculateRequiredDebtRepayment(portfolio.debt.balance, targetDebt);
   if (!repaymentResult.ok) return createFailure(repaymentResult.error, options);
 
-  const btcSoldResult = calculateBtcSaleRequired(repaymentResult.value, scenarioPrice);
+  const btcSoldResult = calculateBtcSaleRequired(
+    repaymentResult.value,
+    scenarioPrice,
+    input.executionCostAssumptions,
+  );
   if (!btcSoldResult.ok) return createFailure(btcSoldResult.error, options);
 
   const btcRetained = toDecimal(portfolio.collateral.quantity).minus(btcSoldResult.value);

@@ -11,6 +11,7 @@ import {
 import type {
   CollateralPosition,
   DebtPosition,
+  ExecutionCostAssumptions,
   MarketPrices,
   PercentageDecimal,
   ProtocolParameters,
@@ -36,6 +37,14 @@ export interface LoopStepInput {
    * does not require a loop step to borrow 100% of what is available.
    */
   borrowPercentage: PercentageDecimal;
+  /**
+   * Optional execution-cost friction assumptions (02_Formulas.md F-070,
+   * V4 Readiness Audit §12 P1-5) — passed straight through to
+   * `calculateBtcPurchasedPerLoop` for this step's BTC-purchase leg,
+   * never re-derived here. Omitted (or both rates zero) reproduces the
+   * pre-P1-5 frictionless behavior exactly.
+   */
+  executionCostAssumptions?: ExecutionCostAssumptions;
 }
 
 export interface LoopStepResult {
@@ -45,7 +54,7 @@ export interface LoopStepResult {
   borrowedAmount: number;
   /** Loop Capital — F-014 (identity over borrowedAmount). */
   loopCapital: number;
-  /** BTC Purchased Per Loop — F-015. */
+  /** Effective BTC Purchased After Execution Friction — F-070 (generalizes F-015; V4 Readiness Audit §12 P1-5). */
   btcPurchased: number;
   collateralAfter: CollateralPosition;
   /** Collateral Value — F-002, recomputed on collateralAfter. */
@@ -65,7 +74,9 @@ export interface LoopStepResult {
  * Capacity -> Borrow -> BTC Purchase -> Collateral -> Exposure -> ...):
  *   - Available Borrow (F-013)
  *   - Loop Capital (F-014) over the amount actually drawn
- *   - BTC Purchased Per Loop (F-015)
+ *   - Effective BTC Purchased After Execution Friction (F-070, generalizes
+ *     F-015 — V4 Readiness Audit §12 P1-5; `executionCostAssumptions`
+ *     omitted reproduces F-015's own frictionless equation exactly)
  *   - Collateral Value (F-002), recomputed on the resupplied position
  *   - Loan-to-Value (F-020) and Health Factor (F-022), recomputed on the
  *     post-step position
@@ -124,6 +135,7 @@ export function calculateLoopStep(input: LoopStepInput): FormulaResult<LoopStepR
   const btcPurchasedResult = calculateBtcPurchasedPerLoop(
     toOutputNumber(borrowedAmount),
     input.market.btcPriceUsd,
+    input.executionCostAssumptions,
   );
   if (!btcPurchasedResult.ok) return createFailure(btcPurchasedResult.error, options);
 

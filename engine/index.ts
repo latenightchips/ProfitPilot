@@ -40,7 +40,14 @@
  * reasoning, including the judgment calls involved.
  */
 
-/** Exit Strategy — 02_Formulas.md F-040–F-042; 06_TASKS.md M2-023/M2-024. */
+/**
+ * Exit Strategy — 02_Formulas.md F-040–F-042; 06_TASKS.md M2-023/M2-024.
+ * `calculateBtcSaleRequired` is now tagged F-071 (V4 Readiness Audit §12
+ * P1-5), generalizing F-042 — see that file's own doc comment and
+ * `tests/fixtures/formulaCoverage.ts`'s F-042 entry (unchanged: still
+ * `implemented`, still tagged independently by `calculateExitPosition`'s
+ * own primary F-042 label).
+ */
 export {
   calculateBtcSaleRequired,
   calculateExitPosition,
@@ -73,7 +80,12 @@ export {
   calculateLiquidationPrice,
 } from './liquidation';
 
-/** Leverage & Loop Mathematics — F-012–F-015, F-018, F-037; M2-015–M2-018. */
+/**
+ * Leverage & Loop Mathematics — F-012–F-014, F-018, F-037; M2-015–M2-018.
+ * `calculateBtcPurchasedPerLoop` is now tagged F-070 (V4 Readiness Audit
+ * §12 P1-5), generalizing F-015 — see that file's own doc comment and
+ * `tests/fixtures/formulaCoverage.ts`'s F-015 entry.
+ */
 export {
   calculateAvailableBorrow,
   calculateBorrowCapacity,
@@ -97,6 +109,25 @@ export {
   type UnavailableLoopCost,
   validateLoopStrategySafety,
 } from './loop';
+
+/**
+ * Execution Cost Mathematics — F-070–F-073; V4 Readiness Audit §12 P1-4
+ * (formula contract), P1-5 (this implementation). F-070/F-071 are not
+ * re-exported here by name — reach them through
+ * `calculateBtcPurchasedPerLoop`/`calculateBtcSaleRequired` above (Loop)
+ * and below (Exit), the same "one call chain owns the formula" boundary
+ * this stage was explicitly scoped to. Only the genuinely-standalone,
+ * reusable accounting primitives — F-072 (Transaction Gas Cost) and
+ * F-073 (Total Execution Cost) — get their own top-level export, since
+ * neither is embedded into `LoopStrategyResult`/`ExitPositionResult` yet
+ * (deliberately deferred past this stage's own "engine implementation
+ * only" scope guard).
+ */
+export {
+  calculateTotalExecutionCost,
+  calculateTransactionGasCost,
+  type TotalExecutionCostResult,
+} from './execution';
 
 /**
  * Protocol/version dispatch for debt projection — V4 Readiness Audit §12.
@@ -218,6 +249,7 @@ export {
 export type {
   CollateralPosition,
   DebtPosition,
+  ExecutionCostAssumptions,
   MarketPrices,
   PercentageDecimal,
   PortfolioInput,

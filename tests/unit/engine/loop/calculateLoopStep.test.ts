@@ -20,6 +20,43 @@ function baseInput(overrides: Partial<LoopStepInput> = {}): LoopStepInput {
   };
 }
 
+/**
+ * Execution-cost friction propagation — V4 Readiness Audit §12 P1-5.
+ * `calculateLoopStep` must pass `executionCostAssumptions` straight
+ * through to `calculateBtcPurchasedPerLoop` (F-070), never reimplement
+ * the friction arithmetic itself.
+ */
+describe('calculateLoopStep — execution-cost friction propagation (P1-5)', () => {
+  it('omitted executionCostAssumptions reproduces the exact pre-P1-5 frictionless btcPurchased', () => {
+    const result = calculateLoopStep(baseInput({ debt: { asset: 'USDC', balance: 0 } }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.btcPurchased).toBeCloseTo(0.35, 8);
+  });
+
+  it('non-zero friction reduces btcPurchased, and collateralAfter/collateralValueAfter/newHealthFactor all reflect it', () => {
+    const frictionless = calculateLoopStep(baseInput({ debt: { asset: 'USDC', balance: 0 } }));
+    const frictioned = calculateLoopStep(
+      baseInput({
+        debt: { asset: 'USDC', balance: 0 },
+        executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005 },
+      }),
+    );
+    expect(frictionless.ok && frictioned.ok).toBe(true);
+    if (!frictionless.ok || !frictioned.ok) return;
+
+    expect(frictioned.value.btcPurchased).toBeLessThan(frictionless.value.btcPurchased);
+    expect(frictioned.value.collateralAfter.quantity).toBeLessThan(
+      frictionless.value.collateralAfter.quantity,
+    );
+    expect(frictioned.value.collateralValueAfter).toBeLessThan(
+      frictionless.value.collateralValueAfter,
+    );
+    // Debt is untouched by friction — only the BTC-purchase leg is affected.
+    expect(frictioned.value.debtAfter).toBe(frictionless.value.debtAfter);
+    expect(frictioned.value.borrowedAmount).toBe(frictionless.value.borrowedAmount);
+  });
+});
+
 describe('calculateLoopStep (M2-015, F-014)', () => {
   it('reconciles a single step against the portfolio and risk modules', () => {
     const result = calculateLoopStep(baseInput());

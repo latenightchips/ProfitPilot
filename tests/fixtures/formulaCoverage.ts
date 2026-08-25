@@ -3,8 +3,9 @@
  * Regression Suite").
  *
  * The canonical, single source of truth for what happened to every one of
- * `02_Formulas.md`'s 69 documented Formula IDs (F-001 through F-069). Each
- * entry is either:
+ * `02_Formulas.md`'s 73 documented Formula IDs (F-001 through F-069, plus
+ * F-070–F-073 — the Execution Cost Mathematics chapter added by V4
+ * Readiness Audit §12 P1-4/P1-5). Each entry is either:
  *   - `'implemented'`: has a real, Formula-ID-tagged implementation in
  *     `engine/`, verified against this registry by
  *     `tests/unit/engine/formulaCoverage.test.ts` (which scans `engine/`
@@ -17,12 +18,16 @@
  *
  * M2-029's own DoD ("A formula coverage report identifies no untested
  * Version 1 Formula IDs") is read as: no Formula ID is *silently*
- * untested. Every one of the 33 `'not_implemented'` entries below is
- * *documented* as untested and why — implementing all 69 would mean
- * inventing 33 formulas, scoring models, or iterative solvers nowhere
+ * untested. Every one of the 34 `'not_implemented'` entries below is
+ * *documented* as untested and why — implementing all of them would mean
+ * inventing formulas, scoring models, or iterative solvers nowhere
  * specified in `02_Formulas.md`, which directly contradicts this batch's
  * own "never invent formulas" instruction. See PROJECT_STATUS.md's Batch
- * 13 section and conflict #15 for the full reasoning.
+ * 13 section and conflict #15 for the full reasoning. F-015's own entry
+ * (below) is the one exception to "never built" — it is `not_implemented`
+ * because it was superseded in place by its own generalization, F-070
+ * (P1-5), not because it was never built at all; see that entry's own
+ * reason.
  */
 
 export type FormulaCoverageStatus = 'implemented' | 'not_implemented';
@@ -68,7 +73,13 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
   { id: 'F-012', title: 'Borrow Capacity', status: 'implemented' },
   { id: 'F-013', title: 'Available Borrow', status: 'implemented' },
   { id: 'F-014', title: 'Loop Capital', status: 'implemented' },
-  { id: 'F-015', title: 'BTC Purchased Per Loop', status: 'implemented' },
+  {
+    id: 'F-015',
+    title: 'BTC Purchased Per Loop',
+    status: 'not_implemented',
+    reason:
+      'Superseded in place by its own generalization, F-070 (Effective BTC Purchased After Execution Friction — V4 Readiness Audit §12 P1-5): calculateBtcPurchasedPerLoop.ts now tags itself F-070, reducing byte-for-byte to F-015\'s own frictionless equation when execution-cost assumptions are omitted or zero. No separate F-015-tagged code path exists any more — the same "absorbed into its own generalization" pattern this registry already uses for F-016/F-018 below.',
+  },
   {
     id: 'F-016',
     title: 'Recursive Exposure',
@@ -299,4 +310,16 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     reason:
       'No task in 06_TASKS.md maps to this formula (Batch 10 finding, part of the F-060-F-069 chapter gap).',
   },
+  {
+    id: 'F-070',
+    title: 'Effective BTC Purchased After Execution Friction',
+    status: 'implemented',
+  },
+  {
+    id: 'F-071',
+    title: 'BTC Sale Required After Execution Friction',
+    status: 'implemented',
+  },
+  { id: 'F-072', title: 'Transaction Gas Cost', status: 'implemented' },
+  { id: 'F-073', title: 'Total Execution Cost', status: 'implemented' },
 ];

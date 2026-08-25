@@ -50,4 +50,24 @@ export interface PortfolioInput {
   protocol: ProtocolParameters;
 }
 
+/**
+ * Execution-cost friction assumptions — 02_Formulas.md F-070/F-071 (V4
+ * Readiness Audit §12 P1-5). Fixed, user-configurable planning
+ * assumptions, never a live DEX quote. Both fields are decimal fractions
+ * in [0, 1) — see `engine/validation/validate.ts`'s
+ * `validateExecutionCostRate`/`resolveEffectiveExecutionRate` for the
+ * exact domain and the canonical `(1 - swapFeeRate) * (1 - slippageRate)`
+ * composition (multiplicative, not additive — see 02_Formulas.md's own
+ * "RATE COMPOSITION" section for why).
+ *
+ * Optional everywhere it is accepted: omitting it is mathematically
+ * identical to supplying `{ swapFeeRate: 0, slippageRate: 0 }`, which
+ * reduces every consumer exactly to its pre-P1-5 frictionless behavior
+ * (F-015/F-042).
+ */
+export interface ExecutionCostAssumptions {
+  swapFeeRate: PercentageDecimal;
+  slippageRate: PercentageDecimal;
+}
+
 export type { FormulaError, FormulaMetadata, FormulaResult, FormulaWarning } from './result';

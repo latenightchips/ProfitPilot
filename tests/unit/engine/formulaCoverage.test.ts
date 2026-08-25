@@ -109,11 +109,11 @@ describe('Formula Coverage Report (M2-029)', () => {
   );
   const undocumentedTaggedFiles = collectUndocumentedTaggedFiles(engineDir);
 
-  it('the registry contains exactly F-001 through F-069, once each', () => {
+  it('the registry contains exactly F-001 through F-073, once each', () => {
     const ids = FORMULA_COVERAGE_REGISTRY.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
 
-    const expectedIds = Array.from({ length: 69 }, (_, i) => `F-${String(i + 1).padStart(3, '0')}`);
+    const expectedIds = Array.from({ length: 73 }, (_, i) => `F-${String(i + 1).padStart(3, '0')}`);
     expect([...ids].sort()).toEqual([...expectedIds].sort());
   });
 
@@ -176,15 +176,15 @@ describe('Formula Coverage Report (M2-029)', () => {
     ).toEqual([]);
   });
 
-  it('counts match the expected 36 implemented / 33 not-implemented split', () => {
+  it('counts match the expected 39 implemented / 34 not-implemented split', () => {
     const implementedCount = FORMULA_COVERAGE_REGISTRY.filter(
       (entry) => entry.status === 'implemented',
     ).length;
     const notImplementedCount = FORMULA_COVERAGE_REGISTRY.filter(
       (entry) => entry.status === 'not_implemented',
     ).length;
-    expect(implementedCount).toBe(36);
-    expect(notImplementedCount).toBe(33);
-    expect(implementedCount + notImplementedCount).toBe(69);
+    expect(implementedCount).toBe(39);
+    expect(notImplementedCount).toBe(34);
+    expect(implementedCount + notImplementedCount).toBe(73);
   });
 });

@@ -1,9 +1,13 @@
 import { calculateHealthFactor } from '../health/calculateHealthFactor';
 import { toDecimal, toOutputNumber } from '../shared/decimal';
 import { createFailure, createSuccess, type FormulaResult } from '../shared/result';
-import type { PortfolioInput } from '../shared/types';
+import type { ExecutionCostAssumptions, PortfolioInput } from '../shared/types';
 import { checkTargetHealthFactorInvariant } from '../validation/invariants';
-import { validateNonNegative, validatePositive } from '../validation/validate';
+import {
+  resolveEffectiveExecutionRate,
+  validateNonNegative,
+  validatePositive,
+} from '../validation/validate';
 import { calculateExitPosition, type ExitPositionResult } from './calculateExitPosition';
 
 const FORMULA_ID = 'F-040';
@@ -32,6 +36,21 @@ export interface TargetExitParams {
   portfolio: PortfolioInput;
   target: ExitTarget;
   scenarioBtcPriceUsd?: number;
+  /**
+   * Optional execution-cost friction assumptions (02_Formulas.md F-071,
+   * V4 Readiness Audit §12 P1-5) — passed through to `calculateExitPosition`
+   * once a target has resolved to a concrete `targetDebt`, AND consumed by
+   * `resolveTargetDebt`'s own `healthFactor` closed-form solve below (via
+   * the same shared `resolveEffectiveExecutionRate` helper), so the target
+   * resolution and the actual frictioned sale agree on the same Effective
+   * Rate. The `debtBalance` and `retainedBtc` target types do not need this
+   * during resolution — `debtBalance` is already a concrete debt figure,
+   * and `retainedBtc` resolves target debt directly from a BTC quantity, not
+   * from a repayment amount computed under friction. Omitted (or both rates
+   * zero) reproduces the pre-P1-5 frictionless behavior exactly, for every
+   * target type.
+   */
+  executionCostAssumptions?: ExecutionCostAssumptions;
 }
 
 export interface TargetExitResult {
@@ -48,11 +67,12 @@ function resolveTargetDebt(
   portfolio: PortfolioInput,
   target: ExitTarget,
   scenarioBtcPriceUsd: number,
+  executionCostAssumptions: ExecutionCostAssumptions | undefined,
 ): FormulaResult<number> {
   const options = {
     formulaId: FORMULA_ID,
     formulaVersion: FORMULA_VERSION,
-    inputsUsed: { portfolio, target, scenarioBtcPriceUsd },
+    inputsUsed: { portfolio, target, scenarioBtcPriceUsd, executionCostAssumptions },
   };
 
   if (target.type === 'debtBalance') {
@@ -63,26 +83,63 @@ function resolveTargetDebt(
     const targetHf = validatePositive(target.targetHealthFactor, 'target.targetHealthFactor');
     if (!targetHf.ok) return createFailure(targetHf.error, options);
 
+    const effectiveRate = resolveEffectiveExecutionRate(executionCostAssumptions);
+    if (!effectiveRate.ok) return createFailure(effectiveRate.error, options);
+
     // Formerly reused F-040 "Target Debt" here (02_Formulas.md), which
     // assumes collateral stays fixed — wrong for an exit, which sells BTC
     // collateral to fund the very repayment being solved for (Conflict
-    // #13, resolved). Since repayment = debt0 - debt1 and btcSold x price
-    // = repayment, selling collateral to repay debt shrinks remaining
-    // collateral value by exactly the repayment amount. Substituting that
-    // into F-022's Health Factor equation (02_Formulas.md):
-    //   targetHF = (collateralValue0 - (debt0 - debt1)) x LT / debt1
-    // and solving directly for debt1 (self-financed, closed-form, no
-    // iteration) gives:
-    //   debt1 = LT x (collateralValue0 - debt0) / (targetHF - LT)
-    // The caller rejects targetHF <= liquidationThreshold before this
-    // branch runs, since that makes the denominator zero or negative.
+    // #13, resolved). Since repayment R = debt0 - debt1 but, once F-071
+    // execution friction applies to the BTC sale funding that repayment,
+    // the BTC actually sold is R / (btcPrice x E) rather than R / btcPrice
+    // (E = the shared F-070/F-071 Effective Rate — see
+    // `resolveEffectiveExecutionRate`), remaining collateral value shrinks
+    // by R / E, not by R itself. Substituting that into F-022's Health
+    // Factor equation (02_Formulas.md):
+    //   targetHF = (collateralValue0 - R / E) x LT / (debt0 - R)
+    // and solving directly for R (self-financed, closed-form, no
+    // iteration; independently re-derived and verified for V4 Readiness
+    // Audit §12 P1-5's correction — it reduces exactly to the pre-P1-5
+    // formula below when E = 1, the omitted/zero-assumptions case) gives:
+    //   R = E x (targetHF x debt0 - LT x collateralValue0) / (E x targetHF - LT)
+    // and debt1 = debt0 - R. `calculateTargetExit` (the only caller) already
+    // rejects, as an infeasible data result, both targetHF <= LT (the
+    // denominator would be <= 0 regardless of E, since E <= 1) and the
+    // friction-specific case where a small enough E still drives
+    // (E x targetHF - LT) to zero or negative even though targetHF > LT —
+    // so the denominator here is guaranteed positive; the check below is
+    // defense in depth only, not the primary rejection path.
     const collateralValue = toDecimal(portfolio.collateral.quantity).times(
       portfolio.market.btcPriceUsd,
     );
     const liquidationThreshold = toDecimal(portfolio.protocol.liquidationThreshold);
-    const numerator = liquidationThreshold.times(collateralValue.minus(portfolio.debt.balance));
-    const denominator = toDecimal(targetHf.value).minus(liquidationThreshold);
-    const resolvedTargetDebt = numerator.dividedBy(denominator);
+    const targetHfDecimal = toDecimal(targetHf.value);
+    const debt0 = toDecimal(portfolio.debt.balance);
+
+    const denominator = effectiveRate.value.times(targetHfDecimal).minus(liquidationThreshold);
+    if (denominator.lessThanOrEqualTo(0)) {
+      // Mathematically unreachable here: `calculateTargetExit` (the only
+      // caller) already rejects any `healthFactor` target for which
+      // (E x targetHF - liquidationThreshold) would be non-positive, as a
+      // `feasible: false` data result rather than an error, before this
+      // function ever runs — see its own pre-check. Kept for defense in
+      // depth, the same "unreachable given already-validated inputs"
+      // convention `resolveEffectiveExecutionRate` establishes above.
+      return createFailure(
+        {
+          code: 'UNREACHABLE_NON_POSITIVE_TARGET_DENOMINATOR',
+          message:
+            'The friction-aware target Health Factor denominator was non-positive; this should have been rejected as infeasible before reaching this closed-form solve.',
+        },
+        options,
+      );
+    }
+
+    const repaymentNumerator = effectiveRate.value.times(
+      targetHfDecimal.times(debt0).minus(liquidationThreshold.times(collateralValue)),
+    );
+    const repayment = repaymentNumerator.dividedBy(denominator);
+    const resolvedTargetDebt = debt0.minus(repayment);
     return createSuccess(toOutputNumber(resolvedTargetDebt), options);
   }
 
@@ -123,6 +180,21 @@ function resolveTargetDebt(
  * with `feasible: false` and an explanatory reason — data, not a thrown
  * failure — the same convention `validateLoopStrategySafety` (M2-018)
  * established for "unsafe but well-formed" results.
+ *
+ * **`executionCostAssumptions` (V4 Readiness Audit §12 P1-5) frictions both
+ * the final `calculateExitPosition` call AND, for the `healthFactor` target
+ * type, `resolveTargetDebt`'s own closed-form solve above.** The
+ * `healthFactor` branch resolves the repayment using the same F-071
+ * Effective Rate that `calculateExitPosition` subsequently applies to the
+ * actual BTC sale (via the shared `resolveEffectiveExecutionRate` helper —
+ * no duplicated fee/slippage arithmetic), so the two agree by construction
+ * rather than by coincidence. The post-hoc verification a few lines below
+ * (the existing M2-027 tolerance/`checkTargetHealthFactorInvariant`
+ * mechanism) is therefore expected to pass for any resolvable
+ * `healthFactor` target, frictioned or not — it remains in place as a
+ * defense-in-depth confirmation, not a documented source of false
+ * negatives. Omitted (or both rates zero) reproduces the pre-P1-5
+ * frictionless resolution exactly for every target type.
  */
 export function calculateTargetExit(params: TargetExitParams): FormulaResult<TargetExitResult> {
   const options = {
@@ -152,12 +224,15 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     target.targetHealthFactor > 0 &&
     target.targetHealthFactor <= portfolio.protocol.liquidationThreshold
   ) {
-    // Below the pre-check: selling collateral to fund repayment reduces
-    // collateral value by exactly the amount it reduces debt, so the
-    // resulting Health Factor can never fall to or below the liquidation
-    // threshold via a self-financed exit — the self-financed equation's
-    // denominator (targetHF - liquidationThreshold) would be zero or
-    // negative here, which is rejected before it is ever evaluated.
+    // Below the pre-check: this remains a necessary (not sufficient) rejection
+    // even once friction is considered. The friction-aware denominator is
+    // (E x targetHF - liquidationThreshold), and E <= 1 always, so
+    // targetHF <= liquidationThreshold implies E x targetHF <= liquidationThreshold
+    // too — the denominator would be zero or negative regardless of E. (E can
+    // ALSO drive the denominator non-positive even when targetHF exceeds the
+    // liquidation threshold; that friction-specific case is checked inside
+    // `resolveTargetDebt` itself, where the resolved Effective Rate is
+    // available.)
     return createSuccess(
       {
         feasible: false,
@@ -170,7 +245,46 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     );
   }
 
-  const resolvedResult = resolveTargetDebt(portfolio, target, scenarioPrice);
+  if (
+    target.type === 'healthFactor' &&
+    target.targetHealthFactor > portfolio.protocol.liquidationThreshold
+  ) {
+    // A friction-specific infeasibility class the H<=L pre-check above does
+    // not catch: even with targetHF strictly above the liquidation
+    // threshold, a small enough Effective Rate E (V4 Readiness Audit §12
+    // P1-5) can still drive the friction-aware denominator
+    // (E x targetHF - liquidationThreshold) to zero or negative, since
+    // E <= 1 always. `resolveTargetDebt` computes the identical Effective
+    // Rate for its own closed-form solve; this is checked here, before
+    // that solve runs, so it is reported the same way every other
+    // infeasible target is — as a `feasible: false` data result, not a
+    // thrown error.
+    const effectiveRate = resolveEffectiveExecutionRate(params.executionCostAssumptions);
+    if (!effectiveRate.ok) return createFailure(effectiveRate.error, options);
+
+    const denominator = effectiveRate.value
+      .times(target.targetHealthFactor)
+      .minus(portfolio.protocol.liquidationThreshold);
+    if (denominator.lessThanOrEqualTo(0)) {
+      return createSuccess(
+        {
+          feasible: false,
+          infeasibleReason:
+            'Under the supplied execution-cost assumptions, no self-financed repayment can reach the requested target Health Factor: execution friction reduces the effective collateral recovered per dollar of repayment enough that the target is unreachable, even though it exceeds the liquidation threshold.',
+          resolvedTargetDebt: null,
+          exit: null,
+        },
+        options,
+      );
+    }
+  }
+
+  const resolvedResult = resolveTargetDebt(
+    portfolio,
+    target,
+    scenarioPrice,
+    params.executionCostAssumptions,
+  );
   if (!resolvedResult.ok) return createFailure(resolvedResult.error, options);
 
   const resolvedTargetDebt = resolvedResult.value;
@@ -220,6 +334,7 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     portfolio,
     targetDebt: resolvedTargetDebt,
     scenarioBtcPriceUsd: scenarioPrice,
+    executionCostAssumptions: params.executionCostAssumptions,
   });
   if (!exitResult.ok) return createFailure(exitResult.error, options);
 

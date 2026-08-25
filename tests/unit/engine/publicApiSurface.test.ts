@@ -45,6 +45,11 @@ describe('Public Engine API surface (M2-031)', () => {
     'calculateLoopStrategy',
     'calculateMaximumBorrowLimit',
     'validateLoopStrategySafety',
+    // Execution Cost Mathematics (F-072/F-073; F-070/F-071 reached
+    // through calculateBtcPurchasedPerLoop/calculateBtcSaleRequired
+    // above — V4 Readiness Audit §12 P1-5)
+    'calculateTotalExecutionCost',
+    'calculateTransactionGasCost',
     // Aave V3 protocol-specific accrual (not a Formula ID)
     'projectVariableDebt',
     // Protocol/version dispatch (V4 Readiness Audit §12 Stage 1)
