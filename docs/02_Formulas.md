@@ -4916,6 +4916,728 @@ Interest Warning
 
 ---
 
+# EXECUTION COST MATHEMATICS
+
+Every Loop and Exit calculation so far assumes execution at the exact oracle price.
+
+Real trades incur a swap fee, price slippage, and gas.
+
+ProfitPilot does not obtain live DEX quotes.
+
+The formulas below model execution friction as explicit, user-configurable planning assumptions, never as a live market measurement.
+
+An assumption is not a prediction.
+
+An assumption must always be labeled as an assumption.
+
+No formula below alters Borrowing Interest (F-030 through F-032, F-037).
+
+Execution cost and borrowing interest are independent cost classes and must never be combined into one number.
+
+No formula below assumes a flash loan.
+
+Loop Builder borrows, buys BTC, and resupplies as separate steps, not as a single atomic leveraged build.
+
+---
+
+# RATE COMPOSITION
+
+Two independent friction rates — swap fee and slippage — must be combined into one Effective Rate before use.
+
+Two candidate compositions exist.
+
+Additive
+
+Effective Rate = 1 − Swap Fee Rate − Slippage Rate
+
+Multiplicative
+
+Effective Rate = (1 − Swap Fee Rate) × (1 − Slippage Rate)
+
+Expanding the multiplicative form
+
+(1 − a) × (1 − b) = 1 − a − b + (a × b)
+
+The two forms differ by exactly (Swap Fee Rate × Slippage Rate).
+
+At small rates this difference is negligible.
+
+At larger rates it is not.
+
+Example
+
+Swap Fee Rate 1%
+
+Slippage Rate 2%
+
+Additive Effective Rate 0.97
+
+Multiplicative Effective Rate 0.9702
+
+Difference 0.02%
+
+The Error Tolerance defined earlier in this document is 0.01% maximum acceptable calculation error.
+
+0.02% exceeds that tolerance.
+
+The two forms are not interchangeable.
+
+Multiplicative composition is the canonical definition for F-070 and F-071.
+
+Reason 1
+
+Sequential percentage reductions compose multiplicatively in standard financial mathematics.
+
+A swap fee and slippage are applied as two sequential effects of one trade, not two simultaneous deductions from the same fixed base.
+
+This satisfies the Source of Truth requirement — Financial Mathematics and Well-established Accounting Principles — rather than an invented shortcut.
+
+Reason 2
+
+Multiplicative composition cannot produce a negative Effective Rate.
+
+Each factor (1 − rate) stays within [0, 1) whenever each individual rate stays within [0, 1).
+
+The additive form can go negative when Swap Fee Rate + Slippage Rate exceeds 1, which would silently flip the sign of BTC Purchased or BTC Sold — an unsafe failure mode the Implementation Rules explicitly forbid ("Avoid division by zero. Return explicit errors for impossible states.").
+
+Reason 3
+
+Multiplicative composition still reduces to the exact frictionless case at zero rates, identically to the additive form.
+
+Compatibility with F-015 and F-042 is preserved either way — this decision only matters once execution-cost assumptions are actually configured.
+
+---
+
+# F-070
+
+Effective BTC Purchased After Execution Friction
+
+Purpose
+
+Determine BTC actually acquired per loop after swap fee and slippage.
+
+Human Explanation
+
+A portion of the borrowed notional is consumed by the swap fee and by slippage before it converts to BTC.
+
+Source
+
+Financial Mathematics (sequential percentage reduction). Generalizes F-015.
+
+Equation
+
+Effective Rate
+
+=
+
+(1 − Swap Fee Rate) × (1 − Slippage Rate)
+
+Effective Notional
+
+=
+
+Borrow Amount × Effective Rate
+
+BTC Purchased
+
+=
+
+Effective Notional / BTC Price
+
+Variables
+
+Borrow Amount
+
+USD (debt-token notional, under the app's existing debt-token assumptions — same meaning as F-014's Borrow Amount)
+
+Swap Fee Rate
+
+Decimal fraction
+
+Slippage Rate
+
+Decimal fraction
+
+BTC Price
+
+USD
+
+Effective Rate
+
+Decimal fraction
+
+Effective Notional
+
+USD
+
+BTC Purchased
+
+BTC
+
+Assumptions
+
+Swap Fee Rate and Slippage Rate are fixed, user-configurable planning assumptions.
+
+Neither rate is obtained from a live quote.
+
+Both rates apply to the full Borrow Amount — no partial-fill or size-dependent curve is modeled.
+
+Valid Domain
+
+Swap Fee Rate is in [0, 1).
+
+Slippage Rate is in [0, 1).
+
+Borrow Amount is nonnegative.
+
+BTC Price is positive.
+
+Zero-Rate Identity
+
+When Swap Fee Rate = 0 and Slippage Rate = 0, Effective Rate = 1, Effective Notional = Borrow Amount, and BTC Purchased = Borrow Amount / BTC Price.
+
+This is exactly F-015.
+
+Every existing caller that does not configure execution-cost assumptions is mathematically unaffected.
+
+Invalid-Input Behavior
+
+Effective Rate = 0 (either rate at exactly 1) must return an explicit error, never a silent zero BTC Purchased presented as a valid result.
+
+A negative Borrow Amount, negative rate, or non-positive BTC Price must return an explicit error, the same convention F-013 through F-015 already use.
+
+Rounding
+
+No intermediate rounding. Full precision through Effective Rate, Effective Notional, and BTC Purchased. Round only for display (BTC to 8 decimals, per the Precision Standard).
+
+Example — zero rates
+
+Borrow Amount $30,000
+
+Swap Fee Rate 0%
+
+Slippage Rate 0%
+
+BTC Price $60,000
+
+Effective Rate 1.000000
+
+BTC Purchased 0.50 BTC
+
+Identical to F-015's own worked example.
+
+Example — non-zero rates
+
+Borrow Amount $30,000
+
+Swap Fee Rate 0.3%
+
+Slippage Rate 0.5%
+
+BTC Price $60,000
+
+Effective Rate (1 − 0.003) × (1 − 0.005) = 0.997 × 0.995 = 0.992015
+
+Effective Notional $30,000 × 0.992015 = $29,760.45
+
+BTC Purchased $29,760.45 / $60,000 = 0.49600750 BTC
+
+Frictionless F-015 result for the same inputs is 0.50 BTC. Friction reduces the purchase by 0.00399250 BTC.
+
+TypeScript
+
+```ts
+effectiveRate =
+(1 - swapFeeRate) *
+(1 - slippageRate);
+
+effectiveNotional =
+borrowAmount *
+effectiveRate;
+
+btcPurchased =
+effectiveNotional /
+btcPrice;
+```
+
+---
+
+# F-071
+
+BTC Sale Required After Execution Friction
+
+Purpose
+
+Determine BTC that must be sold to net a required debt repayment after swap fee and slippage.
+
+Human Explanation
+
+Selling BTC also incurs swap fee and slippage, so more BTC than the frictionless amount must be sold to net the same repayment.
+
+Source
+
+Financial Mathematics (sequential percentage reduction). Generalizes F-042.
+
+Equation
+
+Effective Rate
+
+=
+
+(1 − Swap Fee Rate) × (1 − Slippage Rate)
+
+BTC Sold
+
+=
+
+Repayment / (BTC Price × Effective Rate)
+
+Variables
+
+Repayment
+
+USD (F-041's own output)
+
+Swap Fee Rate
+
+Decimal fraction
+
+Slippage Rate
+
+Decimal fraction
+
+BTC Price
+
+USD
+
+Effective Rate
+
+Decimal fraction
+
+BTC Sold
+
+BTC
+
+Assumptions
+
+Same assumptions as F-070 — fixed, user-configurable planning rates, not a live quote, applied to the full sale notional.
+
+Valid Domain
+
+Swap Fee Rate is in [0, 1).
+
+Slippage Rate is in [0, 1).
+
+Repayment is nonnegative.
+
+BTC Price is positive.
+
+Effective Rate must be strictly greater than 0.
+
+Zero-Rate Identity
+
+When Swap Fee Rate = 0 and Slippage Rate = 0, Effective Rate = 1, and BTC Sold = Repayment / BTC Price.
+
+This is exactly F-042.
+
+Every existing caller that does not configure execution-cost assumptions is mathematically unaffected.
+
+Invalid-Input Behavior
+
+Effective Rate = 0 (either rate at exactly 1) must return an explicit error — never a division by zero, never Infinity presented as a valid BTC Sold.
+
+A negative Repayment, negative rate, or non-positive BTC Price must return an explicit error, the same convention F-041 and F-042 already use.
+
+Rounding
+
+No intermediate rounding. Full precision through Effective Rate and BTC Sold. Round only for display (BTC to 8 decimals).
+
+Example — zero rates
+
+Repayment $12,000
+
+Swap Fee Rate 0%
+
+Slippage Rate 0%
+
+BTC Price $60,000
+
+Effective Rate 1.000000
+
+BTC Sold 0.20 BTC
+
+Identical to F-042's own worked example.
+
+Example — non-zero rates
+
+Repayment $25,000
+
+Swap Fee Rate 0.3%
+
+Slippage Rate 0.5%
+
+BTC Price $50,000
+
+Effective Rate (1 − 0.003) × (1 − 0.005) = 0.992015
+
+BTC Sold $25,000 / ($50,000 × 0.992015) = $25,000 / $49,600.75 = 0.50402464 BTC
+
+Frictionless F-042 result for the same inputs is 0.50 BTC. Friction requires selling an extra 0.00402464 BTC to net the identical repayment.
+
+TypeScript
+
+```ts
+effectiveRate =
+(1 - swapFeeRate) *
+(1 - slippageRate);
+
+btcSold =
+repayment /
+(btcPrice * effectiveRate);
+```
+
+---
+
+# F-072
+
+Transaction Gas Cost
+
+Purpose
+
+Estimate the externally-paid gas cost of executing a planned strategy.
+
+Human Explanation
+
+Gas is paid in the network's native token, from the user's own wallet, separately from the position being built or unwound.
+
+Source
+
+Well-established Accounting Principles (a fixed per-unit cost applied to a count).
+
+Equation
+
+Total Gas Cost
+
+=
+
+Transaction Count × Gas Cost Per Transaction
+
+Variables
+
+Transaction Count
+
+Count (nonnegative integer)
+
+Gas Cost Per Transaction
+
+USD
+
+Total Gas Cost
+
+USD
+
+Assumptions
+
+Gas Cost Per Transaction is a fixed, user-configurable USD planning assumption, entered directly in USD.
+
+ProfitPilot has no native-gas-token price feed anywhere in the system (its only live price source is BTC/USD). Gas Cost Per Transaction is never derived by converting a native-token gas estimate through a price feed that does not exist — it is a direct USD input.
+
+Transaction Count is an explicit planning assumption supplied by the caller, never automatically derived from Loop Builder's steps.length. The current architecture does not establish a documented one-loop-step-equals-one-blockchain-transaction relationship — a loop step may correspond to one transaction, more than one, or a batched multicall, depending on execution details this specification does not model. A caller may choose to default Transaction Count to the step count as its own product decision, but F-072 itself takes Transaction Count as a bare input and makes no claim about what it represents.
+
+For a single Exit action (full exit or partial repayment), Transaction Count is likewise a caller-supplied assumption, not fixed at 1 by this formula.
+
+Total Gas Cost must not increase protocol debt.
+
+Total Gas Cost must not alter Borrow Amount (F-014).
+
+Total Gas Cost must not alter Repayment (F-041).
+
+Total Gas Cost must never be converted through BTC Price.
+
+Total Gas Cost must never be mixed into Borrowing Interest (F-030 through F-032).
+
+Valid Domain
+
+Transaction Count is a nonnegative integer.
+
+Gas Cost Per Transaction is nonnegative.
+
+Zero-Rate Identity
+
+Transaction Count = 0 or Gas Cost Per Transaction = 0 both yield Total Gas Cost = 0 — no separate zero-cost case is needed beyond the plain arithmetic identity.
+
+Invalid-Input Behavior
+
+A negative Transaction Count or a non-integer Transaction Count must return an explicit error.
+
+A negative Gas Cost Per Transaction must return an explicit error.
+
+Rounding
+
+No intermediate rounding. Round only for display (USD to 2 decimals).
+
+Example
+
+Transaction Count 4 (an illustrative planning assumption, not derived from steps.length)
+
+Gas Cost Per Transaction $15.00
+
+Total Gas Cost 4 × $15.00 = $60.00
+
+TypeScript
+
+```ts
+totalGasCostUsd =
+transactionCount *
+gasCostPerTransactionUsd;
+```
+
+---
+
+# F-073
+
+Total Execution Cost
+
+Purpose
+
+Report the full USD cost of execution friction for one Loop step or one Exit action.
+
+Human Explanation
+
+This is an accounting total of costs already embedded in F-070 or F-071's Effective Rate, plus F-072's externally-paid gas. It is never a further deduction applied on top of BTC Purchased, BTC Sold, collateral, equity, or debt.
+
+Source
+
+Well-established Accounting Principles (itemized cost reporting).
+
+No-Double-Count Invariant
+
+F-070 and F-071 already apply Swap Fee Rate and Slippage Rate to the executed BTC quantity, through Effective Rate.
+
+F-073 restates that same already-applied friction as two USD line items, for display and export, and adds Total Gas Cost as a third, independent line item.
+
+F-073 must never be subtracted a second time from collateral, equity, or debt — doing so would double-count friction that F-070/F-071 already applied once.
+
+Equation
+
+Notional
+
+=
+
+Borrow Amount (Loop context) or BTC Sold × BTC Price (Exit context — the gross, pre-friction sale value)
+
+Swap Fee Cost
+
+=
+
+Notional × Swap Fee Rate
+
+Slippage Cost
+
+=
+
+Notional × (1 − Swap Fee Rate) × Slippage Rate
+
+Total Execution Cost
+
+=
+
+Swap Fee Cost + Slippage Cost + Total Gas Cost
+
+Identity Proof
+
+Swap Fee Cost + Slippage Cost
+
+=
+
+Notional × Swap Fee Rate + Notional × (1 − Swap Fee Rate) × Slippage Rate
+
+=
+
+Notional × (Swap Fee Rate + Slippage Rate − Swap Fee Rate × Slippage Rate)
+
+=
+
+Notional × (1 − (1 − Swap Fee Rate) × (1 − Slippage Rate))
+
+=
+
+Notional × (1 − Effective Rate)
+
+=
+
+Notional − (Notional × Effective Rate)
+
+For the Loop context, Notional × Effective Rate is exactly F-070's Effective Notional — so Swap Fee Cost + Slippage Cost equals Borrow Amount − Effective Notional, the friction already subtracted once in F-070, never a second deduction.
+
+For the Exit context, Notional × Effective Rate equals Repayment (by construction of F-071) — so Swap Fee Cost + Slippage Cost equals the extra sale value already implied by selling more BTC than the frictionless amount, never a second deduction from Repayment or BTC Retained.
+
+Variables
+
+Notional
+
+USD
+
+Swap Fee Cost
+
+USD
+
+Slippage Cost
+
+USD
+
+Total Gas Cost
+
+USD (F-072)
+
+Total Execution Cost
+
+USD
+
+Assumptions
+
+Swap Fee Rate and Slippage Rate are the identical rates already used by F-070 or F-071 for the same strategy — never re-entered or re-derived independently.
+
+Valid Domain
+
+Same domain as F-070/F-071 for the rates, and F-072 for gas.
+
+Zero-Rate Identity
+
+When Swap Fee Rate = 0 and Slippage Rate = 0, Swap Fee Cost = 0 and Slippage Cost = 0. Total Execution Cost = Total Gas Cost only.
+
+Invalid-Input Behavior
+
+Same invalid-input behavior as F-070/F-071 (rate domain) and F-072 (gas domain) — F-073 performs no independent validation beyond composing already-validated components.
+
+Rounding
+
+No intermediate rounding. Round only for display (USD to 2 decimals).
+
+Example — Loop context
+
+Using F-070's non-zero-rate example: Borrow Amount $30,000, Swap Fee Rate 0.3%, Slippage Rate 0.5%.
+
+Swap Fee Cost $30,000 × 0.003 = $90.00
+
+Slippage Cost $30,000 × 0.997 × 0.005 = $149.55
+
+Check $90.00 + $149.55 = $239.55, equal to Borrow Amount ($30,000.00) − Effective Notional ($29,760.45) = $239.55. Confirmed — no double count.
+
+Using F-072's example, Total Gas Cost = $60.00.
+
+Total Execution Cost $90.00 + $149.55 + $60.00 = $299.55
+
+TypeScript
+
+```ts
+swapFeeCostUsd =
+notionalUsd *
+swapFeeRate;
+
+slippageCostUsd =
+notionalUsd *
+(1 - swapFeeRate) *
+slippageRate;
+
+totalExecutionCostUsd =
+swapFeeCostUsd +
+slippageCostUsd +
+totalGasCostUsd;
+```
+
+---
+
+# EXECUTION COST IMPLEMENTATION NOTES
+
+F-070 and F-071 are the only formulas that alter an executed BTC quantity. F-072 and F-073 never do.
+
+F-015 and F-042 remain the canonical frictionless identities, unmodified, and remain correct for any caller that has not configured execution-cost assumptions.
+
+Borrowing Interest (F-030 through F-032, F-037) is never modified by this chapter.
+
+No formula in this chapter assumes a flash loan.
+
+No formula in this chapter derives Transaction Count from steps.length.
+
+No formula in this chapter converts Gas Cost through BTC Price.
+
+---
+
+# EXECUTION COST UNIT TEST EXAMPLES
+
+Scenario A — zero rates
+
+Inputs identical to F-015's own example.
+
+Expected BTC Purchased equals F-015's own result exactly.
+
+---
+
+Scenario B — zero rates
+
+Inputs identical to F-042's own example.
+
+Expected BTC Sold equals F-042's own result exactly.
+
+---
+
+Scenario C — non-zero rates, Loop
+
+Borrow Amount $30,000, Swap Fee Rate 0.3%, Slippage Rate 0.5%, BTC Price $60,000.
+
+Expected BTC Purchased 0.49600750 BTC.
+
+---
+
+Scenario D — non-zero rates, Exit
+
+Repayment $25,000, Swap Fee Rate 0.3%, Slippage Rate 0.5%, BTC Price $50,000.
+
+Expected BTC Sold 0.50402464 BTC.
+
+---
+
+Scenario E — additive vs multiplicative divergence
+
+Swap Fee Rate 1%, Slippage Rate 2%.
+
+Additive Effective Rate 0.97. Multiplicative Effective Rate 0.9702.
+
+Expected engine behavior uses the multiplicative value — a test asserting the additive value would fail.
+
+---
+
+Scenario F — invalid domain
+
+Swap Fee Rate 60%, Slippage Rate 50%.
+
+Effective Rate = (1 − 0.60) × (1 − 0.50) = 0.20, still valid and positive — multiplicative composition never goes negative here, unlike the additive form (1 − 0.60 − 0.50 = −0.10), which would be invalid.
+
+---
+
+# EXECUTION COST ACCEPTANCE CRITERIA
+
+✓ F-070 and F-071 use multiplicative rate composition, not additive.
+
+✓ F-070 reduces exactly to F-015 at zero rates.
+
+✓ F-071 reduces exactly to F-042 at zero rates.
+
+✓ F-072 never converts gas through BTC Price.
+
+✓ F-072 never derives Transaction Count from steps.length without it being an explicit, caller-supplied assumption.
+
+✓ F-073 never double-counts the friction F-070/F-071 already applied.
+
+✓ Borrowing Interest formulas are untouched.
+
+✓ No formula assumes a flash loan.
+
+✓ Formula IDs F-070 through F-073 are documented.
+
+---
+
 END OF PAGE 8
 
 NEXT
@@ -5788,6 +6510,10 @@ Recommendation Engine
 
 F-060 → F-069
 
+Execution Cost Mathematics
+
+F-070 → F-073
+
 Performance Metrics
 
 M-001 → M-010
@@ -5810,7 +6536,7 @@ Pages
 
 Formula IDs
 
-69
+73
 
 Dashboard Metrics
 
