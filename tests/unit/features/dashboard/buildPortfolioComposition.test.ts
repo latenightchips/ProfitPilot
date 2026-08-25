@@ -320,3 +320,100 @@ describe('buildPortfolioComposition — V4 risk-capacity display (Stage 23E)', (
     expect(composition.protocolParameters.formattedCollateralFactor).toBe('0%');
   });
 });
+
+/**
+ * "Supply APR" display — V4 Readiness Audit §12 P1-1. No V4 boundary
+ * this codebase talks to exposes an authoritative supply rate, so a live
+ * V4 portfolio must never keep showing the inherited/leftover
+ * `protocol.supplyApr` number. Mirrors the `resolveSupplyAprDisplay`
+ * (`services/portfolio/mapping.ts`) unit tests, at the Dashboard
+ * formatting layer.
+ */
+describe('buildPortfolioComposition — Supply APR (P1-1)', () => {
+  it('V3: shows the real protocol.supplyApr percentage, unchanged', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.formattedSupplyApr).toBe('2%');
+  });
+
+  it('live V4 (setAaveV4CollateralRisk\'s own default source): shows "—", never the leftover protocol.supplyApr figure', () => {
+    // `setAaveV4CollateralRisk` with no explicit `source` argument
+    // defaults to `'live'` (`stores/portfolioStore.ts`'s own default) —
+    // exactly the case this fix targets.
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 20000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0,
+      debtAssetPriceUsd: 1.0,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.data.id, { collateralFactor: 0.65, dynamicConfigKey: 1 });
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    if (!record.summary.ok) throw new Error('expected a successful summary');
+    expect(record.portfolio.v4CollateralRiskSource).toBe('live');
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+    if (!viewModel.ok) throw new Error('expected a successful view model');
+    const composition = buildPortfolioComposition(
+      record.portfolio,
+      record.summary.data,
+      viewModel.freshness.market,
+      {
+        engineVersion: record.summary.metadata.engineVersion,
+        formulaVersion: record.summary.metadata.formulaVersion,
+      },
+    );
+    expect(composition.protocolParameters.formattedSupplyApr).toBe('—');
+  });
+
+  it('V4 with no v4CollateralRisk synced yet: shows "—", not the inherited V3/default figure', () => {
+    const { portfolio, summary, marketFreshness, tracked } = buildOk();
+    const v4PortfolioMissingRisk = { ...portfolio, protocolVersion: 'v4' as const };
+    const composition = buildPortfolioComposition(
+      v4PortfolioMissingRisk,
+      summary,
+      marketFreshness,
+      tracked,
+    );
+    expect(composition.protocolParameters.formattedSupplyApr).toBe('—');
+  });
+
+  it('manual V4 (v4CollateralRiskSource explicitly "manual"): shows the real protocol.supplyApr percentage, manual semantics preserved', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+    usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+      drawnDebt: 20000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0,
+      debtAssetPriceUsd: 1.0,
+    });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(
+        created.data.id,
+        { collateralFactor: 0.65, dynamicConfigKey: 1 },
+        'manual',
+      );
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    if (!record.summary.ok) throw new Error('expected a successful summary');
+    expect(record.portfolio.v4CollateralRiskSource).toBe('manual');
+    const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+    if (!viewModel.ok) throw new Error('expected a successful view model');
+    const composition = buildPortfolioComposition(
+      record.portfolio,
+      record.summary.data,
+      viewModel.freshness.market,
+      {
+        engineVersion: record.summary.metadata.engineVersion,
+        formulaVersion: record.summary.metadata.formulaVersion,
+      },
+    );
+    expect(composition.protocolParameters.formattedSupplyApr).toBe('2%');
+  });
+});

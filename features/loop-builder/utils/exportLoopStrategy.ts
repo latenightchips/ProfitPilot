@@ -6,6 +6,7 @@ import {
   type LoopStrategyPreview,
   type LoopStrategySettings,
   resolveRiskCapacityDisplay,
+  resolveSupplyAprDisplay,
   type ServiceMetadata,
 } from '@/services';
 import type { StrategyWarning } from '@/types/strategy';
@@ -46,6 +47,22 @@ function resolveBorrowAprForExport(portfolio: ApplicationPortfolio): number | nu
  * alone governs both). `null` for whichever fields don't apply to the
  * portfolio's own protocol version, rather than a reinterpreted V3 field.
  */
+/**
+ * "Supply APR" — V4 Readiness Audit §12 P1-1. Previously always the raw
+ * `portfolio.protocol.supplyApr` scalar, exported as-is regardless of
+ * protocol version. For a live V4 portfolio this can be a stale leftover
+ * from before the portfolio became V4, never a real V4 value (no V4
+ * boundary this codebase talks to exposes an authoritative supply rate at
+ * all — see `resolveSupplyAprDisplay`'s own doc comment,
+ * `services/portfolio/mapping.ts`). `null` (rendered as "Not available"
+ * in CSV, literal `null` in JSON — this file's own existing convention)
+ * rather than a stale/fabricated number.
+ */
+function resolveSupplyAprForExport(portfolio: ApplicationPortfolio): number | null {
+  const display = resolveSupplyAprDisplay(portfolio);
+  return display.kind === 'available' ? display.supplyApr : null;
+}
+
 function resolveProtocolParametersForExport(
   portfolio: ApplicationPortfolio,
 ): LoopStrategyExportPayload['assumptions']['protocolParameters'] {
@@ -56,7 +73,7 @@ function resolveProtocolParametersForExport(
       riskCapacityDisplay.kind === 'v3' ? riskCapacityDisplay.liquidationThreshold : null,
     collateralFactor:
       riskCapacityDisplay.kind === 'v4Available' ? riskCapacityDisplay.collateralFactor : null,
-    supplyApr: portfolio.protocol.supplyApr,
+    supplyApr: resolveSupplyAprForExport(portfolio),
     borrowApr: resolveBorrowAprForExport(portfolio),
   };
 }
@@ -154,7 +171,8 @@ export interface LoopStrategyExportPayload {
       liquidationThreshold: number | null;
       /** V4 Readiness Audit §12 Stage 23E — the real V4 risk-capacity parameter; `null` for V3 or when unavailable for a V4 portfolio. */
       collateralFactor: number | null;
-      supplyApr: number;
+      /** V4 Readiness Audit §12 P1-1 — `resolveSupplyAprForExport`'s canonical value, `null` (never a stale/fabricated number) when unavailable for a V4 portfolio. */
+      supplyApr: number | null;
       /** V4 Readiness Audit §12 Stage 22 — `resolveBorrowAprForExport`'s canonical value, `null` (never the legacy V3 scalar) when unavailable for a V4 portfolio. */
       borrowApr: number | null;
     };
@@ -302,7 +320,9 @@ export function buildLoopStrategyExportCsv(payload: LoopStrategyExportPayload): 
       payload.assumptions.protocolParameters.borrowApr ?? 'Not available',
     ),
   );
-  rows.push(csvRow('Supply APR', payload.assumptions.protocolParameters.supplyApr));
+  rows.push(
+    csvRow('Supply APR', payload.assumptions.protocolParameters.supplyApr ?? 'Not available'),
+  );
   rows.push(csvRow('Fees & Slippage', payload.assumptions.feesAndSlippage));
 
   rows.push(csvRow('Timestamp', payload.timestamp ?? 'Not captured'));

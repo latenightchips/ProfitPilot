@@ -13,6 +13,7 @@ import {
   resolveCanonicalDebtBalance,
   resolveRiskCapacityDisplay,
   resolveRiskCapacityFraction,
+  resolveSupplyAprDisplay,
 } from '@/services/portfolio/mapping';
 import type {
   AaveV4DebtState,
@@ -995,6 +996,126 @@ describe('resolveRiskCapacityDisplay (Stage 23E)', () => {
       kind: 'v4Available',
       collateralFactor: 0.65,
     });
+  });
+});
+
+/**
+ * `resolveSupplyAprDisplay` — V4 Readiness Audit §12 P1-1. No V4 boundary
+ * this codebase talks to exposes an authoritative supply rate (verified
+ * against the pinned `aave/aave-v4` primary source — see the function's
+ * own doc comment), so this is Path B: a live V4 portfolio's
+ * `protocol.supplyApr` is always presentation-unavailable, never a stale
+ * V3/default leftover.
+ */
+describe('resolveSupplyAprDisplay (P1-1)', () => {
+  function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.031,
+      },
+      ...overrides,
+    };
+  }
+
+  it('V3 (or unset protocolVersion): returns the real protocol.supplyApr unchanged', () => {
+    expect(resolveSupplyAprDisplay(v4Application({ protocolVersion: 'v3' }))).toEqual({
+      kind: 'available',
+      supplyApr: 0.031,
+    });
+    expect(resolveSupplyAprDisplay(v4Application())).toEqual({
+      kind: 'available',
+      supplyApr: 0.031,
+    });
+  });
+
+  it('manual V4 (v4CollateralRiskSource: "manual"): returns protocol.supplyApr unchanged — manual V4 semantics preserved', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+      v4CollateralRiskSource: 'manual',
+    });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'available', supplyApr: 0.031 });
+  });
+
+  it('live V4 (v4CollateralRiskSource: "live"): unavailable, regardless of the real numeric value stored in protocol.supplyApr — no authoritative V4 source exists', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+      v4CollateralRiskSource: 'live',
+    });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'unavailable' });
+  });
+
+  it('V4 with no v4CollateralRiskSource yet (freshly switched from V3, sync not yet completed): unavailable — never exposes the inherited pre-V4 number', () => {
+    const application = v4Application({ protocolVersion: 'v4' });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'unavailable' });
+  });
+
+  it('regression: a portfolio with a plausible non-zero supplyApr that live-syncs to V4 must not keep presenting that old value as current V4 data', () => {
+    // Same portfolio object shape a real V3->V4 transition would leave
+    // behind: protocol.supplyApr still holds the real V3-era rate the
+    // live V3 sync last wrote, untouched by the V4 opt-in itself (V4 live
+    // sync never writes `protocol` — `hooks/useAaveLiveSync.ts`'s own
+    // header comment).
+    const wasV3ThenLiveSyncedToV4 = v4Application({
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.045, // the real, plausible V3-era rate — never zero, never fabricated
+      },
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+      v4CollateralRiskSource: 'live',
+    });
+    const result = resolveSupplyAprDisplay(wasV3ThenLiveSyncedToV4);
+    expect(result.kind).toBe('unavailable');
+    // Explicitly not the old 0.045 figure, and not fabricated 0 either.
+    expect(result).not.toHaveProperty('supplyApr');
+  });
+
+  it('does not mutate protocol.supplyApr itself — presentation-layer gate only, the underlying required field is untouched', () => {
+    const application = v4Application({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+      v4CollateralRiskSource: 'live',
+    });
+    resolveSupplyAprDisplay(application);
+    expect(application.protocol.supplyApr).toBe(0.031);
+  });
+
+  it('is a pure function of the given portfolio — no cross-portfolio leak between successive calls', () => {
+    const liveV4 = v4Application({
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
+      v4CollateralRiskSource: 'live',
+    });
+    const v3 = v4Application({
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.06,
+      },
+      protocolVersion: 'v3',
+    });
+    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'unavailable' });
+    expect(resolveSupplyAprDisplay(v3)).toEqual({ kind: 'available', supplyApr: 0.06 });
+    // Re-checking the first call's portfolio again, after resolving a
+    // second, different portfolio in between — must still be independent.
+    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'unavailable' });
   });
 });
 

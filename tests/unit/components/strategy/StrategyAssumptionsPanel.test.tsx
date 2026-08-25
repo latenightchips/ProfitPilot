@@ -222,6 +222,80 @@ describe('StrategyAssumptionsPanel — V4 Borrow Rate correctness (Stage 21)', (
 });
 
 /**
+ * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, so a live V4
+ * portfolio must never keep showing the inherited/leftover
+ * `protocol.supplyApr` figure. Mirrors the Borrow Rate describe block
+ * above's own "deliberately wrong value" fixture-design discipline —
+ * `protocol.supplyApr` here is a plausible non-zero rate, never zero, so
+ * a silently-retained leak is directly observable.
+ */
+describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
+  it('V3: shows the real protocol.supplyApr, unchanged', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio()}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
+    expect(protocolParamsValue?.textContent).toContain('Supply APR 2.00%');
+  });
+
+  it('live V4: shows "Not available", never the leftover protocol.supplyApr figure', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({
+          protocolVersion: 'v4',
+          v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 1 },
+          v4CollateralRiskSource: 'live',
+          protocol: {
+            maxLoanToValue: 0.75,
+            liquidationThreshold: 0.8,
+            borrowApr: 0.05,
+            supplyApr: 0.045, // deliberately non-zero, plausible — must never be displayed
+          },
+        })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
+    expect(protocolParamsValue?.textContent).toContain('Supply APR Not available');
+    expect(protocolParamsValue?.textContent).not.toContain('4.50%');
+  });
+
+  it('V4 with no v4CollateralRisk synced yet: shows "Not available", not the inherited figure', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({ protocolVersion: 'v4' })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
+    expect(protocolParamsValue?.textContent).toContain('Supply APR Not available');
+  });
+
+  it('manual V4: shows the real protocol.supplyApr, manual semantics preserved', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({
+          protocolVersion: 'v4',
+          v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 1 },
+          v4CollateralRiskSource: 'manual',
+        })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
+    expect(protocolParamsValue?.textContent).toContain('Supply APR 2.00%');
+  });
+});
+
+/**
  * V4 Readiness Audit §12 Stage 21 — Manual-Data Status / freshness.
  * `protocolStatus` is an optional prop so every pre-Stage-21 caller
  * (including every test above, which never passes it) keeps rendering the

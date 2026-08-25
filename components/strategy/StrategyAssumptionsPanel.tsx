@@ -1,4 +1,8 @@
-import { resolveRiskCapacityDisplay, type ServiceMetadata } from '@/services';
+import {
+  resolveRiskCapacityDisplay,
+  resolveSupplyAprDisplay,
+  type ServiceMetadata,
+} from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import type { ProtocolStatusKind } from '@/utils/protocolStatus';
 import { formatProtocolStatus } from '@/utils/protocolStatus';
@@ -125,6 +129,16 @@ export function StrategyAssumptionsPanel({
       : riskCapacityDisplay.kind === 'v4Available'
         ? `Collateral Factor ${formatPercent(riskCapacityDisplay.collateralFactor)}`
         : 'Collateral Factor Not available';
+  // "Supply APR" — V4 Readiness Audit §12 P1-1. See
+  // `resolveSupplyAprDisplay`'s own doc comment (`services/portfolio/mapping.ts`):
+  // no V4 boundary this codebase talks to exposes an authoritative supply
+  // rate, so a live V4 portfolio never shows a stale/fabricated number
+  // here.
+  const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
+  const supplyAprText =
+    supplyAprDisplay.kind === 'available'
+      ? formatPercent(supplyAprDisplay.supplyApr)
+      : 'Not available';
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -138,8 +152,7 @@ export function StrategyAssumptionsPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Protocol Parameters</span>
         <span className="text-muted-foreground">
-          {riskCapacityText} · Borrow APR {borrowAprDisplay} · Supply APR{' '}
-          {formatPercent(portfolio.protocol.supplyApr)}
+          {riskCapacityText} · Borrow APR {borrowAprDisplay} · Supply APR {supplyAprText}
         </span>
       </div>
 

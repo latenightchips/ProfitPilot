@@ -170,6 +170,58 @@ describe('buildPortfolioPositionsCsv — V4 risk-capacity columns (Stage 23E)', 
 });
 
 /**
+ * "Supply APR" column — V4 Readiness Audit §12 P1-1. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, so a live V4
+ * portfolio must never export the inherited/leftover `protocol.supplyApr`
+ * figure. Column index 11 (Portfolio ID, Name, Collateral Asset,
+ * Collateral Quantity, Debt Asset, Debt Balance, BTC Price, Max LTV,
+ * Liquidation Threshold, Collateral Factor, Borrow APR, Supply APR).
+ */
+describe('buildPortfolioPositionsCsv — Supply APR (P1-1)', () => {
+  function sampleV4PortfolioWithRiskSource(
+    v4CollateralRiskSource: 'manual' | 'live' | undefined,
+  ): Portfolio {
+    return {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+      v4CollateralRiskSource,
+    };
+  }
+
+  it('exports "Not available" for a live V4 portfolio, never the leftover protocol.supplyApr (0.02)', () => {
+    const csv = buildPortfolioPositionsCsv([sampleV4PortfolioWithRiskSource('live')]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[11]).toBe('Not available');
+  });
+
+  it('exports "Not available" for a V4 portfolio with no v4CollateralRiskSource yet (not-yet-synced)', () => {
+    const csv = buildPortfolioPositionsCsv([sampleV4PortfolioWithRiskSource(undefined)]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[11]).toBe('Not available');
+  });
+
+  it('exports the real protocol.supplyApr for a manual V4 portfolio, manual semantics preserved', () => {
+    const csv = buildPortfolioPositionsCsv([sampleV4PortfolioWithRiskSource('manual')]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[11]).toBe('0.02');
+  });
+
+  it('a V3 portfolio is completely unaffected — still exports the raw protocol.supplyApr directly', () => {
+    // Comma-free name — samplePortfolio()'s own name contains a comma,
+    // which would throw off this test's own naive `.split(',')` column
+    // counting (see the V4 risk-capacity describe block above's own
+    // identical note).
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[11]).toBe('0.02');
+  });
+});
+
+/**
  * 06_TASKS.md M9-034 ("Perform Input and Output Sanitization Review") —
  * a genuine CSV-injection gap found and fixed this batch:
  * `CsvExporter.ts`'s own header comment explains the guard;

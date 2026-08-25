@@ -241,6 +241,84 @@ describe('SimulationAssumptions — V4 risk-capacity display (Stage 23E)', () =>
   });
 });
 
+/**
+ * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, so a live V4
+ * portfolio must never keep showing the inherited/leftover
+ * `protocol.supplyApr` figure. Mirrors the Borrow APR/risk-capacity
+ * describe blocks above's own "deliberately non-matching value" fixture
+ * discipline.
+ */
+describe('SimulationAssumptions — Supply APR (P1-1)', () => {
+  const LIVE_V4_PORTFOLIO: ApplicationPortfolio = {
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 999999 },
+    market: { btcPriceUsd: 50000 },
+    protocol: {
+      maxLoanToValue: 0.75,
+      liquidationThreshold: 0.8,
+      borrowApr: 0.05,
+      supplyApr: 0.045, // deliberately non-zero, plausible — must never be displayed
+    },
+    protocolVersion: 'v4',
+    v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+    v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+    v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 1 },
+    v4CollateralRiskSource: 'live',
+  };
+
+  it('V3: shows the real protocol.supplyApr, unchanged', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={PORTFOLIO} />);
+
+    expect(screen.getByText(/Supply APR 2\.00%/)).toBeInTheDocument();
+  });
+
+  it('live V4: shows "Supply APR Not available", never the leftover protocol.supplyApr figure', () => {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(LIVE_V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={LIVE_V4_PORTFOLIO} />);
+
+    expect(screen.getByText(/Supply APR Not available/)).toBeInTheDocument();
+    expect(screen.queryByText(/4\.50%/)).not.toBeInTheDocument();
+  });
+
+  it('V4 with no v4CollateralRisk synced yet: shows "Supply APR Not available", not the inherited figure', () => {
+    const noRiskPortfolio: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+      v4CollateralRiskSource: undefined,
+    };
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(LIVE_V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={noRiskPortfolio} />);
+
+    expect(screen.getByText(/Supply APR Not available/)).toBeInTheDocument();
+  });
+
+  it('manual V4: shows the real protocol.supplyApr, manual semantics preserved', () => {
+    const manualV4Portfolio: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      protocol: { ...LIVE_V4_PORTFOLIO.protocol, supplyApr: 0.02 },
+      v4CollateralRiskSource: 'manual',
+    };
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(manualV4Portfolio, { collateralDelta: 0, debtDelta: 0 });
+
+    render(<SimulationAssumptions portfolio={manualV4Portfolio} />);
+
+    expect(screen.getByText(/Supply APR 2\.00%/)).toBeInTheDocument();
+  });
+});
+
 describe('SimulationAssumptions — portfolio action', () => {
   it('shows the current market price, unmodified, with no Rate Assumptions row', () => {
     useSimulationStore

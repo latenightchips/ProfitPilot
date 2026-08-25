@@ -69,6 +69,7 @@ import {
   deriveAaveV4EffectiveBorrowRate,
   resolveCanonicalDebtBalance,
   resolveRiskCapacityDisplay,
+  resolveSupplyAprDisplay,
 } from '@/services/portfolio/mapping';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -118,6 +119,22 @@ function resolveLiquidationThresholdForExport(portfolio: Portfolio): number | nu
 function resolveCollateralFactorForExport(portfolio: Portfolio): number | null {
   const display = resolveRiskCapacityDisplay(portfolio);
   return display.kind === 'v4Available' ? display.collateralFactor : null;
+}
+
+/**
+ * "Supply APR" column — V4 Readiness Audit §12 P1-1. Previously always
+ * `portfolio.protocol.supplyApr` unconditionally for every row — for a
+ * live V4 portfolio this could be a stale leftover from before the
+ * portfolio became V4, never a real V4 value (no V4 boundary this
+ * codebase talks to exposes an authoritative supply rate at all — see
+ * `resolveSupplyAprDisplay`'s own doc comment,
+ * `services/portfolio/mapping.ts`). `null` (this file's own existing
+ * `null` -> `'Not available'` convention) rather than a stale/fabricated
+ * number.
+ */
+function resolveSupplyAprForExport(portfolio: Portfolio): number | null {
+  const display = resolveSupplyAprDisplay(portfolio);
+  return display.kind === 'available' ? display.supplyApr : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -184,7 +201,7 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       resolveLiquidationThresholdForExport(portfolio),
       resolveCollateralFactorForExport(portfolio),
       resolveBorrowAprForExport(portfolio),
-      portfolio.protocol.supplyApr,
+      resolveSupplyAprForExport(portfolio),
       portfolio.archivedAt !== null,
       portfolio.createdAt,
       portfolio.updatedAt,

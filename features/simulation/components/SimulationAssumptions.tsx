@@ -4,6 +4,7 @@ import {
   type ApplicationPortfolio,
   type PriceScenarioInput,
   resolveRiskCapacityDisplay,
+  resolveSupplyAprDisplay,
 } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
 
@@ -49,11 +50,13 @@ import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate'
  * separate rate is assumed beyond the protocol's own configured value,
  * so this row is omitted rather than duplicating Protocol Parameters.
  *
- * **"Protocol parameters"**: always shown — Supply APR reads directly
- * from the `portfolio.protocol` prop; the risk-capacity line
- * (Max LTV/Liquidation Threshold for V3, Collateral Factor for V4) is
- * protocol-version-dispatched — see the V4 Readiness Audit §12 Stage 23E
- * note below.
+ * **"Protocol parameters"**: always shown — Supply APR resolves via
+ * `resolveSupplyAprDisplay` (V4 Readiness Audit §12 P1-1: unconditional
+ * `portfolio.protocol.supplyApr` for V3, "Not available" for a live V4
+ * portfolio with no authoritative V4 supply rate — see that function's
+ * own doc comment); the risk-capacity line (Max LTV/Liquidation Threshold
+ * for V3, Collateral Factor for V4) is protocol-version-dispatched — see
+ * the V4 Readiness Audit §12 Stage 23E note below.
  *
  * **Borrow APR here is protocol-version-dispatched — V4 Readiness Audit
  * §12 Stage 20.** Previously always `portfolio.protocol.borrowApr`, a
@@ -138,6 +141,16 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       : riskCapacityDisplay.kind === 'v4Available'
         ? `Collateral Factor ${formatPercent(riskCapacityDisplay.collateralFactor)}`
         : 'Collateral Factor Not available';
+  // "Supply APR" — V4 Readiness Audit §12 P1-1. See
+  // `resolveSupplyAprDisplay`'s own doc comment (`services/portfolio/mapping.ts`):
+  // no V4 boundary this codebase talks to exposes an authoritative supply
+  // rate, so a live V4 portfolio never shows a stale/fabricated number
+  // here.
+  const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
+  const supplyAprText =
+    supplyAprDisplay.kind === 'available'
+      ? formatPercent(supplyAprDisplay.supplyApr)
+      : 'Not available';
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -158,7 +171,7 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
         <span className="text-muted-foreground">
           {riskCapacityText} · Borrow APR{' '}
           {effectiveBorrowApr !== null ? formatPercent(effectiveBorrowApr) : 'Not available'} ·
-          Supply APR {formatPercent(portfolio.protocol.supplyApr)}
+          Supply APR {supplyAprText}
         </span>
       </div>
 

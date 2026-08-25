@@ -342,6 +342,108 @@ describe('buildSimulationExportPayload — V4 canonical Borrow APR (Stage 22)', 
 });
 
 /**
+ * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, so a live V4
+ * portfolio must never export the inherited/leftover `protocol.supplyApr`
+ * figure. `protocol.supplyApr: 0.045` deliberately non-zero and distinct
+ * from `PORTFOLIO`'s own `0.02`, the same fixture discipline the Borrow
+ * APR block above already established.
+ */
+describe('buildSimulationExportPayload — Supply APR (P1-1)', () => {
+  const LIVE_V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocol: { ...PORTFOLIO.protocol, supplyApr: 0.045 },
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    v4CollateralRiskSource: 'live',
+  };
+
+  function runV4PriceScenario(portfolio: ApplicationPortfolio): {
+    result: SimulationResult;
+    metadata: ServiceMetadata | null;
+  } {
+    useSimulationStore.getState().reset();
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 65000 },
+    });
+    useSimulationStore.getState().runSimulation(portfolio);
+    const state = useSimulationStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return { result: state.currentResult, metadata: state.lastMetadata };
+  }
+
+  it('exports null (JSON) / "Not available" (CSV) for a live V4 portfolio, never the leftover 0.045 figure', () => {
+    const { result, metadata } = runV4PriceScenario(LIVE_V4_PORTFOLIO);
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      LIVE_V4_PORTFOLIO,
+    );
+
+    expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
+
+    const json = buildSimulationExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.supplyApr).toBeNull();
+
+    const csv = buildSimulationExportCsv(payload);
+    expect(csv).toContain('Supply APR,Not available');
+    expect(csv).not.toContain('Supply APR,0.045');
+  });
+
+  it('exports null/"Not available" for a V4 portfolio with no v4CollateralRiskSource yet', () => {
+    // The simulation itself needs a synced v4CollateralRisk to succeed
+    // (fail-closed, unrelated to this fix) — run it against
+    // LIVE_V4_PORTFOLIO for a valid result, then build the export payload
+    // against a *different* portfolio object with no synced
+    // v4CollateralRisk, the same "display reads directly from the
+    // portfolio prop, not the stored result" pattern the Borrow APR block
+    // above already established.
+    const { result, metadata } = runV4PriceScenario(LIVE_V4_PORTFOLIO);
+    const notYetSynced: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+      v4CollateralRiskSource: undefined,
+    };
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      notYetSynced,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
+  });
+
+  it('exports the real protocol.supplyApr for manual V4 — manual semantics preserved', () => {
+    const manualV4: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      v4CollateralRiskSource: 'manual',
+    };
+    const { result, metadata } = runV4PriceScenario(manualV4);
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      manualV4,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBe(0.045);
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still exports the real protocol.supplyApr', () => {
+    const { result, metadata } = runPriceScenario();
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBe(0.02);
+  });
+});
+
+/**
  * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
  * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
  * differs from `PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`, so

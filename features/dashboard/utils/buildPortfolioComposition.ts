@@ -9,6 +9,7 @@ import {
   type PortfolioSummary,
   resolveCanonicalDebtBalance,
   resolveRiskCapacityDisplay,
+  resolveSupplyAprDisplay,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -72,13 +73,24 @@ function formatDebtQuantity(portfolio: Portfolio): string {
  * rather than re-deriving the V3/V4 branch here; only the formatting
  * (`formatPercent`) is local to this Dashboard util, consistent with the
  * Service layer's own "never format for display" rule.
+ *
+ * **"Supply APR" — V4 Readiness Audit §12 P1-1.** Previously always
+ * `formatPercent(portfolio.protocol.supplyApr)` unconditionally — for a
+ * live V4 portfolio this could be a stale leftover from before the
+ * portfolio became V4, never a real V4 value (no V4 boundary this
+ * codebase talks to exposes an authoritative supply rate at all — see
+ * `resolveSupplyAprDisplay`'s own doc comment). `'—'` (the same
+ * fail-closed convention `formatBorrowRate`/`formatDebtQuantity` above
+ * already established) rather than a stale/fabricated number.
  */
 function formatProtocolParameters(
   portfolio: Portfolio,
   formattedBorrowApr: string,
 ): PortfolioCompositionProtocolParameters {
   const display = resolveRiskCapacityDisplay(portfolio);
-  const formattedSupplyApr = formatPercent(portfolio.protocol.supplyApr);
+  const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
+  const formattedSupplyApr =
+    supplyAprDisplay.kind === 'available' ? formatPercent(supplyAprDisplay.supplyApr) : '—';
   if (display.kind === 'v3') {
     return {
       kind: 'v3',

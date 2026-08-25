@@ -474,6 +474,111 @@ describe('buildExitPlanExportPayload — V4 canonical Borrow APR (Stage 22)', ()
 });
 
 /**
+ * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, so a live V4
+ * portfolio must never export the inherited/leftover `protocol.supplyApr`
+ * figure. `protocol.supplyApr: 0.045` deliberately non-zero and distinct
+ * from `PORTFOLIO`'s own `0.02`, the same fixture discipline the Borrow
+ * APR block above already established.
+ */
+describe('buildExitPlanExportPayload — Supply APR (P1-1)', () => {
+  const LIVE_V4_PORTFOLIO: ApplicationPortfolio = {
+    ...PORTFOLIO,
+    protocol: { ...PORTFOLIO.protocol, supplyApr: 0.045 },
+    protocolVersion: 'v4',
+    v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    v4CollateralRiskSource: 'live',
+  };
+
+  function runV4FeasiblePlan(portfolio: ApplicationPortfolio) {
+    useExitPlannerStore.getState().reset();
+    useExitPlannerStore.getState().setExitType('fullExit');
+    useExitPlannerStore.getState().runExitCalculation(portfolio);
+    const state = useExitPlannerStore.getState();
+    if (state.currentResult === null) throw new Error('setup failed');
+    return {
+      exitType: 'fullExit' as ExitPlannerType,
+      targetInputs: state.targetInputs ?? {},
+      result: state.currentResult,
+      warnings: state.warnings,
+      metadata: state.lastMetadata,
+    };
+  }
+
+  it('exports null (JSON) / "Not available" (CSV) for a live V4 portfolio, never the leftover 0.045 figure', () => {
+    const { exitType, targetInputs, result, warnings, metadata } =
+      runV4FeasiblePlan(LIVE_V4_PORTFOLIO);
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      LIVE_V4_PORTFOLIO,
+    );
+
+    expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
+
+    const json = buildExitPlanExportJson(payload);
+    expect(JSON.parse(json).assumptions.protocolParameters.supplyApr).toBeNull();
+
+    const csv = buildExitPlanExportCsv(payload);
+    expect(csv).toContain('Supply APR,Not available');
+    expect(csv).not.toContain('Supply APR,0.045');
+  });
+
+  it('exports null for a V4 portfolio with no v4CollateralRiskSource yet', () => {
+    const { exitType, targetInputs, result, warnings, metadata } =
+      runV4FeasiblePlan(LIVE_V4_PORTFOLIO);
+    const notYetSynced: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      v4CollateralRisk: undefined,
+      v4CollateralRiskSource: undefined,
+    };
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      notYetSynced,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
+  });
+
+  it('exports the real protocol.supplyApr for manual V4 — manual semantics preserved', () => {
+    const manualV4: ApplicationPortfolio = {
+      ...LIVE_V4_PORTFOLIO,
+      v4CollateralRiskSource: 'manual',
+    };
+    const { exitType, targetInputs, result, warnings, metadata } = runV4FeasiblePlan(manualV4);
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      manualV4,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBe(0.045);
+  });
+
+  it('a V3 (or unset) portfolio is completely unaffected — still exports the real protocol.supplyApr', () => {
+    const { exitType, targetInputs, result, warnings, metadata } = runFeasiblePlan();
+    const payload = buildExitPlanExportPayload(
+      exitType,
+      targetInputs,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.assumptions.protocolParameters.supplyApr).toBe(0.02);
+  });
+});
+
+/**
  * "Max LTV"/"Liquidation Threshold" vs. "Collateral Factor" — V4
  * Readiness Audit §12 Stage 23E. `collateralFactor: 0.65` deliberately
  * differs from `V4_PORTFOLIO`'s own `protocol.liquidationThreshold: 0.8`,

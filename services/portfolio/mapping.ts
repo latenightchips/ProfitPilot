@@ -532,6 +532,63 @@ export function resolveRiskCapacityDisplay(application: ApplicationPortfolio): R
 }
 
 /**
+ * Display-shape resolution for `protocol.supplyApr` — V4 Readiness Audit
+ * §12 P1-1. `protocol.supplyApr` is a required, V3-shaped scalar (Engine
+ * `ProtocolParameters`, persistence `PORTFOLIO_PROTOCOL_SUPPLY_APR_MISSING`
+ * fails the whole portfolio load if absent) with no V4-aware provenance
+ * of its own — unlike `v4DebtState`/`v4CollateralRisk`, there is no
+ * `'manual' | 'live'` source flag attached directly to this field. Before
+ * this stage, every consumer read it unconditionally, so a portfolio that
+ * had ever been V3 (or imported/defaulted) kept showing that number
+ * forever after switching to live V4, even though it never came from V4
+ * at all.
+ *
+ * **Verified against the pinned V4 boundary — this is Path B, not a
+ * staleness window.** No function anywhere in `IHub`/`IHubBase`/`ISpoke`
+ * (`aave/aave-v4` commit `2524fe4018a42750300e114f2a8c4355df62a878`, the
+ * same primary source `infrastructure/protocols/aave/v4/abi.ts` is
+ * already pinned to) exposes a supply-side interest rate. V4's Hub
+ * accounts for supply via a shares/exchange-rate model (`add`/`remove`/
+ * `previewAddByShares`/`previewAddByAssets`), not a point-in-time rate
+ * field the way V3's Pool exposes `liquidityRate` — there is no
+ * authoritative single-read V4 supply APR for this adapter to ever fetch,
+ * so unlike `resolveRiskCapacityDisplay`'s `v4Unavailable` (a genuinely
+ * fetchable value, unavailable only until synced), this is a permanent
+ * "unavailable" for any V4 mode without an explicit human assertion, not
+ * a sync-pending state.
+ *
+ * **Reuses `v4CollateralRiskSource`, the existing BTC-collateral-side V4
+ * provenance flag, rather than inventing a new one** — Supply APR is a
+ * collateral-side (BTC-supply) concept, and this data model has no
+ * `supplyApr`-specific source flag to key off instead. `'manual'` is the
+ * only V4 mode where the user has taken deliberate ownership of this
+ * portfolio's V4 collateral-side data, so it is the only V4 case where
+ * `protocol.supplyApr` is still treated as an honest, user-asserted
+ * value — this preserves manual V4's existing semantics unchanged, per
+ * this stage's own scope. Both `'live'` and not-yet-synced (source is
+ * neither `'manual'` nor `'live'`) resolve to unavailable, so a V3→V4
+ * transition — or a portfolio whose collateral-risk live fetch has never
+ * once succeeded — cannot keep presenting a stale inherited number
+ * either; there is no partial-trust state in between.
+ *
+ * **Never mutates or clears `protocol.supplyApr` itself** — the
+ * underlying field stays exactly as every other reader (Engine
+ * validation, persistence, the equality comparator) already requires;
+ * this is a presentation-layer gate only. Every consumer must call this
+ * before displaying/exporting the raw field for a portfolio that might be
+ * V4 — never read `protocol.supplyApr` directly in that context.
+ */
+export type SupplyAprDisplay = { kind: 'available'; supplyApr: number } | { kind: 'unavailable' };
+
+export function resolveSupplyAprDisplay(application: ApplicationPortfolio): SupplyAprDisplay {
+  const isUntrustedV4 =
+    application.protocolVersion === 'v4' && application.v4CollateralRiskSource !== 'manual';
+  return isUntrustedV4
+    ? { kind: 'unavailable' }
+    : { kind: 'available', supplyApr: application.protocol.supplyApr };
+}
+
+/**
  * V4 interest cost via the real V4 accrual engine, over an arbitrary
  * holding period (V4 Readiness Audit §12 Stage 10, generalized at Stage
  * 11) — replaces a legacy `calculateDailyInterest`/`calculateMonthlyInterest`/
