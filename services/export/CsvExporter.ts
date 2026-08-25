@@ -137,6 +137,16 @@ function resolveSupplyAprForExport(portfolio: Portfolio): number | null {
   return display.kind === 'available' ? display.supplyApr : null;
 }
 
+/**
+ * "Swap Fee Assumption" / "Slippage Assumption" / "Gas Cost Assumption"
+ * columns — V4 Readiness Audit §12 P1-6. Read directly from
+ * `portfolio.settings.executionCostAssumptions` (this file already
+ * operates on the full `Portfolio[]`, unlike most Loop/Exit consumers
+ * which only see `ApplicationPortfolio`) — each independently `null`
+ * (this file's own `null` → `'Not available'` convention) when not
+ * configured, never a fabricated `0`.
+ */
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
@@ -183,6 +193,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'Collateral Factor',
     'Borrow APR',
     'Supply APR',
+    'Swap Fee Assumption',
+    'Slippage Assumption',
+    'Gas Cost Assumption',
     'Archived',
     'Created At',
     'Updated At',
@@ -202,6 +215,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       resolveCollateralFactorForExport(portfolio),
       resolveBorrowAprForExport(portfolio),
       resolveSupplyAprForExport(portfolio),
+      portfolio.settings.executionCostAssumptions?.swapFeeRate ?? null,
+      portfolio.settings.executionCostAssumptions?.slippageRate ?? null,
+      portfolio.settings.executionCostAssumptions?.gasCostUsd ?? null,
       portfolio.archivedAt !== null,
       portfolio.createdAt,
       portfolio.updatedAt,

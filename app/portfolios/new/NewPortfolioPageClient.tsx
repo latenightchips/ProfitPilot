@@ -427,6 +427,60 @@ export function NewPortfolioPageClient() {
           </label>
         </fieldset>
 
+        {/* Execution cost assumptions — V4 Readiness Audit §12 P1-6. See
+            `PortfolioPageClient.tsx`'s identical fieldset for the full
+            reasoning (decimal-fraction entry, no percent conversion,
+            each field independently optional). Optional here too — a
+            portfolio can be created without them and configured later on
+            the Portfolio Details page. */}
+        <fieldset className="flex flex-col gap-3">
+          <legend className="text-sm font-semibold text-foreground">
+            Optional execution cost assumptions
+          </legend>
+          <p className="text-xs text-muted-foreground">
+            Planning assumptions, not live market quotes — used by Loop Builder and Exit Planner to
+            estimate transaction costs.
+          </p>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Swap fee assumption (decimal, e.g. 0.003 for 0.3%)</span>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              max="0.999999"
+              {...register('settings.executionCostAssumptions.swapFeeRate', {
+                setValueAs: (value) => (value === '' ? undefined : Number(value)),
+              })}
+              className="rounded-md border border-border bg-transparent px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Slippage assumption (decimal, e.g. 0.005 for 0.5%)</span>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              max="0.999999"
+              {...register('settings.executionCostAssumptions.slippageRate', {
+                setValueAs: (value) => (value === '' ? undefined : Number(value)),
+              })}
+              className="rounded-md border border-border bg-transparent px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Gas cost assumption (USD per transaction)</span>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              {...register('settings.executionCostAssumptions.gasCostUsd', {
+                setValueAs: (value) => (value === '' ? undefined : Number(value)),
+              })}
+              className="rounded-md border border-border bg-transparent px-3 py-2"
+            />
+          </label>
+        </fieldset>
+
         {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
 
         <button

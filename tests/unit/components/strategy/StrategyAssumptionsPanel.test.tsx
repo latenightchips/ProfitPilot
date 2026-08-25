@@ -46,7 +46,7 @@ describe('StrategyAssumptionsPanel', () => {
     expect(screen.getAllByText('5.00%').length).toBeGreaterThan(0);
   });
 
-  it('itemizes fees, slippage, and gas estimate as unavailable rather than fabricating values, in plain language (UX punch-list item 6)', () => {
+  it('shows "Not configured" for swap fee/slippage/gas assumptions when none are configured, in plain language (UX punch-list item 6; V4 Readiness Audit §12 P1-6)', () => {
     render(
       <StrategyAssumptionsPanel
         portfolio={basePortfolio()}
@@ -54,12 +54,29 @@ describe('StrategyAssumptionsPanel', () => {
         timeHorizonLabel={null}
       />,
     );
-    expect(
-      screen.getByText('Estimated fees, slippage, and gas costs are not included.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Fees, Slippage & Gas Estimate')).toBeInTheDocument();
+    const assumptionsText = screen.getByText(/Swap fee assumption/).textContent ?? '';
+    expect(assumptionsText.match(/Not configured/g)?.length).toBe(3);
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).not.toContain('02_Formulas.md');
     expect(bodyText).not.toContain('Formula ID');
+  });
+
+  it('shows the real configured swap fee/slippage/gas assumptions as labeled assumptions (V4 Readiness Audit §12 P1-6)', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({
+          settings: {
+            executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 },
+          },
+        })}
+        metadata={null}
+        timeHorizonLabel={null}
+      />,
+    );
+    expect(screen.getByText(/Swap fee assumption 0\.30%/)).toBeInTheDocument();
+    expect(screen.getByText(/Slippage assumption 0\.50%/)).toBeInTheDocument();
+    expect(screen.getByText(/Gas cost assumption \$15\.00/)).toBeInTheDocument();
   });
 
   it('omits the Time Horizon row when the caller supplies null', () => {

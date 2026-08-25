@@ -2,6 +2,7 @@
 
 import type { ApplicationPortfolio } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import { downloadExitPlanExport } from '../utils/exportExitPlan';
 
@@ -22,7 +23,14 @@ import { downloadExitPlanExport } from '../utils/exportExitPlan';
  * `warnings`/`metadata`, so a Load-then-Export round trip still
  * reports the original Formula version/timestamp.
  */
-export function ExitPlanExport({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function ExitPlanExport({
+  portfolio,
+  executionCostAssumptions,
+}: {
+  portfolio: ApplicationPortfolio;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6). */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
+}) {
   const exitType = useExitPlannerStore((state) => state.exitType);
   const targetInputs = useExitPlannerStore((state) => state.targetInputs);
   const currentResult = useExitPlannerStore((state) => state.currentResult);
@@ -43,6 +51,7 @@ export function ExitPlanExport({ portfolio }: { portfolio: ApplicationPortfolio 
       lastMetadata,
       portfolio,
       format,
+      executionCostAssumptions,
     );
   }
 

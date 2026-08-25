@@ -8,8 +8,9 @@ export { calculateBtcPurchasedPerLoop } from './calculateBtcPurchasedPerLoop';
 export { calculateLoopCapital } from './calculateLoopCapital';
 export {
   calculateLoopCosts,
+  type LoopCostItem,
   type LoopCostResult,
-  type UnavailableLoopCost,
+  type LoopExecutionCostInputs,
 } from './calculateLoopCosts';
 export { calculateLoopStep, type LoopStepInput, type LoopStepResult } from './calculateLoopStep';
 export {

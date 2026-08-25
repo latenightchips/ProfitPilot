@@ -18,6 +18,7 @@ import {
   type SimulationScenario,
   V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE,
 } from '@/services';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 import type { StrategyWarning, StrategyWarningCategory } from '@/types/strategy';
 
 /**
@@ -151,7 +152,24 @@ export interface LoopBuilderStoreState {
 
 export interface LoopBuilderStoreActions {
   setSettings: (settings: LoopStrategySettings) => void;
-  runLoopStrategy: (portfolio: ApplicationPortfolio) => void;
+  /**
+   * `executionCostAssumptions` (V4 Readiness Audit §12 P1-6) is the
+   * active portfolio's own `settings.executionCostAssumptions` — a
+   * separate, explicit, plain-value parameter, deliberately not read
+   * from `portfolio` itself (still bare `ApplicationPortfolio`, no
+   * `.settings`) or from `usePortfolioStore`. This preserves this
+   * Store's own documented independence from portfolio Store/record
+   * state (see this file's header comment) exactly: the caller — which
+   * already holds the full `Portfolio` record — supplies this one
+   * narrow, portable value, the same "accept a plain value at call
+   * time" precedent every other portfolio-derived input here already
+   * follows, never a dependency on `Portfolio`'s full shape or on
+   * `usePortfolioStore` itself.
+   */
+  runLoopStrategy: (
+    portfolio: ApplicationPortfolio,
+    executionCostAssumptions?: ExecutionCostAssumptionsSettings,
+  ) => void;
   runSensitivityScenario: (portfolio: ApplicationPortfolio, scenario: SimulationScenario) => void;
   saveStrategy: (input: SaveLoopStrategyInput) => string | null;
   loadStrategy: (id: string) => void;
@@ -231,12 +249,12 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
       set({ settings, sensitivityResult: null, sensitivityErrors: [] });
     },
 
-    runLoopStrategy: (portfolio) => {
+    runLoopStrategy: (portfolio, executionCostAssumptions) => {
       const { settings } = get();
       if (settings === null) return;
 
       set({ status: 'calculating' });
-      const result = planLoopStrategy(portfolio, settings, SOURCE_STATUS);
+      const result = planLoopStrategy(portfolio, settings, SOURCE_STATUS, executionCostAssumptions);
 
       if (!result.ok) {
         // `currentResult`/`lastMetadata`/`warnings` are deliberately left

@@ -89,7 +89,7 @@ describe('buildLoopStrategyExportPayload', () => {
     expect(payload.warnings).toEqual(warnings);
   });
 
-  it('includes real protocol assumptions and the documented fees & slippage note', () => {
+  it('includes real protocol assumptions and null execution-cost assumptions when none are configured', () => {
     const { result, warnings, metadata } = runViableStrategy();
     const payload = buildLoopStrategyExportPayload(SETTINGS, result, warnings, metadata, PORTFOLIO);
 
@@ -97,7 +97,28 @@ describe('buildLoopStrategyExportPayload', () => {
       ...PORTFOLIO.protocol,
       collateralFactor: null,
     });
-    expect(payload.assumptions.feesAndSlippage).toMatch(/Formula ID/);
+    expect(payload.assumptions.executionCostAssumptions).toEqual({
+      swapFeeRate: null,
+      slippageRate: null,
+      gasCostUsd: null,
+    });
+  });
+
+  it('includes the configured execution-cost assumptions when supplied (V4 Readiness Audit §12 P1-6)', () => {
+    const { result, warnings, metadata } = runViableStrategy();
+    const payload = buildLoopStrategyExportPayload(
+      SETTINGS,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+      { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 },
+    );
+    expect(payload.assumptions.executionCostAssumptions).toEqual({
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+      gasCostUsd: 15,
+    });
   });
 
   it('reports timestamp/versions as null, not fabricated, when metadata is unavailable', () => {

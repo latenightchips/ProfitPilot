@@ -61,6 +61,83 @@ describe('calculateExitPosition — execution-cost friction propagation (P1-5)',
   });
 });
 
+/**
+ * Execution-cost reporting — V4 Readiness Audit §12 P1-6. Composes
+ * F-072/F-073 (already-approved P1-5 primitives) to turn the pre-P1-6
+ * always-unavailable itemization into real computed dollar figures, once
+ * the product layer supplies what each item needs. An exit is always
+ * exactly one modeled transaction (`EXIT_TRANSACTION_COUNT`).
+ */
+describe('calculateExitPosition — execution-cost reporting (P1-6)', () => {
+  it('computes real swapFees/slippage/gasEstimate/totalImplementationCost, given full execution inputs', () => {
+    const result = calculateExitPosition(
+      baseInput({
+        targetDebt: 24000,
+        executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005 },
+        gasCostUsd: 15,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // notional = repayment = 24000. swapFeeCost = 24000 x 0.003 = 72;
+    // slippageCost = 24000 x 0.997 x 0.005 = 119.64; gas = 1 x $15 = $15.
+    const byItem = Object.fromEntries(result.value.costs.map((entry) => [entry.item, entry]));
+    expect(byItem.swapFees!.amountUsd).toBeCloseTo(72, 6);
+    expect(byItem.slippage!.amountUsd).toBeCloseTo(119.64, 6);
+    expect(byItem.gasEstimate!.amountUsd).toBe(15);
+    expect(byItem.totalImplementationCost!.amountUsd).toBeCloseTo(206.64, 6);
+    for (const entry of result.value.costs) {
+      expect(entry.reason).toBeUndefined();
+    }
+  });
+
+  it('gas configured alone computes a real gasEstimate while swapFees/slippage/total stay unavailable', () => {
+    const result = calculateExitPosition(baseInput({ targetDebt: 24000, gasCostUsd: 8 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const byItem = Object.fromEntries(result.value.costs.map((entry) => [entry.item, entry]));
+    expect(byItem.gasEstimate!.amountUsd).toBe(8);
+    expect(byItem.swapFees!.amountUsd).toBeNull();
+    expect(byItem.slippage!.amountUsd).toBeNull();
+    expect(byItem.totalImplementationCost!.amountUsd).toBeNull();
+  });
+
+  it('explicit zero assumptions compute real $0 figures — not "unavailable"', () => {
+    const result = calculateExitPosition(
+      baseInput({
+        targetDebt: 24000,
+        executionCostAssumptions: { swapFeeRate: 0, slippageRate: 0 },
+        gasCostUsd: 0,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const entry of result.value.costs) {
+      expect(entry.amountUsd).toBe(0);
+      expect(entry.reason).toBeUndefined();
+    }
+  });
+
+  it('gas cost affects only the reported cost items, never repayment/btcSold/remainingDebt/remainingCollateralValue', () => {
+    const withoutGas = calculateExitPosition(baseInput({ targetDebt: 24000 }));
+    const withGas = calculateExitPosition(baseInput({ targetDebt: 24000, gasCostUsd: 5000 }));
+    expect(withoutGas.ok && withGas.ok).toBe(true);
+    if (!withoutGas.ok || !withGas.ok) return;
+    expect(withGas.value.repayment).toBe(withoutGas.value.repayment);
+    expect(withGas.value.btcSold).toBe(withoutGas.value.btcSold);
+    expect(withGas.value.remainingDebt).toBe(withoutGas.value.remainingDebt);
+    expect(withGas.value.remainingCollateralValue).toBe(withoutGas.value.remainingCollateralValue);
+    expect(withGas.value.remainingEquity).toBe(withoutGas.value.remainingEquity);
+  });
+
+  it('propagates a validation failure for a negative gas cost', () => {
+    const result = calculateExitPosition(baseInput({ targetDebt: 24000, gasCostUsd: -1 }));
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe('calculateExitPosition (M2-023, F-042)', () => {
   it('computes a full-exit result (targetDebt 0) that reconciles with portfolio balances', () => {
     const result = calculateExitPosition(baseInput());
@@ -89,15 +166,16 @@ describe('calculateExitPosition (M2-023, F-042)', () => {
     expect(result.value.remainingEquity).toBeCloseTo(72000, 6);
   });
 
-  it('itemizes exit transaction costs as unavailable, with a reason for each', () => {
+  it('omitted execution-cost inputs itemize all 4 cost items as unavailable, with a reason for each (backward compatible)', () => {
     const result = calculateExitPosition(baseInput());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const items = result.value.unavailableCosts.map((c) => c.item);
-    expect(items).toEqual(['swapFees', 'slippage', 'gasEstimate']);
-    for (const entry of result.value.unavailableCosts) {
-      expect(entry.reason.length).toBeGreaterThan(0);
+    const items = result.value.costs.map((c) => c.item);
+    expect(items).toEqual(['swapFees', 'slippage', 'gasEstimate', 'totalImplementationCost']);
+    for (const entry of result.value.costs) {
+      expect(entry.amountUsd).toBeNull();
+      expect(entry.reason?.length).toBeGreaterThan(0);
     }
   });
 

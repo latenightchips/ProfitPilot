@@ -1,14 +1,15 @@
 import {
   type ApplicationPortfolio,
   deriveAaveV4EffectiveBorrowRate,
+  type ExitCostItem,
   type ExitPlanResult,
   resolveCanonicalDebtBalance,
   resolveRiskCapacityDisplay,
   resolveSupplyAprDisplay,
   type ServiceMetadata,
-  type UnavailableExitCost,
 } from '@/services';
 import type { ExitPlannerTargetInputs, ExitPlannerType } from '@/stores/exitPlannerStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 import type { StrategyWarning } from '@/types/strategy';
 
 /** No real Engine call precedes this export — the same "first call, no prior tracked version" case `services/export/CsvExporter.ts` already established for this same function. */
@@ -106,14 +107,16 @@ function resolveProtocolParametersForExport(
  * transaction the Engine computed, not re-derived. "Expected result" →
  * the rest of `expectedResult` (`btcRetained`/`remainingDebt`/
  * `resultingEquity`/`resultingHealthFactor`), `null` when infeasible
- * (no outcome exists to report). "Costs" → the same itemized
- * `unavailableCosts` (conflict #8) `FullExitResult.tsx`/
- * `PartialExitResult.tsx` already display. "Warnings" → the Store's
- * own `warnings` (`StrategyWarning[]`), a frozen snapshot at export
- * time. "Assumptions" → Protocol Parameters plus the same documented
- * Fees & Slippage conflict #8 gap. "Versions" →
- * `metadata?.engineVersion`/`.formulaVersion`, `null` shown as "Not
- * captured."**
+ * (no outcome exists to report). "Costs" → the same itemized `costs`
+ * (conflict #8, resolved for real V4 Readiness Audit §12 P1-6)
+ * `FullExitResult.tsx`/`PartialExitResult.tsx` already display — a real
+ * computed dollar amount per item once its assumption is configured,
+ * explicitly unavailable otherwise. "Warnings" → the Store's own
+ * `warnings` (`StrategyWarning[]`), a frozen snapshot at export time.
+ * "Assumptions" → Protocol Parameters plus the portfolio's own
+ * configured `executionCostAssumptions` (each independently `null` when
+ * not configured). "Versions" → `metadata?.engineVersion`/
+ * `.formulaVersion`, `null` shown as "Not captured."**
  *
  * **An infeasible plan is still exportable — the same real, reachable
  * path `exportLoopStrategy.ts`'s own header comment documents for a
@@ -127,7 +130,15 @@ function resolveProtocolParametersForExport(
  * cross-feature** — the same "each feature owns its own thin utility
  * layer" precedent `exportLoopStrategy.ts` already established.
  */
-export const EXIT_EXPORT_SCHEMA_VERSION = '0.1.0';
+/**
+ * Bumped 0.1.0 → 0.2.0 for V4 Readiness Audit §12 P1-6: `assumptions.feesAndSlippage`
+ * (a static "not included" note) is removed — `costs` now carries a real
+ * computed dollar amount per item once configured, which made the note
+ * actively misleading rather than merely incomplete — and
+ * `assumptions.executionCostAssumptions` (the portfolio's own configured
+ * values) is added.
+ */
+export const EXIT_EXPORT_SCHEMA_VERSION = '0.2.0';
 
 export interface ExitPlanExportPayload {
   schemaVersion: string;
@@ -147,9 +158,21 @@ export interface ExitPlanExportPayload {
     resultingHealthFactor: number;
   } | null;
   infeasibleReason: string | null;
-  costs: UnavailableExitCost[] | null;
+  costs: ExitCostItem[] | null;
   warnings: StrategyWarning[];
   assumptions: {
+    /**
+     * V4 Readiness Audit §12 P1-6 — the portfolio's own CONFIGURED
+     * assumptions (`Portfolio.settings.executionCostAssumptions`), each
+     * independently `null` when not configured. Distinct from `costs`
+     * above, which carries the COMPUTED dollar figures those assumptions
+     * produce (or the explicit reason each stays unavailable).
+     */
+    executionCostAssumptions: {
+      swapFeeRate: number | null;
+      slippageRate: number | null;
+      gasCostUsd: number | null;
+    };
     protocolParameters: {
       /**
        * V4 Readiness Audit §12 Stage 23E — `null` for a V4 portfolio
@@ -168,14 +191,10 @@ export interface ExitPlanExportPayload {
       /** V4 Readiness Audit §12 Stage 22 — `resolveBorrowAprForExport`'s canonical value, `null` (never the legacy V3 scalar) when unavailable for a V4 portfolio. */
       borrowApr: number | null;
     };
-    feesAndSlippage: string;
   };
   versions: { engineVersion: string; formulaVersion: string } | null;
   timestamp: string | null;
 }
-
-const FEES_AND_SLIPPAGE_NOTE =
-  'Not included — no Formula ID or equation for swap fees, slippage, or gas estimation exists in 02_Formulas.md.';
 
 export function buildExitPlanExportPayload(
   exitType: ExitPlannerType,
@@ -184,6 +203,8 @@ export function buildExitPlanExportPayload(
   warnings: StrategyWarning[],
   metadata: ServiceMetadata | null,
   portfolio: ApplicationPortfolio,
+  /** V4 Readiness Audit §12 P1-6 — the active portfolio's own `settings.executionCostAssumptions`; `ApplicationPortfolio` above carries no `settings`, so the caller (which holds the full `Portfolio`) supplies it separately. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): ExitPlanExportPayload {
   return {
     schemaVersion: EXIT_EXPORT_SCHEMA_VERSION,
@@ -206,11 +227,15 @@ export function buildExitPlanExportPayload(
           }
         : null,
     infeasibleReason: result.infeasibleReason ?? null,
-    costs: result.unavailableCosts,
+    costs: result.costs,
     warnings,
     assumptions: {
+      executionCostAssumptions: {
+        swapFeeRate: executionCostAssumptions?.swapFeeRate ?? null,
+        slippageRate: executionCostAssumptions?.slippageRate ?? null,
+        gasCostUsd: executionCostAssumptions?.gasCostUsd ?? null,
+      },
       protocolParameters: resolveProtocolParametersForExport(portfolio),
-      feesAndSlippage: FEES_AND_SLIPPAGE_NOTE,
     },
     versions:
       metadata === null
@@ -280,13 +305,37 @@ export function buildExitPlanExportCsv(payload: ExitPlanExportPayload): string {
 
   if (payload.costs !== null) {
     for (const cost of payload.costs) {
-      rows.push(csvRow(`Cost — ${cost.item}`, cost.reason));
+      rows.push(
+        csvRow(
+          `Cost — ${cost.item}`,
+          cost.amountUsd !== null ? cost.amountUsd : (cost.reason ?? ''),
+        ),
+      );
     }
   }
 
   payload.warnings.forEach((warning, index) => {
     rows.push(csvRow(`Warning ${index + 1}`, `${warning.severity}: ${warning.cause}`));
   });
+
+  rows.push(
+    csvRow(
+      'Swap Fee Assumption',
+      payload.assumptions.executionCostAssumptions.swapFeeRate ?? 'Not configured',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'Slippage Assumption',
+      payload.assumptions.executionCostAssumptions.slippageRate ?? 'Not configured',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'Gas Cost Assumption',
+      payload.assumptions.executionCostAssumptions.gasCostUsd ?? 'Not configured',
+    ),
+  );
 
   // V4 Readiness Audit §12 Stage 23E — V3's exact two rows unchanged; V4
   // has no separate max-LTV/liquidation-threshold pair (Stage 23B), so
@@ -314,7 +363,6 @@ export function buildExitPlanExportCsv(payload: ExitPlanExportPayload): string {
   rows.push(
     csvRow('Supply APR', payload.assumptions.protocolParameters.supplyApr ?? 'Not available'),
   );
-  rows.push(csvRow('Fees & Slippage', payload.assumptions.feesAndSlippage));
 
   rows.push(csvRow('Timestamp', payload.timestamp ?? 'Not captured'));
   rows.push(
@@ -341,6 +389,8 @@ export function downloadExitPlanExport(
   metadata: ServiceMetadata | null,
   portfolio: ApplicationPortfolio,
   format: 'json' | 'csv',
+  /** V4 Readiness Audit §12 P1-6 — see `buildExitPlanExportPayload`'s identical trailing parameter. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): void {
   const payload = buildExitPlanExportPayload(
     exitType,
@@ -349,6 +399,7 @@ export function downloadExitPlanExport(
     warnings,
     metadata,
     portfolio,
+    executionCostAssumptions,
   );
   const content =
     format === 'json' ? buildExitPlanExportJson(payload) : buildExitPlanExportCsv(payload);

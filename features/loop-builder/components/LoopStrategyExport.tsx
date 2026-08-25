@@ -2,6 +2,7 @@
 
 import type { ApplicationPortfolio } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import { downloadLoopStrategyExport } from '../utils/exportLoopStrategy';
 
@@ -28,7 +29,14 @@ import { downloadLoopStrategyExport } from '../utils/exportLoopStrategy';
  * not an error condition this component should hide behind its own
  * empty-state message.
  */
-export function LoopStrategyExport({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function LoopStrategyExport({
+  portfolio,
+  executionCostAssumptions,
+}: {
+  portfolio: ApplicationPortfolio;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6). */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
+}) {
   const settings = useLoopBuilderStore((state) => state.settings);
   const currentResult = useLoopBuilderStore((state) => state.currentResult);
   const warnings = useLoopBuilderStore((state) => state.warnings);
@@ -40,7 +48,15 @@ export function LoopStrategyExport({ portfolio }: { portfolio: ApplicationPortfo
 
   function handleExport(format: 'json' | 'csv') {
     if (settings === null || currentResult === null) return;
-    downloadLoopStrategyExport(settings, currentResult, warnings, lastMetadata, portfolio, format);
+    downloadLoopStrategyExport(
+      settings,
+      currentResult,
+      warnings,
+      lastMetadata,
+      portfolio,
+      format,
+      executionCostAssumptions,
+    );
   }
 
   return (

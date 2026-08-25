@@ -1,9 +1,9 @@
 export { calculateBtcSaleRequired } from './calculateBtcSaleRequired';
 export {
   calculateExitPosition,
+  type ExitCostItem,
   type ExitPositionInput,
   type ExitPositionResult,
-  type UnavailableExitCost,
 } from './calculateExitPosition';
 export { calculateRequiredDebtRepayment } from './calculateRequiredDebtRepayment';
 export { calculateTargetDebt } from './calculateTargetDebt';

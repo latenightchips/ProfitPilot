@@ -115,13 +115,15 @@ describe('FullExitResult — a genuine full-exit result (DoD: reconciles with po
     expect(screen.getByText('Remaining Debt').nextElementSibling?.textContent).toMatch(/\$0\.00/);
   });
 
-  it('itemizes swap fees, slippage, and gas estimate as not itemized (conflict #8)', () => {
+  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as unavailable when no assumptions are configured (conflict #8, V4 Readiness Audit §12 P1-6)', () => {
     runFullExit();
     render(<FullExitResult />);
     expect(screen.getByText('Swap Fees')).toBeInTheDocument();
     expect(screen.getByText('Slippage')).toBeInTheDocument();
     expect(screen.getByText('Gas Estimate')).toBeInTheDocument();
-    expect(screen.getAllByText(/Not itemized —/).length).toBe(3);
+    expect(screen.getByText('Total Implementation Cost')).toBeInTheDocument();
+    expect(screen.getAllByText(/configured for this portfolio/).length).toBe(3);
+    expect(screen.getByText(/Cannot be honestly totaled/)).toBeInTheDocument();
   });
 });
 

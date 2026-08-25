@@ -71,15 +71,28 @@ import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate'
  * component only ever displays the blended one, never feeds it back into
  * a `v4RateStress` calculation.
  *
- * **"Fees" and "Slippage" are a structural, permanent gap, not a
- * "sometimes" one — the same conflict #8 pattern `engine/loop/
- * calculateLoopCosts.ts` and `engine/exit/calculateExitPosition.ts`
- * already established and documented.** No Formula ID or equation for
- * swap fees or slippage exists anywhere in `02_Formulas.md` (confirmed
- * by grep before implementation) — inventing a fee/slippage model here
- * would violate "do not invent formulas." Documented explicitly with
- * the same wording those two Engine functions already use, rather than
- * silently omitted or shown as a fabricated `$0`.
+ * **"Fees" and "Slippage" remain a structural gap HERE specifically —
+ * V4 Readiness Audit §12 P1-6 resolved conflict #8 for Loop/Exit, but
+ * deliberately not for Simulation's own price/interest scenarios.**
+ * `simulateScenario` (`services/simulation/scenario.ts`) never invokes
+ * an actual buy/sell transaction path (F-070/F-071) — a price or
+ * interest scenario projects the *existing* position under a
+ * hypothetical price/rate, it never models selling or buying BTC, so
+ * there is no execution action for a swap fee/slippage assumption to
+ * apply to, configured or not. This is a genuine scope boundary, not an
+ * unresolved specification gap: applying Loop/Exit's execution-cost
+ * assumptions to a passive price projection would misrepresent it as
+ * incurring a transaction cost it structurally does not. (Loop
+ * Builder's own sensitivity re-uses this same Simulation path against a
+ * strategy's already-computed final-state portfolio — a snapshot, not a
+ * new transaction — so the same reasoning applies there too.) The third
+ * Simulation mode this panel also renders for — `portfolioActionPreview`
+ * (`services/simulation/portfolioAction.ts`, "Add/Withdraw collateral,
+ * Borrow, Repay, Combined actions") — applies its own `collateralDelta`/
+ * `debtDelta` directly, with no swap/BTC-purchase step of its own
+ * either, so the same reasoning applies there too: report exactly which
+ * Simulation modes consume execution-cost assumptions — none of the
+ * three.
  *
  * **"Formula version"**: reads `stores/simulationStore.ts`'s own new
  * `lastMetadata` field (Batch 12) — the real `ServiceMetadata.engineVersion`/
@@ -178,7 +191,9 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Fees &amp; Slippage</span>
         <span className="text-muted-foreground">
-          Estimated swap fees and slippage are not included.
+          Not applicable — this simulation projects a position under a hypothetical price, rate, or
+          collateral/debt change; it does not model an actual buy or sell transaction. See Loop
+          Builder/Exit Planner for execution-cost assumptions.
         </span>
       </div>
 

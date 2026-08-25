@@ -20,16 +20,20 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * `newHealthFactor`. Zero recalculation — every cell reads a field the
  * Engine's own step math already produced.
  *
- * **"Cumulative cost" is honestly unavailable, the same conflict #8
- * pattern this milestone has already applied repeatedly** — no
- * `LoopStepRecord` field tracks a per-step cost of any kind (interest
- * only begins accruing on the *final* debt after construction, via
- * `calculateLoopCosts`, not step by step; the only genuine per-step
- * "construction cost" candidates are swap fees/slippage/gas, which have
- * no Formula ID or equation anywhere in `02_Formulas.md`). Rather than
- * fabricate a running total, the column is rendered with the same
- * documented "not included" reason `StrategyAssumptionsPanel`/
- * `LoopStrategySummary` already use for the identical gap.
+ * **"Cumulative cost" is honestly unavailable at the per-step grain, even
+ * after conflict #8's resolution (V4 Readiness Audit §12 P1-6)** — no
+ * `LoopStepRecord` field tracks a per-step dollar cost of any kind
+ * (interest only begins accruing on the *final* debt after construction,
+ * via `calculateLoopCosts`, not step by step; swap fee/slippage friction
+ * IS applied per step, via F-070, but reduces that step's own
+ * `btcPurchased` directly rather than surfacing a separate dollar
+ * figure). The real, aggregate swap fee/slippage/gas dollar cost across
+ * the whole strategy is computed once, at the strategy level
+ * (`LoopCostAnalysis.tsx`'s own "Implementation Costs" section), not
+ * per step — rather than fabricate a per-step running total this Engine
+ * never computed, this column stays rendered with the same "not
+ * included" wording, now describing a genuine per-step display gap
+ * rather than a specification gap.
  *
  * **"Every final strategy value can be traced through its individual
  * steps" (DoD)**: `finalCollateral`/`finalDebt`/`finalHealthFactor` on

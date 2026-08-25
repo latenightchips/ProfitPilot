@@ -3,6 +3,7 @@
 import type { ApplicationPortfolio } from '@/services';
 import type { LoopStrategySettings } from '@/services/loop/strategy';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 /**
  * Loop Presets — 06_TASKS.md M7-009 ("Implement Loop Presets").
@@ -94,10 +95,13 @@ export function LoopPresets({
   portfolio,
   maxLoanToValue,
   borrowRateAssumption,
+  executionCostAssumptions,
 }: {
   portfolio: ApplicationPortfolio;
   maxLoanToValue: number;
   borrowRateAssumption: number;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6) — see `loopBuilderStore.ts`'s `runLoopStrategy` for why this is a separate prop, not read from `portfolio` itself. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
 }) {
   const settings = useLoopBuilderStore((state) => state.settings);
   const setSettings = useLoopBuilderStore((state) => state.setSettings);
@@ -109,7 +113,7 @@ export function LoopPresets({
 
   function applyPreset(preset: LoopPreset) {
     setSettings(presetSettings(preset, maxLoanToValue, borrowRateAssumption));
-    runLoopStrategy(portfolio);
+    runLoopStrategy(portfolio, executionCostAssumptions);
   }
 
   return (

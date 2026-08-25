@@ -122,8 +122,38 @@ export const portfolioSafetyTargetsSchema = z.object({
   safetyBufferPercent: z.number().finite().nonnegative().optional(),
 });
 
+/**
+ * Execution-cost planning assumptions — V4 Readiness Audit §12 P1-6.
+ * Validates `types/portfolio.ts`'s `ExecutionCostAssumptionsSettings`.
+ * `swapFeeRate`/`slippageRate` mirror `engine/validation/validate.ts`'s
+ * `validateExecutionCostRate` exactly — `[0, 1)`, strictly less than 1,
+ * not `[0, 1]` like `protocolParametersSchema`'s LTV-style fields.
+ * `gasCostUsd` is a non-negative USD amount, the same bound every other
+ * USD amount in this file uses (`debtPositionSchema.balance`).
+ */
+export const executionCostAssumptionsSchema = z.object({
+  swapFeeRate: z
+    .number({ error: 'Enter Swap Fee as a percentage.' })
+    .finite('Enter Swap Fee as a percentage.')
+    .min(0, 'Swap Fee must be between 0% and 100%.')
+    .lt(1, 'Swap Fee must be less than 100%.')
+    .optional(),
+  slippageRate: z
+    .number({ error: 'Enter Slippage as a percentage.' })
+    .finite('Enter Slippage as a percentage.')
+    .min(0, 'Slippage must be between 0% and 100%.')
+    .lt(1, 'Slippage must be less than 100%.')
+    .optional(),
+  gasCostUsd: z
+    .number({ error: 'Enter a valid gas cost.' })
+    .finite('Enter a valid gas cost.')
+    .nonnegative('Gas cost cannot be negative.')
+    .optional(),
+});
+
 export const portfolioSettingsSchema = z.object({
   safetyTargets: portfolioSafetyTargetsSchema.optional(),
+  executionCostAssumptions: executionCostAssumptionsSchema.optional(),
 });
 
 /**

@@ -112,7 +112,7 @@ export function RecommendationDetailPanel({ portfolio }: { portfolio: Portfolio 
     if (selectedItemId === 'repayment') {
       setExitType('partialDebtRepayment');
       setTargetInputs({ repaymentAmount: recommendation.relevantValues.requiredRepayment });
-      runExitCalculation(portfolio);
+      runExitCalculation(portfolio, portfolio.settings.executionCostAssumptions);
       router.push('/exit-planner');
       return;
     }

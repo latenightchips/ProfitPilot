@@ -51,6 +51,14 @@ export interface TargetExitParams {
    * target type.
    */
   executionCostAssumptions?: ExecutionCostAssumptions;
+  /**
+   * Optional gas cost assumption, USD per modeled transaction (02_Formulas.md
+   * F-072, V4 Readiness Audit §12 P1-6) — passed straight through to
+   * `calculateExitPosition`'s own `gasCostUsd`, never consumed by
+   * `resolveTargetDebt`'s target-debt solve (gas is reporting-only, never
+   * applied to any repayment/BTC-sale/Health-Factor arithmetic).
+   */
+  gasCostUsd?: number;
 }
 
 export interface TargetExitResult {
@@ -335,6 +343,7 @@ export function calculateTargetExit(params: TargetExitParams): FormulaResult<Tar
     targetDebt: resolvedTargetDebt,
     scenarioBtcPriceUsd: scenarioPrice,
     executionCostAssumptions: params.executionCostAssumptions,
+    gasCostUsd: params.gasCostUsd,
   });
   if (!exitResult.ok) return createFailure(exitResult.error, options);
 

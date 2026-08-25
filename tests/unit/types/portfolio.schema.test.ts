@@ -8,6 +8,7 @@ import {
   collateralPositionSchema,
   debtManagementSchema,
   debtPositionSchema,
+  executionCostAssumptionsSchema,
   portfolioDetailsSchema,
   portfolioInputSchema,
   portfolioInputUpdateSchema,
@@ -85,6 +86,23 @@ describe('portfolioInputSchema (M4-002)', () => {
   it('accepts settings with no safety targets at all', () => {
     const result = portfolioInputSchema.safeParse({ ...validInput(), settings: {} });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts optional execution-cost assumptions in settings (P1-6)', () => {
+    const result = portfolioInputSchema.safeParse({
+      ...validInput(),
+      settings: {
+        executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts settings with no execution-cost assumptions at all — old portfolios keep parsing (P1-6)', () => {
+    const result = portfolioInputSchema.safeParse({ ...validInput(), settings: {} });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.executionCostAssumptions).toBeUndefined();
   });
 
   it('rejects the maxLoanToValue > liquidationThreshold invariant (04_BUILD_GUIDE.md Engine invariants)', () => {
@@ -186,6 +204,73 @@ describe('protocolParametersSchema — percentages (M4-002)', () => {
       supplyApr: 0.02,
     });
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * `executionCostAssumptionsSchema` — V4 Readiness Audit §12 P1-6. Bounds
+ * mirror `engine/validation/validate.ts`'s `validateExecutionCostRate`
+ * ([0, 1), not [0, 1] like `protocolParametersSchema` above) for
+ * `swapFeeRate`/`slippageRate`, and plain non-negative for `gasCostUsd`.
+ * Every field is independently optional (see `types/portfolio.ts`'s own
+ * doc comment for why).
+ */
+describe('executionCostAssumptionsSchema (P1-6)', () => {
+  it('accepts an empty object — every field is independently optional', () => {
+    expect(executionCostAssumptionsSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts a fully populated set of assumptions', () => {
+    const result = executionCostAssumptionsSchema.safeParse({
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+      gasCostUsd: 15,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts each field configured independently of the others', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ gasCostUsd: 10 }).success).toBe(true);
+    expect(executionCostAssumptionsSchema.safeParse({ swapFeeRate: 0.01 }).success).toBe(true);
+    expect(executionCostAssumptionsSchema.safeParse({ slippageRate: 0.02 }).success).toBe(true);
+  });
+
+  it('accepts a zero rate/cost (explicit, genuine zero — not "unconfigured")', () => {
+    const result = executionCostAssumptionsSchema.safeParse({
+      swapFeeRate: 0,
+      slippageRate: 0,
+      gasCostUsd: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a negative swapFeeRate', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ swapFeeRate: -0.01 }).success).toBe(false);
+  });
+
+  it('rejects a negative slippageRate', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ slippageRate: -0.01 }).success).toBe(false);
+  });
+
+  it('rejects swapFeeRate >= 1 (100%)', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ swapFeeRate: 1 }).success).toBe(false);
+    expect(executionCostAssumptionsSchema.safeParse({ swapFeeRate: 1.5 }).success).toBe(false);
+  });
+
+  it('rejects slippageRate >= 1 (100%)', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ slippageRate: 1 }).success).toBe(false);
+  });
+
+  it('rejects a negative gasCostUsd', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ gasCostUsd: -5 }).success).toBe(false);
+  });
+
+  it('rejects NaN and Infinity for every field', () => {
+    expect(executionCostAssumptionsSchema.safeParse({ swapFeeRate: NaN }).success).toBe(false);
+    expect(executionCostAssumptionsSchema.safeParse({ slippageRate: Infinity }).success).toBe(
+      false,
+    );
+    expect(executionCostAssumptionsSchema.safeParse({ gasCostUsd: -Infinity }).success).toBe(false);
   });
 });
 

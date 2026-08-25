@@ -39,12 +39,17 @@ import { resolveEffectiveBorrowRate } from './resolveEffectiveBorrowRate';
  * merged, so this component's shape doesn't need to change once an
  * override exists.
  *
- * **"Fees," "Slippage," and "Gas estimate" are a structural, permanent
- * gap — the same conflict #8 pattern `SimulationAssumptions.tsx`
- * already documents for its own "Fees & Slippage" line, extended here
- * to also name Gas estimate explicitly** (Simulation had no Gas
- * estimate Display item of its own to name). No Formula ID or equation
- * for any of the three exists anywhere in `02_Formulas.md`.
+ * **"Fees," "Slippage," and "Gas estimate" — V4 Readiness Audit §12
+ * P1-6, resolving conflict #8.** Reads `portfolio.settings.executionCostAssumptions`
+ * directly (this component already receives the full `Portfolio`, unlike
+ * most Loop/Exit components which only get `ApplicationPortfolio`) and
+ * shows each of the three configured values, clearly labeled as
+ * assumptions, not live quotes — "Not configured" for whichever is
+ * absent, never a fabricated default. This panel shows the portfolio's
+ * own CONFIGURED inputs; the resulting COMPUTED dollar costs for a
+ * specific strategy/exit are shown by `LoopCostAnalysis.tsx`/
+ * `FullExitResult.tsx`/`PartialExitResult.tsx` instead, not duplicated
+ * here.
  *
  * **"Time horizon" has no universal shape across tools** — Loop
  * Builder has no documented time-horizon input anywhere in M7-008's own
@@ -139,6 +144,22 @@ export function StrategyAssumptionsPanel({
     supplyAprDisplay.kind === 'available'
       ? formatPercent(supplyAprDisplay.supplyApr)
       : 'Not available';
+  // "Fees, Slippage & Gas Estimate" — V4 Readiness Audit §12 P1-6. Each
+  // of the three is independently configured (or not) on the portfolio's
+  // own settings — see `types/portfolio.ts`'s `ExecutionCostAssumptionsSettings`.
+  const executionCostAssumptions = portfolio.settings.executionCostAssumptions;
+  const swapFeeText =
+    executionCostAssumptions?.swapFeeRate !== undefined
+      ? formatPercent(executionCostAssumptions.swapFeeRate)
+      : 'Not configured';
+  const slippageText =
+    executionCostAssumptions?.slippageRate !== undefined
+      ? formatPercent(executionCostAssumptions.slippageRate)
+      : 'Not configured';
+  const gasCostText =
+    executionCostAssumptions?.gasCostUsd !== undefined
+      ? formatCurrency(executionCostAssumptions.gasCostUsd)
+      : 'Not configured';
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -173,7 +194,8 @@ export function StrategyAssumptionsPanel({
           Fees, Slippage &amp; Gas Estimate
         </span>
         <span className="text-muted-foreground">
-          Estimated fees, slippage, and gas costs are not included.
+          Swap fee assumption {swapFeeText} · Slippage assumption {slippageText} · Gas cost
+          assumption {gasCostText}
         </span>
       </div>
 

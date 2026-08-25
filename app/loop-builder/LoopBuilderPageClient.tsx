@@ -187,6 +187,7 @@ export function LoopBuilderPageClient() {
               <LoopStrategyControls
                 portfolio={record.portfolio}
                 portfolioId={record.portfolio.id}
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
               />
             </div>
             <div className="flex flex-col gap-2 border-t border-border pt-4">
@@ -220,6 +221,7 @@ export function LoopBuilderPageClient() {
                 borrowRateAssumption={
                   settings?.borrowAprOverride ?? resolveBorrowRateAssumption(record.portfolio) ?? 0
                 }
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
               />
             </div>
           </aside>
@@ -296,7 +298,10 @@ export function LoopBuilderPageClient() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Export Strategy</h2>
-              <LoopStrategyExport portfolio={record.portfolio} />
+              <LoopStrategyExport
+                portfolio={record.portfolio}
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
+              />
             </section>
           </div>
         </div>

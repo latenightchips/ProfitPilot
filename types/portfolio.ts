@@ -84,8 +84,40 @@ export interface PortfolioSafetyTargets {
   safetyBufferPercent?: number;
 }
 
+/**
+ * Execution-cost planning assumptions — V4 Readiness Audit §12 P1-6.
+ * Portfolio-level, not per-strategy: Loop Builder and Exit Planner both
+ * read this same object directly (via their own Services), rather than
+ * each carrying an independent override — see this stage's own ownership
+ * report for why (mirrors `PortfolioSafetyTargets`'s existing "one
+ * optional settings bag, edited on the Portfolio Details form" shape).
+ * `swapFeeRate`/`slippageRate` reuse the Engine's own `ExecutionCostAssumptions`
+ * domain ([0, 1) each — `engine/validation/validate.ts`'s
+ * `validateExecutionCostRate`); `gasCostUsd` is a USD amount per modeled
+ * transaction (02_Formulas.md F-072's own `gasCostPerTransactionUsd`),
+ * not a total.
+ *
+ * Each field is independently optional, and each is treated
+ * independently by every consumer: `swapFeeRate`/`slippageRate` are only
+ * "configured" together, as a pair — triggered by this whole
+ * `executionCostAssumptions` object being present at all (any missing
+ * rate then defaults to 0, mirroring `resolveEffectiveExecutionRate`'s
+ * own "omitted rate = 0" convention, so the BTC-purchased/sold friction
+ * already applied and the cost figures reported for it can never
+ * disagree about which rate was "unset"). `gasCostUsd` is a separate,
+ * independently optional field — a portfolio can configure gas without
+ * fee/slippage, or vice versa, with each unset item still reported as
+ * explicitly unavailable, never a fabricated $0.
+ */
+export interface ExecutionCostAssumptionsSettings {
+  swapFeeRate?: number;
+  slippageRate?: number;
+  gasCostUsd?: number;
+}
+
 export interface PortfolioSettings {
   safetyTargets?: PortfolioSafetyTargets;
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
 }
 
 /**

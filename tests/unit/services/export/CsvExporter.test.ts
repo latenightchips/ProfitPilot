@@ -229,6 +229,56 @@ describe('buildPortfolioPositionsCsv — Supply APR (P1-1)', () => {
  * genuinely free-text field it exports, but the guard lives in the
  * shared `csvLine` helper every `build*Csv` function routes through.
  */
+/**
+ * "Swap Fee Assumption"/"Slippage Assumption"/"Gas Cost Assumption"
+ * columns — V4 Readiness Audit §12 P1-6. Column indices 12, 13, 14
+ * (appended after "Supply APR" at index 11 — see that describe block
+ * above — so every existing column index before it is unaffected).
+ */
+describe('buildPortfolioPositionsCsv — execution-cost assumptions (P1-6)', () => {
+  // Comma-free name — samplePortfolio()'s own name contains a comma
+  // (quoted in the real CSV), which would throw off a naive
+  // `.split(',')` index count in these tests, the same reasoning the
+  // "Supply APR (P1-1)" describe block above already documents.
+  it('exports "Not available" for each field when no execution-cost assumptions are configured', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[12]).toBe('Not available');
+    expect(fields[13]).toBe('Not available');
+    expect(fields[14]).toBe('Not available');
+  });
+
+  it('exports the real configured values when execution-cost assumptions are set', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[12]).toBe('0.003');
+    expect(fields[13]).toBe('0.005');
+    expect(fields[14]).toBe('15');
+  });
+
+  it('exports each field independently — gas configured alone leaves the two rates "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: { executionCostAssumptions: { gasCostUsd: 8 } },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[12]).toBe('Not available');
+    expect(fields[13]).toBe('Not available');
+    expect(fields[14]).toBe('8');
+  });
+});
+
 describe('CSV formula-injection guard (M9-034)', () => {
   it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);

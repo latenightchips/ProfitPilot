@@ -36,10 +36,15 @@
  * established, applied a third time.
  *
  * **"Transaction assumptions"**: `calculateTargetExit`'s underlying
- * `calculateExitPosition` (M2-023) already itemizes `unavailableCosts`
- * (`swapFees`/`slippage`/`gasEstimate` — conflict #8's same pattern,
- * revisited and still not inventable). Passed through unchanged, not
- * dropped or fabricated.
+ * `calculateExitPosition` (M2-023) itemizes `costs`
+ * (`swapFees`/`slippage`/`gasEstimate`/`totalImplementationCost` —
+ * conflict #8, resolved by V4 Readiness Audit §12 P1-5/P1-6). This
+ * Service resolves the active portfolio's own `settings.executionCostAssumptions`
+ * (via the shared `resolveExecutionCostAssumptions` helper — the caller
+ * supplies it, since `ApplicationPortfolio` carries no `settings`) and
+ * passes it straight through to `calculateTargetExit`, never re-deriving
+ * the cost computation itself; `costs` below is passed through unchanged
+ * from whatever the Engine actually computed.
  *
  * **V4 post-exit state (V4 Readiness Audit §12 Stage 11, resolved with a
  * real protocol-backed rule at Stage 12)** — `afterPortfolio` below
@@ -64,7 +69,8 @@
  * borrows, so this only matters if a future caller ever does, and even
  * then this Service still fails closed rather than guessing.
  */
-import { calculateTargetExit, type ExitTarget, type UnavailableExitCost } from '@/engine';
+import { calculateTargetExit, type ExitCostItem, type ExitTarget } from '@/engine';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import {
   deriveV4DebtStateAfterDelta,
@@ -73,6 +79,7 @@ import {
 } from '../portfolio/mapping';
 import type { AaveV4DebtState, ApplicationPortfolio } from '../portfolio/models';
 import { calculatePortfolioSummary, type PortfolioSummary } from '../portfolio/summary';
+import { resolveExecutionCostAssumptions } from '../shared/executionCost';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 
@@ -112,7 +119,7 @@ export interface ExitPlanResult {
   /** null when infeasible. */
   transaction: ExitTransactionSummary | null;
   /** null when infeasible. */
-  unavailableCosts: UnavailableExitCost[] | null;
+  costs: ExitCostItem[] | null;
 }
 
 /**
@@ -125,6 +132,14 @@ export function planExit(
   target: ExitTarget,
   sourceStatus: string,
   scenarioBtcPriceUsd?: number,
+  /**
+   * The active portfolio's own `settings.executionCostAssumptions` (V4
+   * Readiness Audit §12 P1-6) — see `planLoopStrategy`'s identical
+   * parameter for the full reasoning (same "caller supplies what the
+   * Service doesn't own" convention, since `ApplicationPortfolio` itself
+   * carries no `settings`).
+   */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): ServiceResult<ExitPlanResult> {
   const baselineResult = calculatePortfolioSummary(portfolio, sourceStatus);
   if (!baselineResult.ok) return baselineResult;
@@ -160,7 +175,13 @@ export function planExit(
   };
 
   const exitStep = formulaStep(
-    calculateTargetExit({ portfolio: dispatchedEngineInput, target, scenarioBtcPriceUsd }),
+    calculateTargetExit({
+      portfolio: dispatchedEngineInput,
+      target,
+      scenarioBtcPriceUsd,
+      executionCostAssumptions: resolveExecutionCostAssumptions(executionCostAssumptions),
+      gasCostUsd: executionCostAssumptions?.gasCostUsd,
+    }),
     tracked,
     sourceStatus,
   );
@@ -177,7 +198,7 @@ export function planExit(
         before: baselineResult.data,
         after: null,
         transaction: null,
-        unavailableCosts: null,
+        costs: null,
       },
       optionsFromTracked(sourceStatus, tracked),
       warnings,
@@ -248,7 +269,7 @@ export function planExit(
             },
           }),
       },
-      unavailableCosts: targetExit.exit.unavailableCosts,
+      costs: targetExit.exit.costs,
     },
     optionsFromTracked(sourceStatus, {
       engineVersion: afterResult.metadata.engineVersion,

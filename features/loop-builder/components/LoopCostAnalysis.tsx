@@ -1,7 +1,7 @@
 'use client';
 
 import { formatCurrency, formatLeverage, formatPercent } from '@/components/strategy/format';
-import { type UnavailableLoopCost } from '@/services';
+import { type LoopCostItem } from '@/services';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
@@ -31,16 +31,15 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * narrower, cost-focused framing.
  *
  * **"Implementation costs (itemized)" names the same 4 items the
- * Engine's own `LoopCostResult.unavailable` array itemizes (conflict #8)
- * rather than fabricating a total** — `calculateLoopCosts` (M2-017)
- * cannot compute `swapFees`/`slippage`/`gasEstimate`/
- * `totalImplementationCost` (no formula for any of the three underlying
- * costs exists), so a "total" cannot be honestly derived either. Rendered
- * as 4 rows naming each item and stating plainly that it isn't included
- * — UX punch-list UX-06: the Engine's own internal `reason` string (an
- * implementation-documentation reference) is deliberately not surfaced
- * here; a normal user gains nothing from it that the row label doesn't
- * already convey.
+ * Engine's own `LoopCostResult.items` array itemizes (conflict #8,
+ * resolved for real V4 Readiness Audit §12 P1-6).** `calculateLoopCosts`
+ * (M2-017) computes each of `swapFees`/`slippage`/`gasEstimate`/
+ * `totalImplementationCost` for real once the portfolio has the
+ * execution-cost assumption that item needs configured
+ * (`Portfolio.settings.executionCostAssumptions`, Portfolio Details
+ * form), and reports it explicitly unavailable (with the Engine's own
+ * `reason`, now surfaced — unlike the pre-P1-6 version of this component,
+ * which discarded it) otherwise. Never a fabricated `$0` either way.
  *
  * `monthlyInterestCost !== null`'s own false branch is unreachable here:
  * this component's own top-level guard already requires
@@ -50,14 +49,7 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
  * move a coverage percentage, the same discipline this engagement has
  * applied consistently since Milestone 6 Batch 22's own audit.
  */
-const ITEMIZED_COSTS: UnavailableLoopCost['item'][] = [
-  'swapFees',
-  'slippage',
-  'gasEstimate',
-  'totalImplementationCost',
-];
-
-const ITEMIZED_COST_LABELS: Record<UnavailableLoopCost['item'], string> = {
+const ITEMIZED_COST_LABELS: Record<LoopCostItem['item'], string> = {
   swapFees: 'Swap Fees',
   slippage: 'Slippage',
   gasEstimate: 'Gas Estimate',
@@ -107,11 +99,17 @@ export function LoopCostAnalysis() {
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-muted-foreground">Implementation Costs</span>
         <dl className="flex flex-col gap-1 text-xs">
-          {ITEMIZED_COSTS.map((item) => {
+          {costs.items.map((entry) => {
             return (
-              <div key={item} className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">{ITEMIZED_COST_LABELS[item]}</dt>
-                <dd className="text-right text-muted-foreground">Not included in this estimate</dd>
+              <div key={entry.item} className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">{ITEMIZED_COST_LABELS[entry.item]}</dt>
+                <dd className="text-right text-foreground">
+                  {entry.amountUsd !== null ? (
+                    formatCurrency(entry.amountUsd)
+                  ) : (
+                    <span className="text-muted-foreground">{entry.reason}</span>
+                  )}
+                </dd>
               </div>
             );
           })}

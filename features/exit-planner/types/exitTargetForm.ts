@@ -20,12 +20,15 @@ export { EXIT_PLANNER_TYPES, type ExitPlannerType };
  * **"Cash proceeds target" is excluded — see
  * `stores/exitPlannerStore.ts`'s own header comment (Conflict #10).**
  * "Fees," "Slippage," and "Gas estimate" are excluded for the same
- * reason `LoopStrategyControls.tsx` excludes them — conflict #8, no
- * Formula ID anywhere in `02_Formulas.md` for any of the three, so
- * there is no Service parameter for an editable input to reach;
- * already itemized as unavailable by the shared
- * `StrategyAssumptionsPanel` this route also renders, not duplicated
- * as a dead input here.
+ * reason `LoopStrategyControls.tsx` excludes them (V4 Readiness Audit
+ * §12 P1-6) — conflict #8 is resolved, but as portfolio-level settings
+ * (`Portfolio.settings.executionCostAssumptions`), edited once on the
+ * Portfolio Details form, not as a per-target override here. `ExitTargetForm`
+ * receives the already-resolved value as a separate prop and passes it
+ * straight through to `runExitCalculation`/`runPriceSensitivity`, never
+ * rendering an editable input for it — the shared
+ * `StrategyAssumptionsPanel` this route also renders is where the
+ * configured values (or their absence) are shown.
  *
  * **"Target BTC price" is a field on every type's schema, not a
  * standalone type** — mirrors `calculateExitPosition`'s own

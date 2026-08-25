@@ -58,13 +58,18 @@ describe('planExit — partial exits (M3-011)', () => {
     expect(result.data.after?.leverage).toBe(1.125);
   });
 
-  it('passes through unavailableCosts rather than inventing a transaction-cost model (conflict #8)', () => {
+  it('passes through costs (unavailable when no assumptions are configured) rather than inventing a transaction-cost model (conflict #8, P1-6 backward compatibility)', () => {
     const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
     const result = planExit(basePortfolio(), target, 'live');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const items = result.data.unavailableCosts?.map((u) => u.item);
-    expect(items).toEqual(expect.arrayContaining(['swapFees', 'slippage', 'gasEstimate']));
+    const items = result.data.costs?.map((c) => c.item);
+    expect(items).toEqual(
+      expect.arrayContaining(['swapFees', 'slippage', 'gasEstimate', 'totalImplementationCost']),
+    );
+    for (const entry of result.data.costs ?? []) {
+      expect(entry.amountUsd).toBeNull();
+    }
   });
 
   it('reports infeasible with a reason when the target exceeds current debt', () => {
@@ -76,7 +81,7 @@ describe('planExit — partial exits (M3-011)', () => {
     expect(typeof result.data.infeasibleReason).toBe('string');
     expect(result.data.after).toBeNull();
     expect(result.data.transaction).toBeNull();
-    expect(result.data.unavailableCosts).toBeNull();
+    expect(result.data.costs).toBeNull();
     // The baseline is still reported even when infeasible.
     expect(result.data.before.netEquity).toBe(80000);
   });
@@ -484,5 +489,129 @@ describe('planExit — V4 risk-capacity dispatch for the "healthFactor" target t
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.transaction?.repayment).toBeCloseTo(5000, 6);
+  });
+});
+
+/**
+ * Execution-cost assumption wiring — V4 Readiness Audit §12 P1-6.
+ * `planExit`'s new trailing `executionCostAssumptions` parameter
+ * (portfolio-level, per this stage's own ownership report) resolves
+ * (via the shared `resolveExecutionCostAssumptions`) into
+ * `calculateTargetExit`'s own `executionCostAssumptions`/`gasCostUsd`.
+ */
+describe('planExit — execution-cost assumption wiring (P1-6)', () => {
+  const target: ExitTarget = { type: 'debtBalance', targetDebt: 10000 };
+
+  it('configured swap fee/slippage/gas produce real computed costs matching the repayment notional', () => {
+    const result = planExit(basePortfolio(), target, 'live', undefined, {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+      gasCostUsd: 15,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // notional = repayment = 10000.
+    const byItem = Object.fromEntries(
+      (result.data.costs ?? []).map((entry) => [entry.item, entry]),
+    );
+    expect(byItem.swapFees?.amountUsd).toBeCloseTo(30, 6);
+    expect(byItem.slippage?.amountUsd).toBeCloseTo(49.85, 6);
+    expect(byItem.gasEstimate?.amountUsd).toBe(15);
+    expect(byItem.totalImplementationCost?.amountUsd).toBeCloseTo(94.85, 6);
+  });
+
+  it('the same assumptions also apply real friction to the BTC actually sold (not just cost reporting)', () => {
+    const frictionless = planExit(basePortfolio(), target, 'live');
+    const frictioned = planExit(basePortfolio(), target, 'live', undefined, {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+    });
+    expect(frictionless.ok && frictioned.ok).toBe(true);
+    if (!frictionless.ok || !frictioned.ok) return;
+    expect(frictioned.data.transaction?.btcSold).toBeGreaterThan(
+      frictionless.data.transaction?.btcSold ?? 0,
+    );
+    // Repayment itself is untouched by friction.
+    expect(frictioned.data.transaction?.repayment).toBe(frictionless.data.transaction?.repayment);
+  });
+
+  it('gas configured alone leaves swapFees/slippage/total unavailable', () => {
+    const result = planExit(basePortfolio(), target, 'live', undefined, { gasCostUsd: 8 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byItem = Object.fromEntries(
+      (result.data.costs ?? []).map((entry) => [entry.item, entry]),
+    );
+    expect(byItem.gasEstimate?.amountUsd).toBe(8);
+    expect(byItem.swapFees?.amountUsd).toBeNull();
+    expect(byItem.totalImplementationCost?.amountUsd).toBeNull();
+  });
+
+  it('omitted executionCostAssumptions reproduces the exact pre-P1-6 all-unavailable result', () => {
+    const result = planExit(basePortfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const entry of result.data.costs ?? []) {
+      expect(entry.amountUsd).toBeNull();
+    }
+  });
+
+  it('a healthFactor target still reproduces its requested target under configured friction (P1-5 correction remains intact)', () => {
+    const hfTarget: ExitTarget = { type: 'healthFactor', targetHealthFactor: 5 };
+    const result = planExit(basePortfolio(), hfTarget, 'live', undefined, {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.after?.healthFactor).toBeCloseTo(5, 6);
+  });
+
+  it('gas does not alter repayment/btcSold/Health Factor — only the reported cost item', () => {
+    const withoutGas = planExit(basePortfolio(), target, 'live');
+    const withGas = planExit(basePortfolio(), target, 'live', undefined, { gasCostUsd: 5000 });
+    expect(withoutGas.ok && withGas.ok).toBe(true);
+    if (!withoutGas.ok || !withGas.ok) return;
+    expect(withGas.data.transaction?.repayment).toBe(withoutGas.data.transaction?.repayment);
+    expect(withGas.data.transaction?.btcSold).toBe(withoutGas.data.transaction?.btcSold);
+    expect(withGas.data.after?.healthFactor).toBe(withoutGas.data.after?.healthFactor);
+  });
+
+  it('every supported exit target type shares the identical execution-cost boundary — fullExit, retainedBtc, and healthFactor all report real costs the same way debtBalance does', () => {
+    const assumptions = { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 };
+    const fullExit = planExit(
+      basePortfolio(),
+      { type: 'debtBalance', targetDebt: 0 },
+      'live',
+      undefined,
+      assumptions,
+    );
+    const retainedBtc = planExit(
+      basePortfolio(),
+      { type: 'retainedBtc', targetRetainedBtc: 1.6 },
+      'live',
+      undefined,
+      assumptions,
+    );
+    const healthFactorTarget = planExit(
+      basePortfolio(),
+      { type: 'healthFactor', targetHealthFactor: 5 },
+      'live',
+      undefined,
+      assumptions,
+    );
+    for (const result of [fullExit, retainedBtc, healthFactorTarget]) {
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.data.feasible).toBe(true);
+      const byItem = Object.fromEntries(
+        (result.data.costs ?? []).map((entry) => [entry.item, entry]),
+      );
+      expect(byItem.swapFees?.amountUsd).not.toBeNull();
+      expect(byItem.gasEstimate?.amountUsd).toBe(15);
+      expect(byItem.totalImplementationCost?.amountUsd).not.toBeNull();
+    }
   });
 });

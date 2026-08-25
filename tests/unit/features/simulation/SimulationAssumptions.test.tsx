@@ -57,9 +57,7 @@ describe('SimulationAssumptions — price scenario', () => {
     ).toBeInTheDocument();
 
     expect(screen.getByText('Fees & Slippage')).toBeInTheDocument();
-    expect(
-      screen.getByText('Estimated swap fees and slippage are not included.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Not applicable/)).toBeInTheDocument();
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).not.toContain('Formula ID');
     expect(bodyText).not.toContain('02_Formulas.md');

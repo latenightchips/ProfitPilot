@@ -10,6 +10,7 @@ import {
   type ExitPlannerType,
   useExitPlannerStore,
 } from '@/stores/exitPlannerStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import { exitTargetFormSchemas } from '../types/exitTargetForm';
 
@@ -115,9 +116,12 @@ function targetInputsEqual(a: ExitPlannerTargetInputs, b: ExitPlannerTargetInput
 function ExitTargetFormForType({
   exitType,
   portfolio,
+  executionCostAssumptions,
 }: {
   exitType: ExitPlannerType;
   portfolio: ApplicationPortfolio;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6) — see `exitPlannerStore.ts`'s `runExitCalculation` for why this is a separate prop, not read from `portfolio` itself. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
 }) {
   const targetInputs = useExitPlannerStore((state) => state.targetInputs);
   const setTargetInputs = useExitPlannerStore((state) => state.setTargetInputs);
@@ -177,7 +181,7 @@ function ExitTargetFormForType({
     if (exitType === 'fullExit') {
       lastPushedTargetInputsRef.current = {};
       setTargetInputs({});
-      runExitCalculation(portfolio);
+      runExitCalculation(portfolio, executionCostAssumptions);
     }
     // Only on mount — this component is remounted via `key={exitType}`
     // whenever the type changes, so this fires exactly once per Full
@@ -253,9 +257,12 @@ function ExitTargetFormForType({
 export function ExitTargetForm({
   portfolio,
   portfolioId,
+  executionCostAssumptions,
 }: {
   portfolio: ApplicationPortfolio;
   portfolioId: string;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6) — see `exitPlannerStore.ts`'s `runExitCalculation` for why this is a separate prop, not read from `portfolio` itself. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
 }) {
   const exitType = useExitPlannerStore((state) => state.exitType);
   const syncActivePortfolio = useExitPlannerStore((state) => state.syncActivePortfolio);
@@ -276,5 +283,12 @@ export function ExitTargetForm({
     );
   }
 
-  return <ExitTargetFormForType key={exitType} exitType={exitType} portfolio={portfolio} />;
+  return (
+    <ExitTargetFormForType
+      key={exitType}
+      exitType={exitType}
+      portfolio={portfolio}
+      executionCostAssumptions={executionCostAssumptions}
+    />
+  );
 }

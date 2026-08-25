@@ -77,7 +77,7 @@ describe('LoopStrategySummary — comparison (DoD: distinguishes current and pro
     expect(row?.textContent).not.toMatch(/—$/);
   });
 
-  it('itemizes Estimated Implementation Cost as unavailable rather than fabricating a figure', () => {
+  it('itemizes Estimated Implementation Cost as unavailable rather than fabricating a figure, when no assumptions are configured (V4 Readiness Audit §12 P1-6)', () => {
     useLoopBuilderStore.getState().setSettings({
       targetBorrowPercentage: 0.5,
       maxLoops: 3,
@@ -86,9 +86,8 @@ describe('LoopStrategySummary — comparison (DoD: distinguishes current and pro
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopStrategySummary portfolio={validPortfolio()} />);
-    expect(
-      screen.getByText('Estimated fees, slippage, and gas costs are not included.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Estimated Implementation Cost')).toBeInTheDocument();
+    expect(screen.getByText(/Cannot be honestly totaled/)).toBeInTheDocument();
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).not.toContain('02_Formulas.md');
     expect(bodyText).not.toContain('Formula ID');

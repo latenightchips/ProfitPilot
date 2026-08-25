@@ -83,14 +83,15 @@ describe('LoopCostAnalysis — a viable strategy', () => {
     ).toMatch(/%/);
   });
 
-  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as not included', () => {
+  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as unavailable when no assumptions are configured (V4 Readiness Audit §12 P1-6)', () => {
     runViableStrategy();
     render(<LoopCostAnalysis />);
     expect(screen.getByText('Swap Fees')).toBeInTheDocument();
     expect(screen.getByText('Slippage')).toBeInTheDocument();
     expect(screen.getByText('Gas Estimate')).toBeInTheDocument();
     expect(screen.getByText('Total Implementation Cost')).toBeInTheDocument();
-    expect(screen.getAllByText('Not included in this estimate').length).toBe(4);
+    expect(screen.getAllByText(/configured for this portfolio/).length).toBe(3);
+    expect(screen.getByText(/Cannot be honestly totaled/)).toBeInTheDocument();
   });
 
   it('does not expose the internal Formula ID / specification reference for unavailable costs (UX-06 same-class fix)', () => {

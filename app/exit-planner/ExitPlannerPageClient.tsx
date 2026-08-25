@@ -169,7 +169,11 @@ export function ExitPlannerPageClient() {
           >
             <ExitTypeSelector />
             <div className="border-t border-border pt-4">
-              <ExitTargetForm portfolio={record.portfolio} portfolioId={record.portfolio.id} />
+              <ExitTargetForm
+                portfolio={record.portfolio}
+                portfolioId={record.portfolio.id}
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
+              />
             </div>
           </aside>
 
@@ -228,7 +232,10 @@ export function ExitPlannerPageClient() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Price Sensitivity</h2>
-              <ExitPriceSensitivity portfolio={record.portfolio} />
+              <ExitPriceSensitivity
+                portfolio={record.portfolio}
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
+              />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Warnings</h2>
@@ -251,7 +258,10 @@ export function ExitPlannerPageClient() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Export Plan</h2>
-              <ExitPlanExport portfolio={record.portfolio} />
+              <ExitPlanExport
+                portfolio={record.portfolio}
+                executionCostAssumptions={record.portfolio.settings.executionCostAssumptions}
+              />
             </section>
           </div>
         </div>

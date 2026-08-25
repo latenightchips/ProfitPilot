@@ -85,7 +85,7 @@ describe('buildSimulationExportPayload', () => {
       ...PORTFOLIO.protocol,
       collateralFactor: null,
     });
-    expect(payload.assumptions.feesAndSlippage).toMatch(/no Formula ID or equation/);
+    expect(payload.assumptions.feesAndSlippage).toMatch(/Not applicable/);
     expect(payload.timestamp).toBe(metadata?.calculationTimestamp);
     expect(payload.formulaVersion).toEqual({
       engineVersion: metadata?.engineVersion,
@@ -232,7 +232,7 @@ describe('buildSimulationExportCsv', () => {
 
     const csv = buildSimulationExportCsv(payload);
     expect(csv).toContain(
-      'Fees & Slippage,Not included — no Formula ID or equation for swap fees or slippage exists in 02_Formulas.md.',
+      'Fees & Slippage,Not applicable — this simulation does not model a buy or sell transaction. See Loop Builder/Exit Planner for execution-cost assumptions.',
     );
   });
 

@@ -89,10 +89,12 @@ describe('PartialExitResult — a genuine partial-exit result', () => {
     ).not.toBe('—');
   });
 
-  it('itemizes swap fees, slippage, and gas estimate as not itemized (conflict #8)', () => {
+  it('itemizes swap fees, slippage, gas estimate, and total implementation cost as unavailable when no assumptions are configured (conflict #8, V4 Readiness Audit §12 P1-6)', () => {
     runPartialRepayment();
     render(<PartialExitResult />);
-    expect(screen.getAllByText(/Not itemized —/).length).toBe(3);
+    expect(screen.getByText('Total Implementation Cost')).toBeInTheDocument();
+    expect(screen.getAllByText(/configured for this portfolio/).length).toBe(3);
+    expect(screen.getByText(/Cannot be honestly totaled/)).toBeInTheDocument();
   });
 });
 

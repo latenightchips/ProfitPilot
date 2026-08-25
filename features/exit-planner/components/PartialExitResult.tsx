@@ -22,8 +22,8 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * `ExitPlanResult` fields — zero new calculation.** `transaction.btcSold`/
  * `.repayment`/`.btcRetained`; `after.debtValue`/`.netEquity`/
  * `.healthFactor`/`.liquidation?.price`. "Costs" reuses the same
- * itemized `unavailableCosts` convention (conflict #8)
- * `FullExitResult.tsx` already establishes.
+ * itemized `costs` convention (conflict #8, resolved for real V4
+ * Readiness Audit §12 P1-6) `FullExitResult.tsx` already establishes.
  *
  * **"Resulting liquidation price" is `null` only when `after.liquidation`
  * itself is `null`** — `calculatePortfolioSummary`'s own conflict #20
@@ -44,10 +44,11 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * computed — zero new calculation, purely display of state already
  * carried onto the Service's own "after" portfolio.
  */
-const UNAVAILABLE_COST_LABELS: Record<string, string> = {
+const EXIT_COST_LABELS: Record<string, string> = {
   swapFees: 'Swap Fees',
   slippage: 'Slippage',
   gasEstimate: 'Gas Estimate',
+  totalImplementationCost: 'Total Implementation Cost',
 };
 
 export function PartialExitResult() {
@@ -65,7 +66,7 @@ export function PartialExitResult() {
     return null;
   }
 
-  const { transaction, after, unavailableCosts } = currentResult;
+  const { transaction, after, costs } = currentResult;
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -128,14 +129,20 @@ export function PartialExitResult() {
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-muted-foreground">Costs</span>
         <dl className="flex flex-col gap-1 text-xs">
-          {unavailableCosts?.map((entry) => (
+          {costs?.map((entry) => (
             <div key={entry.item} className="flex justify-between gap-2">
               <dt className="text-muted-foreground">
                 {/* `?? entry.item` is type-system-provably unreachable —
                     see FullExitResult.tsx's own identical note. */}
-                {UNAVAILABLE_COST_LABELS[entry.item] ?? entry.item}
+                {EXIT_COST_LABELS[entry.item] ?? entry.item}
               </dt>
-              <dd className="text-right text-muted-foreground">Not itemized — {entry.reason}</dd>
+              <dd className="text-right text-foreground">
+                {entry.amountUsd !== null ? (
+                  formatCurrency(entry.amountUsd)
+                ) : (
+                  <span className="text-muted-foreground">{entry.reason}</span>
+                )}
+              </dd>
             </div>
           ))}
         </dl>

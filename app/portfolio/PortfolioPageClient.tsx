@@ -80,8 +80,11 @@ import { AaveTechnicalDetails } from './AaveTechnicalDetails';
  *
  * **"Default display settings" is not rendered** — conflict #22
  * (`types/portfolio.ts`): no field list for it exists anywhere in the
- * documentation, so `PortfolioSettings` never modeled it. Only "Safety
- * target settings" (`settings.safetyTargets`) is editable here.
+ * documentation, so `PortfolioSettings` never modeled it. "Safety
+ * target settings" (`settings.safetyTargets`) and, as of V4 Readiness
+ * Audit §12 P1-6, "Execution cost assumptions"
+ * (`settings.executionCostAssumptions` — Swap fee/Slippage/Gas cost,
+ * each independently optional) are editable here.
  *
  * **"Support automatic saving" — auto-save to the in-memory Store, not
  * to disk.** Conflict B (Milestone 4 plan): no persistence
@@ -771,6 +774,80 @@ function PortfolioDetailsForm({
             type="number"
             step="any"
             {...register('settings.safetyTargets.safetyBufferPercent', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+      </fieldset>
+
+      {/*
+        Execution cost assumptions — V4 Readiness Audit §12 P1-6. Portfolio-
+        level, consumed directly by Loop Builder and Exit Planner (no
+        per-strategy override — see this stage's own ownership report).
+        Each field is independently optional (undefined stays "unavailable"
+        in every downstream cost report/export, never a fabricated 0).
+
+        `swapFeeRate`/`slippageRate` are entered as a decimal fraction
+        (e.g. 0.003 for 0.3%), NOT converted to/from a 0-100 percentage —
+        matching this exact form's own existing convention (every other
+        field here, including "Safety buffer (%)" just above, stores
+        whatever the user types unconverted; only `LoopStrategyControls.tsx`,
+        a different form with its own documented percent-scale UI
+        boundary, does a %-to-decimal conversion, and doing that here too
+        would need a second conversion step in the debounced `watch()`
+        handler below to avoid a real bug: an untouched field's raw
+        percent-scale default would otherwise reach `portfolioDetailsSchema`
+        unconverted).
+
+        Values must validate against the Engine's own P1-4 domains
+        (`executionCostAssumptionsSchema`, `types/portfolio.schema.ts`):
+        swap fee/slippage strictly less than 1 (100%), never negative;
+        gas cost never negative. Zod's own `.finite()` on each field
+        already rejects NaN/Infinity — no separate client-side guard is
+        needed.
+      */}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="text-sm font-semibold text-foreground">
+          Execution cost assumptions
+        </legend>
+        <p className="text-xs text-muted-foreground">
+          Planning assumptions, not live market quotes — used by Loop Builder and Exit Planner to
+          estimate transaction costs.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Swap fee assumption (decimal, e.g. 0.003 for 0.3%)</span>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            max="0.999999"
+            {...register('settings.executionCostAssumptions.swapFeeRate', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Slippage assumption (decimal, e.g. 0.005 for 0.5%)</span>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            max="0.999999"
+            {...register('settings.executionCostAssumptions.slippageRate', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Gas cost assumption (USD per transaction)</span>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            {...register('settings.executionCostAssumptions.gasCostUsd', {
               setValueAs: (value) => (value === '' ? undefined : Number(value)),
             })}
             className="rounded-md border border-border bg-transparent px-3 py-2"

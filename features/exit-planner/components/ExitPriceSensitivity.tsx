@@ -3,6 +3,7 @@
 import { formatCurrency } from '@/components/strategy/format';
 import type { ApplicationPortfolio } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 /**
  * Exit Price Sensitivity — 06_TASKS.md M7-028 ("Implement Exit Price
@@ -36,7 +37,14 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * introduced (WCAG 2.1.1/2.1.3) — a scrollable region with no focusable
  * content of its own is unreachable via keyboard.
  */
-export function ExitPriceSensitivity({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function ExitPriceSensitivity({
+  portfolio,
+  executionCostAssumptions,
+}: {
+  portfolio: ApplicationPortfolio;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6) — see `exitPlannerStore.ts`'s `runPriceSensitivity` for why this is a separate prop, not read from `portfolio` itself. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
+}) {
   const exitType = useExitPlannerStore((state) => state.exitType);
   const currentResult = useExitPlannerStore((state) => state.currentResult);
   const priceSensitivity = useExitPlannerStore((state) => state.priceSensitivity);
@@ -55,7 +63,7 @@ export function ExitPriceSensitivity({ portfolio }: { portfolio: ApplicationPort
     <div className="flex flex-col gap-3 text-sm">
       <button
         type="button"
-        onClick={() => runPriceSensitivity(portfolio)}
+        onClick={() => runPriceSensitivity(portfolio, executionCostAssumptions)}
         className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
       >
         Run Price Sensitivity

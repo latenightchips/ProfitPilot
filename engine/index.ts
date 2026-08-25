@@ -54,12 +54,12 @@ export {
   calculateRequiredDebtRepayment,
   calculateTargetDebt,
   calculateTargetExit,
+  type ExitCostItem,
   type ExitPositionInput,
   type ExitPositionResult,
   type ExitTarget,
   type TargetExitParams,
   type TargetExitResult,
-  type UnavailableExitCost,
 } from './exit';
 
 /** Health Factor & Target-Health-Factor borrowing — F-022, F-027; M2-009, M2-011. */
@@ -96,7 +96,9 @@ export {
   calculateLoopStep,
   calculateLoopStrategy,
   calculateMaximumBorrowLimit,
+  type LoopCostItem,
   type LoopCostResult,
+  type LoopExecutionCostInputs,
   type LoopSafetyCheck,
   type LoopSafetyFinding,
   type LoopSafetyValidationResult,
@@ -106,7 +108,6 @@ export {
   type LoopStopReason,
   type LoopStrategyInput,
   type LoopStrategyResult,
-  type UnavailableLoopCost,
   validateLoopStrategySafety,
 } from './loop';
 

@@ -372,3 +372,78 @@ describe('persistedPortfolioPayloadSchema (P1-D3: v4DebtState.debtAssetPriceUsd)
     expect(result.success).toBe(false);
   });
 });
+
+/**
+ * `settings.executionCostAssumptions` — V4 Readiness Audit §12 P1-6, same
+ * "don't silently strip it" regression this schema already closed for
+ * every V4 field above (`portfolioSettingsSchema` is imported directly
+ * from `types/portfolio.schema.ts`, so this schema automatically picks up
+ * the new field — this suite exists to prove that round-trip explicitly,
+ * not because any separate wiring was needed here).
+ */
+const VALID_EXECUTION_COST_ASSUMPTIONS = {
+  swapFeeRate: 0.003,
+  slippageRate: 0.005,
+  gasCostUsd: 15,
+};
+
+describe('persistedPortfolioPayloadSchema (P1-6: settings.executionCostAssumptions)', () => {
+  it('accepts a payload with no executionCostAssumptions at all (every portfolio persisted before P1-6)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.executionCostAssumptions).toBeUndefined();
+  });
+
+  it('accepts and preserves a fully populated executionCostAssumptions through a round trip', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { executionCostAssumptions: VALID_EXECUTION_COST_ASSUMPTIONS } }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.executionCostAssumptions).toEqual(VALID_EXECUTION_COST_ASSUMPTIONS);
+    // The rest of the payload round-trips unchanged alongside it.
+    expect(result.data.name).toBe('My Portfolio');
+    expect(result.data.collateral).toEqual({ asset: 'BTC', quantity: 1.5 });
+  });
+
+  it('preserves a partial executionCostAssumptions (only gasCostUsd configured)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { executionCostAssumptions: { gasCostUsd: 8.5 } } }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.executionCostAssumptions).toEqual({ gasCostUsd: 8.5 });
+  });
+
+  it('rejects a swapFeeRate >= 1, never silently clamping or dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { executionCostAssumptions: { swapFeeRate: 1 } } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative gasCostUsd, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { executionCostAssumptions: { gasCostUsd: -1 } } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('coexists with safetyTargets and every V4 field set together, and with each other unset', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: {
+          safetyTargets: { targetHealthFactor: 2 },
+          executionCostAssumptions: VALID_EXECUTION_COST_ASSUMPTIONS,
+        },
+        protocolVersion: 'v4',
+        v4Position: { userAddress: VALID_V4_ADDRESS },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.safetyTargets).toEqual({ targetHealthFactor: 2 });
+    expect(result.data.settings.executionCostAssumptions).toEqual(VALID_EXECUTION_COST_ASSUMPTIONS);
+  });
+});

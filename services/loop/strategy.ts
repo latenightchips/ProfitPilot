@@ -7,19 +7,19 @@
  * one complete strategy result from the Service."
  *
  * **Revisiting conflict #8 (swap fees/slippage/gas estimate gap) —
- * resolved by faithful pass-through, not by inventing a cost model.**
- * `06_TASKS.md`'s "Apply cost assumptions" reads as though it requires a
- * complete cost model, which does not exist anywhere in `02_Formulas.md`
- * — but the Engine layer already resolved this at M2-017
- * (`calculateLoopCosts`): it computes what is documented (Borrowing
- * Interest F-032, Break-Even BTC Appreciation F-037) and itemizes what
- * is not (`swapFees`/`slippage`/`gasEstimate`/`totalImplementationCost`,
- * each with a reason) rather than fabricating a fee/slippage/gas model.
- * This Service calls `calculateLoopCosts` as-is and passes the
- * `unavailable` array straight through — "apply cost assumptions" is
- * satisfied for what is documented; conflict #8 remains open at the
- * specification level (no new formula was authored), but does not block
- * this task, the same way conflict #9 did not block M3-012.
+ * resolved for real, V4 Readiness Audit §12 P1-6.** `06_TASKS.md`'s
+ * "Apply cost assumptions" originally had no cost model to apply against
+ * (`02_Formulas.md` had no Formula ID for any of the three); F-070–F-073
+ * (P1-5) closed that gap, and this Service now resolves the active
+ * portfolio's own `settings.executionCostAssumptions` (the caller
+ * supplies it — see `planLoopStrategy`'s own `executionCostAssumptions`
+ * parameter doc, since `ApplicationPortfolio` carries no `settings`) and
+ * feeds it into `calculateLoopCosts` (M2-017) as real, product-chosen
+ * `totalBorrowedUsd`/`transactionCount` figures. `swapFees`/`slippage`/
+ * `gasEstimate`/`totalImplementationCost` are each computed for real once
+ * their own required assumption is configured, and remain explicitly
+ * itemized as unavailable otherwise — never a fabricated cost model, and
+ * never silently dropped either way.
  *
  * **"Validate strategy settings" and "surface safety warnings" reuse
  * `validateLoopStrategySafety` (M2-018) directly** — it already performs
@@ -89,11 +89,13 @@ import {
   calculateLoopCosts,
   calculateMonthlyInterest,
   type LoopCostResult,
+  type LoopExecutionCostInputs,
   type LoopSafetyFinding,
   type LoopStrategyResult,
   type ProtocolParameters,
   validateLoopStrategySafety,
 } from '@/engine';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import {
   checkAaveV4CollateralRiskAvailable,
@@ -104,6 +106,7 @@ import {
   resolveRiskCapacityFraction,
 } from '../portfolio/mapping';
 import type { ApplicationPortfolio } from '../portfolio/models';
+import { resolveExecutionCostAssumptions } from '../shared/executionCost';
 import { formulaStep, optionsFromTracked, type TrackedFormulaVersion } from '../shared/formulaStep';
 import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '../shared/result';
 
@@ -141,6 +144,19 @@ export function planLoopStrategy(
   portfolio: ApplicationPortfolio,
   settings: LoopStrategySettings,
   sourceStatus: string,
+  /**
+   * The active portfolio's own `settings.executionCostAssumptions` (V4
+   * Readiness Audit §12 P1-6) — portfolio-level, not part of
+   * `LoopStrategySettings` above, since Loop Builder has no per-strategy
+   * override for these three fields (see this stage's own ownership
+   * report). `ApplicationPortfolio` itself carries no `settings` field
+   * (identity/display-layer only — `services/portfolio/models.ts`), so
+   * the caller (`stores/loopBuilderStore.ts`, which holds the full
+   * `Portfolio`) supplies it explicitly, the same "caller supplies what
+   * the Service doesn't own" convention `sourceStatus`/
+   * `maxLoanToValueOverride` already established above.
+   */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): ServiceResult<LoopStrategyPreview> {
   const mappedInput = mapApplicationPortfolioToEngineInput(portfolio);
   const { targetBorrowPercentage, maxLoops, minHealthFactor } = settings;
@@ -293,8 +309,36 @@ export function planLoopStrategy(
     effectiveBorrowApr = rateStep.value;
   }
 
+  // V4 Readiness Audit §12 P1-6 — `resolvedAssumptions` is `undefined`
+  // exactly when the portfolio has no swap-fee/slippage assumption
+  // configured at all, in which case `execution` below stays `undefined`
+  // too and `calculateLoopCosts` reproduces its pre-P1-6 all-unavailable
+  // result byte-for-byte. `totalBorrowedUsd` is the total USD actually
+  // borrowed across every committed step (`finalDebt` less the portfolio's
+  // own starting debt) — the same notional F-070 already applied friction
+  // to inside each step. `transactionCount` is this Service's own explicit
+  // product decision for F-072's transaction count: one modeled
+  // transaction per committed loop step (borrow + buy + resupply, modeled
+  // as a single action) — never derived inside the Engine itself (see
+  // `calculateTransactionGasCost`'s own doc comment for why).
+  const resolvedAssumptions = resolveExecutionCostAssumptions(executionCostAssumptions);
+  const execution: LoopExecutionCostInputs | undefined =
+    resolvedAssumptions === undefined && executionCostAssumptions?.gasCostUsd === undefined
+      ? undefined
+      : {
+          totalBorrowedUsd: safety.strategy.finalDebt - engineInput.debt.balance,
+          transactionCount: safety.strategy.steps.length,
+          assumptions: resolvedAssumptions,
+          gasCostPerTransactionUsd: executionCostAssumptions?.gasCostUsd,
+        };
+
   const costsStep = formulaStep(
-    calculateLoopCosts(safety.strategy.finalDebt, effectiveBorrowApr, exposureStep.value),
+    calculateLoopCosts(
+      safety.strategy.finalDebt,
+      effectiveBorrowApr,
+      exposureStep.value,
+      execution,
+    ),
     tracked,
     sourceStatus,
   );

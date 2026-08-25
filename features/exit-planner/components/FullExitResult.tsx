@@ -60,9 +60,12 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * value, the same class of composition `StrategyComparison.tsx` already
  * performs for its own delta rows, not a new interest calculation.
  *
- * **"Transaction costs" reuses `unavailableCosts` (conflict #8) — same
- * itemized-unavailable convention `LoopCostAnalysis.tsx` already
- * established** for swap fees/slippage/gas estimate.
+ * **"Transaction costs" reuses `costs` (conflict #8, resolved for real
+ * V4 Readiness Audit §12 P1-6) — same itemized convention
+ * `LoopCostAnalysis.tsx` already established**: each of swap fees/
+ * slippage/gas estimate/total implementation cost is a real computed
+ * amount once the portfolio has the assumption it needs configured, and
+ * explicitly unavailable (with the Engine's own reason) otherwise.
  *
  * **"Remaining collateral"/"Remaining debt"** read `transaction.btcRetained`
  * (BTC quantity) / `after.collateralValue` (USD) and `after.debtValue`
@@ -75,10 +78,11 @@ import { useExitPlannerStore } from '@/stores/exitPlannerStore';
  * the same real premium-first rule, itemized here for the same "prove
  * it, don't just assert it" reason.
  */
-const UNAVAILABLE_COST_LABELS: Record<string, string> = {
+const EXIT_COST_LABELS: Record<string, string> = {
   swapFees: 'Swap Fees',
   slippage: 'Slippage',
   gasEstimate: 'Gas Estimate',
+  totalImplementationCost: 'Total Implementation Cost',
 };
 
 export function FullExitResult() {
@@ -96,7 +100,7 @@ export function FullExitResult() {
     return null;
   }
 
-  const { transaction, after, before, unavailableCosts } = currentResult;
+  const { transaction, after, before, costs } = currentResult;
   const interestEliminated = before.interestCost - after.interestCost;
 
   return (
@@ -163,16 +167,22 @@ export function FullExitResult() {
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-muted-foreground">Transaction Costs</span>
         <dl className="flex flex-col gap-1 text-xs">
-          {unavailableCosts?.map((entry) => (
+          {costs?.map((entry) => (
             <div key={entry.item} className="flex justify-between gap-2">
               <dt className="text-muted-foreground">
                 {/* `?? entry.item` is type-system-provably unreachable —
-                    UNAVAILABLE_COST_LABELS covers all 3 of
-                    UnavailableExitCost['item']'s own literal values,
-                    the same LoopCostAnalysis.tsx precedent. */}
-                {UNAVAILABLE_COST_LABELS[entry.item] ?? entry.item}
+                    EXIT_COST_LABELS covers all 4 of ExitCostItem['item']'s
+                    own literal values, the same LoopCostAnalysis.tsx
+                    precedent. */}
+                {EXIT_COST_LABELS[entry.item] ?? entry.item}
               </dt>
-              <dd className="text-right text-muted-foreground">Not itemized — {entry.reason}</dd>
+              <dd className="text-right text-foreground">
+                {entry.amountUsd !== null ? (
+                  formatCurrency(entry.amountUsd)
+                ) : (
+                  <span className="text-muted-foreground">{entry.reason}</span>
+                )}
+              </dd>
             </div>
           ))}
         </dl>

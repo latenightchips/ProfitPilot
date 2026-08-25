@@ -9,6 +9,7 @@ import {
   resolveSupplyAprDisplay,
   type ServiceMetadata,
 } from '@/services';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 import type { StrategyWarning } from '@/types/strategy';
 
 /** No real Engine call precedes this export — the same "first call, no prior tracked version" case `services/export/CsvExporter.ts` already established for this same function. */
@@ -111,10 +112,11 @@ function resolveProtocolParametersForExport(
  *
  * **"Assumptions" → Protocol Parameters (read from the live `portfolio`
  * prop, the same source `SimulationExportPayload.assumptions` already
- * established) plus the same documented Fees & Slippage Conflict #8
- * gap `LoopStrategySummary.tsx`'s own "Estimated Implementation Cost"
- * row already states — not fabricated here a second, differently-worded
- * way.**
+ * established) plus the portfolio's own configured
+ * `executionCostAssumptions` (Conflict #8, resolved for real V4
+ * Readiness Audit §12 P1-6 — each field independently `null` when not
+ * configured; the real computed dollar figures live on `costs` above,
+ * not duplicated here).**
  *
  * **"Timestamp"/"Formula version" → `metadata?.calculationTimestamp`/
  * `metadata`, the Store's own `lastMetadata` at export time** — `null`
@@ -139,7 +141,15 @@ function resolveProtocolParametersForExport(
  * builder shows "Not available" rather than omitting those rows
  * silently.
  */
-export const LOOP_EXPORT_SCHEMA_VERSION = '0.1.0';
+/**
+ * Bumped 0.1.0 → 0.2.0 for V4 Readiness Audit §12 P1-6: `assumptions.feesAndSlippage`
+ * (a static "not included" note) is removed — `costs.items` now carries a
+ * real computed dollar amount per item once configured, which made the
+ * note actively misleading rather than merely incomplete — and
+ * `assumptions.executionCostAssumptions` (the portfolio's own configured
+ * values) is added.
+ */
+export const LOOP_EXPORT_SCHEMA_VERSION = '0.2.0';
 
 export interface LoopStrategyExportPayload {
   schemaVersion: string;
@@ -176,14 +186,22 @@ export interface LoopStrategyExportPayload {
       /** V4 Readiness Audit §12 Stage 22 — `resolveBorrowAprForExport`'s canonical value, `null` (never the legacy V3 scalar) when unavailable for a V4 portfolio. */
       borrowApr: number | null;
     };
-    feesAndSlippage: string;
+    /**
+     * V4 Readiness Audit §12 P1-6 — the portfolio's own CONFIGURED
+     * assumptions (`Portfolio.settings.executionCostAssumptions`), each
+     * independently `null` when not configured. Distinct from `costs`
+     * above, which carries the COMPUTED dollar figures those assumptions
+     * produce (or the explicit reason each stays unavailable).
+     */
+    executionCostAssumptions: {
+      swapFeeRate: number | null;
+      slippageRate: number | null;
+      gasCostUsd: number | null;
+    };
   };
   versions: { engineVersion: string; formulaVersion: string } | null;
   timestamp: string | null;
 }
-
-const FEES_AND_SLIPPAGE_NOTE =
-  'Not included — no Formula ID or equation for swap fees, slippage, or gas estimation exists in 02_Formulas.md.';
 
 export function buildLoopStrategyExportPayload(
   settings: LoopStrategySettings,
@@ -191,6 +209,8 @@ export function buildLoopStrategyExportPayload(
   warnings: StrategyWarning[],
   metadata: ServiceMetadata | null,
   portfolio: ApplicationPortfolio,
+  /** V4 Readiness Audit §12 P1-6 — the active portfolio's own `settings.executionCostAssumptions`; `ApplicationPortfolio` above carries no `settings`, so the caller (which holds the full `Portfolio`) supplies it separately. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): LoopStrategyExportPayload {
   return {
     schemaVersion: LOOP_EXPORT_SCHEMA_VERSION,
@@ -213,7 +233,11 @@ export function buildLoopStrategyExportPayload(
     warnings,
     assumptions: {
       protocolParameters: resolveProtocolParametersForExport(portfolio),
-      feesAndSlippage: FEES_AND_SLIPPAGE_NOTE,
+      executionCostAssumptions: {
+        swapFeeRate: executionCostAssumptions?.swapFeeRate ?? null,
+        slippageRate: executionCostAssumptions?.slippageRate ?? null,
+        gasCostUsd: executionCostAssumptions?.gasCostUsd ?? null,
+      },
     },
     versions:
       metadata === null
@@ -272,6 +296,14 @@ export function buildLoopStrategyExportCsv(payload: LoopStrategyExportPayload): 
   if (payload.costs !== null) {
     rows.push(csvRow('Annual Interest Cost', payload.costs.borrowingInterest));
     rows.push(csvRow('Break-Even BTC Appreciation', payload.costs.breakEvenAppreciation));
+    for (const item of payload.costs.items) {
+      rows.push(
+        csvRow(
+          `Cost — ${item.item}`,
+          item.amountUsd !== null ? item.amountUsd : (item.reason ?? ''),
+        ),
+      );
+    }
   } else {
     rows.push(csvRow('Costs', 'Not available — the strategy is not viable.'));
   }
@@ -323,7 +355,24 @@ export function buildLoopStrategyExportCsv(payload: LoopStrategyExportPayload): 
   rows.push(
     csvRow('Supply APR', payload.assumptions.protocolParameters.supplyApr ?? 'Not available'),
   );
-  rows.push(csvRow('Fees & Slippage', payload.assumptions.feesAndSlippage));
+  rows.push(
+    csvRow(
+      'Swap Fee Assumption',
+      payload.assumptions.executionCostAssumptions.swapFeeRate ?? 'Not configured',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'Slippage Assumption',
+      payload.assumptions.executionCostAssumptions.slippageRate ?? 'Not configured',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'Gas Cost Assumption',
+      payload.assumptions.executionCostAssumptions.gasCostUsd ?? 'Not configured',
+    ),
+  );
 
   rows.push(csvRow('Timestamp', payload.timestamp ?? 'Not captured'));
   rows.push(
@@ -349,8 +398,17 @@ export function downloadLoopStrategyExport(
   metadata: ServiceMetadata | null,
   portfolio: ApplicationPortfolio,
   format: 'json' | 'csv',
+  /** V4 Readiness Audit §12 P1-6 — see `buildLoopStrategyExportPayload`'s identical trailing parameter. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings,
 ): void {
-  const payload = buildLoopStrategyExportPayload(settings, result, warnings, metadata, portfolio);
+  const payload = buildLoopStrategyExportPayload(
+    settings,
+    result,
+    warnings,
+    metadata,
+    portfolio,
+    executionCostAssumptions,
+  );
   const content =
     format === 'json' ? buildLoopStrategyExportJson(payload) : buildLoopStrategyExportCsv(payload);
   const mimeType = format === 'json' ? 'application/json' : 'text/csv';

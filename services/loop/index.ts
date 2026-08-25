@@ -10,7 +10,7 @@
  * directly — the same "Services own the boundary" precedent this
  * barrel already established for its own Service-level exports.
  * Milestone 7 Batch 3 adds `buildFinalLoopPortfolio` and re-exports
- * `LoopCostResult`/`UnavailableLoopCost` (needed by `LoopCostAnalysis.tsx`,
+ * `LoopCostResult`/`LoopCostItem` (needed by `LoopCostAnalysis.tsx`,
  * M7-014) — see that file's own header comment.
  */
 export {
@@ -20,11 +20,11 @@ export {
 } from './finalPortfolio';
 export { type LoopStrategyPreview, type LoopStrategySettings, planLoopStrategy } from './strategy';
 export {
+  type LoopCostItem,
   type LoopCostResult,
   type LoopSafetyCheck,
   type LoopSafetyFinding,
   type LoopStepRecord,
   type LoopStopReason,
   type LoopStrategyResult,
-  type UnavailableLoopCost,
 } from '@/engine';

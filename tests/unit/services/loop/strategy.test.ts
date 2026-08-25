@@ -70,15 +70,18 @@ describe('planLoopStrategy (M3-010)', () => {
     expect(result.data.btcExposure).toBeNull();
   });
 
-  it('itemizes swap fees, slippage, gas estimate, and total cost as unavailable (conflict #8)', () => {
+  it('itemizes swap fees, slippage, gas estimate, and total cost as unavailable when no execution-cost assumptions are configured (conflict #8, P1-6 backward compatibility)', () => {
     const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const items = result.data.costs?.unavailable.map((u) => u.item);
+    const items = result.data.costs?.items.map((entry) => entry.item);
     expect(items).toEqual(
       expect.arrayContaining(['swapFees', 'slippage', 'gasEstimate', 'totalImplementationCost']),
     );
-    expect(result.data.costs?.unavailable).toHaveLength(4);
+    expect(result.data.costs?.items).toHaveLength(4);
+    for (const entry of result.data.costs?.items ?? []) {
+      expect(entry.amountUsd).toBeNull();
+    }
   });
 
   it('computes borrowing interest and break-even appreciation (the documented, computable cost fields)', () => {
@@ -519,5 +522,84 @@ describe('planLoopStrategy — V4 risk-capacity dispatch (Stage 23E)', () => {
     // A much lower override (0.2, vs. the real collateralFactor 0.65)
     // must draw strictly less final debt.
     expect(overridden.data.strategy.finalDebt).toBeLessThan(real.data.strategy.finalDebt);
+  });
+});
+
+/**
+ * Execution-cost assumption wiring — V4 Readiness Audit §12 P1-6.
+ * `planLoopStrategy`'s new trailing `executionCostAssumptions` parameter
+ * (portfolio-level, per this stage's own ownership report) resolves
+ * (via the shared `resolveExecutionCostAssumptions`) into the Engine's
+ * `LoopExecutionCostInputs`, using the strategy's own actual
+ * `finalDebt - startingDebt` as the notional and `steps.length` as the
+ * transaction count.
+ */
+describe('planLoopStrategy — execution-cost assumption wiring (P1-6)', () => {
+  it('configured swap fee/slippage produce real computed costs, matching the total borrowed across every committed step', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live', {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    const totalBorrowed = result.data.strategy.finalDebt - healthyPortfolio().debt.balance;
+    const byItem = Object.fromEntries(
+      (result.data.costs?.items ?? []).map((entry) => [entry.item, entry]),
+    );
+    expect(byItem.swapFees?.amountUsd).toBeCloseTo(totalBorrowed * 0.003, 6);
+    expect(byItem.gasEstimate?.amountUsd).toBeNull();
+    expect(byItem.totalImplementationCost?.amountUsd).toBeNull();
+  });
+
+  it('configured gas cost produces a real gasEstimate using one transaction per committed step', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live', {
+      gasCostUsd: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    const byItem = Object.fromEntries(
+      (result.data.costs?.items ?? []).map((entry) => [entry.item, entry]),
+    );
+    expect(byItem.gasEstimate?.amountUsd).toBeCloseTo(result.data.strategy.steps.length * 10, 6);
+    expect(byItem.swapFees?.amountUsd).toBeNull();
+  });
+
+  it('all three assumptions configured together produce a real totalImplementationCost', () => {
+    const result = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live', {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+      gasCostUsd: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const totalItem = result.data.costs?.items.find(
+      (entry) => entry.item === 'totalImplementationCost',
+    );
+    expect(totalItem?.amountUsd).not.toBeNull();
+    expect(totalItem?.amountUsd).toBeGreaterThan(0);
+  });
+
+  it('omitted executionCostAssumptions reproduces the exact pre-P1-6 all-unavailable result', () => {
+    const withAssumptions = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live', {
+      swapFeeRate: 0.003,
+      slippageRate: 0.005,
+    });
+    const withoutAssumptions = planLoopStrategy(healthyPortfolio(), healthySettings(), 'live');
+    expect(withAssumptions.ok && withoutAssumptions.ok).toBe(true);
+    if (!withAssumptions.ok || !withoutAssumptions.ok) return;
+
+    for (const entry of withoutAssumptions.data.costs?.items ?? []) {
+      expect(entry.amountUsd).toBeNull();
+    }
+    // The strategy's own math (finalDebt/finalCollateral/finalHealthFactor)
+    // is identical either way — cost reporting never feeds back into it.
+    expect(withAssumptions.data.strategy?.finalDebt).toBe(
+      withoutAssumptions.data.strategy?.finalDebt,
+    );
+    expect(withAssumptions.data.strategy?.finalCollateral.quantity).toBe(
+      withoutAssumptions.data.strategy?.finalCollateral.quantity,
+    );
   });
 });

@@ -1,3 +1,5 @@
+import { calculateTotalExecutionCost } from '../execution/calculateTotalExecutionCost';
+import { calculateTransactionGasCost } from '../execution/calculateTransactionGasCost';
 import { calculateCollateralValue } from '../portfolio/calculateCollateralValue';
 import { calculateNetWorth } from '../portfolio/calculateNetWorth';
 import { toDecimal, toOutputNumber } from '../shared/decimal';
@@ -15,25 +17,33 @@ import { calculateRequiredDebtRepayment } from './calculateRequiredDebtRepayment
 const FORMULA_ID = 'F-042';
 const FORMULA_VERSION = '1.0';
 
-export interface UnavailableExitCost {
-  item: 'swapFees' | 'slippage' | 'gasEstimate';
-  reason: string;
+/**
+ * A single modeled exit transaction — one sell-and-repay action, per
+ * V4 Readiness Audit §12 P1-6's own transaction-count decision (see
+ * `calculateTransactionGasCost`'s/F-072's own doc comment: ProfitPilot is
+ * a planner, not an execution engine, so this Engine never invents an
+ * on-chain transaction architecture; the product layer decides the count
+ * honestly instead). An exit is always exactly one modeled action here,
+ * regardless of the actual number of on-chain transactions a real wallet
+ * might submit.
+ */
+const EXIT_TRANSACTION_COUNT = 1;
+
+export interface ExitCostItem {
+  item: 'swapFees' | 'slippage' | 'gasEstimate' | 'totalImplementationCost';
+  /** The computed USD amount, once configured assumptions make this item computable. `null` while unavailable. */
+  amountUsd: number | null;
+  /** Present only when `amountUsd` is `null`. */
+  reason?: string;
 }
 
-const UNAVAILABLE_EXIT_COSTS: UnavailableExitCost[] = [
-  {
-    item: 'swapFees',
-    reason: 'No Formula ID or equation for swap fees exists in 02_Formulas.md.',
-  },
-  {
-    item: 'slippage',
-    reason: 'No Formula ID or equation for slippage exists in 02_Formulas.md.',
-  },
-  {
-    item: 'gasEstimate',
-    reason: 'No Formula ID or equation for gas estimation exists in 02_Formulas.md.',
-  },
-];
+const SWAP_FEES_UNAVAILABLE_REASON =
+  'No execution-cost assumptions are configured for this portfolio (Portfolio Details → Execution cost assumptions).';
+const SLIPPAGE_UNAVAILABLE_REASON = SWAP_FEES_UNAVAILABLE_REASON;
+const GAS_UNAVAILABLE_REASON =
+  'No gas cost assumption is configured for this portfolio (Portfolio Details → Execution cost assumptions).';
+const TOTAL_UNAVAILABLE_REASON =
+  'Cannot be honestly totaled while swap fee/slippage and/or gas cost assumptions remain unconfigured.';
 
 export interface ExitPositionInput {
   portfolio: PortfolioInput;
@@ -45,10 +55,24 @@ export interface ExitPositionInput {
    * Optional execution-cost friction assumptions (02_Formulas.md F-071,
    * V4 Readiness Audit §12 P1-5) — passed straight through to
    * `calculateBtcSaleRequired` for the sale-quantity leg, never
-   * re-derived here. Omitted (or both rates zero) reproduces the
-   * pre-P1-5 frictionless behavior exactly.
+   * re-derived here. ALSO drives `costs` below (V4 Readiness Audit §12
+   * P1-6): present (even both rates zero) means swap-fee/slippage cost
+   * reporting is computed for real, using the SAME assumptions object,
+   * so the friction already applied to `btcSold` and the dollar figures
+   * reported for it can never disagree. Omitted reproduces the pre-P1-5
+   * frictionless behavior exactly, and the pre-P1-6 always-unavailable
+   * cost reporting exactly.
    */
   executionCostAssumptions?: ExecutionCostAssumptions;
+  /**
+   * Optional gas cost assumption, USD per modeled transaction (02_Formulas.md
+   * F-072, V4 Readiness Audit §12 P1-6) — independently optional of
+   * `executionCostAssumptions` above. An exit is always exactly one
+   * modeled transaction (see `EXIT_TRANSACTION_COUNT`'s own comment).
+   * Never applied to `btcSold`/`repayment`/`remainingDebt` — gas is
+   * reporting-only, the same isolation F-072's own doc comment requires.
+   */
+  gasCostUsd?: number;
 }
 
 export interface ExitPositionResult {
@@ -62,8 +86,14 @@ export interface ExitPositionResult {
   remainingCollateralValue: number;
   /** Net Equity — F-004 pattern, on the post-exit position. */
   remainingEquity: number;
-  /** Exit transaction costs — not computed; see PROJECT_STATUS.md conflict #8. */
-  unavailableCosts: UnavailableExitCost[];
+  /**
+   * Exit transaction costs (02_Formulas.md conflict #8's own itemized
+   * gap) — each independently either a real computed USD amount (V4
+   * Readiness Audit §12 P1-6, once `executionCostAssumptions`/
+   * `gasCostUsd` above supply what that item needs) or explicitly
+   * unavailable with a reason, never a fabricated `$0`.
+   */
+  costs: ExitCostItem[];
 }
 
 /**
@@ -99,10 +129,16 @@ export interface ExitPositionResult {
  * usable with any exit calculation, not a standalone target type. See
  * PROJECT_STATUS.md.
  *
- * "Exit transaction costs" (M2-023's own Include list) has no documented
- * formula, the same gap as M2-017's swap fees / slippage / gas estimate
- * (PROJECT_STATUS.md conflict #8) — itemized as `unavailableCosts` rather
- * than invented or silently omitted.
+ * "Exit transaction costs" (M2-023's own Include list) had no documented
+ * formula at conflict #8's original writing — F-072/F-073 (V4 Readiness
+ * Audit §12 P1-5) now exist, so `costs` below computes each item for real
+ * once the assumptions it needs are supplied (P1-6), and stays explicitly
+ * itemized-as-unavailable otherwise, never invented or silently omitted.
+ * `totalImplementationCost` is included alongside `swapFees`/`slippage`/
+ * `gasEstimate` for consistency with `calculateLoopCosts`'s own item set
+ * (F-037) — computing it costs nothing extra once the other three are
+ * already being computed via the same shared `calculateTotalExecutionCost`
+ * call.
  */
 export function calculateExitPosition(input: ExitPositionInput): FormulaResult<ExitPositionResult> {
   const options = {
@@ -194,6 +230,51 @@ export function calculateExitPosition(input: ExitPositionInput): FormulaResult<E
     ...remainingEquityResult.warnings,
   ];
 
+  let swapFeeCostUsd: number | null = null;
+  let slippageCostUsd: number | null = null;
+  if (input.executionCostAssumptions !== undefined) {
+    // gasCostUsd fed as 0 here regardless of whether gas is separately
+    // configured — see `calculateLoopCosts`'s identical comment for why
+    // this cannot corrupt either figure; only this call's own
+    // totalGasCostUsd/totalExecutionCostUsd outputs (both discarded here)
+    // would reflect it.
+    const totalCostResult = calculateTotalExecutionCost(
+      repaymentResult.value,
+      input.executionCostAssumptions,
+      0,
+    );
+    if (!totalCostResult.ok) return createFailure(totalCostResult.error, options);
+    swapFeeCostUsd = totalCostResult.value.swapFeeCostUsd;
+    slippageCostUsd = totalCostResult.value.slippageCostUsd;
+  }
+
+  let gasCostResolvedUsd: number | null = null;
+  if (input.gasCostUsd !== undefined) {
+    const gasResult = calculateTransactionGasCost(EXIT_TRANSACTION_COUNT, input.gasCostUsd);
+    if (!gasResult.ok) return createFailure(gasResult.error, options);
+    gasCostResolvedUsd = gasResult.value;
+  }
+
+  const totalImplementationCostUsd =
+    swapFeeCostUsd !== null && slippageCostUsd !== null && gasCostResolvedUsd !== null
+      ? swapFeeCostUsd + slippageCostUsd + gasCostResolvedUsd
+      : null;
+
+  const costs: ExitCostItem[] = [
+    swapFeeCostUsd !== null
+      ? { item: 'swapFees', amountUsd: swapFeeCostUsd }
+      : { item: 'swapFees', amountUsd: null, reason: SWAP_FEES_UNAVAILABLE_REASON },
+    slippageCostUsd !== null
+      ? { item: 'slippage', amountUsd: slippageCostUsd }
+      : { item: 'slippage', amountUsd: null, reason: SLIPPAGE_UNAVAILABLE_REASON },
+    gasCostResolvedUsd !== null
+      ? { item: 'gasEstimate', amountUsd: gasCostResolvedUsd }
+      : { item: 'gasEstimate', amountUsd: null, reason: GAS_UNAVAILABLE_REASON },
+    totalImplementationCostUsd !== null
+      ? { item: 'totalImplementationCost', amountUsd: totalImplementationCostUsd }
+      : { item: 'totalImplementationCost', amountUsd: null, reason: TOTAL_UNAVAILABLE_REASON },
+  ];
+
   return createSuccess(
     {
       repayment: repaymentResult.value,
@@ -202,7 +283,7 @@ export function calculateExitPosition(input: ExitPositionInput): FormulaResult<E
       remainingDebt: targetDebt,
       remainingCollateralValue: remainingCollateralValueResult.value,
       remainingEquity: remainingEquityResult.value,
-      unavailableCosts: UNAVAILABLE_EXIT_COSTS,
+      costs,
     },
     options,
     warnings,

@@ -213,8 +213,17 @@ export interface SimulationExportPayload {
   formulaVersion: { engineVersion: string; formulaVersion: string } | null;
 }
 
+/**
+ * V4 Readiness Audit §12 P1-6 — unlike Loop/Exit's identical-looking note
+ * (now removed there, since those tools compute real figures), this one
+ * stays accurate as written: Simulation's price/interest/portfolio-action
+ * scenarios never model an actual buy/sell transaction, so no swap
+ * fee/slippage assumption applies here regardless of whether the
+ * portfolio has one configured — see `SimulationAssumptions.tsx`'s own
+ * header comment for the full reasoning.
+ */
 const FEES_AND_SLIPPAGE_NOTE =
-  'Not included — no Formula ID or equation for swap fees or slippage exists in 02_Formulas.md.';
+  'Not applicable — this simulation does not model a buy or sell transaction. See Loop Builder/Exit Planner for execution-cost assumptions.';
 
 export function buildSimulationExportPayload(
   scenario: SimulationScenario,

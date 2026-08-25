@@ -15,14 +15,22 @@ const protocol = {
 /**
  * Gas isolation, end-to-end — 02_Formulas.md F-072's own explicit "must
  * not" list, verified at the Loop/Exit call-chain boundary, not just
- * inside F-072/F-073's own unit tests. `LoopStrategyInput`/
- * `TargetExitParams` (V4 Readiness Audit §12 P1-5) have no gas-related
- * field at all — there is no parameter through which a gas assumption
- * could reach borrow amount, BTC purchased/sold, protocol debt,
- * repayment, collateral, or Health Factor, even if a caller computed a
- * wildly different gas figure via F-072 in the same request.
+ * inside F-072/F-073's own unit tests.
+ *
+ * `LoopStrategyInput` (still, unchanged) has no gas-related field at
+ * all — Loop's gas cost is a Service-layer-only reporting concern
+ * (`services/loop/strategy.ts`'s own `LoopExecutionCostInputs`,
+ * V4 Readiness Audit §12 P1-6), never threaded into the Engine's own
+ * strategy-construction input.
+ *
+ * `TargetExitParams` (P1-6) DOES now carry an optional `gasCostUsd` —
+ * unlike Loop, Exit's `calculateExitPosition` computes cost reporting
+ * inline in the same call that resolves the exit itself. The test below
+ * now exercises this real field directly (not just its absence), proving
+ * a wildly different `gasCostUsd` still never reaches `btcSold`/
+ * `repayment`/`remainingDebt` — only the `costs` item it feeds.
  */
-describe('Gas isolation — Loop and Exit results are unaffected by any gas computation (P1-5)', () => {
+describe('Gas isolation — Loop and Exit results are unaffected by any gas computation (P1-5/P1-6)', () => {
   it("two wildly different F-072 gas costs computed alongside an identical Loop strategy do not change that strategy's own result", () => {
     const loopInput: LoopStrategyInput = {
       collateral: { asset: 'BTC', quantity: 1 },
@@ -64,10 +72,12 @@ describe('Gas isolation — Loop and Exit results are unaffected by any gas comp
       market: { btcPriceUsd: 60000 },
       protocol,
     };
-    const exitParams: TargetExitParams = {
+    const cheapGasParams: TargetExitParams = {
       portfolio,
       target: { type: 'debtBalance', targetDebt: 48000 },
+      gasCostUsd: 5,
     };
+    const expensiveGasParams: TargetExitParams = { ...cheapGasParams, gasCostUsd: 5000 };
 
     const cheapGas = calculateTransactionGasCost(1, 5);
     const expensiveGas = calculateTransactionGasCost(1, 5000);
@@ -76,8 +86,8 @@ describe('Gas isolation — Loop and Exit results are unaffected by any gas comp
       expect(cheapGas.value).not.toBe(expensiveGas.value);
     }
 
-    const withCheapGasComputed = calculateTargetExit(exitParams);
-    const withExpensiveGasComputed = calculateTargetExit(exitParams);
+    const withCheapGasComputed = calculateTargetExit(cheapGasParams);
+    const withExpensiveGasComputed = calculateTargetExit(expensiveGasParams);
     expect(withCheapGasComputed.ok && withExpensiveGasComputed.ok).toBe(true);
     if (!withCheapGasComputed.ok || !withExpensiveGasComputed.ok) return;
     expect(withCheapGasComputed.value.exit?.btcSold).toBe(
@@ -89,5 +99,19 @@ describe('Gas isolation — Loop and Exit results are unaffected by any gas comp
     expect(withCheapGasComputed.value.exit?.remainingDebt).toBe(
       withExpensiveGasComputed.value.exit?.remainingDebt,
     );
+    expect(withCheapGasComputed.value.exit?.remainingCollateralValue).toBe(
+      withExpensiveGasComputed.value.exit?.remainingCollateralValue,
+    );
+    // The wildly different gasCostUsd values DO reach the reported cost
+    // item — proving isolation is real (the field is actually wired in,
+    // not merely absent), not incidental.
+    const cheapGasItem = withCheapGasComputed.value.exit?.costs.find(
+      (entry) => entry.item === 'gasEstimate',
+    );
+    const expensiveGasItem = withExpensiveGasComputed.value.exit?.costs.find(
+      (entry) => entry.item === 'gasEstimate',
+    );
+    expect(cheapGasItem?.amountUsd).toBe(5);
+    expect(expensiveGasItem?.amountUsd).toBe(5000);
   });
 });

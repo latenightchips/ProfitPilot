@@ -63,10 +63,12 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * **"Annual interest cost" and "Estimated implementation cost" are two
  * separate rows, not one** — `currentResult.costs.borrowingInterest`
  * (F-032, a real computed number) satisfies "Annual interest cost";
- * "Estimated implementation cost" is honestly itemized as unavailable
- * (conflict #8 — `costs.unavailable`'s own `totalImplementationCost`
- * entry, with its documented reason), never fabricated as a dollar
- * figure the Engine cannot actually produce.
+ * "Estimated implementation cost" reads `costs.items`'s own
+ * `totalImplementationCost` entry (conflict #8, resolved for real V4
+ * Readiness Audit §12 P1-6) — a real computed dollar figure once the
+ * portfolio has swap fee/slippage/gas all configured, and honestly
+ * itemized as unavailable (with the Engine's own reason) otherwise,
+ * never fabricated either way.
  *
  * **"Stop reason" is a human-readable label for
  * `LoopStrategyResult.stopReason`** (`LoopStopReason`,
@@ -163,8 +165,19 @@ export function LoopStrategySummary({ portfolio }: { portfolio: ApplicationPortf
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Estimated Implementation Cost</span>
-          <span className="text-xs text-muted-foreground">
-            Estimated fees, slippage, and gas costs are not included.
+          <span className="font-medium text-foreground">
+            {(() => {
+              const totalItem = currentResult.costs?.items.find(
+                (item) => item.item === 'totalImplementationCost',
+              );
+              return totalItem?.amountUsd !== null && totalItem?.amountUsd !== undefined ? (
+                formatCurrency(totalItem.amountUsd)
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {totalItem?.reason ?? 'Not available.'}
+                </span>
+              );
+            })()}
           </span>
         </div>
         {currentResult.strategy !== null && (

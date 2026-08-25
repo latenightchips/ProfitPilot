@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import type { ApplicationPortfolio } from '@/services';
 import type { LoopStrategySettings } from '@/services/loop/strategy';
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import {
   type LoopStrategyControlsFormValues,
@@ -43,17 +44,18 @@ import { resolveMaxLoanToValueAssumption } from '../utils/resolveMaxLoanToValueA
  * elsewhere on the route (the shared `StrategyComparison`'s own
  * "Current" column), not a fourth thing to configure here.
  *
- * **"Swap fee," "Slippage," and "Gas estimate" are not form fields
- * either — a deliberate, documented scope decision, not an oversight.**
- * Conflict #8 (no Formula ID or equation for any of the three anywhere
- * in `02_Formulas.md`) means there is no Service parameter for them to
- * reach; rendering editable inputs with nowhere for their values to go
- * would be exactly the "dead affordance" this codebase has consistently
- * avoided (see `features/dashboard/types/recommendationSummary.ts`'s
- * own "View all action — not built" reasoning). They are already
- * itemized as unavailable, with the documented reason, by the shared
- * `StrategyAssumptionsPanel` (M7-004, Batch 1) this route also renders
- * — reused, not duplicated as dead inputs here.
+ * **"Swap fee," "Slippage," and "Gas estimate" are still not form fields
+ * here — a deliberate, documented scope decision, not an oversight.**
+ * Conflict #8 is resolved (F-070–F-073, V4 Readiness Audit §12 P1-5/P1-6)
+ * and all three now have a real place to reach — but as portfolio-level
+ * settings (`Portfolio.settings.executionCostAssumptions`), edited once
+ * on the Portfolio Details form, not as a per-strategy override here (see
+ * that stage's own ownership report for why). This component receives
+ * the already-resolved `executionCostAssumptions` prop and passes it
+ * straight through to `runLoopStrategy`, never rendering an editable
+ * input for it — the shared `StrategyAssumptionsPanel` (M7-004, Batch 1)
+ * this route also renders is where the configured values (or their
+ * absence) are shown.
  *
  * **"Maximum LTV" and "Borrow-rate assumption" are real, wired
  * overrides**, pre-filled from the portfolio's own current risk-capacity
@@ -200,9 +202,12 @@ function settingsEqual(a: LoopStrategySettings, b: LoopStrategySettings): boolea
 export function LoopStrategyControls({
   portfolio,
   portfolioId,
+  executionCostAssumptions,
 }: {
   portfolio: ApplicationPortfolio;
   portfolioId: string;
+  /** The active portfolio's own `settings.executionCostAssumptions` (V4 Readiness Audit §12 P1-6) — see `loopBuilderStore.ts`'s `runLoopStrategy` for why this is a separate prop, not read from `portfolio` itself. */
+  executionCostAssumptions?: ExecutionCostAssumptionsSettings;
 }) {
   const settings = useLoopBuilderStore((state) => state.settings);
   const setSettings = useLoopBuilderStore((state) => state.setSettings);
@@ -289,7 +294,7 @@ export function LoopStrategyControls({
       };
       lastPushedSettingsRef.current = nextSettings;
       setSettings(nextSettings);
-      runLoopStrategy(portfolio);
+      runLoopStrategy(portfolio, executionCostAssumptions);
     }, DEBOUNCE_MS);
   }
 

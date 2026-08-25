@@ -11,6 +11,7 @@ import {
   resolveCanonicalDebtBalance,
   type ServiceMetadata,
 } from '@/services';
+import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 import type { StrategyWarning } from '@/types/strategy';
 
 /**
@@ -220,8 +221,22 @@ export interface ExitPlannerStoreState {
 export interface ExitPlannerStoreActions {
   setExitType: (exitType: ExitPlannerType) => void;
   setTargetInputs: (inputs: ExitPlannerTargetInputs) => void;
-  runExitCalculation: (portfolio: ApplicationPortfolio) => void;
-  runPriceSensitivity: (portfolio: ApplicationPortfolio) => void;
+  /**
+   * `executionCostAssumptions` (V4 Readiness Audit §12 P1-6) is the
+   * active portfolio's own `settings.executionCostAssumptions` — a
+   * separate, explicit, plain-value parameter, the same "accept a
+   * plain value at call time" precedent `loopBuilderStore.ts`'s
+   * `runLoopStrategy` already establishes, preserving this Store's own
+   * documented independence from portfolio Store/record state.
+   */
+  runExitCalculation: (
+    portfolio: ApplicationPortfolio,
+    executionCostAssumptions?: ExecutionCostAssumptionsSettings,
+  ) => void;
+  runPriceSensitivity: (
+    portfolio: ApplicationPortfolio,
+    executionCostAssumptions?: ExecutionCostAssumptionsSettings,
+  ) => void;
   saveExitPlan: (input: SaveExitPlanInput) => string | null;
   /**
    * `activePortfolioId` (M9-012 follow-up — cross-portfolio saved-plan
@@ -378,7 +393,7 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       set({ targetInputs: inputs, priceSensitivity: null, priceSensitivityErrors: [] });
     },
 
-    runExitCalculation: (portfolio) => {
+    runExitCalculation: (portfolio, executionCostAssumptions) => {
       const { exitType, targetInputs } = get();
       if (exitType === null) return;
 
@@ -390,7 +405,13 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       if (target === null) return;
 
       set({ status: 'calculating' });
-      const result = planExit(portfolio, target, SOURCE_STATUS, targetInputs?.scenarioBtcPriceUsd);
+      const result = planExit(
+        portfolio,
+        target,
+        SOURCE_STATUS,
+        targetInputs?.scenarioBtcPriceUsd,
+        executionCostAssumptions,
+      );
 
       if (!result.ok) {
         // `currentResult`/`lastMetadata`/`warnings` are deliberately left
@@ -417,7 +438,7 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
       });
     },
 
-    runPriceSensitivity: (portfolio) => {
+    runPriceSensitivity: (portfolio, executionCostAssumptions) => {
       const { exitType, targetInputs } = get();
       if (exitType === null) return;
 
@@ -445,7 +466,13 @@ export const useExitPlannerStore = create<ExitPlannerStoreState & ExitPlannerSto
 
       const results: PriceSensitivityPoint[] = [];
       for (const point of points) {
-        const result = planExit(portfolio, target, SOURCE_STATUS, point.priceUsd);
+        const result = planExit(
+          portfolio,
+          target,
+          SOURCE_STATUS,
+          point.priceUsd,
+          executionCostAssumptions,
+        );
         if (!result.ok) {
           set({ priceSensitivityErrors: result.errors, priceSensitivity: null });
           return;
