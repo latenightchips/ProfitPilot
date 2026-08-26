@@ -221,6 +221,14 @@ export function SettingsPageClient() {
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
+    // Reset the native input's selection immediately, before any `await`.
+    // Without this, re-selecting the SAME file (same path) after a failed
+    // or successful import never fires another `change` event — a browser
+    // `<input type="file">` behavior, not a React one — so retrying with
+    // the identical file (the most natural next action right after a
+    // failure) would otherwise silently do nothing: no new preview, no
+    // error, no visible feedback at all.
+    event.target.value = '';
     if (file === undefined) return;
     const text = await file.text();
     setRawFileText(text);

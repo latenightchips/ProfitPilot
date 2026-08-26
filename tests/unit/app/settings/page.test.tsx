@@ -246,6 +246,20 @@ describe('SettingsPage — import preview', () => {
     await waitFor(() => expect(screen.getByText(/imported 1 record/i)).toBeInTheDocument());
   });
 
+  it('clears the file input value after a read so the same file can be re-selected to retry (V4 Readiness Audit §12 P3-4)', async () => {
+    render(<SettingsPage />);
+    const file = new File(['{not valid json'], 'bad.json', { type: 'application/json' });
+    const input = screen.getByLabelText(/import file/i) as HTMLInputElement;
+    await userEvent.upload(input, file);
+
+    // A real browser never fires another `change` event for reselecting the
+    // exact same file path unless the input's own value was cleared first —
+    // this asserts the fix's actual mechanism, not that browser quirk
+    // itself (which jsdom does not model).
+    await waitFor(() => expect(input.value).toBe(''));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+  });
+
   it('shows warnings for a duplicate record id within the file', async () => {
     const portfolioEnvelope = {
       app: 'ProfitPilot',
