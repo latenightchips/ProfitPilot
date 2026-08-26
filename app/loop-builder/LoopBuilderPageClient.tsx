@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo } from 'react';
 
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
@@ -142,6 +143,24 @@ export function LoopBuilderPageClient() {
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const record = usePortfolioStore((state) =>
     state.activePortfolioId !== null ? state.portfolios[state.activePortfolioId] : undefined,
+  );
+  // V4 Readiness Audit §12 P3-1 — same "page composes across Stores,
+  // feature components receive plain props" convention
+  // `app/simulation/SimulationPageClient.tsx`'s own identical
+  // `portfolioNames` already established: `LoopStrategyLibrary` needs to
+  // tell a deleted originating portfolio apart from a merely different
+  // active one, which requires the full portfolios dictionary, not just
+  // the active `record.portfolio` it already receives.
+  const portfolios = usePortfolioStore((state) => state.portfolios);
+  const portfolioNames = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(portfolios).map(([id, portfolioRecord]) => [
+          id,
+          portfolioRecord.portfolio.name,
+        ]),
+      ),
+    [portfolios],
   );
   const lastMetadata = useLoopBuilderStore((state) => state.lastMetadata);
   const warnings = useLoopBuilderStore((state) => state.warnings);
@@ -294,7 +313,7 @@ export function LoopBuilderPageClient() {
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Saved Strategies</h2>
-              <LoopStrategyLibrary portfolio={record.portfolio} />
+              <LoopStrategyLibrary portfolio={record.portfolio} portfolioNames={portfolioNames} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Export Strategy</h2>

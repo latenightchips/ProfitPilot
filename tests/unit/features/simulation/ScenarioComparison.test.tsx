@@ -235,6 +235,33 @@ describe('ScenarioComparison — Load (M6-016, Batch 15)', () => {
     );
     expect(screen.getByText(/Saved against a different portfolio\./)).toBeInTheDocument();
   });
+
+  /**
+   * V4 Readiness Audit §12 P3-1 — a saved scenario's originating
+   * portfolio ('portfolio-1') has been deleted; only a different,
+   * still-existing portfolio ('portfolio-2') is now active. Deletion
+   * never prunes `savedScenarios`, so this scenario is still shown, still
+   * holds its original result, and must not be misrepresented as "just a
+   * different portfolio" (which would wrongly imply switching portfolios
+   * could resolve it). Reuses this component's own already-existing
+   * `portfolioNames` prop — no new prop needed here, unlike
+   * `LoopStrategyLibrary`/`ExitPlanLibrary`'s own identical fix.
+   */
+  it('shows a distinct notice when the originating portfolio was deleted, not merely different', () => {
+    saveAPriceScenario(60000);
+    render(
+      <ScenarioComparison
+        portfolio={testPortfolio({ id: 'portfolio-2' })}
+        portfolioNames={{ 'portfolio-2': 'Test Portfolio' }}
+      />,
+    );
+    expect(
+      screen.getByText(/The portfolio this was saved against no longer exists\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Saved against a different portfolio.')).not.toBeInTheDocument();
+    // The saved result is preserved, not silently substituted or dropped.
+    expect(useSimulationStore.getState().savedScenarios[0]?.result.scenario.equity).toBe(100000);
+  });
 });
 
 describe('ScenarioComparison — Duplicate (M6-017, Batch 16)', () => {

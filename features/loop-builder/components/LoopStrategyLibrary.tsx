@@ -36,12 +36,33 @@ import type { Portfolio } from '@/types/portfolio';
  * task's own DoD ("provides a clear next action") unmet — a first-time
  * user had no indication of what to do about it. Now names the real
  * control that gets a strategy here (Save Strategy, in this same route).
+ *
+ * **`driftNotice` distinguishes a deleted originating portfolio from a
+ * merely different active one (V4 Readiness Audit §12 P3-1)** — a saved
+ * strategy's own `portfolioId` snapshot can reference a portfolio that
+ * still exists (just not the one currently open) or one that has since
+ * been deleted entirely; `savedStrategies` is never pruned when a
+ * portfolio is deleted, and the two cases warrant different user
+ * expectations (switch portfolios vs. this reference is permanently
+ * gone). `portfolioNames` — an `{ id: name }` map built by
+ * `LoopBuilderPageClient.tsx` from the full `usePortfolioStore`
+ * dictionary, the same "page composes across Stores, feature components
+ * receive plain props" convention `ScenarioComparison.tsx`'s own
+ * identically-shaped prop already established — is how membership is
+ * checked; this component still never imports `usePortfolioStore`
+ * itself. Calculation results/warnings/metadata are never touched by
+ * this distinction — display only.
  */
 function driftNotice(
   saved: { portfolioId: string; portfolioUpdatedAt: string },
   portfolio: Portfolio,
+  portfolioNames: Record<string, string>,
 ): string | null {
-  if (saved.portfolioId !== portfolio.id) return 'Saved against a different portfolio.';
+  if (saved.portfolioId !== portfolio.id) {
+    return portfolioNames[saved.portfolioId] !== undefined
+      ? 'Saved against a different portfolio.'
+      : 'The portfolio this was saved against no longer exists.';
+  }
   if (saved.portfolioUpdatedAt !== portfolio.updatedAt) {
     return 'Portfolio has changed since this was saved.';
   }
@@ -52,7 +73,13 @@ function sortByNewest(strategies: SavedLoopStrategy[]): SavedLoopStrategy[] {
   return [...strategies].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function LoopStrategyLibrary({ portfolio }: { portfolio: Portfolio }) {
+export function LoopStrategyLibrary({
+  portfolio,
+  portfolioNames,
+}: {
+  portfolio: Portfolio;
+  portfolioNames: Record<string, string>;
+}) {
   const savedStrategies = useLoopBuilderStore((state) => state.savedStrategies);
   const loadStrategy = useLoopBuilderStore((state) => state.loadStrategy);
   const duplicateStrategy = useLoopBuilderStore((state) => state.duplicateStrategy);
@@ -77,7 +104,7 @@ export function LoopStrategyLibrary({ portfolio }: { portfolio: Portfolio }) {
   return (
     <div className="flex flex-col gap-1">
       {sorted.map((saved) => {
-        const notice = driftNotice(saved, portfolio);
+        const notice = driftNotice(saved, portfolio, portfolioNames);
         return (
           <div key={saved.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">

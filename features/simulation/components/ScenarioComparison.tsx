@@ -177,11 +177,24 @@ function scenarioLabel(scenario: { type: 'price' | 'interest' }): string {
   return scenario.type === 'price' ? 'Price Scenario' : 'Interest Scenario';
 }
 
+/**
+ * Distinguishes a deleted originating portfolio from a merely different
+ * active one (V4 Readiness Audit §12 P3-1) — reuses this component's own
+ * already-existing `portfolioNames` prop (previously only consulted for
+ * the "Portfolio" sort label's "(Unknown Portfolio)" fallback), so no new
+ * prop or Store access was needed here, unlike `LoopStrategyLibrary.tsx`/
+ * `ExitPlanLibrary.tsx`'s own identical fix.
+ */
 function driftNotice(
   saved: { portfolioId: string; portfolioUpdatedAt: string },
   portfolio: Portfolio,
+  portfolioNames: Record<string, string>,
 ): string | null {
-  if (saved.portfolioId !== portfolio.id) return 'Saved against a different portfolio.';
+  if (saved.portfolioId !== portfolio.id) {
+    return portfolioNames[saved.portfolioId] !== undefined
+      ? 'Saved against a different portfolio.'
+      : 'The portfolio this was saved against no longer exists.';
+  }
   if (saved.portfolioUpdatedAt !== portfolio.updatedAt) {
     return 'Portfolio has changed since this was saved.';
   }
@@ -275,7 +288,7 @@ export function ScenarioComparison({
 
       <div className="flex flex-col gap-1">
         {sortedScenarios.map((saved) => {
-          const notice = driftNotice(saved, portfolio);
+          const notice = driftNotice(saved, portfolio, portfolioNames);
           return (
             <div key={saved.id} className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-sm">

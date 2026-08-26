@@ -25,6 +25,9 @@ const INITIAL_STATE = {
   selectedPlanId: null,
 };
 
+/** Both `p1` (the default active/saved-against portfolio) and `p2` (a different, still-existing portfolio) are known — V4 Readiness Audit §12 P3-1. */
+const PORTFOLIO_NAMES: Record<string, string> = { p1: 'My Portfolio', p2: 'Other Portfolio' };
+
 function fakePortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
   return {
     id: 'p1',
@@ -71,7 +74,7 @@ beforeEach(() => {
 
 describe('ExitPlanLibrary — empty state (M7-037)', () => {
   it('shows a message and a clear next action when no plans are saved', () => {
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     expect(screen.getByText(/No exit plans saved yet\./)).toBeInTheDocument();
     expect(
       screen.getByText(/Configure an exit target above and use Save Plan/),
@@ -83,7 +86,7 @@ describe('ExitPlanLibrary — Load/Duplicate/Delete', () => {
   it('Load restores the saved exitType/result onto the Store', async () => {
     const user = userEvent.setup();
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
 
     await user.click(screen.getByRole('button', { name: 'Load' }));
 
@@ -94,7 +97,7 @@ describe('ExitPlanLibrary — Load/Duplicate/Delete', () => {
   it('Duplicate creates a second entry with a " (Copy)" suffix', async () => {
     const user = userEvent.setup();
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
 
     await user.click(screen.getByRole('button', { name: 'Duplicate' }));
 
@@ -106,7 +109,7 @@ describe('ExitPlanLibrary — Load/Duplicate/Delete', () => {
   it('Delete requires confirmation before removing the record', async () => {
     const user = userEvent.setup();
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(screen.getByText('Delete “My Exit”?')).toBeInTheDocument();
@@ -119,7 +122,7 @@ describe('ExitPlanLibrary — Load/Duplicate/Delete', () => {
   it('Cancel dismisses the delete confirmation without deleting', async () => {
     const user = userEvent.setup();
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -132,23 +135,55 @@ describe('ExitPlanLibrary — Load/Duplicate/Delete', () => {
 describe('ExitPlanLibrary — drift notice', () => {
   it('shows no drift notice when the portfolio is unchanged since saving', () => {
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio()} />);
+    render(<ExitPlanLibrary portfolio={fakePortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     expect(screen.queryByText(/Saved against a different portfolio/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Portfolio has changed since/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no longer exists/)).not.toBeInTheDocument();
   });
 
   it('shows "Portfolio has changed since this was saved." when the same portfolio has since been updated', () => {
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
     render(
-      <ExitPlanLibrary portfolio={fakePortfolio({ updatedAt: '2026-06-01T00:00:00.000Z' })} />,
+      <ExitPlanLibrary
+        portfolio={fakePortfolio({ updatedAt: '2026-06-01T00:00:00.000Z' })}
+        portfolioNames={PORTFOLIO_NAMES}
+      />,
     );
     expect(screen.getByText(/Portfolio has changed since this was saved\./)).toBeInTheDocument();
   });
 
-  it('shows "Saved against a different portfolio." when the plan belongs to a different portfolio', () => {
+  it('shows "Saved against a different portfolio." when the plan belongs to a different, still-existing portfolio', () => {
     useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
-    render(<ExitPlanLibrary portfolio={fakePortfolio({ id: 'p2' })} />);
+    render(
+      <ExitPlanLibrary
+        portfolio={fakePortfolio({ id: 'p2', name: 'Other Portfolio' })}
+        portfolioNames={PORTFOLIO_NAMES}
+      />,
+    );
     expect(screen.getByText(/Saved against a different portfolio\./)).toBeInTheDocument();
+  });
+
+  /**
+   * V4 Readiness Audit §12 P3-1 — a saved plan's originating portfolio
+   * (`p1`) has been deleted; only a different, still-existing portfolio
+   * (`p2`) is now active. Deletion never prunes `savedPlans`, so this
+   * plan is still shown, still holds its original result, and must not
+   * be misrepresented as "just a different portfolio."
+   */
+  it('shows "The portfolio this was saved against no longer exists." when the originating portfolio was deleted', () => {
+    useExitPlannerStore.setState({ savedPlans: [fakeSavedPlan()] });
+    render(
+      <ExitPlanLibrary
+        portfolio={fakePortfolio({ id: 'p2', name: 'Other Portfolio' })}
+        portfolioNames={{ p2: 'Other Portfolio' }}
+      />,
+    );
+    expect(
+      screen.getByText(/The portfolio this was saved against no longer exists\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Saved against a different portfolio.')).not.toBeInTheDocument();
+    // The saved result is preserved, not silently substituted or dropped.
+    expect(useExitPlannerStore.getState().savedPlans[0]?.result).toEqual({ feasible: true });
   });
 });
 
@@ -167,7 +202,9 @@ describe('ExitPlanLibrary — cross-portfolio load is blocked (M9-012 follow-up)
       currentResult: null,
       selectedPlanId: null,
     });
-    render(<ExitPlanLibrary portfolio={fakePortfolio({ id: 'p2' })} />);
+    render(
+      <ExitPlanLibrary portfolio={fakePortfolio({ id: 'p2' })} portfolioNames={PORTFOLIO_NAMES} />,
+    );
 
     const loadButton = screen.getByRole('button', { name: 'Load' });
     expect(loadButton).toBeDisabled();
@@ -183,8 +220,54 @@ describe('ExitPlanLibrary — cross-portfolio load is blocked (M9-012 follow-up)
       currentResult: null,
       selectedPlanId: null,
     });
-    render(<ExitPlanLibrary portfolio={fakePortfolio({ id: 'p1' })} />);
+    render(
+      <ExitPlanLibrary portfolio={fakePortfolio({ id: 'p1' })} portfolioNames={PORTFOLIO_NAMES} />,
+    );
 
     expect(screen.getByRole('button', { name: 'Load' })).not.toBeDisabled();
+  });
+
+  /**
+   * V4 Readiness Audit §12 P3-1 — Load stays disabled for a deleted
+   * originating portfolio too (the block itself is unchanged), but the
+   * tooltip must not tell the user to "switch to that portfolio" when no
+   * such portfolio exists to switch to.
+   */
+  it('disables Load for a deleted originating portfolio, with a tooltip distinct from the different-portfolio case', () => {
+    useExitPlannerStore.setState({
+      savedPlans: [fakeSavedPlan()],
+      currentResult: null,
+      selectedPlanId: null,
+    });
+    render(
+      <ExitPlanLibrary
+        portfolio={fakePortfolio({ id: 'p2', name: 'Other Portfolio' })}
+        portfolioNames={{ p2: 'Other Portfolio' }}
+      />,
+    );
+
+    const loadButton = screen.getByRole('button', { name: 'Load' });
+    expect(loadButton).toBeDisabled();
+    expect(loadButton).toHaveAttribute(
+      'title',
+      'The portfolio this was saved against no longer exists.',
+    );
+  });
+
+  it('uses the "switch to that portfolio" tooltip only for a different, still-existing portfolio', () => {
+    useExitPlannerStore.setState({
+      savedPlans: [fakeSavedPlan()],
+      currentResult: null,
+      selectedPlanId: null,
+    });
+    render(
+      <ExitPlanLibrary portfolio={fakePortfolio({ id: 'p2' })} portfolioNames={PORTFOLIO_NAMES} />,
+    );
+
+    const loadButton = screen.getByRole('button', { name: 'Load' });
+    expect(loadButton).toHaveAttribute(
+      'title',
+      'Saved against a different portfolio — switch to that portfolio to load it.',
+    );
   });
 });

@@ -24,12 +24,27 @@ import type { Portfolio } from '@/types/portfolio';
  * **Empty-state next action (M7-037 "Strategy Loading and Empty
  * States", Batch 7)** — the same fix as `LoopStrategyLibrary.tsx`'s own,
  * naming the real control (Save Plan, in this same route).
+ *
+ * **`driftNotice`/the Load tooltip distinguish a deleted originating
+ * portfolio from a merely different active one (V4 Readiness Audit §12
+ * P3-1)** — same reasoning and `portfolioNames` prop as
+ * `LoopStrategyLibrary.tsx`'s own identical fix. `isCrossPortfolio`'s own
+ * Load-blocking boolean is deliberately UNCHANGED by this — a deleted
+ * portfolio must stay just as un-loadable as a merely-different one (see
+ * `loadExitPlan`'s own doc comment); only the two cases' messaging now
+ * differs, since "switch to that portfolio to load it" is actively wrong
+ * advice when that portfolio no longer exists to switch to.
  */
 function driftNotice(
   saved: { portfolioId: string; portfolioUpdatedAt: string },
   portfolio: Portfolio,
+  portfolioNames: Record<string, string>,
 ): string | null {
-  if (saved.portfolioId !== portfolio.id) return 'Saved against a different portfolio.';
+  if (saved.portfolioId !== portfolio.id) {
+    return portfolioNames[saved.portfolioId] !== undefined
+      ? 'Saved against a different portfolio.'
+      : 'The portfolio this was saved against no longer exists.';
+  }
   if (saved.portfolioUpdatedAt !== portfolio.updatedAt) {
     return 'Portfolio has changed since this was saved.';
   }
@@ -42,6 +57,7 @@ function driftNotice(
 // see `loadExitPlan`'s own doc comment (`stores/exitPlannerStore.ts`).
 // The store itself also refuses the load — this disables the control so
 // a user is never invited to try an action that silently does nothing.
+// Deliberately unchanged by P3-1 — see this file's own header comment.
 function isCrossPortfolio(saved: { portfolioId: string }, portfolio: Portfolio): boolean {
   return saved.portfolioId !== portfolio.id;
 }
@@ -50,7 +66,13 @@ function sortByNewest(plans: SavedExitPlan[]): SavedExitPlan[] {
   return [...plans].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
+export function ExitPlanLibrary({
+  portfolio,
+  portfolioNames,
+}: {
+  portfolio: Portfolio;
+  portfolioNames: Record<string, string>;
+}) {
   const savedPlans = useExitPlannerStore((state) => state.savedPlans);
   const loadExitPlan = useExitPlannerStore((state) => state.loadExitPlan);
   const duplicateExitPlan = useExitPlannerStore((state) => state.duplicateExitPlan);
@@ -75,8 +97,9 @@ export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
   return (
     <div className="flex flex-col gap-1">
       {sorted.map((saved) => {
-        const notice = driftNotice(saved, portfolio);
+        const notice = driftNotice(saved, portfolio, portfolioNames);
         const crossPortfolio = isCrossPortfolio(saved, portfolio);
+        const referencedPortfolioExists = portfolioNames[saved.portfolioId] !== undefined;
         return (
           <div key={saved.id} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-sm">
@@ -90,9 +113,11 @@ export function ExitPlanLibrary({ portfolio }: { portfolio: Portfolio }) {
                 disabled={crossPortfolio}
                 aria-disabled={crossPortfolio}
                 title={
-                  crossPortfolio
-                    ? 'Saved against a different portfolio — switch to that portfolio to load it.'
-                    : undefined
+                  !crossPortfolio
+                    ? undefined
+                    : referencedPortfolioExists
+                      ? 'Saved against a different portfolio — switch to that portfolio to load it.'
+                      : 'The portfolio this was saved against no longer exists.'
                 }
                 className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
               >
