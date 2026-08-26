@@ -71,6 +71,7 @@ import {
   resolveRiskCapacityDisplay,
   resolveSupplyAprDisplay,
 } from '@/services/portfolio/mapping';
+import { resolveExportProvenance } from '@/services/shared/exportProvenance';
 import type { Portfolio } from '@/types/portfolio';
 
 /** No real Engine call precedes this export — the same "first call, no prior tracked version" case `services/recommendation/recommendations.ts` already established for this same function. */
@@ -147,6 +148,16 @@ function resolveSupplyAprForExport(portfolio: Portfolio): number | null {
  * configured, never a fabricated `0`.
  */
 
+/**
+ * "Protocol Version" / "V4 Debt State Source" / "V4 Debt State Updated At" /
+ * "V4 Collateral Risk Source" / "V4 Collateral Risk Updated At" /
+ * "V4 Data Stale At Export" columns — V4 Readiness Audit §12 P2-1. Reuse
+ * `resolveExportProvenance` (`services/shared/exportProvenance.ts`)
+ * directly — the same shared resolver the Loop/Exit/Simulation exporters
+ * call, rather than a fourth independent copy of the same "manual vs live,
+ * last successful timestamp, stale at export" logic.
+ */
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
@@ -196,13 +207,20 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'Swap Fee Assumption',
     'Slippage Assumption',
     'Gas Cost Assumption',
+    'Protocol Version',
+    'V4 Debt State Source',
+    'V4 Debt State Updated At',
+    'V4 Collateral Risk Source',
+    'V4 Collateral Risk Updated At',
+    'V4 Data Stale At Export',
     'Archived',
     'Created At',
     'Updated At',
   ]);
 
-  const rows = portfolios.map((portfolio) =>
-    csvLine([
+  const rows = portfolios.map((portfolio) => {
+    const provenance = resolveExportProvenance(portfolio);
+    return csvLine([
       portfolio.id,
       portfolio.name,
       portfolio.collateral.asset,
@@ -218,11 +236,17 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.settings.executionCostAssumptions?.swapFeeRate ?? null,
       portfolio.settings.executionCostAssumptions?.slippageRate ?? null,
       portfolio.settings.executionCostAssumptions?.gasCostUsd ?? null,
+      provenance.protocolVersion,
+      provenance.v4DebtStateSource,
+      provenance.v4DebtStateUpdatedAt,
+      provenance.v4CollateralRiskSource,
+      provenance.v4CollateralRiskUpdatedAt,
+      provenance.v4DataStaleAtExport,
       portfolio.archivedAt !== null,
       portfolio.createdAt,
       portfolio.updatedAt,
-    ]),
-  );
+    ]);
+  });
 
   return [header, ...rows].join('\n');
 }

@@ -522,6 +522,81 @@ describe('buildSimulationExportPayload — V4 risk-capacity export (Stage 23E)',
   });
 });
 
+/**
+ * Export provenance — V4 Readiness Audit §12 P2-1. `buildSimulationExportPayload`
+ * delegates entirely to `resolveExportProvenance`
+ * (`services/shared/exportProvenance.ts`, its own dedicated unit tests) —
+ * these tests only confirm the payload/CSV wiring, not the resolver's own
+ * staleness logic a second time.
+ */
+describe('buildSimulationExportPayload — provenance (P2-1)', () => {
+  it('identifies manual V4 provenance', () => {
+    const { result, metadata } = runPriceScenario();
+    const manualPortfolio: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'manual',
+      v4DebtStateUpdatedAt: '2026-08-25T11:00:00.000Z',
+    };
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      manualPortfolio,
+    );
+    expect(payload.provenance.protocolVersion).toBe('v4');
+    expect(payload.provenance.v4DebtStateSource).toBe('manual');
+    expect(payload.provenance.v4DebtStateUpdatedAt).toBe('2026-08-25T11:00:00.000Z');
+  });
+
+  it('identifies live V4 provenance', () => {
+    const { result, metadata } = runPriceScenario();
+    const livePortfolio: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+      v4DebtStateUpdatedAt: new Date().toISOString(),
+    };
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      livePortfolio,
+    );
+    expect(payload.provenance.v4DebtStateSource).toBe('live');
+    expect(payload.provenance.v4DataStaleAtExport).toBe(false);
+  });
+
+  it('exports unknown freshness honestly (null) for a V3 portfolio, never a fabricated value', () => {
+    const { result, metadata } = runPriceScenario();
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      PORTFOLIO,
+    );
+    expect(payload.provenance.protocolVersion).toBe('v3');
+    expect(payload.provenance.v4DebtStateUpdatedAt).toBeNull();
+    expect(payload.provenance.v4DataStaleAtExport).toBeNull();
+  });
+
+  it('CSV includes the provenance columns', () => {
+    const { result, metadata } = runPriceScenario();
+    const payload = buildSimulationExportPayload(
+      { type: 'price', priceScenario: { type: 'absolute', btcPriceUsd: 65000 } },
+      result,
+      metadata,
+      PORTFOLIO,
+    );
+    const csv = buildSimulationExportCsv(payload);
+    expect(csv).toContain('Protocol Version,v3');
+    expect(csv).toContain('V4 Debt State Source,Not available');
+    expect(csv).toContain('V4 Data Stale At Export,Not available');
+  });
+});
+
 describe('downloadSimulationExport', () => {
   afterEach(() => {
     vi.restoreAllMocks();

@@ -963,6 +963,13 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       // interface doc comment for why that default, not `'manual'`, is
       // correct here.
       v4DebtStateSource: validated !== undefined ? (source ?? 'live') : undefined,
+      // V4 Readiness Audit §12 P2-1 — same "defined iff the value it
+      // describes is defined" invariant as `v4DebtStateSource`, stamped
+      // with a single shared timestamp so this action's own successful
+      // return is the one place "last successful fetch" is ever recorded.
+      // A failed live refresh never calls this action at all, so it can
+      // never overwrite a real success with a stale/failed one.
+      v4DebtStateUpdatedAt: validated !== undefined ? new Date().toISOString() : undefined,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1014,6 +1021,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       v4CollateralRisk: validated,
       // Same invariant, and same `'live'` default, as `setAaveV4DebtState` above.
       v4CollateralRiskSource: validated !== undefined ? (source ?? 'live') : undefined,
+      // Same invariant and reasoning as `setAaveV4DebtState`'s own `v4DebtStateUpdatedAt` above.
+      v4CollateralRiskUpdatedAt: validated !== undefined ? new Date().toISOString() : undefined,
       updatedAt: new Date().toISOString(),
     };
 

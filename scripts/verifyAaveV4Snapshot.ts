@@ -50,10 +50,11 @@ import { projectAaveV4Debt } from '@/engine/protocols/aaveV4';
 import { AAVE_V4_DEFAULT_RPC_URL } from '@/infrastructure/protocols/aave/v4/addresses';
 import { createAaveV4RpcClient } from '@/infrastructure/protocols/aave/v4/client';
 import { fetchAaveV4DebtSnapshot } from '@/infrastructure/protocols/aave/v4/index';
+import { isValidEip55Address } from '@/utils/evmAddress';
 
 async function main(): Promise<void> {
   const userAddress = process.env.AAVE_V4_USER_ADDRESS;
-  if (userAddress === undefined || !/^0x[0-9a-fA-F]{40}$/.test(userAddress)) {
+  if (userAddress === undefined || !isValidEip55Address(userAddress)) {
     console.error(
       'AAVE_V4_USER_ADDRESS environment variable must be set to a valid 0x-prefixed Ethereum address.',
     );

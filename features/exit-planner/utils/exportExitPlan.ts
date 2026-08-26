@@ -3,7 +3,9 @@ import {
   deriveAaveV4EffectiveBorrowRate,
   type ExitCostItem,
   type ExitPlanResult,
+  type ExportProvenance,
   resolveCanonicalDebtBalance,
+  resolveExportProvenance,
   resolveRiskCapacityDisplay,
   resolveSupplyAprDisplay,
   type ServiceMetadata,
@@ -137,8 +139,12 @@ function resolveProtocolParametersForExport(
  * actively misleading rather than merely incomplete — and
  * `assumptions.executionCostAssumptions` (the portfolio's own configured
  * values) is added.
+ *
+ * Bumped 0.2.0 → 0.3.0 for V4 Readiness Audit §12 P2-1 — see
+ * `exportLoopStrategy.ts`'s identical version-bump comment; the same
+ * additive `provenance` field is added here.
  */
-export const EXIT_EXPORT_SCHEMA_VERSION = '0.2.0';
+export const EXIT_EXPORT_SCHEMA_VERSION = '0.3.0';
 
 export interface ExitPlanExportPayload {
   schemaVersion: string;
@@ -194,6 +200,8 @@ export interface ExitPlanExportPayload {
   };
   versions: { engineVersion: string; formulaVersion: string } | null;
   timestamp: string | null;
+  /** V4 Readiness Audit §12 P2-1 — see `resolveExportProvenance`'s own header comment. */
+  provenance: ExportProvenance;
 }
 
 export function buildExitPlanExportPayload(
@@ -242,6 +250,7 @@ export function buildExitPlanExportPayload(
         ? null
         : { engineVersion: metadata.engineVersion, formulaVersion: metadata.formulaVersion },
     timestamp: metadata?.calculationTimestamp ?? null,
+    provenance: resolveExportProvenance(portfolio),
   };
 }
 
@@ -375,6 +384,34 @@ export function buildExitPlanExportCsv(payload: ExitPlanExportPayload): string {
     csvRow(
       'Formula Version',
       payload.versions !== null ? payload.versions.formulaVersion : 'Not captured',
+    ),
+  );
+
+  rows.push(csvRow('Protocol Version', payload.provenance.protocolVersion));
+  rows.push(
+    csvRow('V4 Debt State Source', payload.provenance.v4DebtStateSource ?? 'Not available'),
+  );
+  rows.push(
+    csvRow('V4 Debt State Updated At', payload.provenance.v4DebtStateUpdatedAt ?? 'Not available'),
+  );
+  rows.push(
+    csvRow(
+      'V4 Collateral Risk Source',
+      payload.provenance.v4CollateralRiskSource ?? 'Not available',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'V4 Collateral Risk Updated At',
+      payload.provenance.v4CollateralRiskUpdatedAt ?? 'Not available',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'V4 Data Stale At Export',
+      payload.provenance.v4DataStaleAtExport === null
+        ? 'Not available'
+        : String(payload.provenance.v4DataStaleAtExport),
     ),
   );
 

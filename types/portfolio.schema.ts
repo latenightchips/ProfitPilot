@@ -53,6 +53,7 @@
  */
 import { z } from 'zod';
 
+import { isValidEip55Address } from '@/utils/evmAddress';
 import { sanitizeText } from '@/utils/sanitizeText';
 
 import { SUPPORTED_DEBT_ASSETS } from './portfolio';
@@ -170,19 +171,20 @@ export const portfolioSettingsSchema = z.object({
  * the main creation form either. There is still no UI form for either
  * field (Stage 5's own non-goal).
  *
- * Deliberately unchecksummed (`^0x[0-9a-fA-F]{40}$`, case-insensitive) —
- * the only existing address-shape check anywhere in this repo
- * (`scripts/verifyAaveV4Snapshot.ts`) uses the same plain hex-length
- * pattern; no EIP-55 checksum or network-specific validation convention
- * exists elsewhere to mirror instead, and requiring one here would be a
- * new, unrequested rule.
+ * EIP-55 checksum-aware (V4 Readiness Audit §12 P2-1) — an all-lowercase
+ * or all-uppercase address is accepted unconditionally (matching EIP-55's
+ * own "no checksum encoded" carve-out), a mixed-case address must satisfy
+ * the checksum, and malformed input is rejected. See
+ * `utils/evmAddress.ts`'s own header comment for the full reasoning and
+ * why `viem`'s bare `isAddress` alone can't express this. Zero address is
+ * accepted, unchanged from the plain hex-shape check this replaced.
+ * `scripts/verifyAaveV4Snapshot.ts`'s independent copy of the previous
+ * plain-hex pattern now calls this same validator.
  */
-const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
-
 export const aaveV4PositionIdentitySchema = z.object({
   userAddress: z
     .string({ error: 'Enter a valid wallet address.' })
-    .regex(EVM_ADDRESS_PATTERN, 'Enter a valid wallet address.'),
+    .refine(isValidEip55Address, 'Enter a valid wallet address.'),
 });
 
 export type AaveV4PositionIdentityInput = z.infer<typeof aaveV4PositionIdentitySchema>;

@@ -447,3 +447,44 @@ describe('persistedPortfolioPayloadSchema (P1-6: settings.executionCostAssumptio
     expect(result.data.settings.executionCostAssumptions).toEqual(VALID_EXECUTION_COST_ASSUMPTIONS);
   });
 });
+
+/**
+ * `v4DebtStateUpdatedAt`/`v4CollateralRiskUpdatedAt` — V4 Readiness Audit
+ * §12 P2-1. Same optional, independent, backward-compatible pattern as
+ * `v4DebtStateSource`/`v4CollateralRiskSource` (Stage 25) above.
+ */
+describe('persistedPortfolioPayloadSchema (P2-1: v4DebtStateUpdatedAt/v4CollateralRiskUpdatedAt)', () => {
+  it('accepts a payload with neither freshness timestamp (backward compatibility)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateUpdatedAt).toBeUndefined();
+    expect(result.data.v4CollateralRiskUpdatedAt).toBeUndefined();
+  });
+
+  it('accepts a valid ISO 8601 v4DebtStateUpdatedAt', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtStateUpdatedAt: '2026-08-25T12:00:00.000Z' }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4DebtStateUpdatedAt).toBe('2026-08-25T12:00:00.000Z');
+  });
+
+  it('accepts a valid ISO 8601 v4CollateralRiskUpdatedAt independently', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4CollateralRiskUpdatedAt: '2026-08-25T12:00:00.000Z' }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.v4CollateralRiskUpdatedAt).toBe('2026-08-25T12:00:00.000Z');
+    expect(result.data.v4DebtStateUpdatedAt).toBeUndefined();
+  });
+
+  it('rejects a malformed (non-ISO-8601) v4DebtStateUpdatedAt, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ v4DebtStateUpdatedAt: 'not-a-date' }),
+    );
+    expect(result.success).toBe(false);
+  });
+});

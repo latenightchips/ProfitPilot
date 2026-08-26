@@ -279,6 +279,62 @@ describe('buildPortfolioPositionsCsv — execution-cost assumptions (P1-6)', () 
   });
 });
 
+/**
+ * "Protocol Version"/"V4 Debt State Source"/"V4 Debt State Updated At"/
+ * "V4 Collateral Risk Source"/"V4 Collateral Risk Updated At"/
+ * "V4 Data Stale At Export" columns — V4 Readiness Audit §12 P2-1.
+ * `resolveExportProvenance`'s own dedicated unit tests cover the resolver
+ * logic itself; these only confirm the columns are wired at the correct
+ * indices, matching this file's own by-index testing convention (see the
+ * "execution-cost assumptions" describe block above for why: this file's
+ * fixture name contains a comma).
+ */
+describe('buildPortfolioPositionsCsv — export provenance (P2-1)', () => {
+  it('exports "Not available" for every V4 provenance field on a V3 (or unset) portfolio', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[15]).toBe('v3');
+    expect(fields[16]).toBe('Not available');
+    expect(fields[17]).toBe('Not available');
+    expect(fields[18]).toBe('Not available');
+    expect(fields[19]).toBe('Not available');
+    expect(fields[20]).toBe('Not available');
+  });
+
+  it('identifies manual V4 provenance', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+        v4DebtStateSource: 'manual',
+        v4DebtStateUpdatedAt: '2026-08-25T11:00:00.000Z',
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[15]).toBe('v4');
+    expect(fields[16]).toBe('manual');
+    expect(fields[17]).toBe('2026-08-25T11:00:00.000Z');
+  });
+
+  it('identifies live V4 provenance and reports fresh/stale correctly', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+        v4DebtStateSource: 'live',
+        v4DebtStateUpdatedAt: new Date().toISOString(),
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[16]).toBe('live');
+    expect(fields[20]).toBe('false');
+  });
+});
+
 describe('CSV formula-injection guard (M9-034)', () => {
   it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);

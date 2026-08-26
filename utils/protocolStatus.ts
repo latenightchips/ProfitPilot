@@ -154,10 +154,27 @@ export interface ProtocolStatusInput {
   now: string;
 }
 
-function isV4DataStale(lastFetchedAt: string | null, now: string): boolean {
+/**
+ * Whether a given ISO 8601 timestamp is older than
+ * `FRESHNESS_THRESHOLD_MINUTES` (or absent) as of `now` — V4 Readiness
+ * Audit §12 P2-1. Extracted from this module's own `isV4DataStale` (Stage
+ * 17) with no behavior change, so this module's live-status badge and
+ * export code's own "was this data stale at export time" computation
+ * (`utils/exportProvenance.ts`) share one definition of "stale" rather
+ * than risking two independently-invented ones. Exported for that reuse;
+ * `deriveProtocolStatus`'s own precedence chain below is otherwise
+ * untouched by this stage — see this stage's final report for why the
+ * live status badge itself was deliberately left unwired to the newly
+ * persisted freshness timestamps.
+ */
+export function isTimestampStale(lastFetchedAt: string | null, now: string): boolean {
   if (lastFetchedAt === null) return true;
   const ageMinutes = (Date.parse(now) - Date.parse(lastFetchedAt)) / 60000;
   return ageMinutes > FRESHNESS_THRESHOLD_MINUTES;
+}
+
+function isV4DataStale(lastFetchedAt: string | null, now: string): boolean {
+  return isTimestampStale(lastFetchedAt, now);
 }
 
 export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatusKind {

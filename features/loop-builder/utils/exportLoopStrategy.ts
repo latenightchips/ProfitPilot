@@ -1,10 +1,12 @@
 import {
   type ApplicationPortfolio,
   deriveAaveV4EffectiveBorrowRate,
+  type ExportProvenance,
   type LoopCostResult,
   type LoopStepRecord,
   type LoopStrategyPreview,
   type LoopStrategySettings,
+  resolveExportProvenance,
   resolveRiskCapacityDisplay,
   resolveSupplyAprDisplay,
   type ServiceMetadata,
@@ -148,8 +150,15 @@ function resolveProtocolParametersForExport(
  * note actively misleading rather than merely incomplete — and
  * `assumptions.executionCostAssumptions` (the portfolio's own configured
  * values) is added.
+ *
+ * Bumped 0.2.0 → 0.3.0 for V4 Readiness Audit §12 P2-1: a new top-level
+ * `provenance` field is added (`resolveExportProvenance`,
+ * `services/shared/exportProvenance.ts`) — protocol version, manual/live
+ * source, last successful live-refresh timestamp, and whether the
+ * exported V4 data was stale/unknown at export time. Purely additive; no
+ * existing field changed shape.
  */
-export const LOOP_EXPORT_SCHEMA_VERSION = '0.2.0';
+export const LOOP_EXPORT_SCHEMA_VERSION = '0.3.0';
 
 export interface LoopStrategyExportPayload {
   schemaVersion: string;
@@ -201,6 +210,8 @@ export interface LoopStrategyExportPayload {
   };
   versions: { engineVersion: string; formulaVersion: string } | null;
   timestamp: string | null;
+  /** V4 Readiness Audit §12 P2-1 — see `resolveExportProvenance`'s own header comment. */
+  provenance: ExportProvenance;
 }
 
 export function buildLoopStrategyExportPayload(
@@ -244,6 +255,7 @@ export function buildLoopStrategyExportPayload(
         ? null
         : { engineVersion: metadata.engineVersion, formulaVersion: metadata.formulaVersion },
     timestamp: metadata?.calculationTimestamp ?? null,
+    provenance: resolveExportProvenance(portfolio),
   };
 }
 
@@ -385,6 +397,34 @@ export function buildLoopStrategyExportCsv(payload: LoopStrategyExportPayload): 
     csvRow(
       'Formula Version',
       payload.versions !== null ? payload.versions.formulaVersion : 'Not captured',
+    ),
+  );
+
+  rows.push(csvRow('Protocol Version', payload.provenance.protocolVersion));
+  rows.push(
+    csvRow('V4 Debt State Source', payload.provenance.v4DebtStateSource ?? 'Not available'),
+  );
+  rows.push(
+    csvRow('V4 Debt State Updated At', payload.provenance.v4DebtStateUpdatedAt ?? 'Not available'),
+  );
+  rows.push(
+    csvRow(
+      'V4 Collateral Risk Source',
+      payload.provenance.v4CollateralRiskSource ?? 'Not available',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'V4 Collateral Risk Updated At',
+      payload.provenance.v4CollateralRiskUpdatedAt ?? 'Not available',
+    ),
+  );
+  rows.push(
+    csvRow(
+      'V4 Data Stale At Export',
+      payload.provenance.v4DataStaleAtExport === null
+        ? 'Not available'
+        : String(payload.provenance.v4DataStaleAtExport),
     ),
   );
 

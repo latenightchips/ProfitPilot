@@ -61,6 +61,15 @@
  * default (`'manual'`, never a silently-assumed `'live'`), not this
  * schema. This schema only needs to round-trip whatever the Store
  * already attached, on both read and write.
+ *
+ * **`v4DebtStateUpdatedAt`/`v4CollateralRiskUpdatedAt` (V4 Readiness Audit
+ * §12 P2-1)** — same discipline again, for `services/portfolio/models.ts`'s
+ * new freshness timestamps. Both optional, independently, for the same
+ * reason as `v4DebtStateSource`/`v4CollateralRiskSource`: a portfolio
+ * persisted before P2-1 has neither, and this schema just needs to
+ * round-trip whatever `stores/portfolioStore.ts`'s `setAaveV4DebtState`/
+ * `setAaveV4CollateralRisk` already attached — no backfill, no fabricated
+ * timestamp for old data.
  */
 import { z } from 'zod';
 
@@ -94,6 +103,8 @@ export const persistedPortfolioPayloadSchema = z.object({
   v4CollateralRisk: aaveV4CollateralRiskConfigSchema.optional(),
   v4DebtStateSource: aaveV4DataSourceSchema.optional(),
   v4CollateralRiskSource: aaveV4DataSourceSchema.optional(),
+  v4DebtStateUpdatedAt: z.string().datetime().optional(),
+  v4CollateralRiskUpdatedAt: z.string().datetime().optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

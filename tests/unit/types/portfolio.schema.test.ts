@@ -335,6 +335,33 @@ describe('aaveV4PositionIdentitySchema (Stage 4A)', () => {
     const result = aaveV4PositionIdentitySchema.safeParse({});
     expect(result.success).toBe(false);
   });
+
+  /**
+   * EIP-55 checksum enforcement — V4 Readiness Audit §12 P2-1. Mixed-case
+   * input must satisfy the checksum; all-lowercase/all-uppercase carry no
+   * checksum information and remain accepted unconditionally (matching
+   * EIP-55's own spec) — see `utils/evmAddress.ts` for the full reasoning.
+   */
+  it('accepts an all-uppercase address (no checksum requirement)', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a mixed-case address with an incorrect checksum', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xD8DA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts the zero address (existing product policy, unchanged)', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0x0000000000000000000000000000000000000000'.slice(0, 42),
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 /**

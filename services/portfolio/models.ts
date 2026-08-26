@@ -202,6 +202,26 @@ export interface ApplicationPortfolio {
   v4DebtStateSource?: AaveV4DataSource;
   /** Same invariant as `v4DebtStateSource`, independently, for `v4CollateralRisk`. See `setAaveV4CollateralRisk`'s own comment. */
   v4CollateralRiskSource?: AaveV4DataSource;
+  /**
+   * V4 Readiness Audit §12 P2-1 — ISO 8601 timestamp of the last
+   * successful `v4DebtState` write, manual or live. Same "defined iff the
+   * value it describes is defined" invariant as `v4DebtStateSource`,
+   * maintained by the same writer (`stores/portfolioStore.ts`'s
+   * `setAaveV4DebtState`) — every call that sets `v4DebtState` also sets
+   * this to the current time, and every call that clears it (address
+   * change) clears this too. A failed live refresh never reaches this
+   * field at all (the Store action is only called on a *successful*
+   * fetch or a validated manual entry) — a stale/failed refresh therefore
+   * never overwrites a previously-recorded success, which is exactly the
+   * "reloading must not erase the known last-successful-fetch timestamp"
+   * requirement this field exists to satisfy. `undefined` on every
+   * portfolio persisted before this stage — no migration backfills a
+   * fabricated value, matching every other V4 field's own backward-
+   * compatibility discipline.
+   */
+  v4DebtStateUpdatedAt?: string;
+  /** Same invariant and reasoning as `v4DebtStateUpdatedAt`, independently, for `v4CollateralRisk`/`setAaveV4CollateralRisk`. */
+  v4CollateralRiskUpdatedAt?: string;
 }
 
 /**

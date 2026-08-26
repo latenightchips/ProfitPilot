@@ -1478,6 +1478,153 @@ describe('usePortfolioStore.load — normalizeV4Provenance backfill (Stage 25)',
 });
 
 /**
+ * `v4DebtStateUpdatedAt`/`v4CollateralRiskUpdatedAt` freshness persistence
+ * — V4 Readiness Audit §12 P2-1. Same "defined iff the value it describes
+ * is defined" invariant, and same load-time backward-compatibility
+ * discipline, as `v4DebtStateSource`/`v4CollateralRiskSource` (Stage 25)
+ * above — but these timestamps need no `normalizeV4Provenance`-style
+ * backfill: `undefined` is already the honest "unknown" answer for a
+ * portfolio persisted before this field existed, so no migration is
+ * needed to keep that promise.
+ */
+describe('usePortfolioStore.setAaveV4DebtState / setAaveV4CollateralRisk — freshness timestamps (P2-1)', () => {
+  function writeRawPortfolioRecord(id: string, payload: Record<string, unknown>) {
+    const envelope = {
+      app: 'ProfitPilot',
+      storageSchemaVersion: '1.0.0',
+      appVersion: '1.0.0',
+      recordType: 'portfolio',
+      recordId: id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      checksum: computeChecksum(payload),
+      payload,
+    };
+    window.localStorage.setItem(buildLocalStorageKey('portfolio', id), JSON.stringify(envelope));
+  }
+
+  it('never-fetched leaves v4DebtStateUpdatedAt/v4CollateralRiskUpdatedAt undefined', () => {
+    const created = createValidPortfolio();
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBeUndefined();
+    expect(record.v4CollateralRiskUpdatedAt).toBeUndefined();
+  });
+
+  it('setAaveV4DebtState stamps v4DebtStateUpdatedAt with the current time', () => {
+    const created = createValidPortfolio();
+    const before = Date.now();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    const after = Date.now();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBeDefined();
+    const stamped = new Date(record.v4DebtStateUpdatedAt as string).getTime();
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
+  });
+
+  it('setAaveV4CollateralRisk stamps v4CollateralRiskUpdatedAt with the current time', () => {
+    const created = createValidPortfolio();
+    const before = Date.now();
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    const after = Date.now();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4CollateralRiskUpdatedAt).toBeDefined();
+    const stamped = new Date(record.v4CollateralRiskUpdatedAt as string).getTime();
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
+  });
+
+  it('clearing v4DebtState also clears v4DebtStateUpdatedAt', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, undefined);
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBeUndefined();
+  });
+
+  it('a rejected (invalid) setAaveV4DebtState call does not touch the previously-recorded v4DebtStateUpdatedAt', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    const firstStamp =
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateUpdatedAt;
+
+    // Simulates a failed refresh / rejected manual entry: the Store action
+    // is only ever called by application code on a validated success, but
+    // this proves that even an attempted write that fails validation can
+    // never overwrite the last real success with a fake timestamp.
+    const rejected = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, { ...VALID_V4_DEBT_STATE, drawnDebt: -1 });
+
+    expect(rejected.ok).toBe(false);
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBe(firstStamp);
+  });
+
+  it('the last successful v4DebtStateUpdatedAt survives a full persistence round-trip (reload)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    const stamp =
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateUpdatedAt;
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBe(stamp);
+    expect(record.v4DebtStateUpdatedAt).toBeDefined();
+  });
+
+  it('the last successful v4CollateralRiskUpdatedAt survives a full persistence round-trip (reload)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    const stamp =
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4CollateralRiskUpdatedAt;
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4CollateralRiskUpdatedAt).toBe(stamp);
+    expect(record.v4CollateralRiskUpdatedAt).toBeDefined();
+  });
+
+  it('an old saved portfolio with no freshness metadata still loads, with the timestamps left undefined (not fabricated)', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const { v4DebtStateUpdatedAt, v4CollateralRiskUpdatedAt, ...withoutFreshness } =
+      stored as unknown as Record<string, unknown> & {
+        v4DebtStateUpdatedAt?: unknown;
+        v4CollateralRiskUpdatedAt?: unknown;
+      };
+    void v4DebtStateUpdatedAt;
+    void v4CollateralRiskUpdatedAt;
+    writeRawPortfolioRecord(created.id, withoutFreshness);
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    expect(usePortfolioStore.getState().loadStatus).toBe('idle');
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(record.v4DebtStateUpdatedAt).toBeUndefined();
+    expect(record.v4CollateralRiskUpdatedAt).toBeUndefined();
+  });
+});
+
+/**
  * Persistence + canonical debt reconciliation integration — V4 Readiness
  * Audit §12 Stage 9. Ties Stage 5/6 (persistence), Stage 7 (live sync's
  * own eventual `setAaveV4DebtState` caller), and Stage 9 (canonical debt)
