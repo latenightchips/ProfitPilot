@@ -5,6 +5,18 @@ on:
   push:
     branches: [main]
 
+# Least-privilege GITHUB_TOKEN — R1-2 ("Protect Aave API Boundary +
+# Least-Privilege CI"). This job only checks out the repository to lint,
+# type-check, test, and build; it never writes back to GitHub (no
+# comments, no releases, no pushed commits), so it needs no more than
+# read access to repository contents. Without this block the token
+# would fall back to whatever the repository/organization default
+# grants, which may be broader than this job actually uses. Matches
+# `aave-v4-boundary.yml`'s own identical `permissions: contents: read`,
+# applied here for the same reason.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

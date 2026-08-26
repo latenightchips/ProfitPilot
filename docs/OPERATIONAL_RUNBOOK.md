@@ -228,6 +228,72 @@ deliberate, per-deployment decision left to whoever actually owns the
 domain (`next.config.ts`'s own header comment), not something this
 repository decides on an operator's behalf.
 
+## Aave API rate limiting [Repository + Operator]
+
+`middleware.ts` (R1-2 — "Protect Aave API Boundary + Least-Privilege
+CI") enforces an in-memory, per-client-identity request budget in front
+of `/api/aave/reserve`, `/api/aave/v4-position`, and
+`/api/aave/v4-collateral-risk` — 30 requests per 60 seconds, shared
+across all three routes per client identity
+(`services/rateLimit/aaveApiRateLimit.ts`). A request over the limit
+gets `429` with `{ "ok": false, "error": { "code": "AAVE_RATE_LIMITED", "message": "..." } }`
+and a `Retry-After` header (seconds). This exists because these three
+routes are public, unauthenticated proxies to whatever RPC endpoint
+`AAVE_RPC_URL`/`AAVE_V4_RPC_URL` resolve to — with neither set (the
+shipped default) that's a free shared public endpoint; once either is
+pointed at a paid, key-embedded provider, an unthrottled route becomes
+an open proxy to that quota for anyone who can reach the deployed app.
+
+**What this control actually provides, stated honestly, not
+oversold:**
+
+- **Client identity is best-effort, from `x-forwarded-for`/`x-real-ip`
+  request headers — not a platform-verified IP.** Behind a reverse
+  proxy that sets these headers correctly (Vercel's edge network, a
+  correctly configured nginx/Cloudflare front end), this is a real,
+  meaningful per-client signal. Self-hosted with no reverse proxy, or
+  behind one that blindly forwards client-supplied headers, these
+  headers are entirely attacker-controlled — a script rotating a fake
+  `x-forwarded-for` value on every request is never throttled by
+  identity at all.
+- **The limiter is in-memory and process-local, not distributed.** On
+  a single long-running `next start` process (the ordinary self-hosted
+  case) this is fully consistent. Across multiple concurrent
+  instances — horizontally-scaled serverless invocations, multi-region
+  edge, load-balanced replicas — each instance enforces the limit
+  independently, so the effective ceiling becomes `limit × (number of
+  live instances)`, not `limit`. This is **not** a substitute for a
+  shared store (Redis, a platform-provided distributed limiter) in
+  that topology.
+- **This is still a genuine defense-in-depth control**, not a no-op:
+  it blunts unsophisticated scripted abuse and accidental
+  runaway-client bugs regardless of deployment shape, and it is a real
+  per-client throttle in any deployment sitting behind a trustworthy
+  reverse proxy.
+
+**Deployment-level rate limiting remains recommended, and is not
+replaced by this control.** An operator who wants protection that
+holds against a sophisticated, identity-rotating attacker, or against
+horizontal scaling, should add rate limiting at the hosting platform or
+CDN layer in front of this application (e.g. a host's own edge rate
+limiting, or an API gateway) — this repository does not invent that
+infrastructure itself, consistent with `docs/DEPLOYMENT_DISPOSITION.md`'s
+own governing decision not to assume any specific operated
+infrastructure.
+
+**Behavior when a private/paid RPC provider is configured**: unchanged
+by this control beyond the throttle itself — `AAVE_RPC_URL`/
+`AAVE_V4_RPC_URL` are read exactly as before
+(`app/api/aave/*/route.ts`), and the rate limiter runs identically
+whether the configured endpoint is the public default or a paid
+provider. The 30-requests-per-60-seconds budget is sized from this
+codebase's own actual usage pattern (each live-sync hook fetches once
+per mount, never on an interval — see
+`services/rateLimit/aaveApiRateLimit.ts`'s own header comment), not
+from any specific provider's rate limits; an operator on a
+lower-throughput paid tier should size their own deployment-level
+limiting accordingly rather than relying on this default alone.
+
 ## Health/readiness checks that can actually be performed [Operator]
 
 No ProfitPilot-operated health-check endpoint or uptime monitor exists
@@ -253,6 +319,11 @@ on any of the above is **[Deferred]** — none exists for Version 1.0.0.
 
 ## Known operational limitations
 
+- **`/api/aave/*` rate limiting is process-local, not distributed, and
+  its client identity is best-effort from forwarded-IP headers** — see
+  "Aave API rate limiting" above for the full accounting; deployment-
+  level rate limiting remains recommended for real protection against a
+  sophisticated attacker or a horizontally-scaled deployment.
 - **No ProfitPilot-operated production deployment, monitoring,
   logging, or alerting exists for Version 1.0.0** — every "Deferred"
   item above is a deliberate release decision (`docs/RELEASE_NOTES.md`),
