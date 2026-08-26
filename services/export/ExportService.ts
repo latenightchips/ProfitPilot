@@ -18,6 +18,18 @@
  * `unknown[]` handed to `CsvExporter.ts` is already validated,
  * already-current-version data — the same "Do not bypass
  * PersistenceService" guarantee `JsonExporter.ts` provides for JSON.
+ *
+ * **`scenario-comparisons`/`loop-steps`/`exit-plan-breakdowns` also fetch
+ * `service.list<Portfolio>('portfolio')` — V4 Readiness Audit §12 P2-2.**
+ * A saved simulation/loop-strategy/exit-plan record carries only its own
+ * `portfolioId`, never the owning portfolio's protocol version or V4
+ * source/freshness fields — `CsvExporter.ts`'s three collection-level
+ * builders resolve real export provenance for each row by cross-
+ * referencing that id against this portfolios list (`resolveExportProvenance`,
+ * `services/shared/exportProvenance.ts`). A genuine read failure on this
+ * second fetch fails the whole export, the same "no partial/corrupted
+ * export" guarantee `exportFullBackup`'s own M9-046 test already
+ * establishes for a multi-record-type read.
  */
 import type { MappingResult } from '@/services/shared';
 import type { Portfolio } from '@/types/portfolio';
@@ -138,11 +150,13 @@ export async function exportCsv(
     case 'scenario-comparisons': {
       const listed = await service.list<unknown>('simulation');
       if (!listed.ok) return listed;
+      const portfolios = await service.list<Portfolio>('portfolio');
+      if (!portfolios.ok) return portfolios;
       return {
         ok: true,
         data: await buildCsvExportResult(
           kind,
-          buildScenarioComparisonsCsv(listed.data),
+          buildScenarioComparisonsCsv(listed.data, portfolios.data),
           options.now,
         ),
       };
@@ -150,19 +164,27 @@ export async function exportCsv(
     case 'loop-steps': {
       const listed = await service.list<unknown>('loopStrategy');
       if (!listed.ok) return listed;
+      const portfolios = await service.list<Portfolio>('portfolio');
+      if (!portfolios.ok) return portfolios;
       return {
         ok: true,
-        data: await buildCsvExportResult(kind, buildLoopStepsCsv(listed.data), options.now),
+        data: await buildCsvExportResult(
+          kind,
+          buildLoopStepsCsv(listed.data, portfolios.data),
+          options.now,
+        ),
       };
     }
     case 'exit-plan-breakdowns': {
       const listed = await service.list<unknown>('exitPlan');
       if (!listed.ok) return listed;
+      const portfolios = await service.list<Portfolio>('portfolio');
+      if (!portfolios.ok) return portfolios;
       return {
         ok: true,
         data: await buildCsvExportResult(
           kind,
-          buildExitPlanBreakdownsCsv(listed.data),
+          buildExitPlanBreakdownsCsv(listed.data, portfolios.data),
           options.now,
         ),
       };

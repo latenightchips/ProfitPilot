@@ -146,6 +146,65 @@ describe('exportCsv', () => {
     if (!result.ok) return;
     expect(result.data.content.split('\n')).toHaveLength(1);
   });
+
+  /**
+   * `scenario-comparisons`/`loop-steps`/`exit-plan-breakdowns` also fetch
+   * the portfolios list to resolve export provenance — V4 Readiness Audit
+   * §12 P2-2. `CsvExporter.test.ts` covers the column-resolution logic
+   * itself; these only confirm `exportCsv` actually wires a real
+   * portfolios list through to the builder (not an empty array by
+   * omission) and that the provenance columns land in the real CSV
+   * output.
+   */
+  it('resolves real provenance for a V4 portfolio referenced by a saved simulation record', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    await service.write('portfolio', 'portfolio-1', {
+      ...samplePortfolio(),
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+      v4DebtStateUpdatedAt: '2026-03-15T11:59:00.000Z',
+    });
+    const writeResult = await service.write('simulation', 'sim-1', {
+      id: 'sim-1',
+      name: 'Sim',
+      description: null,
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      scenario: { type: 'btcPriceTarget' },
+      result: { baseline: { equity: 1 }, scenario: { equity: 1 } },
+      metadata: null,
+    });
+    expect(writeResult.ok).toBe(true);
+
+    const result = await exportCsv('scenario-comparisons', { service, now });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.content).toContain('v4,live,2026-03-15T11:59:00.000Z');
+  });
+
+  it('a genuine storage-read failure resolving portfolios fails the export rather than silently omitting provenance', async () => {
+    const adapter = createFailingListAdapter('portfolio');
+    const service = createPersistenceService(adapter);
+    const writeResult = await service.write('simulation', 'sim-1', {
+      id: 'sim-1',
+      name: 'Sim',
+      description: null,
+      portfolioId: 'portfolio-1',
+      portfolioUpdatedAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      scenario: { type: 'btcPriceTarget' },
+      result: {},
+      metadata: null,
+    });
+    expect(writeResult.ok).toBe(true);
+
+    const result = await exportCsv('scenario-comparisons', { service, now });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('SIMULATED_FAILURE');
+  });
 });
 
 describe('triggerDownload', () => {

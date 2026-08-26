@@ -151,12 +151,64 @@ function resolveSupplyAprForExport(portfolio: Portfolio): number | null {
 /**
  * "Protocol Version" / "V4 Debt State Source" / "V4 Debt State Updated At" /
  * "V4 Collateral Risk Source" / "V4 Collateral Risk Updated At" /
- * "V4 Data Stale At Export" columns — V4 Readiness Audit §12 P2-1. Reuse
+ * "V4 Data Stale At Export" columns — V4 Readiness Audit §12 P2-1
+ * (`buildPortfolioPositionsCsv` below), extended to the three
+ * collection-level exports (`buildScenarioComparisonsCsv`/
+ * `buildLoopStepsCsv`/`buildExitPlanBreakdownsCsv`) in P2-2. Reuse
  * `resolveExportProvenance` (`services/shared/exportProvenance.ts`)
- * directly — the same shared resolver the Loop/Exit/Simulation exporters
- * call, rather than a fourth independent copy of the same "manual vs live,
- * last successful timestamp, stale at export" logic.
+ * directly — the same shared resolver every exporter calls, rather than a
+ * fifth independent copy of the same "manual vs live, last successful
+ * timestamp, stale at export" logic.
+ *
+ * **Why P2-2, not already part of P2-1**: `buildScenarioComparisonsCsv`/
+ * `buildLoopStepsCsv`/`buildExitPlanBreakdownsCsv` each operate on a
+ * saved simulation/loop-strategy/exit-plan record — structurally typed
+ * `unknown`, not `Portfolio` — and a saved record carries only its own
+ * `portfolioId` string, never the owning portfolio's protocol version or
+ * V4 source/freshness fields. Resolving real provenance for these three
+ * exports requires cross-referencing each record's `portfolioId` against
+ * a portfolios list, which `ExportService.ts`'s `exportCsv` now fetches
+ * only for these three kinds (`services/portfolio/index` still owns
+ * nothing about it — this stays a plain `Portfolio[]` lookup, no new
+ * dependency).
+ *
+ * **Never a fabricated value.** A `portfolioId` that doesn't resolve to
+ * any currently-saved portfolio (deleted since the record was saved, or a
+ * malformed/missing id on the loosely-typed record) reports every
+ * provenance column as `null` → `'Not available'` — a real "we do not
+ * know," never a guess and never silently `'v3'`.
  */
+function buildPortfolioLookup(portfolios: Portfolio[]): Map<string, Portfolio> {
+  return new Map(portfolios.map((portfolio) => [portfolio.id, portfolio]));
+}
+
+function resolvePortfolioProvenanceColumns(
+  portfolioId: string | null,
+  portfoliosById: Map<string, Portfolio>,
+): (string | boolean | null)[] {
+  const portfolio = portfolioId !== null ? portfoliosById.get(portfolioId) : undefined;
+  if (portfolio === undefined) {
+    return [null, null, null, null, null, null];
+  }
+  const provenance = resolveExportProvenance(portfolio);
+  return [
+    provenance.protocolVersion,
+    provenance.v4DebtStateSource,
+    provenance.v4DebtStateUpdatedAt,
+    provenance.v4CollateralRiskSource,
+    provenance.v4CollateralRiskUpdatedAt,
+    provenance.v4DataStaleAtExport,
+  ];
+}
+
+const PROVENANCE_COLUMN_HEADERS = [
+  'Protocol Version',
+  'V4 Debt State Source',
+  'V4 Debt State Updated At',
+  'V4 Collateral Risk Source',
+  'V4 Collateral Risk Updated At',
+  'V4 Data Stale At Export',
+];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
@@ -251,7 +303,7 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
   return [header, ...rows].join('\n');
 }
 
-export function buildScenarioComparisonsCsv(scenarios: unknown[]): string {
+export function buildScenarioComparisonsCsv(scenarios: unknown[], portfolios: Portfolio[]): string {
   const header = csvLine([
     'Simulation ID',
     'Name',
@@ -263,7 +315,10 @@ export function buildScenarioComparisonsCsv(scenarios: unknown[]): string {
     'Scenario Health Factor',
     'Profit or Loss (USD)',
     'Created At',
+    ...PROVENANCE_COLUMN_HEADERS,
   ]);
+
+  const portfoliosById = buildPortfolioLookup(portfolios);
 
   const rows = scenarios.map((raw) => {
     const record = asRecord(raw);
@@ -271,11 +326,12 @@ export function buildScenarioComparisonsCsv(scenarios: unknown[]): string {
     const baseline = asRecord(result?.baseline);
     const scenario = asRecord(result?.scenario);
     const scenarioDefinition = asRecord(record?.scenario);
+    const portfolioId = asString(record?.portfolioId);
 
     return csvLine([
       asString(record?.id) ?? 'Not available',
       asString(record?.name) ?? 'Not available',
-      asString(record?.portfolioId) ?? 'Not available',
+      portfolioId ?? 'Not available',
       asString(scenarioDefinition?.type),
       asNumber(baseline?.equity),
       asNumber(scenario?.equity),
@@ -283,13 +339,14 @@ export function buildScenarioComparisonsCsv(scenarios: unknown[]): string {
       asNumber(scenario?.healthFactor),
       asNumber(scenario?.profitOrLoss),
       asString(record?.createdAt) ?? 'Not available',
+      ...resolvePortfolioProvenanceColumns(portfolioId, portfoliosById),
     ]);
   });
 
   return [header, ...rows].join('\n');
 }
 
-export function buildLoopStepsCsv(strategies: unknown[]): string {
+export function buildLoopStepsCsv(strategies: unknown[], portfolios: Portfolio[]): string {
   const header = csvLine([
     'Strategy ID',
     'Strategy Name',
@@ -299,22 +356,38 @@ export function buildLoopStepsCsv(strategies: unknown[]): string {
     'BTC Purchased (BTC)',
     'Collateral After (BTC)',
     'Created At',
+    ...PROVENANCE_COLUMN_HEADERS,
   ]);
+
+  const portfoliosById = buildPortfolioLookup(portfolios);
 
   const rows: string[] = [];
   for (const raw of strategies) {
     const record = asRecord(raw);
     const id = asString(record?.id) ?? 'Not available';
     const name = asString(record?.name) ?? 'Not available';
-    const portfolioId = asString(record?.portfolioId) ?? 'Not available';
+    const portfolioId = asString(record?.portfolioId);
     const createdAt = asString(record?.createdAt) ?? 'Not available';
+    const provenanceColumns = resolvePortfolioProvenanceColumns(portfolioId, portfoliosById);
 
     const result = asRecord(record?.result);
     const strategy = asRecord(result?.strategy);
     const steps = Array.isArray(strategy?.steps) ? (strategy.steps as unknown[]) : [];
 
     if (steps.length === 0) {
-      rows.push(csvLine([id, name, portfolioId, null, null, null, null, createdAt]));
+      rows.push(
+        csvLine([
+          id,
+          name,
+          portfolioId ?? 'Not available',
+          null,
+          null,
+          null,
+          null,
+          createdAt,
+          ...provenanceColumns,
+        ]),
+      );
       continue;
     }
 
@@ -325,12 +398,13 @@ export function buildLoopStepsCsv(strategies: unknown[]): string {
         csvLine([
           id,
           name,
-          portfolioId,
+          portfolioId ?? 'Not available',
           asNumber(step?.stepNumber),
           asNumber(step?.borrowedAmount),
           asNumber(step?.btcPurchased),
           asNumber(collateralAfter?.quantity),
           createdAt,
+          ...provenanceColumns,
         ]),
       );
     }
@@ -339,7 +413,7 @@ export function buildLoopStepsCsv(strategies: unknown[]): string {
   return [header, ...rows].join('\n');
 }
 
-export function buildExitPlanBreakdownsCsv(plans: unknown[]): string {
+export function buildExitPlanBreakdownsCsv(plans: unknown[], portfolios: Portfolio[]): string {
   const header = csvLine([
     'Plan ID',
     'Plan Name',
@@ -352,7 +426,10 @@ export function buildExitPlanBreakdownsCsv(plans: unknown[]): string {
     'BTC Sold',
     'BTC Retained',
     'Created At',
+    ...PROVENANCE_COLUMN_HEADERS,
   ]);
+
+  const portfoliosById = buildPortfolioLookup(portfolios);
 
   const rows = plans.map((raw) => {
     const record = asRecord(raw);
@@ -360,11 +437,12 @@ export function buildExitPlanBreakdownsCsv(plans: unknown[]): string {
     const before = asRecord(result?.before);
     const after = asRecord(result?.after);
     const transaction = asRecord(result?.transaction);
+    const portfolioId = asString(record?.portfolioId);
 
     return csvLine([
       asString(record?.id) ?? 'Not available',
       asString(record?.name) ?? 'Not available',
-      asString(record?.portfolioId) ?? 'Not available',
+      portfolioId ?? 'Not available',
       asString(record?.exitType) ?? 'Not available',
       typeof result?.feasible === 'boolean' ? result.feasible : null,
       asNumber(before?.netEquity),
@@ -373,6 +451,7 @@ export function buildExitPlanBreakdownsCsv(plans: unknown[]): string {
       asNumber(transaction?.btcSold),
       asNumber(transaction?.btcRetained),
       asString(record?.createdAt) ?? 'Not available',
+      ...resolvePortfolioProvenanceColumns(portfolioId, portfoliosById),
     ]);
   });
 

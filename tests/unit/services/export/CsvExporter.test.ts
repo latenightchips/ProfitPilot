@@ -367,59 +367,124 @@ describe('CSV formula-injection guard (M9-034)', () => {
 
 describe('buildScenarioComparisonsCsv', () => {
   it('reads well-formed simulation records structurally', () => {
-    const csv = buildScenarioComparisonsCsv([
-      {
-        id: 'sim-1',
-        name: 'Bull case',
-        portfolioId: 'portfolio-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        scenario: { type: 'btcPriceTarget' },
-        result: {
-          baseline: { equity: 10000, healthFactor: 1.5 },
-          scenario: { equity: 15000, healthFactor: 2, profitOrLoss: 5000 },
+    const csv = buildScenarioComparisonsCsv(
+      [
+        {
+          id: 'sim-1',
+          name: 'Bull case',
+          portfolioId: 'portfolio-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          scenario: { type: 'btcPriceTarget' },
+          result: {
+            baseline: { equity: 10000, healthFactor: 1.5 },
+            scenario: { equity: 15000, healthFactor: 2, profitOrLoss: 5000 },
+          },
         },
-      },
-    ]);
+      ],
+      [],
+    );
     const lines = csv.split('\n');
     expect(lines[1]).toContain('sim-1');
     expect(lines[1]).toContain('5000');
   });
 
   it('renders "Not available" for malformed or missing nested fields', () => {
-    const csv = buildScenarioComparisonsCsv([{ id: 'sim-2' }]);
+    const csv = buildScenarioComparisonsCsv([{ id: 'sim-2' }], []);
     const lines = csv.split('\n');
     expect(lines[1]).toContain('Not available');
   });
 });
 
+/**
+ * Export provenance for the referenced portfolio — V4 Readiness Audit §12
+ * P2-2, extending P2-1's `buildPortfolioPositionsCsv` provenance columns
+ * to this collection-level export by cross-referencing each record's own
+ * `portfolioId`. `resolveExportProvenance`'s own dedicated unit tests
+ * cover the resolver logic itself; these only confirm the lookup/column
+ * wiring.
+ */
+describe('buildScenarioComparisonsCsv — export provenance (P2-2)', () => {
+  it('reports "Not available" for every provenance column when the referenced portfolio is not found', () => {
+    const csv = buildScenarioComparisonsCsv(
+      [{ id: 'sim-1', portfolioId: 'missing-portfolio' }],
+      [],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+  });
+
+  it('resolves real provenance for a V4 portfolio found in the referenced list', () => {
+    const v4Portfolio: Portfolio = {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'manual',
+      v4DebtStateUpdatedAt: '2026-08-25T11:00:00.000Z',
+    };
+    const csv = buildScenarioComparisonsCsv(
+      [{ id: 'sim-1', portfolioId: 'portfolio-1' }],
+      [v4Portfolio],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual([
+      'v4',
+      'manual',
+      '2026-08-25T11:00:00.000Z',
+      'Not available',
+      'Not available',
+      'Not available',
+    ]);
+  });
+
+  it('resolves v3 provenance for an unversioned portfolio, never fabricating V4 fields', () => {
+    const csv = buildScenarioComparisonsCsv(
+      [{ id: 'sim-1', portfolioId: 'portfolio-1' }],
+      [samplePortfolio()],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual([
+      'v3',
+      'Not available',
+      'Not available',
+      'Not available',
+      'Not available',
+      'Not available',
+    ]);
+  });
+});
+
 describe('buildLoopStepsCsv', () => {
   it('emits one row per step across a strategy', () => {
-    const csv = buildLoopStepsCsv([
-      {
-        id: 'strategy-1',
-        name: 'Strategy',
-        portfolioId: 'portfolio-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        result: {
-          strategy: {
-            steps: [
-              {
-                stepNumber: 1,
-                borrowedAmount: 1000,
-                btcPurchased: 0.02,
-                collateralAfter: { quantity: 2.02 },
-              },
-              {
-                stepNumber: 2,
-                borrowedAmount: 900,
-                btcPurchased: 0.018,
-                collateralAfter: { quantity: 2.038 },
-              },
-            ],
+    const csv = buildLoopStepsCsv(
+      [
+        {
+          id: 'strategy-1',
+          name: 'Strategy',
+          portfolioId: 'portfolio-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          result: {
+            strategy: {
+              steps: [
+                {
+                  stepNumber: 1,
+                  borrowedAmount: 1000,
+                  btcPurchased: 0.02,
+                  collateralAfter: { quantity: 2.02 },
+                },
+                {
+                  stepNumber: 2,
+                  borrowedAmount: 900,
+                  btcPurchased: 0.018,
+                  collateralAfter: { quantity: 2.038 },
+                },
+              ],
+            },
           },
         },
-      },
-    ]);
+      ],
+      [],
+    );
     const lines = csv.split('\n');
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain('strategy-1');
@@ -427,15 +492,18 @@ describe('buildLoopStepsCsv', () => {
   });
 
   it('emits one placeholder row for a strategy with no steps', () => {
-    const csv = buildLoopStepsCsv([
-      {
-        id: 'strategy-1',
-        name: 'Strategy',
-        portfolioId: 'portfolio-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        result: { strategy: { steps: [] } },
-      },
-    ]);
+    const csv = buildLoopStepsCsv(
+      [
+        {
+          id: 'strategy-1',
+          name: 'Strategy',
+          portfolioId: 'portfolio-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          result: { strategy: { steps: [] } },
+        },
+      ],
+      [],
+    );
     const lines = csv.split('\n');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('Not available');
@@ -455,27 +523,30 @@ describe('buildLoopStepsCsv', () => {
    * the output regardless of whether it's present in the source data.
    */
   it('never includes an arbitrary field from the loose result object, even one shaped like a credential', () => {
-    const csv = buildLoopStepsCsv([
-      {
-        id: 'strategy-1',
-        name: 'Strategy',
-        portfolioId: 'portfolio-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        result: {
-          wallet: { privateKey: '0xabc123', seedPhrase: 'wagon current bunker...' },
-          strategy: {
-            steps: [
-              {
-                stepNumber: 1,
-                borrowedAmount: 1000,
-                btcPurchased: 0.02,
-                collateralAfter: { quantity: 2.02 },
-              },
-            ],
+    const csv = buildLoopStepsCsv(
+      [
+        {
+          id: 'strategy-1',
+          name: 'Strategy',
+          portfolioId: 'portfolio-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          result: {
+            wallet: { privateKey: '0xabc123', seedPhrase: 'wagon current bunker...' },
+            strategy: {
+              steps: [
+                {
+                  stepNumber: 1,
+                  borrowedAmount: 1000,
+                  btcPurchased: 0.02,
+                  collateralAfter: { quantity: 2.02 },
+                },
+              ],
+            },
           },
         },
-      },
-    ]);
+      ],
+      [],
+    );
     expect(csv).not.toContain('privateKey');
     expect(csv).not.toContain('0xabc123');
     expect(csv).not.toContain('seedPhrase');
@@ -483,31 +554,133 @@ describe('buildLoopStepsCsv', () => {
   });
 });
 
+/**
+ * Export provenance for the referenced portfolio — V4 Readiness Audit §12
+ * P2-2. Same reasoning as `buildScenarioComparisonsCsv`'s own provenance
+ * describe block above; every row for a given strategy (including the
+ * no-steps placeholder row) carries the same resolved provenance.
+ */
+describe('buildLoopStepsCsv — export provenance (P2-2)', () => {
+  it('reports "Not available" for every provenance column when the referenced portfolio is not found', () => {
+    const csv = buildLoopStepsCsv(
+      [
+        {
+          id: 'strategy-1',
+          portfolioId: 'missing-portfolio',
+          result: { strategy: { steps: [] } },
+        },
+      ],
+      [],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+  });
+
+  it('resolves real provenance for a live V4 portfolio, applied to every step row', () => {
+    const v4Portfolio: Portfolio = {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4DebtStateSource: 'live',
+      v4DebtStateUpdatedAt: new Date().toISOString(),
+    };
+    const csv = buildLoopStepsCsv(
+      [
+        {
+          id: 'strategy-1',
+          portfolioId: 'portfolio-1',
+          result: {
+            strategy: {
+              steps: [
+                { stepNumber: 1, borrowedAmount: 1000, btcPurchased: 0.02 },
+                { stepNumber: 2, borrowedAmount: 900, btcPurchased: 0.018 },
+              ],
+            },
+          },
+        },
+      ],
+      [v4Portfolio],
+    );
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(3);
+    const step1Fields = lines[1]!.split(',');
+    const step2Fields = lines[2]!.split(',');
+    expect(step1Fields.slice(-6)[0]).toBe('v4');
+    expect(step1Fields.slice(-6)[1]).toBe('live');
+    expect(step1Fields.slice(-6)[5]).toBe('false');
+    expect(step2Fields.slice(-6)[0]).toBe('v4');
+  });
+});
+
 describe('buildExitPlanBreakdownsCsv', () => {
   it('reads well-formed exit plan records structurally', () => {
-    const csv = buildExitPlanBreakdownsCsv([
-      {
-        id: 'plan-1',
-        name: 'Full exit',
-        portfolioId: 'portfolio-1',
-        exitType: 'fullExit',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        result: {
-          feasible: true,
-          before: { netEquity: 10000 },
-          after: { netEquity: 9000 },
-          transaction: { repayment: 5000, btcSold: 0.1, btcRetained: 0 },
+    const csv = buildExitPlanBreakdownsCsv(
+      [
+        {
+          id: 'plan-1',
+          name: 'Full exit',
+          portfolioId: 'portfolio-1',
+          exitType: 'fullExit',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          result: {
+            feasible: true,
+            before: { netEquity: 10000 },
+            after: { netEquity: 9000 },
+            transaction: { repayment: 5000, btcSold: 0.1, btcRetained: 0 },
+          },
         },
-      },
-    ]);
+      ],
+      [],
+    );
     const lines = csv.split('\n');
     expect(lines[1]).toContain('plan-1');
     expect(lines[1]).toContain('true');
   });
 
   it('renders "Not available" for a malformed record rather than throwing', () => {
-    expect(() => buildExitPlanBreakdownsCsv([null, 'not-an-object', 42])).not.toThrow();
-    const csv = buildExitPlanBreakdownsCsv([null]);
+    expect(() => buildExitPlanBreakdownsCsv([null, 'not-an-object', 42], [])).not.toThrow();
+    const csv = buildExitPlanBreakdownsCsv([null], []);
     expect(csv.split('\n')[1]).toContain('Not available');
+  });
+});
+
+/**
+ * Export provenance for the referenced portfolio — V4 Readiness Audit §12
+ * P2-2. Same reasoning as `buildScenarioComparisonsCsv`'s own provenance
+ * describe block above.
+ */
+describe('buildExitPlanBreakdownsCsv — export provenance (P2-2)', () => {
+  it('reports "Not available" for every provenance column when the referenced portfolio is not found', () => {
+    const csv = buildExitPlanBreakdownsCsv(
+      [{ id: 'plan-1', portfolioId: 'missing-portfolio' }],
+      [],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+  });
+
+  it('resolves real provenance for a manual V4 portfolio found in the referenced list', () => {
+    const v4Portfolio: Portfolio = {
+      ...samplePortfolio(),
+      name: 'V4 Portfolio',
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 1 },
+      v4CollateralRiskSource: 'manual',
+      v4CollateralRiskUpdatedAt: '2026-08-25T11:00:00.000Z',
+    };
+    const csv = buildExitPlanBreakdownsCsv(
+      [{ id: 'plan-1', portfolioId: 'portfolio-1' }],
+      [v4Portfolio],
+    );
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields.slice(-6)).toEqual([
+      'v4',
+      'Not available',
+      'Not available',
+      'manual',
+      '2026-08-25T11:00:00.000Z',
+      'Not available',
+    ]);
   });
 });
