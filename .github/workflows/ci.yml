@@ -49,3 +49,24 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # Production smoke gate — R1-3 ("Runtime Pinning + Production CI
+      # Smoke Gate"). Closes the R1-1 finding that a passing `pnpm build`
+      # was never actually verified to boot and serve anything. Installs
+      # only Chromium (the one browser `playwright.config.ts`'s own
+      # `projects` array defines) plus its OS-level dependencies — not
+      # the full Firefox/WebKit matrix `pnpm test:e2e`'s broader,
+      # non-blocking local suite could use.
+      - name: Install Playwright Chromium (production smoke gate only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Runs `pnpm start` against the build produced above (via
+      # `playwright.config.ts`'s own `webServer` block — bounded by its
+      # explicit 60s timeout, with guaranteed process cleanup after this
+      # step regardless of outcome) and exercises exactly
+      # `tests/e2e/productionSmoke.spec.ts`, not the full E2E suite. Makes
+      # no live external network call — see that file's own header
+      # comment for why. Network-dependent Aave V4 boundary verification
+      # stays in its own separate, scheduled `aave-v4-boundary.yml`.
+      - name: Production smoke test
+        run: pnpm exec playwright test tests/e2e/productionSmoke.spec.ts

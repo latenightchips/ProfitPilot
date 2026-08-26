@@ -31,10 +31,18 @@ Every procedure below is marked with who performs it:
 
 ## Prerequisites [Operator]
 
-Node.js 22+, pnpm 10+ (`CONTRIBUTING.md`'s own "Setup" section — this
-document does not repeat that walkthrough). No database, no cache
-server, no external service is required to run Version 1.0.0 — Manual
-Mode (the only mode this version ships) needs zero external
+Node.js 22.x, pnpm 10.x (`CONTRIBUTING.md`'s own "Setup" section — this
+document does not repeat that walkthrough). Machine-visible, not just
+documented — R1-3 ("Runtime Pinning + Production CI Smoke Gate") added
+`package.json`'s `engines` field (`node: ">=22.0.0 <23.0.0"`,
+`pnpm: ">=10.0.0 <11.0.0"`) so a mismatched local toolchain fails fast
+and clearly at `pnpm install` rather than downstream with a confusing
+error, plus a root `.nvmrc` (`22`) for `nvm`/`fnm` users — both mirror
+exactly what `.github/workflows/ci.yml` already pins
+(`actions/setup-node`'s `node-version: 22`, `pnpm/action-setup`'s
+`version: 10`), not a new or different requirement. No database, no
+cache server, no external service is required to run Version 1.0.0 —
+Manual Mode (the only mode this version ships) needs zero external
 configuration (`utils/env.ts`'s own schema: every field is optional or
 defaulted).
 
@@ -294,6 +302,35 @@ from any specific provider's rate limits; an operator on a
 lower-throughput paid tier should size their own deployment-level
 limiting accordingly rather than relying on this default alone.
 
+## Production smoke gate (CI) [Repository]
+
+R1-3 ("Runtime Pinning + Production CI Smoke Gate") added a small,
+blocking CI step — `tests/e2e/productionSmoke.spec.ts`, run via
+`.github/workflows/ci.yml`'s existing `build` job, immediately after
+`pnpm build` — that starts the real production server (`pnpm start`,
+not `next dev`) and checks it with Playwright's Chromium project only
+(not the full Firefox/WebKit matrix `pnpm test:e2e` could use).
+
+**What it proves**: the production build actually boots within a
+bounded 60-second startup window (`playwright.config.ts`'s
+`webServer.timeout`); the root route renders past hydration, not just a
+static shell; a second real application page (`/portfolios`) loads; and
+the `/api/aave/*` boundary — including R1-2's rate-limiting
+`middleware.ts` sitting in front of it — is reachable and returns a
+well-formed response rather than crashing the process.
+
+**What it deliberately does not prove**: anything about a real, live
+Aave RPC call, or Supabase/Sentry/CoinGecko reachability — the one
+`/api/aave/*` check sends a request with its required query parameters
+removed on purpose, which the route rejects with `400` before ever
+constructing an RPC client, so this gate makes zero live external
+network calls and cannot fail due to RPC flakiness. Real RPC/ABI/
+decimals verification remains `aave-v4-boundary.yml`'s own separate,
+scheduled, non-blocking job, unchanged by this batch. Nor does this
+gate replace `pnpm test:e2e`'s much broader manual suite (full
+workflow coverage across every feature, all 43 accessibility checks) —
+see "Known operational limitations" below for what remains manual only.
+
 ## Health/readiness checks that can actually be performed [Operator]
 
 No ProfitPilot-operated health-check endpoint or uptime monitor exists
@@ -335,11 +372,20 @@ on any of the above is **[Deferred]** — none exists for Version 1.0.0.
   cross-device data — each browser/device carries its own independent
   local copy; moving data between them is always a manual export/import,
   never automatic.
-- **CI does not run the end-to-end (Playwright) suite automatically**
-  — a documented, non-blocking limitation
-  (`docs/DEFECT_CLASSIFICATION.md` §6); an operator building their own
-  release should run `pnpm test:e2e` manually before deploying, the same
-  practice this project's own release process follows.
+- **CI runs a small production smoke gate, not the full end-to-end
+  (Playwright) suite.** R1-3 ("Runtime Pinning + Production CI Smoke
+  Gate") added `tests/e2e/productionSmoke.spec.ts` to
+  `.github/workflows/ci.yml`, run against a real `pnpm build && pnpm
+  start` process (not `next dev`) after every other validation gate
+  passes — proving the production process actually boots, the root
+  route renders past hydration, a second real page loads, and the
+  `/api/aave/*` boundary responds without crashing, all without any
+  live external network call. It deliberately does **not** run the
+  broader suite (`docs/DEFECT_CLASSIFICATION.md` §6, formerly
+  documented as entirely manual) — an operator building their own
+  release should still run `pnpm test:e2e` manually before deploying
+  for full workflow/accessibility coverage, the same practice this
+  project's own release process follows.
 - **Single-copy data model** — a lost device, cleared browser storage,
   or an un-exported dataset has no recovery path beyond a previously
   exported backup (`docs/DISASTER_RECOVERY.md`'s "Deleted local browser
