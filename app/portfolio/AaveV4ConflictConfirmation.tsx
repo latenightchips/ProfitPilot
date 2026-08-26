@@ -31,6 +31,22 @@ import type { Portfolio } from '@/types/portfolio';
  * dismissing one never touches the other, and both can be visible
  * simultaneously if both dimensions happen to be in conflict at once.
  *
+ * **"Use Live Data"/"Keep Manual" carry an `aria-describedby` back to
+ * their own panel's heading (V4 Readiness Audit §12 P3-3).** Both panels
+ * use the identical visible button text, and — as the previous paragraph
+ * documents — both panels can be on-screen together; a sighted user
+ * reads the "Debt State: ..." / "Collateral Risk: ..." heading directly
+ * above each button pair for context, but a screen-reader user jumping
+ * between controls by widget type (a common assistive-technology
+ * navigation pattern) previously heard two identically-named "Use Live
+ * Data" buttons with nothing distinguishing them. Reuses this codebase's
+ * own established `aria-describedby`-to-explanatory-text convention
+ * (`app/portfolio/AaveProtocolVersionForm.tsx`'s `userAddress` field
+ * error) rather than an `aria-label` override, which would also have
+ * changed each button's accessible NAME and broken every existing
+ * `getByRole('button', { name: 'Use Live Data' })`-style test query. No
+ * visible text, click behavior, or Store action changes.
+ *
  * **"Use Live Data"** calls `acceptAaveV4DebtStateCandidate`/
  * `acceptAaveV4CollateralRiskCandidate`, which writes the pending
  * candidate as the new canonical `'live'` value and clears the
@@ -78,7 +94,10 @@ function AaveV4DebtStateConflictPanel({
       role="alert"
       className="flex flex-col gap-2 rounded-md border border-border bg-accent/20 p-3 text-xs"
     >
-      <p className="font-medium text-foreground">
+      <p
+        id={`v4-debt-state-conflict-heading-${portfolioId}`}
+        className="font-medium text-foreground"
+      >
         Debt State: live Aave data differs from your manual assumption
       </p>
       <dl className="flex flex-col gap-1">
@@ -95,6 +114,7 @@ function AaveV4DebtStateConflictPanel({
         <button
           type="button"
           onClick={() => acceptCandidate(portfolioId)}
+          aria-describedby={`v4-debt-state-conflict-heading-${portfolioId}`}
           className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
         >
           Use Live Data
@@ -102,6 +122,7 @@ function AaveV4DebtStateConflictPanel({
         <button
           type="button"
           onClick={() => dismissCandidate(portfolioId)}
+          aria-describedby={`v4-debt-state-conflict-heading-${portfolioId}`}
           className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
         >
           Keep Manual
@@ -129,7 +150,10 @@ function AaveV4CollateralRiskConflictPanel({
       role="alert"
       className="flex flex-col gap-2 rounded-md border border-border bg-accent/20 p-3 text-xs"
     >
-      <p className="font-medium text-foreground">
+      <p
+        id={`v4-collateral-risk-conflict-heading-${portfolioId}`}
+        className="font-medium text-foreground"
+      >
         Collateral Risk: live Aave data differs from your manual assumption
       </p>
       <dl className="flex flex-col gap-1">
@@ -146,6 +170,7 @@ function AaveV4CollateralRiskConflictPanel({
         <button
           type="button"
           onClick={() => acceptCandidate(portfolioId)}
+          aria-describedby={`v4-collateral-risk-conflict-heading-${portfolioId}`}
           className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
         >
           Use Live Data
@@ -153,6 +178,7 @@ function AaveV4CollateralRiskConflictPanel({
         <button
           type="button"
           onClick={() => dismissCandidate(portfolioId)}
+          aria-describedby={`v4-collateral-risk-conflict-heading-${portfolioId}`}
           className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
         >
           Keep Manual
