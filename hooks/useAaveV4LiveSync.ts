@@ -163,6 +163,9 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
   const attemptedDebtAsset = useAaveV4LiveDataStore((state) => state.attemptedDebtAsset);
   const fetchAaveV4LiveData = useAaveV4LiveDataStore((state) => state.fetchAaveV4LiveData);
   const setAaveV4DebtState = usePortfolioStore((state) => state.setAaveV4DebtState);
+  const touchAaveV4DebtStateFreshness = usePortfolioStore(
+    (state) => state.touchAaveV4DebtStateFreshness,
+  );
   const setAaveV4DebtStateCandidate = usePortfolioStore(
     (state) => state.setAaveV4DebtStateCandidate,
   );
@@ -249,10 +252,17 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
 
     if (portfolio.v4DebtStateSource === 'live') {
       // Established live→live refresh model, unchanged: an unchanged
-      // refresh is a no-op (avoids needlessly clearing an open
-      // Preview); a genuinely different refresh auto-applies, no
+      // refresh skips the canonical write (avoids needlessly clearing an
+      // open Preview); a genuinely different refresh auto-applies, no
       // confirmation — the freshness model your own audit asked to keep
-      // as-is.
+      // as-is. V4 Readiness Audit §12 P2-3 — skipping the canonical
+      // write must not also silently freeze the persisted freshness
+      // timestamp: `touchAaveV4DebtStateFreshness` refreshes
+      // `v4DebtStateUpdatedAt` alone, without touching `v4DebtState`/
+      // `Portfolio.updatedAt`, so a genuinely fresh confirmation is never
+      // misreported as stale (`resolveExportProvenance`'s
+      // `v4DataStaleAtExport`, and any future reload) merely because the
+      // value itself happened not to change on this particular poll.
       //
       // V4 Readiness Audit §12 P1-D3 — a genuine defect found while
       // reviewing that stage: `aaveV4DebtStateEqual` deliberately never
@@ -269,7 +279,10 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
       const unchanged =
         aaveV4DebtStateEqual(engineInputs, portfolio.v4DebtState) &&
         engineInputs.debtAssetPriceUsd === portfolio.v4DebtState?.debtAssetPriceUsd;
-      if (unchanged) return;
+      if (unchanged) {
+        touchAaveV4DebtStateFreshness(portfolioId);
+        return;
+      }
       setAaveV4DebtState(portfolioId, engineInputs, 'live');
       return;
     }
@@ -304,6 +317,7 @@ export function useAaveV4LiveSync(portfolioId: string | null): void {
     attemptedUserAddress,
     attemptedDebtAsset,
     setAaveV4DebtState,
+    touchAaveV4DebtStateFreshness,
     setAaveV4DebtStateCandidate,
     setAaveV4DebtStateError,
   ]);

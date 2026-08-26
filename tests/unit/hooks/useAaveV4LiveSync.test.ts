@@ -244,6 +244,42 @@ describe('useAaveV4LiveSync — identical data causes no portfolio update (equal
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
     expect(after.updatedAt).toBe(updatedAtBefore);
   });
+
+  /**
+   * V4 Readiness Audit §12 P2-3 — a genuine gap found while auditing the
+   * P2-1 freshness-persistence guarantee: this exact "unchanged, skip the
+   * canonical write" branch also silently skipped refreshing
+   * `v4DebtStateUpdatedAt`, freezing it at whenever the value last
+   * actually changed even while live sync kept confirming it fresh every
+   * poll — directly undermining `resolveExportProvenance`'s
+   * `v4DataStaleAtExport`. `touchAaveV4DebtStateFreshness` closes this
+   * without reintroducing the `updatedAt`/Preview-clearing regression the
+   * equality gate exists to prevent (the test above still passes
+   * unchanged, proving `updatedAt` itself is untouched).
+   */
+  it('still refreshes v4DebtStateUpdatedAt on an unchanged live refresh, honestly reflecting the fresh confirmation', async () => {
+    const portfolio = createV4Portfolio();
+    const withDebtState = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(portfolio.id, VALID_ENGINE_INPUTS, 'live');
+    if (!withDebtState.ok) throw new Error('setup failed');
+    const stampBefore = withDebtState.data.v4DebtStateUpdatedAt;
+    expect(stampBefore).toBeDefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    renderHook(() => useAaveV4LiveSync(portfolio.id));
+    useAaveV4LiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(after.v4DebtStateUpdatedAt).not.toBe(stampBefore);
+    });
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4DebtState).toEqual(VALID_ENGINE_INPUTS);
+    expect(after.v4DebtStateSource).toBe('live');
+  });
 });
 
 describe('useAaveV4LiveSync — RPC failure preserves last-known v4DebtState', () => {

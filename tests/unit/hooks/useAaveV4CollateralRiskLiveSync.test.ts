@@ -201,6 +201,39 @@ describe('useAaveV4CollateralRiskLiveSync — identical data causes no portfolio
     expect(after.updatedAt).toBe(updatedAtBefore);
   });
 
+  /**
+   * V4 Readiness Audit §12 P2-3 — same gap and fix as
+   * `useAaveV4LiveSync.test.ts`'s own identically-named test, applied
+   * here for `v4CollateralRisk`.
+   */
+  it('still refreshes v4CollateralRiskUpdatedAt on an unchanged live refresh, honestly reflecting the fresh confirmation', async () => {
+    const portfolio = createV4Portfolio();
+    const withRisk = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(portfolio.id, VALID_RISK_CONFIG, 'live');
+    if (!withRisk.ok) throw new Error('setup failed');
+    const withMarket = usePortfolioStore
+      .getState()
+      .update(portfolio.id, { market: { btcPriceUsd: VALID_CANONICAL.collateralPriceUsd } });
+    if (!withMarket.ok) throw new Error('setup failed');
+    const stampBefore = withMarket.data.v4CollateralRiskUpdatedAt;
+    expect(stampBefore).toBeDefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    renderHook(() => useAaveV4CollateralRiskLiveSync(portfolio.id));
+    useAaveV4CollateralRiskLiveDataStore.setState(readyState());
+
+    await waitFor(() => {
+      const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+      expect(after.v4CollateralRiskUpdatedAt).not.toBe(stampBefore);
+    });
+
+    const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(after.v4CollateralRisk).toEqual(VALID_RISK_CONFIG);
+    expect(after.v4CollateralRiskSource).toBe('live');
+  });
+
   it('a changed dynamicConfigKey with a coincidentally-equal collateralFactor still counts as a real change', async () => {
     const portfolio = createV4Portfolio();
     usePortfolioStore

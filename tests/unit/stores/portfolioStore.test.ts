@@ -1625,6 +1625,98 @@ describe('usePortfolioStore.setAaveV4DebtState / setAaveV4CollateralRisk — fre
 });
 
 /**
+ * `touchAaveV4DebtStateFreshness`/`touchAaveV4CollateralRiskFreshness` —
+ * V4 Readiness Audit §12 P2-3. Closes a gap in the P2-1 freshness
+ * guarantee above: `hooks/useAaveV4LiveSync.ts`/
+ * `useAaveV4CollateralRiskLiveSync.ts`'s own "live→live, fetch confirms
+ * the SAME value" branch skips the canonical `setAaveV4DebtState`/
+ * `setAaveV4CollateralRisk` write entirely (to avoid needlessly bumping
+ * `Portfolio.updatedAt` and clearing an open Preview / triggering a false
+ * `driftNotice`) — which previously ALSO silently skipped refreshing the
+ * freshness timestamp, even though a genuine, fresh, successful fetch had
+ * just landed. These two actions refresh the timestamp alone.
+ */
+describe('usePortfolioStore.touchAaveV4DebtStateFreshness / touchAaveV4CollateralRiskFreshness (P2-3)', () => {
+  it('touchAaveV4DebtStateFreshness refreshes v4DebtStateUpdatedAt without touching v4DebtState, v4DebtStateSource, or Portfolio.updatedAt', async () => {
+    const created = createValidPortfolio();
+    const withState = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    if (!withState.ok) throw new Error('setup failed');
+    const stampBefore = withState.data.v4DebtStateUpdatedAt;
+    const updatedAtBefore = withState.data.updatedAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    usePortfolioStore.getState().touchAaveV4DebtStateFreshness(created.id);
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4DebtStateUpdatedAt).not.toBe(stampBefore);
+    expect(after.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(after.v4DebtStateSource).toBe('live');
+    expect(after.updatedAt).toBe(updatedAtBefore);
+  });
+
+  it('touchAaveV4CollateralRiskFreshness refreshes v4CollateralRiskUpdatedAt without touching v4CollateralRisk, v4CollateralRiskSource, or Portfolio.updatedAt', async () => {
+    const created = createValidPortfolio();
+    const withRisk = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'live');
+    if (!withRisk.ok) throw new Error('setup failed');
+    const stampBefore = withRisk.data.v4CollateralRiskUpdatedAt;
+    const updatedAtBefore = withRisk.data.updatedAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    usePortfolioStore.getState().touchAaveV4CollateralRiskFreshness(created.id);
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4CollateralRiskUpdatedAt).not.toBe(stampBefore);
+    expect(after.v4CollateralRisk).toEqual(VALID_V4_COLLATERAL_RISK);
+    expect(after.v4CollateralRiskSource).toBe('live');
+    expect(after.updatedAt).toBe(updatedAtBefore);
+  });
+
+  it('touchAaveV4DebtStateFreshness is a no-op when the portfolio has no v4DebtState at all', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().touchAaveV4DebtStateFreshness(created.id);
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4DebtStateUpdatedAt).toBeUndefined();
+  });
+
+  it('touchAaveV4CollateralRiskFreshness is a no-op when the portfolio has no v4CollateralRisk at all', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().touchAaveV4CollateralRiskFreshness(created.id);
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.v4CollateralRiskUpdatedAt).toBeUndefined();
+  });
+
+  it('touchAaveV4DebtStateFreshness is a no-op for a missing portfolio id (does not throw)', () => {
+    expect(() =>
+      usePortfolioStore.getState().touchAaveV4DebtStateFreshness('missing-id'),
+    ).not.toThrow();
+  });
+
+  it('the refreshed v4DebtStateUpdatedAt survives a full persistence round-trip (reload)', async () => {
+    const created = createValidPortfolio();
+    const withState = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    if (!withState.ok) throw new Error('setup failed');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    usePortfolioStore.getState().touchAaveV4DebtStateFreshness(created.id);
+    const stamp =
+      usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtStateUpdatedAt;
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtStateUpdatedAt).toBe(stamp);
+  });
+});
+
+/**
  * Persistence + canonical debt reconciliation integration — V4 Readiness
  * Audit §12 Stage 9. Ties Stage 5/6 (persistence), Stage 7 (live sync's
  * own eventual `setAaveV4DebtState` caller), and Stage 9 (canonical debt)

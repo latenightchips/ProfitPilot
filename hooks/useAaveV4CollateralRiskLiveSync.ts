@@ -162,6 +162,9 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     (state) => state.fetchAaveV4CollateralRiskLiveData,
   );
   const setAaveV4CollateralRisk = usePortfolioStore((state) => state.setAaveV4CollateralRisk);
+  const touchAaveV4CollateralRiskFreshness = usePortfolioStore(
+    (state) => state.touchAaveV4CollateralRiskFreshness,
+  );
   const setAaveV4CollateralRiskCandidate = usePortfolioStore(
     (state) => state.setAaveV4CollateralRiskCandidate,
   );
@@ -255,8 +258,17 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     };
 
     if (portfolio.v4CollateralRiskSource === 'live') {
-      // Established live→live refresh model, unchanged.
-      if (aaveV4CollateralRiskEqual(riskConfig, portfolio.v4CollateralRisk)) return;
+      // Established live→live refresh model, unchanged: skips the
+      // canonical write. V4 Readiness Audit §12 P2-3 — same reasoning as
+      // `useAaveV4LiveSync.ts`'s own identical fix: skipping the
+      // canonical write must not also silently freeze the persisted
+      // freshness timestamp, so `touchAaveV4CollateralRiskFreshness`
+      // refreshes `v4CollateralRiskUpdatedAt` alone, without touching
+      // `v4CollateralRisk`/`Portfolio.updatedAt`.
+      if (aaveV4CollateralRiskEqual(riskConfig, portfolio.v4CollateralRisk)) {
+        touchAaveV4CollateralRiskFreshness(portfolioId);
+        return;
+      }
       setAaveV4CollateralRisk(portfolioId, riskConfig, 'live');
       return;
     }
@@ -286,6 +298,7 @@ export function useAaveV4CollateralRiskLiveSync(portfolioId: string | null): voi
     errorCode,
     attemptedUserAddress,
     setAaveV4CollateralRisk,
+    touchAaveV4CollateralRiskFreshness,
     setAaveV4CollateralRiskCandidate,
     setAaveV4CollateralRiskError,
     update,

@@ -351,6 +351,32 @@ export interface PortfolioStoreActions {
     source?: AaveV4DataSource,
   ) => MappingResult<Portfolio>;
   /**
+   * V4 Readiness Audit §12 P2-3 — refreshes `v4DebtStateUpdatedAt` to now
+   * WITHOUT writing `v4DebtState`/`v4DebtStateSource`/bumping
+   * `Portfolio.updatedAt`. Exists for exactly one caller:
+   * `hooks/useAaveV4LiveSync.ts`'s own "live→live, fetch confirms the
+   * SAME value" branch, which deliberately skips `setAaveV4DebtState`
+   * entirely (an unchanged canonical write would bump `updatedAt` and
+   * needlessly clear an open Preview / trigger a false `driftNotice` —
+   * see that hook's own header comment). Skipping the canonical write
+   * previously ALSO skipped the P2-1 freshness stamp, silently freezing
+   * `v4DebtStateUpdatedAt` at whenever the value last actually changed
+   * even while live sync kept confirming it fresh every poll — this
+   * action is the fix, called from that same branch. No-op (including no
+   * persisted write) when the portfolio has no `v4DebtState` at all —
+   * mirrors `setAaveV4DebtState`'s own "defined iff the value is defined"
+   * invariant, never fabricating a freshness timestamp for an absent
+   * value. Deliberately does not touch `saveStatus`: unlike every other
+   * action in this Store, this one exists purely to keep a background,
+   * low-visibility timestamp honest, and letting it flicker `saveStatus`
+   * on every routine unchanged live poll (far more frequent than a value
+   * actually changing) would be a visible regression this fix must not
+   * introduce.
+   */
+  touchAaveV4DebtStateFreshness: (id: string) => void;
+  /** Same role and reasoning as `touchAaveV4DebtStateFreshness` above, independently, for `v4CollateralRisk`. See `hooks/useAaveV4CollateralRiskLiveSync.ts`. */
+  touchAaveV4CollateralRiskFreshness: (id: string) => void;
+  /**
    * V4 Readiness Audit §12 — P0-1. Registers (or clears, via `undefined`)
    * a pending manual/live conflict candidate for one portfolio's
    * `v4DebtState` — called only by `hooks/useAaveV4LiveSync.ts`'s own
@@ -1035,6 +1061,41 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     schedulePortfolioSave(portfolio);
 
     return { ok: true, data: portfolio };
+  },
+
+  touchAaveV4DebtStateFreshness: (id) => {
+    const existing = get().portfolios[id];
+    if (existing === undefined) return;
+    // "Defined iff the value is defined" — see this action's own
+    // interface doc comment. Nothing to timestamp for a portfolio with
+    // no current `v4DebtState` at all.
+    if (existing.portfolio.v4DebtState === undefined) return;
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      v4DebtStateUpdatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+    }));
+    schedulePortfolioSave(portfolio);
+  },
+
+  touchAaveV4CollateralRiskFreshness: (id) => {
+    const existing = get().portfolios[id];
+    if (existing === undefined) return;
+    if (existing.portfolio.v4CollateralRisk === undefined) return;
+
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      v4CollateralRiskUpdatedAt: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+    }));
+    schedulePortfolioSave(portfolio);
   },
 
   setAaveV4DebtStateCandidate: (id, candidate) => {
