@@ -25,6 +25,12 @@
  * replaces (`EVM_ADDRESS_PATTERN`), which imposed no such restriction;
  * this stage's own instructions call for following existing product
  * policy here rather than changing it implicitly.
+ *
+ * `hasEvmAddressShape` (V4 Readiness Audit §12 P3-2) is the same
+ * format-only check `isValidEip55Address` already performs as its first
+ * step, exported separately so a caller can distinguish "malformed" from
+ * "right shape, wrong checksum" for messaging purposes without
+ * duplicating that check.
  */
 import { getAddress, isAddress } from 'viem';
 
@@ -33,4 +39,22 @@ export function isValidEip55Address(address: string): boolean {
   const hex = address.slice(2);
   if (hex === hex.toLowerCase() || hex === hex.toUpperCase()) return true;
   return address === getAddress(address);
+}
+
+/**
+ * Format-only check (0x-prefixed, 40 hex characters) — V4 Readiness
+ * Audit §12 P3-2. Ignores checksum entirely, so a well-formed but
+ * wrong-checksum mixed-case address still returns `true` here. Exists so
+ * callers can tell "this isn't shaped like an address at all" (malformed
+ * length, non-hex characters, missing `0x`) apart from "this is shaped
+ * like an address but its checksum doesn't match" — two failure modes
+ * `aaveV4PositionIdentitySchema`'s single generic "Enter a valid wallet
+ * address." message previously collapsed into one, even though the
+ * second case is a materially different, more specific — and more
+ * common — mistake (e.g. a single mistyped or wrongly-cased character
+ * from a manual retype or a copy/paste that lost its exact casing) than
+ * genuinely garbled input.
+ */
+export function hasEvmAddressShape(address: string): boolean {
+  return isAddress(address, { strict: false });
 }

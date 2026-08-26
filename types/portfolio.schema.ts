@@ -53,7 +53,7 @@
  */
 import { z } from 'zod';
 
-import { isValidEip55Address } from '@/utils/evmAddress';
+import { hasEvmAddressShape, isValidEip55Address } from '@/utils/evmAddress';
 import { sanitizeText } from '@/utils/sanitizeText';
 
 import { SUPPORTED_DEBT_ASSETS } from './portfolio';
@@ -180,11 +180,26 @@ export const portfolioSettingsSchema = z.object({
  * accepted, unchanged from the plain hex-shape check this replaced.
  * `scripts/verifyAaveV4Snapshot.ts`'s independent copy of the previous
  * plain-hex pattern now calls this same validator.
+ *
+ * **Two distinct error messages (V4 Readiness Audit §12 P3-2)** — a
+ * single generic "Enter a valid wallet address." previously covered both
+ * genuinely malformed input (wrong length, non-hex characters, missing
+ * `0x`) and a well-shaped mixed-case address whose checksum simply
+ * doesn't match, even though the second is a materially different,
+ * common, and more specific mistake (a single mistyped or wrongly-cased
+ * character) than garbled input — indistinguishable to a user staring at
+ * an address that visibly *looks* right. `hasEvmAddressShape` (format
+ * only, ignores checksum) distinguishes the two after `isValidEip55Address`
+ * has already failed; the validation OUTCOME (accept/reject) is
+ * completely unchanged, only which of the two messages is shown.
  */
 export const aaveV4PositionIdentitySchema = z.object({
-  userAddress: z
-    .string({ error: 'Enter a valid wallet address.' })
-    .refine(isValidEip55Address, 'Enter a valid wallet address.'),
+  userAddress: z.string({ error: 'Enter a valid wallet address.' }).refine(isValidEip55Address, {
+    error: (issue) =>
+      hasEvmAddressShape(issue.input as string)
+        ? 'This address does not match its checksum. Double-check for a mistyped or wrong-case character.'
+        : 'Enter a valid wallet address.',
+  }),
 });
 
 export type AaveV4PositionIdentityInput = z.infer<typeof aaveV4PositionIdentitySchema>;

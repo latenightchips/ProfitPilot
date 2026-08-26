@@ -356,6 +356,52 @@ describe('aaveV4PositionIdentitySchema (Stage 4A)', () => {
     expect(result.success).toBe(false);
   });
 
+  /**
+   * Distinct error messages for "malformed" vs "right shape, wrong
+   * checksum" — V4 Readiness Audit §12 P3-2. A single generic "Enter a
+   * valid wallet address." previously covered both, even though a
+   * checksum mismatch is a materially different, common, more specific
+   * mistake (one mistyped/wrongly-cased character) than genuinely garbled
+   * input — indistinguishable to a user staring at an address that
+   * visibly looks right. The accept/reject outcome itself is unchanged
+   * (already covered by the tests above); these only check the message.
+   */
+  it('reports a checksum-specific message for a well-shaped address with the wrong checksum', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xD8DA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe(
+      'This address does not match its checksum. Double-check for a mistyped or wrong-case character.',
+    );
+  });
+
+  it('reports the generic malformed message for a too-short address, not the checksum-specific one', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({ userAddress: '0xd8dA6BF2' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter a valid wallet address.');
+  });
+
+  it('reports the generic malformed message for non-hex characters, not the checksum-specific one', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: '0xzzzz6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter a valid wallet address.');
+  });
+
+  it('reports the generic malformed message for a missing 0x prefix, not the checksum-specific one', () => {
+    const result = aaveV4PositionIdentitySchema.safeParse({
+      userAddress: 'd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter a valid wallet address.');
+  });
+
   it('accepts the zero address (existing product policy, unchanged)', () => {
     const result = aaveV4PositionIdentitySchema.safeParse({
       userAddress: '0x0000000000000000000000000000000000000000'.slice(0, 42),

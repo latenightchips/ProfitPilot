@@ -1025,6 +1025,37 @@ describe('PortfolioPage — Aave protocol version selector (Stage 13)', () => {
     expect(usePortfolioStore.getState().portfolios[activeId].portfolio.v4Position).toBeUndefined();
   });
 
+  /**
+   * V4 Readiness Audit §12 P3-2 — a well-shaped mixed-case address with
+   * the wrong checksum previously showed the same generic "Enter a valid
+   * wallet address." message as genuinely malformed input, even though a
+   * user staring at an address that visibly looks right has no way to
+   * tell what's wrong with it. Confirms the more specific message reaches
+   * the real form (not just the schema in isolation), and that rejection
+   * itself is unchanged (still not persisted).
+   */
+  it('shows a checksum-specific message for a well-shaped address with the wrong checksum, and does not persist it', async () => {
+    createAndSelect();
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Aave protocol version' }));
+
+    await user.click(section.getByRole('radio', { name: 'Aave V4' }));
+    await user.type(
+      section.getByLabelText('On-chain address', { exact: false }),
+      '0xD8DA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    );
+    await user.click(section.getByRole('button', { name: 'Save address' }));
+
+    expect(
+      screen.getByText(
+        'This address does not match its checksum. Double-check for a mistyped or wrong-case character.',
+      ),
+    ).toBeInTheDocument();
+    const activeId = usePortfolioStore.getState().activePortfolioId!;
+    expect(usePortfolioStore.getState().portfolios[activeId].portfolio.v4Position).toBeUndefined();
+  });
+
   it('accepts a valid address, persists it via setAaveV4Position, and survives a remount (Stage 4A schema reused)', async () => {
     const created = createAndSelect();
     const user = userEvent.setup();
