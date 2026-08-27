@@ -84,22 +84,54 @@ documentation-only inconsistency.
 
 ## C. Development/CI limitations (non-blocking, documented workaround exists)
 
-- **CI does not run the end-to-end (Playwright) test suite
-  automatically — classified P2.** The 151-test suite (including all 43
-  accessibility tests) exists, is current, and passes; it is run
-  manually before every release (exactly what every Milestone 9/10 batch
-  in this project has actually done) rather than wired into
-  `.github/workflows/ci.yml`. Non-blocking, documented workaround exists
-  — `docs/DEFECT_CLASSIFICATION.md` §6.
-- **18 `pnpm audit` advisory instances (11 high, 7 moderate, 0
-  critical).** Every advisory is a build-time/lint-time/test-time
-  tooling dependency path (`sharp`, `postcss`, `brace-expansion`,
-  `undici`, `fast-uri`, `js-yaml`, `nanoid` — transitive dependencies of
-  `next`, `eslint-config-next`, `@sentry/nextjs`, `@tailwindcss/postcss`,
-  or `vitest`'s own `jsdom`), **none reachable from client-shipped
-  runtime code**, verified by dependency path
-  (`docs/SECURITY_REVIEW.md` M9-029, `docs/DEFECT_CLASSIFICATION.md`
-  §6). Not a runtime application vulnerability.
+- **CI does not run the full end-to-end (Playwright) test suite on
+  every PR — classified P2, substantially resolved post-M10 (R1-3,
+  R2-4).** `.github/workflows/ci.yml` now runs a small, blocking
+  production smoke suite (`tests/e2e/productionSmoke.spec.ts`) against a
+  real `pnpm build && pnpm start` server on every PR/push, proving the
+  built production application actually starts and serves its critical
+  routes (R1-3, "Runtime Pinning + Production CI Smoke Gate"). The
+  broader 150-test suite (including all 43 accessibility tests) is
+  wired into a separate, manual `workflow_dispatch` workflow
+  (`.github/workflows/e2e-full.yml`, R2-4, "Dependency Security
+  Follow-up + Release E2E Policy") — a deliberate release gate, not
+  blocking on every push, since its own ~2.5-minute runtime doesn't
+  justify making it a required check the way the fast smoke gate is.
+  `productionSmoke.spec.ts` is deliberately excluded from that full-suite
+  workflow's own test selection: it already runs independently in
+  `ci.yml`, and running it again inside the large suite collides with
+  the R1-2 Aave API rate limiter's documented process-local, in-memory
+  fallback client identity (no reverse-proxy `x-forwarded-for` header in
+  this environment means the whole suite's `/api/aave/*` traffic shares
+  one bucket) — not a flaky test, a deterministic, understood
+  interaction, excluded rather than hidden. **Do not describe this as
+  "CI has no E2E coverage"** — it has blocking smoke coverage on every
+  push and full-suite coverage on demand before release. See
+  `docs/DEFECT_CLASSIFICATION.md` §6 and `docs/PRODUCTION_READINESS.md`
+  §7 for the full record.
+- **1 `pnpm audit --prod` finding (1 high, 0 moderate, 0 critical) —
+  current as of R2-4 ("Dependency Security Follow-up + Release E2E
+  Policy"), down from the original 18-instance full-tree count.** The
+  original 18-instance figure (11 high, 7 moderate — still accurate as
+  the *full* dependency tree, including dev/lint/test-only tooling, per
+  the one-time M9-029 audit) is not the ongoing release-gate metric;
+  `pnpm audit --prod` (production dependency tree only) is. That
+  narrower command found 9 findings, of which `package.json`'s
+  `pnpm.overrides` (`postcss`/`nanoid`/`brace-expansion`/`fast-uri`)
+  closed 8 — verified by a real `pnpm install` + `pnpm audit --prod` +
+  full `pnpm validate` re-run, not assumed safe. The 1 remaining finding
+  (`sharp`, transitive via `next`'s optional image-optimization
+  dependency) is confirmed unused — a repository-wide search finds zero
+  `next/image` usage anywhere in this application — and deliberately not
+  overridden (`sharp` ships native, platform-specific binaries; the
+  installation/ABI-compatibility risk of forcing its version outweighs a
+  security benefit this application cannot be exposed to). Tracked as
+  **TRACK / WAIT FOR UPSTREAM**, revisited if `next` bumps its own
+  `sharp` dependency or if this application ever adopts `next/image`.
+  See `docs/SECURITY_REVIEW.md`'s M9-029 "R2-4 update" section for the
+  full per-package table and the standing ongoing policy, and
+  `docs/MAINTENANCE_SCHEDULE.md`'s "Security updates" section for how a
+  future finding gets triaged.
 - **Automated cross-browser test coverage is Chromium-only.** Firefox
   and Safari are covered by code-level review
   (`docs/CROSS_BROWSER_REVIEW.md`), not automated tests — no Firefox/
@@ -165,8 +197,9 @@ documentation-only inconsistency.
 
 - P0 defects: **0**. P1 defects: **0** (`docs/DEFECT_CLASSIFICATION.md`
   §6, Milestone 9 M9-064 Quality Sign-Off).
-- CI Playwright automation gap: **P2, non-blocking, documented
-  workaround** (category C above).
+- CI Playwright automation gap: **P2, substantially resolved — blocking
+  smoke gate on every PR/push, manual full-suite release gate on demand**
+  (category C above).
 - Publicly operated production deployment: **deferred** (category B).
 - Live, hosted monitoring: **deferred** (category B).
 - Cloud Database/Cloud Sync: **cancelled**, not deferred (category E).
@@ -174,6 +207,16 @@ documentation-only inconsistency.
   only, not a runtime/product defect** (category D).
 - Firefox/Safari automated verification: **not claimed** — code-level
   review only (category C).
-- Dependency audit: **18 instances, 11 high / 7 moderate, 0 critical —
-  all build/lint/test-tooling dependency paths, none reachable from
-  runtime application code** (category C).
+- Dependency audit: **full dependency tree, 18 instances (11 high / 7
+  moderate, 0 critical), all build/lint/test-tooling dependency paths,
+  none reachable from runtime application code — one-time M9-029
+  figure, unchanged. Production dependency tree (the ongoing release-gate
+  metric, `pnpm audit --prod`): 1 finding (`sharp`, confirmed unused,
+  TRACK / WAIT FOR UPSTREAM), down from 9 after R2-4's `pnpm.overrides`**
+  (category C).
+- Application-level Aave API rate limiting (R1-2): **repository-level
+  control (process-local, in-memory), not a substitute for
+  infrastructure-level/distributed throttling** — see
+  `docs/PRODUCTION_READINESS.md` §7 (category B/C boundary — the
+  mechanism is implemented and verified, but coordinated
+  fleet-wide throttling remains an operated-deployment concern).

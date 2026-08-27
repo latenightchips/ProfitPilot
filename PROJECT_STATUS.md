@@ -1,7 +1,7 @@
 # ProfitPilot — Project Status
 
 Last updated: 2026-08-08
-**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations**: Batches 1–6 (M10-001–M10-020, M10-021–M10-024, M10-005–M10-011) are complete and synchronized to GitHub. Batch 7 (Finalize Version 1, Celebrate the Release — final project closure audit, M10-025–M10-026) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. **Full, final Milestone 10 ledger (M10-001–M10-026)**: 16 COMPLETE; 5 COMPLETE UNDER APPROVED DISPOSITION (M10-002, M10-005, M10-008, M10-021, M10-025); 5 DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION (M10-006, M10-007, M10-009, M10-010, M10-011 — "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A," which is reserved for cancelled Cloud Database/Cloud Sync); 0 UNRESOLVED/BLOCKING. **This is not summarized as "all M10 tasks complete."** Pending this batch's own commit approval: **ProfitPilot Version 1.0.0 software release: COMPLETE. Version 1 quality sign-off: COMPLETE. Milestone 10: COMPLETE UNDER APPROVED PATH B DISPOSITION. Version 1 project/repository closure: COMPLETE UNDER APPROVED PATH B DISPOSITION. Operated public production deployment: DEFERRED. Live production monitoring: DEFERRED. Cloud Database/Cloud Sync: CANCELLED. Version 2: NOT STARTED.**
+**Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations**: Batches 1–6 (M10-001–M10-020, M10-021–M10-024, M10-005–M10-011) are complete and synchronized to GitHub. Batch 7 (Finalize Version 1, Celebrate the Release — final project closure audit, M10-025–M10-026) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. **Reconciliation note (2026-08-27): this sentence is a preserved historical statement, accurate at the time it was written — Batch 7 is now merged and pushed to `origin/main`.** Substantial P-series (Aave V4 correctness/provenance/execution-cost) hardening, followed by two rounds of post-M10 production-readiness and security hardening (R1, R2), have since been completed and merged — none of it recorded contemporaneously in this file. See `## Post-Milestone-10 Hardening (P-series, R1, R2) — V1 Documentation Reconciliation` (after `## Milestone 10 progress`) for the full reconciliation record and the current V1 technical-readiness verdict. **Full, final Milestone 10 ledger (M10-001–M10-026)**: 16 COMPLETE; 5 COMPLETE UNDER APPROVED DISPOSITION (M10-002, M10-005, M10-008, M10-021, M10-025); 5 DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION (M10-006, M10-007, M10-009, M10-010, M10-011 — "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A," which is reserved for cancelled Cloud Database/Cloud Sync); 0 UNRESOLVED/BLOCKING. **This is not summarized as "all M10 tasks complete."** Pending this batch's own commit approval: **ProfitPilot Version 1.0.0 software release: COMPLETE. Version 1 quality sign-off: COMPLETE. Milestone 10: COMPLETE UNDER APPROVED PATH B DISPOSITION. Version 1 project/repository closure: COMPLETE UNDER APPROVED PATH B DISPOSITION. Operated public production deployment: DEFERRED. Live production monitoring: DEFERRED. Cloud Database/Cloud Sync: CANCELLED. Version 2: NOT STARTED.**
 
 The remainder of this summary paragraph is historical: Milestone 9 Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate and Version 1 Quality Sign-Off, M9-057–064) is also complete: a real production build/server was verified directly (security headers confirmed on a live response, not just source), the full regression suite passed (2123/2123 unit tests, 151/151 Playwright including 43/43 accessibility), 8 AI-agent-driven exploratory scenarios found zero defects, the local storage migration/rollback mechanism was confirmed genuinely wired into the real app boot path (not just unit-tested), and the open-defect review found zero P0/P1 defects — one non-blocking P2 (CI does not yet run the Playwright suite automatically) was found, classified, and documented rather than silently left unmentioned. Version 1 Quality Sign-Off passed; `package.json`/`APP_VERSION`/`ENGINE_VERSION` bumped from `0.1.0` to `1.0.0` per `01_PRD.md` REQ-017's own definition of what "Version 1.0" means, `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` left unchanged. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
 
@@ -12982,6 +12982,121 @@ Sync: CANCELLED. Version 2: NOT STARTED.** This batch does not state
 "all M10 tasks complete" — the matrix above is the actual closure
 state, and "release complete" is not used anywhere in this record to
 mean "publicly deployed."
+
+---
+
+## Post-Milestone-10 Hardening (P-series, R1, R2) — V1 Documentation Reconciliation
+
+This section is added by the V1 documentation-reconciliation batch
+(2026-08-27), which is itself the work item this section records. It is
+deliberately **not** woven into the Milestone 10 batch narrative above:
+none of the work below was tracked against a `06_TASKS.md` M10 task ID,
+and none of it was recorded in this file contemporaneously as it
+happened — **this is a reconciliation record added after the fact, not
+a rewritten history.** Where a detail cannot be verified from current
+repository evidence (commit history, code, or another still-accurate
+document), it is not asserted here.
+
+### P-series (Aave V4 correctness, provenance, and execution-cost hardening)
+
+Between Milestone 10 Batch 7's own closure (2026-08-08 sign-off date,
+above) and R1 (below), a substantial body of Aave V4 correctness/
+provenance/execution-cost hardening work was committed directly to
+`origin/main` (`git log --oneline`, commits dated 2026-08-19 through
+2026-08-26) without a corresponding update to this file. **No dedicated
+P-series specification document exists in `docs/`** to cite instead —
+this paragraph is reconstructed from commit subjects and current
+repository state, not from a contemporaneous record, and is
+deliberately kept at that level of precision rather than inventing task
+IDs or DoDs this file cannot verify. Evidenced scope: V3/V4 portfolio
+data isolation and cross-portfolio load correctness; debt-state
+identity/clearing fixes; V4 collateral/debt oracle price ownership and
+live valuation; a Health Factor cross-check; an execution-cost engine
+and formulas (gas/transaction cost) integrated into Loop Builder and
+Exit Planner outputs; CSV export provenance metadata; live-refresh
+data-freshness handling; EIP-55 checksum address validation and its
+error messaging; an ARIA `aria-describedby` fix on a conflict-
+confirmation panel; a file-input reset fix; and a scheduled, non-
+blocking `.github/workflows/aave-v4-boundary.yml` CI workflow
+(read-only, live-RPC boundary verification, deliberately not a
+required PR check — see that file's own header comment). **This
+reconciliation does not re-run or re-verify P-series work** — it is
+cited as already-merged `origin/main` evidence, the same standard
+applied to R1/R2 below.
+
+### R1 — Production Readiness Hardening (complete, closed)
+
+R1-1 (Production Readiness Audit) identified three public
+`/api/aave/*` routes with no application-level rate limiting, and two
+runtime-portability gaps. R1-2 added Aave API rate limiting
+(`services/rateLimit/`, `middleware.ts`) and CI least-privilege
+permissions (`contents: read`); R1-3 added machine-checkable Node
+22/pnpm 10 runtime pinning and a blocking production CI smoke gate. An
+independent R1 closure audit (real `pnpm install --frozen-lockfile` +
+`pnpm validate` + a real smoke-test run, in a clean worktree) verified
+R1 complete. Full detail: `docs/PRODUCTION_READINESS.md` §6–7,
+`docs/CHANGELOG.md`'s "Post-M10 hardening (R1/R2)" entry.
+
+### R2 — Security and Release-Process Hardening (complete, closed)
+
+R2-1 hardened all three `/api/aave/*` routes against an unexpected
+exception escaping existing error-classification layers (stable JSON
+error contract, no stack trace exposure, operator diagnostics). R2-2
+hardened every async Supabase auth call against an unhandled promise
+rejection. R2-3 added a minimal, evidence-based `Permissions-Policy`
+header (8 capabilities denied, chosen after a repository-wide usage
+search). R2-4 established an ongoing `pnpm audit --prod`
+dependency-security policy, applied `pnpm.overrides` closing 8 of 9
+production findings (the 1 remaining, `sharp`, deliberately tracked,
+not overridden), and added a manual `workflow_dispatch` full-E2E
+release workflow. An independent R2 closure audit (real `pnpm install
+--frozen-lockfile` + `pnpm audit --prod` + `pnpm validate`, in a clean
+worktree) verified R2 complete. Full detail: `docs/SECURITY_REVIEW.md`
+M9-029's "R2-4 update" section, `docs/KNOWN_ISSUES.md` category C,
+`docs/CHANGELOG.md`'s "Post-M10 hardening (R1/R2)" entry.
+
+### Current V1 technical-readiness state (as of this reconciliation, 2026-08-27)
+
+Confirmed directly against `origin/main` (commit `ccbc03f`) in a clean
+worktree for this reconciliation batch, not inferred from any other
+document: `middleware.ts` and `services/rateLimit/` exist and are
+wired; `app/api/aave/_shared/unexpectedErrorBoundary.ts` wraps all
+three Aave routes; `services/auth/authService.ts`'s `callAuthClient`
+wraps all 7 async auth methods; `next.config.ts` sets
+`Permissions-Policy`; `package.json` declares `engines` and
+`pnpm.overrides`; `.nvmrc` exists; `tests/e2e/productionSmoke.spec.ts`
+and `.github/workflows/e2e-full.yml` exist; `pnpm audit --prod` reports
+exactly 1 finding (`sharp`); no `v1.0.0` git tag exists locally or on
+the remote (`git ls-remote --tags origin`, re-confirmed this batch).
+**Verdict: V1 TECHNICALLY READY — documentation/release closure only.**
+Nothing found in this reconciliation changes Milestone 10's own closure
+disposition (above) or reopens any M10 task.
+
+### Current validation baseline (as of this reconciliation)
+
+A fresh `pnpm install --frozen-lockfile` + `pnpm validate`
+(typecheck/lint/format/unit tests/production build) was run against a
+clean worktree checked out from `origin/main` as part of this same
+reconciliation batch — see this batch's own delivered report for the
+exact pass/fail counts recorded at the time it ran. This is a
+documentation-only change; the underlying application code is
+unchanged from what R1's and R2's own closure audits already
+validated.
+
+### Deployment disposition (unchanged)
+
+None of the P-series/R1/R2 work above changes the Path B deployment
+decision recorded in `docs/DEPLOYMENT_DISPOSITION.md`: **M10-006
+(Deploy Version 1), M10-007 (Verify Production Deployment), M10-009
+(Enable Production Monitoring), M10-010 (Verify Production Logging),
+and M10-011 (Review Production Health) remain unperformed** — deferred
+by the same explicit product/release decision recorded in Milestone 10
+Batch 6 above, not executed, and not converted into complete tasks by
+any later hardening work. `docs/DEPLOYMENT_DISPOSITION.md`'s own
+"Update" section (added by this same reconciliation batch) records
+exactly how the R1-2 rate-limiting/middleware evidence updates that
+document's M10-005/M10-006 evidence rows without changing either
+task's classification.
 
 ---
 

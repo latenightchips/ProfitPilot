@@ -73,12 +73,45 @@ remediation deadline.
 a claim that a remediation is currently owed.** This project's current,
 already-documented dependency-audit baseline (`docs/KNOWN_ISSUES.md`
 category C, `docs/DEFECT_CLASSIFICATION.md` §6: 18 `pnpm audit`
-advisory instances, 11 high / 7 moderate / 0 critical) is not an open
-runtime vulnerability list — every one of those 18 is a build/lint/
-test-time-only tooling-dependency path, verified unreachable from
-client-shipped runtime code, and already classified P2/non-blocking.
-This schedule's job is only to define how a *future* advisory gets
-triaged, not to reopen or restate that existing finding differently.
+advisory instances across the *full* dependency tree, 11 high / 7
+moderate / 0 critical) is not an open runtime vulnerability list —
+every one of those 18 is a build/lint/test-time-only tooling-dependency
+path, verified unreachable from client-shipped runtime code, and
+already classified P2/non-blocking. This schedule's job is only to
+define how a *future* advisory gets triaged, not to reopen or restate
+that existing finding differently.
+
+**Update — `pnpm audit --prod` is the ongoing release-gate command
+(established R2-4, "Dependency Security Follow-up + Release E2E
+Policy").** The full-tree 18-instance figure above is a one-time,
+broader audit (M9-029) that also covers dev/lint/test-only tooling —
+too broad for a repeatable *release* gate, which only needs to know
+what actually ships in the built application. `pnpm audit --prod`
+(production dependency tree only) is that narrower, repeatable command:
+run it before cutting a release, and whenever `next`, `@sentry/nextjs`,
+`@supabase/supabase-js`, or any other direct production dependency is
+upgraded — in addition to, not instead of, the full-tree trigger above.
+As of R2-4, it reports exactly 1 finding (`sharp`, confirmed unused,
+tracked — see below), down from 9 after `package.json`'s
+`pnpm.overrides` closed 8.
+
+**Severity alone does not decide urgency — reachability and remediation
+availability do.** `docs/SECURITY_REVIEW.md`'s M9-029 "R2-4 update"
+section is the authoritative, detailed triage policy (its own **FIX
+NOW** / **TRACK / WAIT FOR UPSTREAM** / **NOT RUNTIME-REACHABLE** /
+**FALSE/IRRELEVANT FOR CURRENT PRODUCT USAGE** categories) — this
+schedule does not duplicate it, only points to it: for every finding,
+trace the actual dependency path (`pnpm why <package>`) and ask whether
+attacker-controlled input ever reaches it in this application's own
+runtime, not just what its CVSS/severity label says. A finding that is
+both runtime-reachable *and* has no safe override/upgrade available is
+what blocks a release; nothing in the current 1-finding set meets both
+conditions. **An accepted transitive risk needs an explicit revisit
+condition, not an open-ended "accepted forever."** The current
+accepted risk (`sharp`) has one: revisit if `next` itself bumps its own
+`sharp` dependency, or if this application ever adopts `next/image`
+(`docs/SECURITY_REVIEW.md`'s own words) — a condition to re-check, not
+a promise of a fixed date.
 
 ## Dependency updates
 

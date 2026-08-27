@@ -135,19 +135,77 @@ no gap found.**
 
 `package.json`'s `build`/`start` scripts (`next build --turbopack` /
 `next start`) are the entire build/run pipeline — no `vercel.json`, no
-`middleware.ts`, no platform-specific configuration file exists anywhere
-in the repository (confirmed by direct inspection). This matches
-`04_BUILD_GUIDE.md`'s own "avoid vendor lock-in whenever practical"
-principle under "DEPLOYMENT PLATFORM": the build is portable to Vercel,
-a Docker/self-hosted container, Cloudflare, or Netlify without any
-platform-specific file to add or remove first. The Build Guide's own
-"BUILD PROCESS" pipeline (Install → Type Check → Lint → Run Tests →
-Production Build → Deploy → Health Check → Ready) matches this
-repository's `pnpm validate` script and `.github/workflows/ci.yml`
-exactly through "Production Build" — "Deploy" and "Health Check" are the
-two steps requiring an actual deployment target, Deferred per the same
-release decision as above. **Status: Verified — portable, no vendor
-lock-in, matches Build Guide through the build step.**
+platform-specific configuration file exists anywhere in the repository
+(confirmed by direct inspection). This matches `04_BUILD_GUIDE.md`'s own
+"avoid vendor lock-in whenever practical" principle under "DEPLOYMENT
+PLATFORM": the build is portable to Vercel, a Docker/self-hosted
+container, Cloudflare, or Netlify without any platform-specific file to
+add or remove first. The Build Guide's own "BUILD PROCESS" pipeline
+(Install → Type Check → Lint → Run Tests → Production Build → Deploy →
+Health Check → Ready) matches this repository's `pnpm validate` script
+and `.github/workflows/ci.yml` exactly through "Production Build" —
+"Deploy" and "Health Check" are the two steps requiring an actual
+deployment target, Deferred per the same release decision as above.
+**Status: Verified — portable, no vendor lock-in, matches Build Guide
+through the build step.**
+
+**Update (post-M10 hardening, R1-2 "Aave API Rate Limiting" and R1-3
+"Runtime Pinning + Production CI Smoke Gate")**: `middleware.ts` now
+exists at the repository root — the statement above that no
+`middleware.ts` existed anywhere in the repository is no longer
+accurate and is corrected here rather than left stale. It is a narrow,
+framework-glue file applying a rate-limit boundary to `/api/aave/*`
+only (§7 below); it does not add a platform-specific deployment
+requirement — the application remains portable to any Next.js-capable
+host, since `middleware.ts` is a standard Next.js primitive, not a
+vendor-specific configuration file. `package.json` also now declares
+`engines` (`node: >=22.0.0 <23.0.0`, `pnpm: >=10.0.0 <11.0.0`) and a
+committed `.nvmrc` (`22`), making the supported runtime machine-checkable
+rather than only prose in `04_BUILD_GUIDE.md`; `pnpm install`/CI reject
+an unsupported Node/pnpm version rather than silently proceeding.
+**Status: Verified — portable, no vendor lock-in, matches Build Guide
+through the build step; runtime requirements are now machine-enforced.**
+
+## 7. Application-level API rate limiting (added post-M10, R1-2/R1-3)
+
+Not part of M10-005's original Review list (which predates this work) —
+recorded here because it is production-readiness-relevant repository
+evidence, and because §6 above now references it.
+
+The three public `/api/aave/*` routes (`reserve`, `v4-position`,
+`v4-collateral-risk`) — the only routes that proxy requests into RPC
+infrastructure — are covered by `middleware.ts` plus the framework-free
+`services/rateLimit/` policy/limiter (`FixedWindowRateLimiter`,
+30 requests per client identity per 60-second window). Client identity
+is resolved from `x-forwarded-for` (first entry) or `x-real-ip`, falling
+back to a single shared `'unknown'` bucket when neither header is
+present. A request over the limit receives `429` with a machine-readable
+JSON error body and a `Retry-After` header; no internal detail or secret
+is ever exposed in that response.
+
+**Honest limitation, stated plainly**: this is a **process-local,
+in-memory** limiter — it is not a substitute for infrastructure-level or
+distributed rate limiting. In a multi-instance/serverless deployment
+(multiple concurrent server processes, each with its own memory), the
+effective limit is per-instance, not globally coordinated across the
+fleet — a real deployment fronted by a CDN/WAF/API gateway should still
+apply its own coordinated throttling for defense in depth; this
+repository-level control does not claim to replace that. The same
+`'unknown'`-identity fallback also means that in an environment with no
+reverse proxy forwarding real client IPs (e.g., local `pnpm build && pnpm
+start`, or this project's own local/CI E2E runs), all traffic through
+`/api/aave/*` shares one bucket — a known, documented interaction (see
+R2-4's E2E findings below), not a defect.
+
+A small, blocking production smoke gate (R1-3, `tests/e2e/productionSmoke.spec.ts`)
+runs in `.github/workflows/ci.yml` against a real `pnpm build && pnpm
+start` server on every PR/push, proving the built production application
+actually starts and serves its critical routes — narrower than the full
+Playwright suite by design (see `docs/KNOWN_ISSUES.md` category C and
+`docs/DEFECT_CLASSIFICATION.md` §6 for how the full suite is run
+instead). **Status: Verified — repository-level control, not a
+substitute for infrastructure-level throttling; limitation documented,
+not glossed over.**
 
 ## Summary
 
@@ -159,11 +217,18 @@ lock-in, matches Build Guide through the build step.**
 | Deployment secrets | Deferred by explicit product/release decision |
 | Security headers | Verified, matches Build Guide |
 | Caching | Verified — no gap found |
-| Build configuration | Verified — portable, no vendor lock-in |
+| Build configuration | Verified — portable, no vendor lock-in; runtime requirements now machine-enforced |
+| Application-level API rate limiting (R1-2/R1-3) | Verified — repository-level control; not a substitute for infrastructure-level/distributed throttling |
 
 Everything this repository controls is production-ready. The remaining
 gap between "production-ready" and "in production" is entirely external
 infrastructure this release deliberately does not include — see
 `docs/RELEASE_NOTES.md`. See `docs/DEPLOYMENT_DISPOSITION.md`
 (Milestone 10 Batch 6) for the full M10-006–M10-011 requirement-by-
-requirement disposition that follows from this readiness state.
+requirement disposition that follows from this readiness state, and
+`docs/CHANGELOG.md`'s "Post-M10 hardening (R1/R2)" entry for the full
+list of hardening work completed after Milestone 10's own closure. **No
+real production deployment has been operated as a result of this
+update, and no production-traffic evidence exists** — every verification
+above remains local production-*mode* evidence, not production-
+*deployment* evidence, unchanged from the rest of this document.

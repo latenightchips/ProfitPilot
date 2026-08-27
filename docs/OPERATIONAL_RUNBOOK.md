@@ -57,9 +57,11 @@ pnpm start
 Matches `04_BUILD_GUIDE.md`'s own "BUILD PROCESS" pipeline (Install →
 Type Check → Lint → Run Tests → Production Build → Deploy → Health
 Check → Ready) through "Production Build" — see
-`docs/PRODUCTION_READINESS.md` §6 for the full build-configuration audit
-(no `vercel.json`/`middleware.ts`, portable to any Next.js-compatible
-host). "Deploy" and "Health Check" against a *real* hosted target are
+`docs/PRODUCTION_READINESS.md` §6–7 for the full build-configuration
+audit (no `vercel.json`; `middleware.ts` exists but is a narrow,
+portable Aave API rate-limit boundary, not a platform-specific
+deployment file — still portable to any Next.js-compatible host).
+"Deploy" and "Health Check" against a *real* hosted target are
 **[Deferred]** — see "Health/readiness checks" below for what can
 actually be checked against a local production-mode server today.
 

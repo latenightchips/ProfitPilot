@@ -88,6 +88,86 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
   documented item — see `docs/DEFECT_CLASSIFICATION.md` §6.
 - **No live deployment exists.** Self-hostable, no owned production
   domain by design — see "What 'released' means here" above.
+- **CI runs a blocking production smoke gate on every PR/push and a
+  manual full-suite release gate on demand — not the full suite on
+  every push.** See "Post-M10 hardening (R1/R2)" below.
+- **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
+  tracked)**, down from the original full-tree count. See "Post-M10
+  hardening (R1/R2)" below.
+
+## [Unreleased] — Post-M10 hardening (R1/R2)
+
+**No version-axis bump accompanies this section** — none of this work
+changes `package.json`'s `"version"`, `APP_VERSION`, `ENGINE_VERSION`,
+`FORMULA_VERSION`, or `STORAGE_SCHEMA_VERSION`; Version 1.0.0's own
+Quality Sign-Off (below) is unchanged and not reopened. This entry
+records production-readiness and security hardening completed *after*
+Milestone 10's own closure (`PROJECT_STATUS.md`'s "Post-Milestone-10
+Hardening" section has the full task-by-task record) but *before* any
+`v1.0.0` tag has been created — see "What 'released' means here" above;
+that has still not happened. **No production deployment occurred as
+part of this work.**
+
+- **Aave API rate limiting.** The three public `/api/aave/*` routes
+  (proxies into RPC infrastructure, previously unthrottled at the
+  application level) now return `429` with a machine-readable error and
+  a `Retry-After` header once a client identity exceeds 30 requests per
+  60-second window. Implemented as a framework-free policy/limiter
+  (`services/rateLimit/`) plus a `middleware.ts` glue layer. Documented,
+  not glossed over: this is a process-local, in-memory control, not a
+  substitute for infrastructure-level/distributed throttling — see
+  `docs/PRODUCTION_READINESS.md` §7.
+- **CI least-privilege permissions.** `.github/workflows/ci.yml` now
+  declares an explicit `permissions: contents: read`, rather than
+  inheriting the default (broader) token scope.
+- **Node 22 / pnpm 10 runtime pinning.** `package.json`'s `engines`
+  field and a committed `.nvmrc` make the supported runtime
+  machine-checkable, matching what `04_BUILD_GUIDE.md` already stated in
+  prose.
+- **Production smoke CI gate.** A small, targeted Playwright spec
+  (`tests/e2e/productionSmoke.spec.ts`) now runs in `ci.yml` on every
+  PR/push against a real `pnpm build && pnpm start` server, proving the
+  built production application actually starts and serves its critical
+  routes.
+- **Aave API unexpected-exception boundaries.** All three `/api/aave/*`
+  route handlers are now wrapped so that an exception escaping the
+  existing adapter/error-classification layers still produces a stable
+  JSON error contract and an appropriate `5xx` response, never a raw
+  stack trace or internal implementation detail, with diagnostics
+  captured for operators.
+- **Supabase rejected-promise hardening.** Every async
+  `services/auth/authService.ts` method now routes its
+  `@supabase/supabase-js` call through a shared helper so a genuine
+  network/runtime rejection cannot escape as an unhandled promise
+  rejection or leave authentication state inconsistent. Does not change
+  authentication's dormant-by-default behavior.
+- **Permissions-Policy header.** `next.config.ts` now denies eight
+  unused browser capabilities (camera, microphone, geolocation, payment,
+  usb, magnetometer, gyroscope, accelerometer) by an empty allowlist,
+  chosen after a repository-wide search confirmed zero production-code
+  use of any of them.
+- **Dependency audit remediation and ongoing tracking policy.**
+  `pnpm.overrides` closes 8 of 9 `pnpm audit --prod` findings
+  (`postcss`/`nanoid`/`brace-expansion`/`fast-uri`); the 1 remaining
+  (`sharp`) is confirmed unused and deliberately tracked rather than
+  overridden (native-binary risk). `docs/SECURITY_REVIEW.md` and
+  `docs/MAINTENANCE_SCHEDULE.md` establish the standing `pnpm audit
+  --prod` release-gate policy going forward.
+- **Manual full-E2E release workflow.** The existing 150-test Playwright
+  suite (all 43 accessibility tests included) now runs via a manual
+  `workflow_dispatch` workflow (`.github/workflows/e2e-full.yml`) as a
+  release gate, deliberately excluding `productionSmoke.spec.ts` (already
+  covered independently in `ci.yml`; running it again inside the full
+  suite collides with the rate limiter's documented process-local
+  fallback identity in an environment with no reverse proxy).
+
+**Validation**: every item above shipped behind the standing `pnpm
+validate` pipeline (typecheck/lint/format/unit tests/production build),
+run fresh for each change, with focused regression tests added per
+change. See `PROJECT_STATUS.md`'s "Post-Milestone-10 Hardening"
+section for the full audit-implement-test-validate record per item, and
+`docs/DEPLOYMENT_DISPOSITION.md` for confirmation that none of this
+work changes the Path B deployment disposition below.
 
 ## [1.0.0] — 2026-08-08
 

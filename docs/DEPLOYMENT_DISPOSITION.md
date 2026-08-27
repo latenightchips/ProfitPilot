@@ -47,6 +47,36 @@ individually, and each task's own Definition of Done is evaluated
 against the *whole* requirement set, not the locally-satisfiable part
 alone.
 
+## Update (post-M10 hardening — R1/R2, V1 documentation reconciliation)
+
+Two rounds of production-readiness and security hardening (R1, R2—
+`docs/CHANGELOG.md`'s "Post-M10 hardening (R1/R2)" entry,
+`PROJECT_STATUS.md`'s "Post-Milestone-10 Hardening" section) were
+completed after this document was originally written. **The governing
+decision below is unchanged and not reopened by any of that work**:
+repository engineering — now including R1/R2's own additions — is
+V1-ready; a real, operated production deployment remains intentionally
+deferred; **no update in this document, or in any document touched by
+this reconciliation, is evidence that a production deployment
+happened.** No Vercel project, production domain, Supabase project, or
+Sentry project exists today, exactly as before.
+
+The one classification-relevant change: R1-2 ("Aave API Rate Limiting")
+added `middleware.ts` at the repository root. `docs/PRODUCTION_READINESS.md`
+§6 previously stated no `middleware.ts` existed anywhere in the
+repository — that statement is now false and has been corrected there
+(§6–7). It does **not** change M10-005's own classification below:
+`middleware.ts` is a standard, portable Next.js primitive applying a
+narrow, repository-owned rate-limit boundary to `/api/aave/*` only, not
+a platform-specific deployment file — the "Build configuration"
+requirement remains classified **A**, on stronger evidence than before,
+not a new gap. It likewise does not change M10-006's classification:
+"Version 1 is available in production" still requires an operated
+deployment that does not exist, and application-level rate limiting
+(itself explicitly documented as a process-local, in-memory control,
+not a substitute for infrastructure-level/distributed throttling — see
+`docs/PRODUCTION_READINESS.md` §7) is not read as evidence otherwise.
+
 ## M10-005 — Configure Production Environment
 
 Dependencies: M10-002 (complete). DoD: "Production configuration
