@@ -219,22 +219,36 @@ anywhere in this codebase.
 ## Security-header verification [Operator]
 
 `next.config.ts`'s `headers()` function ships CSP, HSTS,
-`X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy` on
-every route — already verified against a real local production build
-and server (`docs/PRODUCTION_READINESS.md` §4, freshly re-run in
-Milestone 10 Batch 1). An operator deploying this application should
-re-verify the same headers against their own real, hosted origin after
-deployment:
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and
+`Permissions-Policy` on every route — already verified against a real
+local production build and server (`docs/PRODUCTION_READINESS.md` §4,
+freshly re-run in Milestone 10 Batch 1; `Permissions-Policy` added by
+R2-3, "Add Minimal Permissions-Policy Browser Hardening"). An operator
+deploying this application should re-verify the same headers against
+their own real, hosted origin after deployment:
 
 ```bash
-curl -sI https://<your-real-domain>/ | grep -i "content-security-policy\|strict-transport\|x-frame-options\|x-content-type\|referrer-policy"
+curl -sI https://<your-real-domain>/ | grep -i "content-security-policy\|strict-transport\|x-frame-options\|x-content-type\|referrer-policy\|permissions-policy"
 ```
 
-Expect the same five headers `docs/PRODUCTION_READINESS.md` §4 already
+Expect the same six headers `docs/PRODUCTION_READINESS.md` §4 already
 documents. HSTS deliberately omits `preload` — adding it is a
 deliberate, per-deployment decision left to whoever actually owns the
 domain (`next.config.ts`'s own header comment), not something this
 repository decides on an operator's behalf.
+
+**`Permissions-Policy` denies eight browser capabilities this
+application's entire production source tree has zero use of** —
+`camera`, `microphone`, `geolocation`, `payment`, `usb`,
+`magnetometer`, `gyroscope`, `accelerometer` — each with an empty
+allowlist (`()`), confirmed by a repository-wide search before adding
+it, not a generic "deny everything" template (`next.config.ts`'s own
+header comment has the full audit and the reasoning for why
+`clipboard-*`/`fullscreen` are deliberately left ungated instead). This
+reflects current application behavior only — if a future feature
+genuinely needs one of these eight APIs, remove that one directive
+rather than the whole header, and update the audit comment alongside
+it.
 
 ## Aave API rate limiting [Repository + Operator]
 

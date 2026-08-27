@@ -640,14 +640,17 @@ full reasoning behind every choice below:
 | HTTPS enforcement | `Strict-Transport-Security: max-age=63072000; includeSubDomains` — the client-reinforcement half; the actual HTTP→HTTPS redirect is delegated to hosting configuration (this application has no server runtime of its own to add a redirect to). Deliberately no `preload` directive — see `next.config.ts`'s own header comment for why defaulting a self-hostable application onto the largely-irreversible browser HSTS preload list is a per-deployment decision, not something this codebase should presume on every future deployer's behalf. |
 | Secure cookies | **Not applicable** — no header here sets a cookie, because this application's own code never sets one; `GoTrueClient` persists to `localStorage`, not a cookie |
 | Preview deployment access | A hosting-platform concern (e.g. a password-protected preview URL) — recorded as a deployment recommendation, not expressible in `next.config.ts` |
+| Permissions Policy | **R2-3** ("Add Minimal Permissions-Policy Browser Hardening") — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()`, a deny-list built from a repository-wide search confirming zero production-code use of any of the eight capabilities, not a generic template. `clipboard-*`/`fullscreen` deliberately left ungated — see `next.config.ts`'s own header comment. |
 
 **Verified working, not just configured**: `pnpm build` succeeds with
 the new `headers()` function (confirmed present in the build's own
 `routes-manifest.json`); a real `next start` server was launched in this
-environment and `curl`'d directly, returning all five headers exactly as
-configured; a real headless-Chromium page load against that running
-server rendered the Dashboard successfully with zero console/page
-errors — the CSP does not break this application's own runtime. New
-`tests/unit/next.config.test.ts` (7 tests) locks in the header set and
-the dynamic `connect-src` behavior for both the unconfigured (this
-environment's real state) and a hypothetically-configured-Supabase case.
+environment and `curl`'d directly, returning all six headers exactly as
+configured (`Permissions-Policy` re-verified the same way by R2-3); a
+real headless-Chromium page load against that running server rendered
+the Dashboard successfully with zero console/page errors — the CSP does
+not break this application's own runtime. `tests/unit/next.config.test.ts`
+(13 tests as of R2-3) locks in the header set, the dynamic `connect-src`
+behavior for both the unconfigured (this environment's real state) and a
+hypothetically-configured-Supabase case, and the `Permissions-Policy`
+value itself.

@@ -73,12 +73,14 @@ prior batch's own review.
 
 ## 4. Security headers
 
-`next.config.ts`'s `headers()` function (Milestone 9 Batch 6, M9-035) is
-the actual, shipped configuration. **Freshly re-verified this batch**
-against a real local production build and server (`rm -rf .next && pnpm
-build && next start`) — this is production-*mode* verification, cited
-here as repository-level readiness evidence only, **not** as production-
-*deployment* verification (no deployment exists to verify):
+`next.config.ts`'s `headers()` function (Milestone 9 Batch 6, M9-035;
+`Permissions-Policy` added by R2-3, "Add Minimal Permissions-Policy
+Browser Hardening") is the actual, shipped configuration. **Freshly
+re-verified** against a real local production build and server (`pnpm
+build && pnpm start`, `curl -sI`) — this is production-*mode*
+verification, cited here as repository-level readiness evidence only,
+**not** as production-*deployment* verification (no deployment exists
+to verify):
 
 ```
 Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline';
@@ -89,6 +91,8 @@ X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Referrer-Policy: strict-origin-when-cross-origin
 Strict-Transport-Security: max-age=63072000; includeSubDomains
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(),
+  magnetometer=(), gyroscope=(), accelerometer=()
 ```
 
 Matches `next.config.ts`'s own source exactly, on every route tested

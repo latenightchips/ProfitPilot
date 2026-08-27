@@ -88,7 +88,51 @@ import type { NextConfig } from 'next';
  * security header should do to error-monitoring infrastructure. In this
  * environment the variable is unset, so this resolves to `'self'` alone,
  * same as before this batch.
+ *
+ * **`Permissions-Policy` — R2-3 ("Add Minimal Permissions-Policy Browser
+ * Hardening").** A deny-list for exactly the browser capabilities this
+ * application genuinely never uses, confirmed by searching the entire
+ * production source tree (`app/`, `components/`, `features/`, `hooks/`,
+ * `services/`, `stores/`, `providers/`) for any reference to
+ * `navigator.mediaDevices`/`getUserMedia`, `navigator.geolocation`,
+ * `PaymentRequest`, `navigator.usb`/`bluetooth`/`serial`/`hid`,
+ * `DeviceOrientationEvent`/`DeviceMotionEvent`, or a `<video>`/`<audio>`
+ * element with `autoplay` — zero matches for any of them. `camera`,
+ * `microphone`, `geolocation`, `payment`, `usb`, `magnetometer`,
+ * `gyroscope`, `accelerometer` are all real, currently-specified,
+ * broadly browser-supported Permissions Policy directives (not
+ * deprecated/experimental ones a browser console would flag as
+ * unrecognized) — this list, not a larger "deny everything" template,
+ * because those are the ones this audit can actually back with genuine
+ * repository evidence.
+ *
+ * **Deliberately excludes `clipboard-*`/`fullscreen`.** Also unused by
+ * anything in this codebase today, but left alone here: unlike the
+ * eight directives above, a browser's *manual*, user-initiated
+ * copy/paste and fullscreen-toggle behavior is unaffected either way
+ * (Permissions Policy only gates *programmatic* access via
+ * `navigator.clipboard`/`Element.requestFullscreen()`, neither of which
+ * this codebase calls) — so disabling them would add directives with no
+ * present behavioral effect and only a hypothetical, un-evidenced future
+ * cost if this application ever needs either API, for zero present
+ * security benefit beyond what the eight already-justified directives
+ * already provide.
+ *
+ * **Revisit this list, not blindly extend it, if a future feature needs
+ * a currently-denied capability** — the same "reflects current
+ * application behavior" discipline this file's own CSP `connect-src`
+ * already follows for external origins.
  */
+const PERMISSIONS_POLICY = [
+  'camera=()',
+  'microphone=()',
+  'geolocation=()',
+  'payment=()',
+  'usb=()',
+  'magnetometer=()',
+  'gyroscope=()',
+  'accelerometer=()',
+].join(', ');
 const SUPABASE_ORIGIN = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const PRICE_API_ORIGIN = process.env.NEXT_PUBLIC_PRICE_API_URL;
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
@@ -137,6 +181,7 @@ const nextConfig: NextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains',
           },
+          { key: 'Permissions-Policy', value: PERMISSIONS_POLICY },
         ],
       },
     ];
