@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchAaveV4DebtSnapshot = vi.fn();
 const createAaveV4RpcClient = vi.fn().mockReturnValue({});
@@ -10,11 +10,26 @@ vi.mock('@/infrastructure/protocols/aave/v4/client', () => ({
   createAaveV4RpcClient: (...args: unknown[]) => createAaveV4RpcClient(...args),
 }));
 
+/** R2-1 — see `tests/unit/app/api/aave/_shared/unexpectedErrorBoundary.test.ts` for the boundary's own isolated tests; these assert the real route is actually wired to it. */
+const { captureError, logDiagnosticEvent } = vi.hoisted(() => ({
+  captureError: vi.fn(),
+  logDiagnosticEvent: vi.fn(),
+}));
+vi.mock('@/services/observability', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/observability')>();
+  return { ...actual, captureError, logDiagnosticEvent };
+});
+
 const VALID_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 
 function request(query = ''): Request {
   return new Request(`http://localhost/api/aave/v4-position${query}`);
 }
+
+beforeEach(() => {
+  captureError.mockClear();
+  logDiagnosticEvent.mockClear();
+});
 
 /**
  * Aave V4 Live Position API route — V4 Readiness Audit §12 Stage 4B.
@@ -124,6 +139,74 @@ describe('GET /api/aave/v4-position', () => {
     const { GET } = await import('@/app/api/aave/v4-position/route');
     const response = await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
     expect(response.status).toBe(502);
+  });
+});
+
+describe('GET /api/aave/v4-position — unexpected-exception boundary (R2-1)', () => {
+  it('returns a stable 500 fallback, not a raw crash, when the adapter throws instead of returning a classified failure', async () => {
+    fetchAaveV4DebtSnapshot.mockRejectedValueOnce(
+      new Error('sensitive internal detail: rpc key leaked'),
+    );
+    const { GET } = await import('@/app/api/aave/v4-position/route');
+    const response = await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body).toEqual({
+      ok: false,
+      errors: [
+        {
+          category: 'unknown',
+          code: 'AAVE_V4_UNEXPECTED_ERROR',
+          message: expect.any(String),
+        },
+      ],
+    });
+  });
+
+  it('never leaks the thrown exception’s own message into the response body', async () => {
+    fetchAaveV4DebtSnapshot.mockRejectedValueOnce(new Error('sensitive internal detail'));
+    const { GET } = await import('@/app/api/aave/v4-position/route');
+    const response = await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
+    const body = await response.json();
+
+    expect(JSON.stringify(body)).not.toContain('sensitive internal detail');
+  });
+
+  it('reports the exception via captureError and logDiagnosticEvent, tagged for the v4-position route', async () => {
+    const thrown = new Error('boom');
+    fetchAaveV4DebtSnapshot.mockRejectedValueOnce(thrown);
+    const { GET } = await import('@/app/api/aave/v4-position/route');
+    await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
+
+    expect(captureError).toHaveBeenCalledWith(
+      thrown,
+      expect.objectContaining({ operation: 'v4-position', code: 'AAVE_V4_UNEXPECTED_ERROR' }),
+    );
+    expect(logDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'v4-position',
+        code: 'AAVE_V4_UNEXPECTED_ERROR',
+        outcome: 'failure',
+      }),
+    );
+  });
+
+  it('does not fire the unexpected-exception diagnostics for an ordinary classified adapter failure', async () => {
+    fetchAaveV4DebtSnapshot.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'AAVE_V4_RPC_NETWORK_ERROR',
+        message: 'x',
+        userMessage: 'x',
+        retryable: true,
+      },
+    });
+    const { GET } = await import('@/app/api/aave/v4-position/route');
+    await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
+
+    expect(captureError).not.toHaveBeenCalled();
+    expect(logDiagnosticEvent).not.toHaveBeenCalled();
   });
 });
 

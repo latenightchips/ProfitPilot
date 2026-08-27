@@ -6,8 +6,11 @@ import { createAaveV4RpcClient } from '@/infrastructure/protocols/aave/v4/client
 import type { AaveV4CollateralRiskSnapshot } from '@/infrastructure/protocols/aave/v4/types';
 import { validateAaveV4CollateralRiskRequest } from '@/services/aave/v4CollateralRisk';
 import { mapAaveV4AdapterFailure } from '@/services/aave/v4LivePosition';
+import { createApplicationError } from '@/services/shared';
 import type { ApplicationError } from '@/services/shared/errors';
 import { env } from '@/utils/env';
+
+import { withUnexpectedErrorBoundary } from '../_shared/unexpectedErrorBoundary';
 
 /**
  * Read-only Aave V4 live collateral-risk snapshot — V4 Readiness Audit
@@ -22,6 +25,11 @@ import { env } from '@/utils/env';
  * the collateral asset internally (always WBTC under this codebase's
  * single-collateral-asset scope), so there is no second identity
  * parameter for a caller to supply.
+ *
+ * **Wrapped in `withUnexpectedErrorBoundary` — R2-1 ("Harden Aave API
+ * Routes Against Unexpected Exceptions").** Mirrors `../v4-position/route.ts`'s
+ * own identical boundary exactly — see that file, or the helper's own
+ * header comment, for the full reasoning.
  */
 export interface AaveV4CollateralRiskApiResponse {
   ok: boolean;
@@ -67,39 +75,67 @@ function missingParamsResponse(): NextResponse<AaveV4CollateralRiskApiResponse> 
   );
 }
 
+const UNEXPECTED_ERROR_CODE = 'AAVE_V4_UNEXPECTED_ERROR';
+
+function unexpectedErrorResponse(): NextResponse<AaveV4CollateralRiskApiResponse> {
+  return NextResponse.json(
+    {
+      ok: false,
+      errors: [
+        createApplicationError(
+          'unknown',
+          UNEXPECTED_ERROR_CODE,
+          'An unexpected error occurred. Please try again shortly.',
+        ),
+      ],
+    },
+    { status: 500 },
+  );
+}
+
 export async function GET(
   request: Request,
 ): Promise<NextResponse<AaveV4CollateralRiskApiResponse>> {
-  const searchParams = new URL(request.url).searchParams;
-  const userAddress = searchParams.get('userAddress');
+  return withUnexpectedErrorBoundary<AaveV4CollateralRiskApiResponse>(
+    'v4-collateral-risk',
+    UNEXPECTED_ERROR_CODE,
+    async () => {
+      const searchParams = new URL(request.url).searchParams;
+      const userAddress = searchParams.get('userAddress');
 
-  if (userAddress === null || userAddress === '') {
-    return missingParamsResponse();
-  }
+      if (userAddress === null || userAddress === '') {
+        return missingParamsResponse();
+      }
 
-  const validation = validateAaveV4CollateralRiskRequest({
-    v4Position: { userAddress: userAddress as `0x${string}` },
-  });
+      const validation = validateAaveV4CollateralRiskRequest({
+        v4Position: { userAddress: userAddress as `0x${string}` },
+      });
 
-  if (!validation.ok) {
-    return NextResponse.json(
-      { ok: false, errors: validation.errors },
-      { status: statusForErrors(validation.errors) },
-    );
-  }
+      if (!validation.ok) {
+        return NextResponse.json(
+          { ok: false, errors: validation.errors },
+          { status: statusForErrors(validation.errors) },
+        );
+      }
 
-  const rpcUrl =
-    env.AAVE_V4_RPC_URL !== '' && env.AAVE_V4_RPC_URL != null
-      ? env.AAVE_V4_RPC_URL
-      : AAVE_V4_DEFAULT_RPC_URL;
-  const client = createAaveV4RpcClient(rpcUrl);
+      const rpcUrl =
+        env.AAVE_V4_RPC_URL !== '' && env.AAVE_V4_RPC_URL != null
+          ? env.AAVE_V4_RPC_URL
+          : AAVE_V4_DEFAULT_RPC_URL;
+      const client = createAaveV4RpcClient(rpcUrl);
 
-  const result = await fetchAaveV4CollateralRiskSnapshot(client, validation.data.userAddress);
+      const result = await fetchAaveV4CollateralRiskSnapshot(client, validation.data.userAddress);
 
-  if (!result.ok) {
-    const error = mapAaveV4AdapterFailure(result.error);
-    return NextResponse.json({ ok: false, errors: [error] }, { status: statusForErrors([error]) });
-  }
+      if (!result.ok) {
+        const error = mapAaveV4AdapterFailure(result.error);
+        return NextResponse.json(
+          { ok: false, errors: [error] },
+          { status: statusForErrors([error]) },
+        );
+      }
 
-  return NextResponse.json({ ok: true, data: result.data });
+      return NextResponse.json({ ok: true, data: result.data });
+    },
+    unexpectedErrorResponse,
+  );
 }

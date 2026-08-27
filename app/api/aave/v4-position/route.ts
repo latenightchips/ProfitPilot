@@ -8,8 +8,11 @@ import {
   mapAaveV4AdapterFailure,
   validateAaveV4LivePositionRequest,
 } from '@/services/aave/v4LivePosition';
+import { createApplicationError } from '@/services/shared';
 import type { ApplicationError } from '@/services/shared/errors';
 import { env } from '@/utils/env';
+
+import { withUnexpectedErrorBoundary } from '../_shared/unexpectedErrorBoundary';
 
 /**
  * Read-only Aave V4 live position snapshot — V4 Readiness Audit §12 Stage
@@ -34,6 +37,13 @@ import { env } from '@/utils/env';
  * `validateAaveV4LivePositionRequest`'s identical-shaped parameters.
  * Wiring an actual caller (Store/hook) to send these is out of Stage 4B's
  * scope (V4 Readiness Audit §12 Stage 4C/4D).
+ *
+ * **Wrapped in `withUnexpectedErrorBoundary` — R2-1 ("Harden Aave API
+ * Routes Against Unexpected Exceptions").** Every failure mode above
+ * (missing params, validation, classified RPC/adapter errors) is
+ * already a typed return, never a throw — this boundary only ever
+ * catches something the classification layer itself didn't anticipate.
+ * See that helper's own header comment for the full reasoning.
  */
 export interface AaveV4PositionApiResponse {
   ok: boolean;
@@ -88,43 +98,71 @@ function missingParamsResponse(): NextResponse<AaveV4PositionApiResponse> {
   );
 }
 
-export async function GET(request: Request): Promise<NextResponse<AaveV4PositionApiResponse>> {
-  const searchParams = new URL(request.url).searchParams;
-  const userAddress = searchParams.get('userAddress');
-  const debtAsset = searchParams.get('debtAsset');
+const UNEXPECTED_ERROR_CODE = 'AAVE_V4_UNEXPECTED_ERROR';
 
-  if (userAddress === null || userAddress === '' || debtAsset === null || debtAsset === '') {
-    return missingParamsResponse();
-  }
-
-  const validation = validateAaveV4LivePositionRequest({
-    v4Position: { userAddress: userAddress as `0x${string}` },
-    debtAssetSymbol: debtAsset,
-  });
-
-  if (!validation.ok) {
-    return NextResponse.json(
-      { ok: false, errors: validation.errors },
-      { status: statusForErrors(validation.errors) },
-    );
-  }
-
-  const rpcUrl =
-    env.AAVE_V4_RPC_URL !== '' && env.AAVE_V4_RPC_URL != null
-      ? env.AAVE_V4_RPC_URL
-      : AAVE_V4_DEFAULT_RPC_URL;
-  const client = createAaveV4RpcClient(rpcUrl);
-
-  const result = await fetchAaveV4DebtSnapshot(
-    client,
-    validation.data.debtAssetSymbol,
-    validation.data.userAddress,
+function unexpectedErrorResponse(): NextResponse<AaveV4PositionApiResponse> {
+  return NextResponse.json(
+    {
+      ok: false,
+      errors: [
+        createApplicationError(
+          'unknown',
+          UNEXPECTED_ERROR_CODE,
+          'An unexpected error occurred. Please try again shortly.',
+        ),
+      ],
+    },
+    { status: 500 },
   );
+}
 
-  if (!result.ok) {
-    const error = mapAaveV4AdapterFailure(result.error);
-    return NextResponse.json({ ok: false, errors: [error] }, { status: statusForErrors([error]) });
-  }
+export async function GET(request: Request): Promise<NextResponse<AaveV4PositionApiResponse>> {
+  return withUnexpectedErrorBoundary<AaveV4PositionApiResponse>(
+    'v4-position',
+    UNEXPECTED_ERROR_CODE,
+    async () => {
+      const searchParams = new URL(request.url).searchParams;
+      const userAddress = searchParams.get('userAddress');
+      const debtAsset = searchParams.get('debtAsset');
 
-  return NextResponse.json({ ok: true, data: result.data });
+      if (userAddress === null || userAddress === '' || debtAsset === null || debtAsset === '') {
+        return missingParamsResponse();
+      }
+
+      const validation = validateAaveV4LivePositionRequest({
+        v4Position: { userAddress: userAddress as `0x${string}` },
+        debtAssetSymbol: debtAsset,
+      });
+
+      if (!validation.ok) {
+        return NextResponse.json(
+          { ok: false, errors: validation.errors },
+          { status: statusForErrors(validation.errors) },
+        );
+      }
+
+      const rpcUrl =
+        env.AAVE_V4_RPC_URL !== '' && env.AAVE_V4_RPC_URL != null
+          ? env.AAVE_V4_RPC_URL
+          : AAVE_V4_DEFAULT_RPC_URL;
+      const client = createAaveV4RpcClient(rpcUrl);
+
+      const result = await fetchAaveV4DebtSnapshot(
+        client,
+        validation.data.debtAssetSymbol,
+        validation.data.userAddress,
+      );
+
+      if (!result.ok) {
+        const error = mapAaveV4AdapterFailure(result.error);
+        return NextResponse.json(
+          { ok: false, errors: [error] },
+          { status: statusForErrors([error]) },
+        );
+      }
+
+      return NextResponse.json({ ok: true, data: result.data });
+    },
+    unexpectedErrorResponse,
+  );
 }

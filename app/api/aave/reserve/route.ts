@@ -5,6 +5,8 @@ import { getAaveAdapter } from '@/infrastructure/protocols/aave';
 import { AAVE_V3_DEFAULT_RPC_URL } from '@/infrastructure/protocols/aave/v3/addresses';
 import { env } from '@/utils/env';
 
+import { withUnexpectedErrorBoundary } from '../_shared/unexpectedErrorBoundary';
+
 /**
  * Read-only Aave V3 reserve snapshot — server-side only (RPC calls happen
  * here, not in the browser, via `infrastructure/protocols/aave/v3`'s
@@ -30,6 +32,14 @@ import { env } from '@/utils/env';
  * silently — `fetchReserveSnapshot` itself fails closed with
  * `AAVE_UNSUPPORTED_BORROW_ASSET`, mapped to 400 below (a client input
  * problem, not an upstream RPC failure).
+ *
+ * **Wrapped in `withUnexpectedErrorBoundary` — R2-1 ("Harden Aave API
+ * Routes Against Unexpected Exceptions").** Every failure mode above is
+ * already a typed `{ok: false, error}` return, never a throw — this
+ * boundary only ever catches something `classifyError` itself didn't
+ * anticipate. See that helper's own header comment for the full
+ * reasoning (fallback contract, diagnostics, why classified failures
+ * never reach it).
  */
 export interface AaveReserveApiResponse {
   ok: boolean;
@@ -38,30 +48,53 @@ export interface AaveReserveApiResponse {
 }
 
 const DEFAULT_BORROW_ASSET = 'USDC';
+const UNEXPECTED_ERROR_CODE = 'AAVE_UNEXPECTED_ERROR';
+
+function unexpectedErrorResponse(): NextResponse<AaveReserveApiResponse> {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        code: UNEXPECTED_ERROR_CODE,
+        message: 'An unexpected internal error occurred.',
+        userMessage: 'An unexpected error occurred. Please try again shortly.',
+        retryable: false,
+      },
+    },
+    { status: 500 },
+  );
+}
 
 export async function GET(request: Request): Promise<NextResponse<AaveReserveApiResponse>> {
-  const requestedBorrowAsset = new URL(request.url).searchParams.get('borrowAsset');
-  const borrowAsset =
-    requestedBorrowAsset !== null && requestedBorrowAsset !== ''
-      ? requestedBorrowAsset
-      : DEFAULT_BORROW_ASSET;
+  return withUnexpectedErrorBoundary<AaveReserveApiResponse>(
+    'reserve',
+    UNEXPECTED_ERROR_CODE,
+    async () => {
+      const requestedBorrowAsset = new URL(request.url).searchParams.get('borrowAsset');
+      const borrowAsset =
+        requestedBorrowAsset !== null && requestedBorrowAsset !== ''
+          ? requestedBorrowAsset
+          : DEFAULT_BORROW_ASSET;
 
-  const rpcUrl =
-    env.AAVE_RPC_URL !== '' && env.AAVE_RPC_URL != null
-      ? env.AAVE_RPC_URL
-      : AAVE_V3_DEFAULT_RPC_URL;
-  const adapter = getAaveAdapter({ version: 'v3', rpcUrl });
-  const result = await adapter.fetchReserveSnapshot(borrowAsset);
+      const rpcUrl =
+        env.AAVE_RPC_URL !== '' && env.AAVE_RPC_URL != null
+          ? env.AAVE_RPC_URL
+          : AAVE_V3_DEFAULT_RPC_URL;
+      const adapter = getAaveAdapter({ version: 'v3', rpcUrl });
+      const result = await adapter.fetchReserveSnapshot(borrowAsset);
 
-  if (!result.ok) {
-    const status =
-      result.error.code === 'AAVE_UNSUPPORTED_BORROW_ASSET'
-        ? 400
-        : result.error.retryable
-          ? 503
-          : 502;
-    return NextResponse.json({ ok: false, error: result.error }, { status });
-  }
+      if (!result.ok) {
+        const status =
+          result.error.code === 'AAVE_UNSUPPORTED_BORROW_ASSET'
+            ? 400
+            : result.error.retryable
+              ? 503
+              : 502;
+        return NextResponse.json({ ok: false, error: result.error }, { status });
+      }
 
-  return NextResponse.json({ ok: true, data: result.data });
+      return NextResponse.json({ ok: true, data: result.data });
+    },
+    unexpectedErrorResponse,
+  );
 }
