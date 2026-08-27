@@ -140,6 +140,37 @@ describe('signIn', () => {
     expect(ok).toBe(false);
     expect(useAuthStore.getState().status).toBe('error');
   });
+
+  /**
+   * R2-2 — `authService.signIn` itself now converts a genuine
+   * thrown/rejected exception into this exact `AUTH_UNEXPECTED_ERROR`
+   * `MappingResult` failure (`services/auth/authService.ts`'s own
+   * `callAuthClient`), so from this Store's perspective it is just
+   * another ordinary failure result — no special-casing needed, and no
+   * unhandled rejection ever reaches this action. Proves the loading
+   * flag settles out of `'loading'` for this specific new failure code,
+   * not only the generic `AUTH_ERROR` case above.
+   */
+  it("settles out of 'loading' for the new unexpected-auth-error code, same as any other failure", async () => {
+    mockAuthService.signIn.mockResolvedValue({
+      ok: false,
+      errors: [
+        {
+          category: 'authentication',
+          code: 'AUTH_UNEXPECTED_ERROR',
+          message: 'An unexpected error occurred. Please try again.',
+        },
+      ],
+    });
+
+    const ok = await useAuthStore.getState().signIn('a@example.com', 'password123');
+
+    expect(ok).toBe(false);
+    const state = useAuthStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.status).not.toBe('loading');
+    expect(state.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
 });
 
 describe('signOut', () => {

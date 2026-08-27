@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   AuthClient,
@@ -7,6 +7,21 @@ import type {
 } from '@/services/auth/authService';
 import { createAuthService } from '@/services/auth/authService';
 import type { AuthChangeEvent, AuthSession } from '@/services/auth/types';
+
+/** R2-2 — see this file's own "unexpected-rejection hardening" describe block below. */
+const { captureError, logDiagnosticEvent } = vi.hoisted(() => ({
+  captureError: vi.fn(),
+  logDiagnosticEvent: vi.fn(),
+}));
+vi.mock('@/services/observability', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/observability')>();
+  return { ...actual, captureError, logDiagnosticEvent };
+});
+
+beforeEach(() => {
+  captureError.mockClear();
+  logDiagnosticEvent.mockClear();
+});
 
 /**
  * Authentication Service — 06_TASKS.md M8-015. Every test here runs
@@ -52,8 +67,17 @@ class FakeAuthClient implements AuthClient {
   updateUserError: SupabaseAuthErrorLike | null = null;
   listeners: ((event: AuthChangeEvent, session: SupabaseAuthSession | null) => void)[] = [];
   unsubscribeCalls = 0;
+  /**
+   * R2-2 — set to make the *next* call on this fake reject instead of
+   * resolving, simulating a genuine transport/runtime exception rather
+   * than an ordinary Supabase `{error}` result. Each test constructs its
+   * own fresh `FakeAuthClient` and exercises exactly one operation, so a
+   * single shared field is enough — no per-method flag needed.
+   */
+  rejectWith: Error | null = null;
 
   async signUp() {
+    if (this.rejectWith) throw this.rejectWith;
     return {
       data: { user: this.signUpResult.session?.user ?? null, session: this.signUpResult.session },
       error: this.signUpResult.error,
@@ -61,6 +85,7 @@ class FakeAuthClient implements AuthClient {
   }
 
   async signInWithPassword() {
+    if (this.rejectWith) throw this.rejectWith;
     return {
       data: { user: this.signInResult.session?.user ?? null, session: this.signInResult.session },
       error: this.signInResult.error,
@@ -68,18 +93,22 @@ class FakeAuthClient implements AuthClient {
   }
 
   async signOut() {
+    if (this.rejectWith) throw this.rejectWith;
     return { error: this.signOutError };
   }
 
   async resetPasswordForEmail() {
+    if (this.rejectWith) throw this.rejectWith;
     return { error: this.resetError };
   }
 
   async getSession() {
+    if (this.rejectWith) throw this.rejectWith;
     return { data: { session: this.getSessionResult.session }, error: this.getSessionResult.error };
   }
 
   async refreshSession() {
+    if (this.rejectWith) throw this.rejectWith;
     return {
       data: { user: this.refreshResult.session?.user ?? null, session: this.refreshResult.session },
       error: this.refreshResult.error,
@@ -94,6 +123,7 @@ class FakeAuthClient implements AuthClient {
   }
 
   async updateUser() {
+    if (this.rejectWith) throw this.rejectWith;
     return { data: { user: session().user }, error: this.updateUserError };
   }
 
@@ -319,5 +349,166 @@ describe('createAuthService — configured (fake client)', () => {
 
     unsubscribe?.();
     expect(fake.unsubscribeCalls).toBe(1);
+  });
+});
+
+/**
+ * Unexpected-rejection hardening — R2-2 ("Harden Supabase/Auth Calls
+ * Against Unexpected Rejections"). Every method here shares
+ * `authService.ts`'s own `callAuthClient` helper — these tests prove
+ * each of the seven is actually wired to it, not just the helper's own
+ * generic behavior once. `signIn`/`refreshSession` get the deepest
+ * coverage (the task's own "at minimum" pair); the rest get one
+ * representative rejection test each, since the shared implementation
+ * makes a per-operation deep-dive redundant.
+ */
+describe('createAuthService — unexpected rejection hardening (R2-2)', () => {
+  it('signIn converts a genuine thrown/rejected exception to a safe MappingResult failure, not an unhandled rejection', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('sensitive internal detail: connection refused at 10.0.0.5');
+    const service = createAuthService(fake);
+
+    await expect(service.signIn('a@example.com', 'password123')).resolves.toEqual({
+      ok: false,
+      errors: [
+        {
+          category: 'authentication',
+          code: 'AUTH_UNEXPECTED_ERROR',
+          message: expect.any(String),
+        },
+      ],
+    });
+  });
+
+  it('signIn never leaks the thrown exception’s own message into the returned error', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('sensitive internal detail');
+    const service = createAuthService(fake);
+
+    const result = await service.signIn('a@example.com', 'password123');
+    expect(JSON.stringify(result)).not.toContain('sensitive internal detail');
+  });
+
+  it('signIn reports the exception via captureError and logDiagnosticEvent, tagged for signIn', async () => {
+    const fake = new FakeAuthClient();
+    const thrown = new Error('boom');
+    fake.rejectWith = thrown;
+    const service = createAuthService(fake);
+
+    await service.signIn('a@example.com', 'password123');
+
+    expect(captureError).toHaveBeenCalledWith(
+      thrown,
+      expect.objectContaining({
+        feature: 'auth',
+        operation: 'signIn',
+        code: 'AUTH_UNEXPECTED_ERROR',
+      }),
+    );
+    expect(logDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: 'auth',
+        operation: 'signIn',
+        code: 'AUTH_UNEXPECTED_ERROR',
+        outcome: 'failure',
+      }),
+    );
+  });
+
+  it('signIn fires no diagnostics for an ordinary Supabase {error} result (only a genuine exception counts)', async () => {
+    const fake = new FakeAuthClient();
+    fake.signInResult = { session: null, error: authError('Invalid login credentials.') };
+    const service = createAuthService(fake);
+
+    const result = await service.signIn('a@example.com', 'wrong-password');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0]?.message).toBe('Invalid login credentials.');
+    expect(captureError).not.toHaveBeenCalled();
+    expect(logDiagnosticEvent).not.toHaveBeenCalled();
+  });
+
+  it('refreshSession converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('network died');
+    const service = createAuthService(fake);
+
+    const result = await service.refreshSession();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toEqual({
+      category: 'authentication',
+      code: 'AUTH_UNEXPECTED_ERROR',
+      message: expect.any(String),
+    });
+    expect(captureError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ operation: 'refreshSession' }),
+    );
+  });
+
+  it('signUp converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('boom');
+    const service = createAuthService(fake);
+
+    const result = await service.signUp('a@example.com', 'password123');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
+
+  it('signOut converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('boom');
+    const service = createAuthService(fake);
+
+    const result = await service.signOut();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
+
+  it('requestPasswordReset converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('boom');
+    const service = createAuthService(fake);
+
+    const result = await service.requestPasswordReset('a@example.com');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
+
+  it('completePasswordReset converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('boom');
+    const service = createAuthService(fake);
+
+    const result = await service.completePasswordReset('newpassword123');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
+
+  it('getSession converts a genuine rejection to a safe MappingResult failure', async () => {
+    const fake = new FakeAuthClient();
+    fake.rejectWith = new Error('boom');
+    const service = createAuthService(fake);
+
+    const result = await service.getSession();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('AUTH_UNEXPECTED_ERROR');
+  });
+
+  it('still returns SUPABASE_NOT_CONFIGURED, not AUTH_UNEXPECTED_ERROR, when there is no client at all', async () => {
+    const service = createAuthService(null);
+    const result = await service.signIn('a@example.com', 'password123');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('SUPABASE_NOT_CONFIGURED');
+    expect(captureError).not.toHaveBeenCalled();
+    expect(logDiagnosticEvent).not.toHaveBeenCalled();
   });
 });

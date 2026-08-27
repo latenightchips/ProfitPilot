@@ -33,7 +33,50 @@
  * checked). Every method below is exercised in this batch's own tests
  * against a fake `AuthClient`, never a real backend — see this batch's
  * final summary for the exact scope of what "tested" means here.
+ *
+ * **`callAuthClient` — R2-2 ("Harden Supabase/Auth Calls Against
+ * Unexpected Rejections").** `tests/unit/services/auth/authService.test.ts`'s
+ * own M9-047 test already confirmed, by direct inspection of the
+ * installed `@supabase/supabase-js` package, that `GoTrueClient` wraps a
+ * network-layer failure into a *resolved* `{error}` result rather than
+ * rejecting — so under that specific, already-verified failure mode
+ * there is genuinely nothing for a `try/catch` to catch. This is
+ * broader, deliberate defense-in-depth on top of that, not a
+ * contradiction of it: a future SDK version, an unanticipated runtime
+ * exception inside `GoTrueClient` itself, or any other class of failure
+ * this file cannot enumerate in advance could still reject the returned
+ * Promise, and every method below's own header comment already *claims*
+ * "never throws" as an established guarantee — this closes the actual
+ * gap between that claim and the code that previously did not enforce
+ * it. Every one of the seven async methods below now funnels its own
+ * `client.<method>(...)` call through this one helper rather than each
+ * writing its own `try/catch`: the interpretation of a *resolved*
+ * `{data, error}` result stays fully visible and unique to each method
+ * (passed in as `onResult`, never hidden inside this helper), only the
+ * catch-and-report behavior for a genuine rejection is shared.
+ *
+ * **Diagnostic path: both `captureError` and `logDiagnosticEvent`** —
+ * the identical choice `app/api/aave/_shared/unexpectedErrorBoundary.ts`
+ * already made for the equivalent Aave-route boundary (R2-1), for the
+ * same reason: `captureError`'s `captureException` preserves the real
+ * exception/stack for a live Sentry project, but is a silent no-op
+ * without one configured (this application's actual common case);
+ * `logDiagnosticEvent` always writes to the console regardless, so an
+ * operator has something to look at either way. Neither ever receives
+ * anything beyond the four short `feature`/`operation`/`code` tags
+ * already used throughout this file — no email, password, token, or
+ * session content ever reaches either call.
+ *
+ * **Never reflects the caught exception's own message/stack to the
+ * caller.** The `MappingResult` failure `callAuthClient` returns on a
+ * catch always carries the same static, generic
+ * `'An unexpected error occurred. Please try again.'` — the one place
+ * this file already deviates from "pass Supabase's own message
+ * through" (every *resolved* `{error}` case still does exactly that,
+ * unchanged), because an exception's message here is an unclassified
+ * JS/runtime string, not Supabase's own already-safe, user-facing copy.
  */
+import { buildDiagnosticEvent, captureError, logDiagnosticEvent } from '@/services/observability';
 import type { MappingResult } from '@/services/shared';
 import { createApplicationError } from '@/services/shared';
 
@@ -130,6 +173,52 @@ function notConfiguredFailure(): MappingResult<never> {
   };
 }
 
+const UNEXPECTED_AUTH_ERROR_CODE = 'AUTH_UNEXPECTED_ERROR';
+
+function unexpectedAuthFailure(): MappingResult<never> {
+  return {
+    ok: false,
+    errors: [
+      createApplicationError(
+        'authentication',
+        UNEXPECTED_AUTH_ERROR_CODE,
+        'An unexpected error occurred. Please try again.',
+      ),
+    ],
+  };
+}
+
+/**
+ * Calls `client`, interprets its *resolved* result via `onResult`, and
+ * converts a genuine thrown/rejected exception into the same safe
+ * `MappingResult` failure shape every other failure path in this file
+ * already returns — see this file's own header comment for the full
+ * reasoning.
+ */
+async function callAuthClient<TResult, TData>(
+  operation: string,
+  call: () => Promise<TResult>,
+  onResult: (result: TResult) => MappingResult<TData>,
+): Promise<MappingResult<TData>> {
+  let result: TResult;
+  try {
+    result = await call();
+  } catch (error) {
+    captureError(error, { feature: 'auth', operation, code: UNEXPECTED_AUTH_ERROR_CODE });
+    logDiagnosticEvent(
+      buildDiagnosticEvent({
+        category: 'authentication',
+        code: UNEXPECTED_AUTH_ERROR_CODE,
+        feature: 'auth',
+        operation,
+        outcome: 'failure',
+      }),
+    );
+    return unexpectedAuthFailure();
+  }
+  return onResult(result);
+}
+
 export function createAuthService(client: AuthClient | null) {
   return {
     checkAvailability(): AuthAvailability {
@@ -140,50 +229,76 @@ export function createAuthService(client: AuthClient | null) {
 
     async signUp(email: string, password: string): Promise<MappingResult<AuthSession | null>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.signUp({ email, password });
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      // `session` is null when the project requires email confirmation
-      // before a session is issued — a real, expected outcome, not a
-      // failure.
-      return {
-        ok: true,
-        data: result.data.session === null ? null : toAuthSession(result.data.session),
-      };
+      return callAuthClient(
+        'signUp',
+        () => client.signUp({ email, password }),
+        (result) => {
+          if (result.error !== null)
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          // `session` is null when the project requires email confirmation
+          // before a session is issued — a real, expected outcome, not a
+          // failure.
+          return {
+            ok: true,
+            data: result.data.session === null ? null : toAuthSession(result.data.session),
+          };
+        },
+      );
     },
 
     async signIn(email: string, password: string): Promise<MappingResult<AuthSession>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.signInWithPassword({ email, password });
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      if (result.data.session === null) {
-        return {
-          ok: false,
-          errors: [
-            createApplicationError(
-              'authentication',
-              'NO_SESSION_RETURNED',
-              'Sign-in did not return a session.',
-            ),
-          ],
-        };
-      }
-      return { ok: true, data: toAuthSession(result.data.session) };
+      return callAuthClient(
+        'signIn',
+        () => client.signInWithPassword({ email, password }),
+        (result) => {
+          if (result.error !== null) {
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          }
+          if (result.data.session === null) {
+            return {
+              ok: false,
+              errors: [
+                createApplicationError(
+                  'authentication',
+                  'NO_SESSION_RETURNED',
+                  'Sign-in did not return a session.',
+                ),
+              ],
+            };
+          }
+          return { ok: true, data: toAuthSession(result.data.session) };
+        },
+      );
     },
 
     async signOut(
       options: { scope?: 'global' | 'local' | 'others' } = {},
     ): Promise<MappingResult<void>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.signOut(options);
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      return { ok: true, data: undefined };
+      return callAuthClient(
+        'signOut',
+        () => client.signOut(options),
+        (result) => {
+          if (result.error !== null)
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          return { ok: true, data: undefined };
+        },
+      );
     },
 
     async requestPasswordReset(email: string): Promise<MappingResult<void>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.resetPasswordForEmail(email);
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      return { ok: true, data: undefined };
+      return callAuthClient(
+        'requestPasswordReset',
+        () => client.resetPasswordForEmail(email),
+        (result) => {
+          if (result.error !== null) {
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          }
+          return { ok: true, data: undefined };
+        },
+      );
     },
 
     /**
@@ -195,29 +310,48 @@ export function createAuthService(client: AuthClient | null) {
      */
     async completePasswordReset(newPassword: string): Promise<MappingResult<void>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.updateUser({ password: newPassword });
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      return { ok: true, data: undefined };
+      return callAuthClient(
+        'completePasswordReset',
+        () => client.updateUser({ password: newPassword }),
+        (result) => {
+          if (result.error !== null) {
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          }
+          return { ok: true, data: undefined };
+        },
+      );
     },
 
     async getSession(): Promise<MappingResult<AuthSession | null>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.getSession();
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      return {
-        ok: true,
-        data: result.data.session === null ? null : toAuthSession(result.data.session),
-      };
+      return callAuthClient(
+        'getSession',
+        () => client.getSession(),
+        (result) => {
+          if (result.error !== null)
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          return {
+            ok: true,
+            data: result.data.session === null ? null : toAuthSession(result.data.session),
+          };
+        },
+      );
     },
 
     async refreshSession(): Promise<MappingResult<AuthSession | null>> {
       if (client === null) return notConfiguredFailure();
-      const result = await client.refreshSession();
-      if (result.error !== null) return { ok: false, errors: [toApplicationError(result.error)] };
-      return {
-        ok: true,
-        data: result.data.session === null ? null : toAuthSession(result.data.session),
-      };
+      return callAuthClient(
+        'refreshSession',
+        () => client.refreshSession(),
+        (result) => {
+          if (result.error !== null)
+            return { ok: false, errors: [toApplicationError(result.error)] };
+          return {
+            ok: true,
+            data: result.data.session === null ? null : toAuthSession(result.data.session),
+          };
+        },
+      );
     },
 
     /**
