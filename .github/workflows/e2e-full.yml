@@ -1,0 +1,75 @@
+name: Full E2E Suite (manual)
+
+# R2-4 ("Dependency Security Follow-up + Release E2E Policy"). Manual,
+# non-blocking — deliberately NOT on pull_request/push, unlike
+# ci.yml's own blocking gates. See docs/OPERATIONAL_RUNBOOK.md's
+# "Full E2E suite (manual release gate)" section for the full release
+# policy this workflow implements: R1-3's production smoke gate stays
+# the one thing every PR/push blocks on; this is the broader, full
+# 150-test Playwright suite (all feature workflows, all 43
+# accessibility checks, responsive/mobile/tablet layouts, offline mode)
+# a release operator runs before cutting a release, either locally
+# (`pnpm test:e2e`) or here, on demand.
+#
+# **Excludes `tests/e2e/productionSmoke.spec.ts` by design, not by
+# accident.** Confirmed by two full local runs during R2-4: the full
+# suite (153 tests, including that spec) produces exactly one failure —
+# that spec's own `/api/aave/*` boundary check receiving 429 instead of
+# 400 — while the identical suite with that one spec excluded (150
+# tests) passes cleanly. Root cause, not a flaky/non-deterministic
+# test: with no reverse proxy in front of a local/CI `pnpm start`
+# instance, every request carries no `x-forwarded-for` header, so
+# `services/rateLimit/aaveApiRateLimit.ts`'s own documented "unknown"-
+# bucket fallback (R1-2) puts *every* `/api/aave/*` call across the
+# entire suite — including the dozens of ordinary, legitimate V3
+# `/api/aave/reserve` calls the earlier feature-workflow specs already
+# make while exercising real portfolio pages — into one shared 30-
+# requests-per-60-seconds budget. By the time this spec's own check
+# runs, that budget is already, correctly, exhausted by genuine prior
+# traffic. That spec's own dedicated coverage already runs in every
+# `ci.yml` build (against a fresh server, alone, never colliding with
+# this suite's own volume), so re-running it here adds no coverage —
+# only a guaranteed collision. Not a reason to touch R1-2's rate
+# limiter, which is scope this task does not touch.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      # Uses the repository's own playwright.config.ts as-is (no custom
+      # config) — its `webServer` block runs `pnpm start` against the
+      # build above, the same mechanism R1-3's ci.yml smoke step already
+      # relies on. No live Aave RPC/Supabase/Sentry dependency: confirmed
+      # by direct inspection that no spec in tests/e2e/ ever enters a
+      # real wallet address (the only path that would trigger a live V4
+      # RPC call), and authWorkflows.spec.ts exercises only the honest,
+      # already-graceful "Supabase not configured" path this sandbox's
+      # own real environment already takes.
+      - name: Full E2E suite (excludes the production smoke spec — see this file's own header comment)
+        run: pnpm exec playwright test --grep-invert productionSmoke

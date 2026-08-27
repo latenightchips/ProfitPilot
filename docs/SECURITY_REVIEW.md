@@ -406,6 +406,85 @@ vulnerability is transitive, build/lint/test-time-only tooling (above),
 so there is no vulnerable package this application's own runtime needs
 patched today.
 
+### R2-4 update — production dependency audit, overrides, and ongoing policy
+
+**A narrower, `--prod`-scoped re-run, not a replacement for the audit
+above.** M9-029's own 18-instance count above covers the *full*
+dependency tree, including dev/lint/test-only tooling (`eslint`,
+`jsdom`, etc.) — legitimate for a one-time full review, but too broad
+for an ongoing *release* gate, which only needs to know what actually
+ships in the built application. `pnpm audit --prod` (production
+dependency tree only) is the narrower, repeatable command this section
+below establishes as the standing policy.
+
+**Result at the time of this update**: `pnpm audit --prod` reported 9
+findings (7 high, 2 moderate) across 5 packages, all transitive through
+`next`/`@sentry/nextjs`:
+
+| Package | Path | Reachability |
+|---|---|---|
+| `postcss` (4 findings) | `.>next>postcss` | Build-time only — processes this repository's own trusted Tailwind/CSS source during `next build`, never attacker-controlled input, never shipped to the browser |
+| `nanoid` (1) | `.>next>postcss>nanoid` | Same build-time path as `postcss` above |
+| `brace-expansion` (2) | `.>@sentry/nextjs>@sentry/bundler-plugin-core>glob>minimatch>brace-expansion` | Build-time only — Sentry's build-time bundler plugin (source-map/release tooling), which `next.config.ts`'s own `withSentryConfig` call already disables (`sourcemaps: {disable: true}`, `telemetry: false`) |
+| `fast-uri` (1) | `.>@sentry/nextjs>@sentry/webpack-plugin>webpack>schema-utils>ajv>fast-uri` | Build-time only — the identical Sentry build-plugin path |
+| `sharp` (1) | `.>next>sharp` | **Confirmed unused** — Next.js's own optional image-optimization dependency; a repository-wide search found zero `next/image` usage anywhere in this application |
+
+**Remediation applied**: `package.json`'s `pnpm.overrides` now pins
+`postcss>=8.5.23`, `nanoid>=3.3.18`, `brace-expansion>=5.0.9`,
+`fast-uri>=3.1.5` — each a same-major-line minor/patch bump for a
+narrowly-scoped utility package, not a `next`/`@sentry/nextjs` version
+change. Verified, not assumed: `pnpm install` resolves cleanly,
+`pnpm audit --prod` afterward reports exactly 1 remaining finding
+(`sharp`), and a full `pnpm validate` (typecheck/lint/format/all
+3710 unit tests/production build) passes unchanged. This closes 8 of
+the 9 findings.
+
+**`sharp` deliberately left un-overridden.** Unlike the four packages
+above, `sharp` ships native, platform-specific prebuilt binaries —
+overriding its resolved version carries real installation risk across
+different CI/deployment platforms (binary availability, ABI
+compatibility) that a pure-JS utility package override does not. Given
+this application never invokes the one feature (`next/image`) that
+would ever load `sharp` at all, that risk is not worth taking for zero
+practical security benefit. Tracked as **TRACK / WAIT FOR UPSTREAM** —
+revisit if `next` itself bumps its own `sharp` dependency, or if this
+application ever adopts `next/image` (at which point reachability
+changes and this classification must be revisited).
+
+**Ongoing production dependency-security policy** (the standing answer
+to "what known production dependency advisories exist, and why are we
+accepting or fixing them?"):
+
+- **Command**: `pnpm audit --prod` — production dependency tree only,
+  not the broader dev/lint/test tree M9-029's own one-time audit above
+  covered.
+- **When to run**: before cutting a release, and whenever `next`,
+  `@sentry/nextjs`, `@supabase/supabase-js`, or any other direct
+  production dependency in `package.json` is upgraded.
+- **Triage**: for each finding, trace the actual dependency path (`pnpm
+  why <package>`) and classify — **FIX NOW** (a safe override or direct
+  upgrade exists per the preconditions this section's own R2-4 example
+  demonstrates), **TRACK / WAIT FOR UPSTREAM** (no safe fix yet, or the
+  regression risk outweighs the benefit — `sharp` above), **NOT
+  RUNTIME-REACHABLE** (build/lint/test-time-only, confirmed by tracing
+  the dependency path, not assumed from the package name), or
+  **FALSE/IRRELEVANT FOR CURRENT PRODUCT USAGE** (gates a feature this
+  application doesn't use, like `next/image`).
+- **What blocks a release**: a finding that is both runtime-reachable
+  *and* has no safe override/upgrade available. Nothing in the current
+  9-finding (now 1-finding) set meets both conditions.
+- **Audit output alone is never sufficient** — every finding above was
+  classified by tracing its actual dependency path and asking whether
+  attacker-controlled input ever reaches it in this application's own
+  runtime, not from its CVSS/severity label alone. A `pnpm audit --prod`
+  run with zero findings would not, by itself, prove the application is
+  secure; a run with findings does not, by itself, prove it is not.
+- **How accepted risk is recorded**: this section, updated in place the
+  next time `pnpm audit --prod` is re-run — not a separate tracking
+  system, and not a third-party SaaS dependency scanner (none is
+  currently used by this repository, and nothing here warrants adding
+  one).
+
 ## M9-030 — Audit Environment Variable Handling
 
 Check: no secrets committed, no service-role keys exposed, public

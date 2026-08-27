@@ -343,7 +343,56 @@ decimals verification remains `aave-v4-boundary.yml`'s own separate,
 scheduled, non-blocking job, unchanged by this batch. Nor does this
 gate replace `pnpm test:e2e`'s much broader manual suite (full
 workflow coverage across every feature, all 43 accessibility checks) —
-see "Known operational limitations" below for what remains manual only.
+see "Full E2E suite (manual release gate)" below for that suite's own
+policy.
+
+## Full E2E suite (manual release gate) [Repository + Operator]
+
+R2-4 ("Dependency Security Follow-up + Release E2E Policy") formalizes
+the intended role of the broader Playwright suite (`tests/e2e/`, 150
+tests excluding `productionSmoke.spec.ts` — see below) relative to
+R1-3's own always-on smoke gate above:
+
+- **Every PR/push (`ci.yml`, blocking)**: typecheck, lint, format,
+  unit/integration tests, build, and the one small production smoke
+  spec above. Fast, always-on, catches "the build doesn't boot."
+- **On demand (`.github/workflows/e2e-full.yml`, `workflow_dispatch`,
+  non-blocking)**: the full suite — every feature workflow (Portfolio,
+  Dashboard, Simulation, Loop Builder, Exit Planner, Recommendations,
+  Settings import/export), all 43 accessibility checks, responsive/
+  mobile/tablet layouts, offline mode, and the honest "Supabase not
+  configured" auth path. Proves the *product* works end-to-end, not
+  just that the process boots. Trigger it manually from the Actions tab
+  before cutting a release, or run the identical suite locally
+  (`pnpm build && pnpm exec playwright test --grep-invert
+  productionSmoke`, or the full `pnpm test:e2e` including that spec for
+  a single, isolated local run — see below for why it's excluded from
+  the *combined* run specifically).
+- **Not on every PR, deliberately**: confirmed by two full local runs
+  during R2-4 to take roughly 2.5 minutes end-to-end (install +
+  Chromium + build + suite) — genuinely CI-safe and deterministic, but
+  a meaningfully heavier and slower gate than the existing fast smoke
+  check for a much larger surface than "did this PR break the build."
+  Making it blocking on every push was evaluated and rejected in favor
+  of the always-on smoke gate plus an on-demand full run before release.
+
+**Why `e2e-full.yml` excludes `tests/e2e/productionSmoke.spec.ts`
+specifically** (a genuine, verified interaction, not a workaround for
+flakiness): running the full suite once, unmodified, produces exactly
+one failure — that spec's own `/api/aave/*` check receives `429`
+instead of `400`. Root cause: with no reverse proxy in front of a
+local/CI `pnpm start` instance, every request has no `x-forwarded-for`
+header, so `services/rateLimit/aaveApiRateLimit.ts`'s own documented
+"unknown"-bucket fallback (R1-2) puts *every* `/api/aave/*` call in the
+entire run — including the dozens of legitimate V3 `/api/aave/reserve`
+calls the earlier feature-workflow specs already make while exercising
+real portfolio pages — into one shared 30-requests-per-60-seconds
+budget, which is correctly exhausted by the time that spec's own check
+runs. Re-running the same worked out to 150/150 passing with only that
+one spec excluded — confirming this is a deterministic collision
+between two already-correct pieces of behavior, not a flaky test, and
+not something worth changing R1-2's rate limiter for (that spec's own
+coverage already runs, uncollided, in every `ci.yml` build).
 
 ## Health/readiness checks that can actually be performed [Operator]
 
@@ -357,7 +406,7 @@ Batch 1:
    other route (`/`, `/portfolios`, `/simulation`, `/loop-builder`,
    `/exit-planner`, `/recommendations`, `/settings`, `/sign-in`,
    `/sign-up`, `/reset-password`), and `404` on an unknown route.
-2. The five security headers above are present.
+2. The six security headers above are present.
 3. `document.title` reflects the correct route (`"Dashboard —
    ProfitPilot"` on `/`, etc.) — confirms client-side hydration
    succeeded, not just that the static HTML shell was served.
@@ -386,20 +435,22 @@ on any of the above is **[Deferred]** — none exists for Version 1.0.0.
   cross-device data — each browser/device carries its own independent
   local copy; moving data between them is always a manual export/import,
   never automatic.
-- **CI runs a small production smoke gate, not the full end-to-end
-  (Playwright) suite.** R1-3 ("Runtime Pinning + Production CI Smoke
-  Gate") added `tests/e2e/productionSmoke.spec.ts` to
-  `.github/workflows/ci.yml`, run against a real `pnpm build && pnpm
-  start` process (not `next dev`) after every other validation gate
-  passes — proving the production process actually boots, the root
-  route renders past hydration, a second real page loads, and the
-  `/api/aave/*` boundary responds without crashing, all without any
-  live external network call. It deliberately does **not** run the
-  broader suite (`docs/DEFECT_CLASSIFICATION.md` §6, formerly
-  documented as entirely manual) — an operator building their own
-  release should still run `pnpm test:e2e` manually before deploying
-  for full workflow/accessibility coverage, the same practice this
-  project's own release process follows.
+- **CI blocks on a small production smoke gate; the full end-to-end
+  (Playwright) suite runs on demand, not on every PR/push.** R1-3
+  ("Runtime Pinning + Production CI Smoke Gate") added
+  `tests/e2e/productionSmoke.spec.ts` to `.github/workflows/ci.yml`,
+  run against a real `pnpm build && pnpm start` process (not `next
+  dev`) after every other validation gate passes — proving the
+  production process actually boots, the root route renders past
+  hydration, a second real page loads, and the `/api/aave/*` boundary
+  responds without crashing, all without any live external network
+  call. R2-4 ("Dependency Security Follow-up + Release E2E Policy")
+  added the full 150-test suite as a separate, manually-triggered
+  `workflow_dispatch` workflow (`.github/workflows/e2e-full.yml`) — see
+  "Full E2E suite (manual release gate)" above for the full policy and
+  why it deliberately excludes `productionSmoke.spec.ts` itself. Not
+  blocking on every PR by design, not because it's unreliable —
+  confirmed deterministic and CI-safe by two full local runs.
 - **Single-copy data model** — a lost device, cleared browser storage,
   or an un-exported dataset has no recovery path beyond a previously
   exported backup (`docs/DISASTER_RECOVERY.md`'s "Deleted local browser
