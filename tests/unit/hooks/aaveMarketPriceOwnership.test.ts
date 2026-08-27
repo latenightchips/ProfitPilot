@@ -223,11 +223,19 @@ describe('market.btcPriceUsd ownership — required invariant: V3 refresh never 
     mountBothHooks(portfolio.id);
 
     useAaveLiveDataStore.setState(v3ReadyState());
+    // V1.1 Batch 1 (Live-Data Trust Parity) — the fetched V3 price
+    // differs from this portfolio's manual creation-time price, so it
+    // lands as a pending candidate first; accept it to reach the synced
+    // state this test's own cross-hook-isolation assertion cares about.
     await waitFor(() => {
-      expect(
-        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd,
-      ).toBe(V3_PRICE);
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]?.btcPriceUsd).toBe(
+        V3_PRICE,
+      );
     });
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd).toBe(
+      V3_PRICE,
+    );
 
     // The V4 store happening to hold ready data must never leak into this
     // V3 portfolio (it has no v4Position to fetch against in the first
@@ -245,11 +253,17 @@ describe('market.btcPriceUsd ownership — required invariant: V3 refresh never 
 
     mountBothHooks(v3Portfolio.id);
     useAaveLiveDataStore.setState(v3ReadyState());
+    // V1.1 Batch 1 (Live-Data Trust Parity) — differs from the manual
+    // creation-time price, so it lands as a candidate first.
     await waitFor(() => {
-      expect(
-        usePortfolioStore.getState().portfolios[v3Portfolio.id].portfolio.market.btcPriceUsd,
-      ).toBe(V3_PRICE);
+      expect(usePortfolioStore.getState().marketCandidates[v3Portfolio.id]?.btcPriceUsd).toBe(
+        V3_PRICE,
+      );
     });
+    usePortfolioStore.getState().acceptMarketCandidate(v3Portfolio.id);
+    expect(
+      usePortfolioStore.getState().portfolios[v3Portfolio.id].portfolio.market.btcPriceUsd,
+    ).toBe(V3_PRICE);
 
     mountBothHooks(v4Portfolio.id);
     useAaveV4CollateralRiskLiveDataStore.setState(v4ReadyState());

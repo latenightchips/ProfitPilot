@@ -185,6 +185,26 @@ export interface ApplicationPortfolio {
   debt: DebtPosition;
   market: MarketPrices;
   protocol: ProtocolParameters;
+  /**
+   * V1.1 Batch 1 (Live-Data Trust Parity) — same `AaveV4DataSource`
+   * provenance marker `v4DebtStateSource` already uses below, reused
+   * rather than duplicated: the concept ("did a human type this, or did
+   * a live RPC read produce it") is identical for V3's `market`/
+   * `protocol`, even though the type's own name predates V3 having a
+   * source concept at all. Optional for the same backward-compatibility
+   * reason as every V4 field here — a portfolio persisted before this
+   * batch has it `undefined`, normalized to `'manual'` on load by
+   * `normalizePortfolioProvenance` (`stores/portfolioStore.ts`), the
+   * conservative "cannot prove a historical value is still live" default
+   * `v4DebtStateSource` itself already establishes. Unlike the V4
+   * fields, `market`/`protocol` are never themselves optional — every
+   * portfolio has always had a value for both since Milestone 4 — so
+   * this source field, once normalized, is likewise always defined, not
+   * "defined iff the value is defined."
+   */
+  marketSource?: AaveV4DataSource;
+  /** Same reasoning as `marketSource` above, independently, for `protocol`. */
+  protocolSource?: AaveV4DataSource;
   protocolVersion?: AaveProtocolVersion;
   v4Position?: AaveV4PositionIdentity;
   v4DebtState?: AaveV4DebtState;

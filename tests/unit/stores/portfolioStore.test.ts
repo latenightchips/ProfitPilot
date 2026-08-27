@@ -1478,6 +1478,164 @@ describe('usePortfolioStore.load — normalizeV4Provenance backfill (Stage 25)',
 });
 
 /**
+ * V1.1 Batch 1 (Live-Data Trust Parity) — `marketSource`/`protocolSource`
+ * are the V3 equivalent of `v4DebtStateSource`/`v4CollateralRiskSource`
+ * above, normalized by the same (now-renamed) `normalizePortfolioProvenance`
+ * function. One real difference: `market`/`protocol` are never optional,
+ * so a historical record always gets `'manual'` backfilled — never the
+ * "value never set, so no source either" case `v4DebtState` allows.
+ */
+describe('usePortfolioStore.load — market/protocol provenance backfill (V1.1 Batch 1)', () => {
+  function writeRawPortfolioRecord(id: string, payload: Record<string, unknown>) {
+    const envelope = {
+      app: 'ProfitPilot',
+      storageSchemaVersion: '1.0.0',
+      appVersion: '1.0.0',
+      recordType: 'portfolio',
+      recordId: id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      checksum: computeChecksum(payload),
+      payload,
+    };
+    window.localStorage.setItem(buildLocalStorageKey('portfolio', id), JSON.stringify(envelope));
+  }
+
+  it('backfills a historical portfolio with no marketSource/protocolSource to "manual"', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    const stored = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const { marketSource, protocolSource, ...withoutSource } = stored as unknown as Record<
+      string,
+      unknown
+    > & {
+      marketSource?: unknown;
+      protocolSource?: unknown;
+    };
+    void marketSource;
+    void protocolSource;
+    writeRawPortfolioRecord(created.id, withoutSource);
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.market).toEqual(stored.market);
+    expect(record.marketSource).toBe('manual');
+    expect(record.protocolSource).toBe('manual');
+  });
+
+  it('leaves an already-"live" marketSource/protocolSource untouched on reload', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 71000 }, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.marketSource).toBe('live');
+    expect(record.market.btcPriceUsd).toBe(71000);
+  });
+});
+
+/**
+ * V1.1 Batch 1 (Live-Data Trust Parity) — `create()` always stamps a
+ * new portfolio's `market`/`protocol` as `'manual'`, the one deliberate
+ * exception to `setMarket`/`setProtocol`'s own default-to-`'live'`
+ * discipline (see those actions' own comments): a brand-new portfolio's
+ * values always come from this form's own manual entry, never a live
+ * fetch.
+ */
+describe('usePortfolioStore.create — marketSource/protocolSource default to "manual" (V1.1 Batch 1)', () => {
+  it('stamps a newly created portfolio as manual-sourced for both market and protocol', () => {
+    const created = createValidPortfolio();
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.marketSource).toBe('manual');
+    expect(record.protocolSource).toBe('manual');
+  });
+});
+
+/**
+ * V1.1 Batch 1 (Live-Data Trust Parity) — `setMarket`/`setProtocol` and
+ * their candidate actions, mirroring the equivalent V4 action tests
+ * elsewhere in this file. `hooks/useAaveLiveSync.ts`'s own test suite
+ * covers the end-to-end conflict rule; this block covers the Store
+ * actions directly and in isolation.
+ */
+describe('usePortfolioStore — setMarket/setProtocol and market/protocol candidates (V1.1 Batch 1)', () => {
+  it('setMarket defaults source to "live" and clears any pending market candidate', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setMarketCandidate(created.id, { btcPriceUsd: 99000 });
+    expect(usePortfolioStore.getState().marketCandidates[created.id]).toBeDefined();
+
+    const result = usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 71000 });
+    expect(result.ok).toBe(true);
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.market.btcPriceUsd).toBe(71000);
+    expect(record.marketSource).toBe('live');
+    expect(usePortfolioStore.getState().marketCandidates[created.id]).toBeUndefined();
+  });
+
+  it('setProtocol defaults source to "live" and clears any pending protocol candidate', () => {
+    const created = createValidPortfolio();
+    const candidate = {
+      maxLoanToValue: 0.6,
+      liquidationThreshold: 0.65,
+      borrowApr: 0.1,
+      supplyApr: 0.01,
+    };
+    usePortfolioStore.getState().setProtocolCandidate(created.id, candidate);
+    expect(usePortfolioStore.getState().protocolCandidates[created.id]).toBeDefined();
+
+    const result = usePortfolioStore.getState().setProtocol(created.id, candidate);
+    expect(result.ok).toBe(true);
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.protocol).toEqual(candidate);
+    expect(record.protocolSource).toBe('live');
+    expect(usePortfolioStore.getState().protocolCandidates[created.id]).toBeUndefined();
+  });
+
+  it('acceptMarketCandidate fails with a validation error when no candidate is pending', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore.getState().acceptMarketCandidate(created.id);
+    expect(result.ok).toBe(false);
+  });
+
+  it('acceptProtocolCandidate fails with a validation error when no candidate is pending', () => {
+    const created = createValidPortfolio();
+    const result = usePortfolioStore.getState().acceptProtocolCandidate(created.id);
+    expect(result.ok).toBe(false);
+  });
+
+  it('dismissMarketCandidate/dismissProtocolCandidate clear the candidate without touching canonical state', () => {
+    const created = createValidPortfolio();
+    const before = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    usePortfolioStore.getState().setMarketCandidate(created.id, { btcPriceUsd: 99000 });
+    usePortfolioStore.getState().setProtocolCandidate(created.id, {
+      maxLoanToValue: 0.5,
+      liquidationThreshold: 0.55,
+      borrowApr: 0.2,
+      supplyApr: 0.03,
+    });
+
+    usePortfolioStore.getState().dismissMarketCandidate(created.id);
+    usePortfolioStore.getState().dismissProtocolCandidate(created.id);
+
+    expect(usePortfolioStore.getState().marketCandidates[created.id]).toBeUndefined();
+    expect(usePortfolioStore.getState().protocolCandidates[created.id]).toBeUndefined();
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.market).toEqual(before.market);
+    expect(after.protocol).toEqual(before.protocol);
+    expect(after.marketSource).toBe('manual');
+    expect(after.protocolSource).toBe('manual');
+  });
+});
+
+/**
  * `v4DebtStateUpdatedAt`/`v4CollateralRiskUpdatedAt` freshness persistence
  * — V4 Readiness Audit §12 P2-1. Same "defined iff the value it describes
  * is defined" invariant, and same load-time backward-compatibility

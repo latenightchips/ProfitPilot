@@ -18,21 +18,40 @@ Bitcoin-collateralized leverage position on Aave. It calculates your
 Health Factor, Loan-to-Value, liquidation price, borrowing cost, and
 suggested actions from numbers you enter yourself.
 
-**What it is not**: ProfitPilot does not connect to a wallet, does not
-read your real Aave position, and does not execute any transaction on
-your behalf. Nothing you do inside ProfitPilot changes your real
-position on Aave — every "Borrow," "Repay," "Loop," or "Exit" action
-inside the app only updates the numbers you are tracking locally. It is
-not financial advice, and every suggested action is a calculation you
-should verify yourself before acting on it in the real world.
+**What it is not**: ProfitPilot does not connect to a wallet and does
+not execute any transaction on your behalf — nothing here can ever
+sign or submit anything to a real Aave position, on V3 or V4. Nothing
+you do inside ProfitPilot changes your real position on Aave — every
+"Borrow," "Repay," "Loop," or "Exit" action inside the app only
+updates the numbers you are tracking locally. It is not financial
+advice, and every suggested action is a calculation you should verify
+yourself before acting on it in the real world.
 
-This is **Version 1.0.0 — Manual Mode**: there is no live price feed and
-no live Aave connection. You enter your own BTC price and Aave
-parameters (LTV, liquidation threshold, borrow/supply APR) by hand, and
-update them yourself when they change. "Manual Mode" is a permanent
-functional description, not a placeholder — `01_PRD.md`'s own REQ-010
-names it, and a live price feed remains Version 2 scope, not something
-this version is missing by accident.
+This is **Version 1.0.0 — Manual Mode**: "Manual Mode" describes
+ProfitPilot needing no backend service configured to run (`01_PRD.md`'s
+own REQ-010) — not, as this section previously implied, an absence of
+live data. Reading your real Aave *position* directly by connecting a
+wallet remains Version 2 scope (`docs/VERSION_2_BACKLOG.md`'s "Live
+portfolio imports"), not something this version does by accident or on
+purpose.
+
+**Live data, read-only, distinct from position size.** BTC price and
+Aave V3 protocol parameters (max LTV, liquidation threshold, borrow/supply
+APR) are fetched live and read-only by default, with no setup required —
+ProfitPilot reads these directly from Aave V3's own on-chain contracts.
+If you opt in to Aave V4 for a portfolio by entering an on-chain
+address, ProfitPilot also reads that position's real, live debt state
+and collateral risk factor the same way — read-only, no wallet
+connection, no signing. What stays manual, always: your collateral
+quantity and debt balance — only you enter and update your own position
+size; ProfitPilot never infers or fetches it. If a live V4 value you
+opted into differs from a manual entry you made, you choose whether to
+adopt the live value or keep your own — never silently overwritten. A
+live fetch can fail (e.g. the RPC provider is unreachable); ProfitPilot
+then keeps showing your last known value rather than blanking it, and
+labels it accordingly. This is not a live price *feed* in the
+continuous-streaming sense — it refreshes when you load the page or
+press refresh, not automatically in the background.
 
 ## Getting started
 
@@ -154,9 +173,13 @@ mechanics on Aave).
 ## Your data
 
 Everything you enter lives in your browser's own local storage — there
-is no server, and nothing is sent anywhere by default (see "Optional
-observability" below for the one exception, which is off unless a
-deployer explicitly configures it). This means:
+is no server holding a copy of it, and it is never sent anywhere on
+its own. Two things do leave your browser by default, neither of them
+your portfolio data: a read-only Aave price/parameter request (see
+"Live data, read-only" above — the request itself, not your entered
+collateral/debt amounts, reaches a third-party RPC provider), and,
+only if a deployer explicitly configures it, error monitoring (see
+"Optional observability" below, off by default). This means:
 
 - **Your data does not follow you to a different browser or device.**
   If you switch browsers, clear your browser data, or move to a new
@@ -209,8 +232,13 @@ all.
 
 ## Limitations
 
-- **No live pricing or live Aave data.** Every number is only as
-  current as the last time you updated it by hand.
+- **Collateral quantity and debt balance are always manual.** Live data
+  covers price and protocol parameters (and, opted into V4, debt
+  state/collateral risk) — never your position size; you enter and
+  update that yourself.
+- **Refresh is on page load, not continuous.** Live values update when
+  you open or reload a page, or press refresh — not automatically in
+  the background while you're looking at it.
 - **No cloud backup.** Your only backup is a file you export yourself.
 - **Deleting a single record is permanent.** Unlike a bulk import
   replace, an ordinary Delete (a portfolio, a saved strategy) has no

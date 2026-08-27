@@ -248,10 +248,12 @@ import {
   aaveV4CollateralRiskConfigSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
+  marketPricesSchema,
   type PortfolioInput,
   portfolioInputSchema,
   type PortfolioInputUpdate,
   portfolioInputUpdateSchema,
+  protocolParametersSchema,
 } from '@/types/portfolio.schema';
 
 const SOURCE_STATUS = 'manual';
@@ -304,6 +306,20 @@ export interface PortfolioStoreState {
   v4DebtStateErrors: Record<string, { code: string | null; message: string } | undefined>;
   /** Same role as `v4DebtStateErrors` above, independently, for `v4CollateralRisk`. See `hooks/useAaveV4CollateralRiskLiveSync.ts`. */
   v4CollateralRiskErrors: Record<string, { code: string | null; message: string } | undefined>;
+  /**
+   * V1.1 Batch 1 (Live-Data Trust Parity) — the V3 equivalent of
+   * `v4DebtStateCandidates` above, same role: a live V3 fetch whose
+   * `market`/`protocol` value differs from an existing MANUAL value is
+   * held here, keyed by portfolio id, until the user explicitly accepts
+   * or dismisses it via `acceptMarketCandidate`/`dismissMarketCandidate`
+   * — never canonical on its own. Ephemeral, session-only UI state, not
+   * part of `Portfolio`/the persistence schema, for the identical reason
+   * `v4DebtStateCandidates` already is. See `hooks/useAaveLiveSync.ts`'s
+   * own header comment for the full manual-vs-live decision this backs.
+   */
+  marketCandidates: Record<string, Portfolio['market'] | undefined>;
+  /** Same role as `marketCandidates` above, independently, for `protocol`. */
+  protocolCandidates: Record<string, Portfolio['protocol'] | undefined>;
 }
 
 export interface PortfolioStoreActions {
@@ -334,7 +350,7 @@ export interface PortfolioStoreActions {
    * `v4DebtState` from whatever the old one's provenance already was)
    * needs to pass `source` explicitly. See `AaveV4DataSource`'s own doc
    * comment (`services/portfolio/models.ts`) for what the two values
-   * mean, and `normalizeV4Provenance` above for the SEPARATE, more
+   * mean, and `normalizePortfolioProvenance` above for the SEPARATE, more
    * conservative default (`'manual'`, never silently `'live'`) this
    * Store applies to historical PERSISTED data with no recorded source —
    * a different problem in a different context, not a contradiction.
@@ -412,6 +428,39 @@ export interface PortfolioStoreActions {
   /** Same role as `dismissAaveV4DebtStateCandidate` above, independently, for `v4CollateralRisk`. */
   dismissAaveV4CollateralRiskCandidate: (id: string) => void;
   /**
+   * V1.1 Batch 1 (Live-Data Trust Parity) — the V3 equivalent of
+   * `setAaveV4DebtState` for `market`, same `source`-defaults-to-`'live'`
+   * discipline: every existing caller before this batch (the live-sync
+   * hook) was already modeling a live-synced value, so defaulting
+   * preserves that unchanged; only a caller that genuinely means
+   * "manual" (`create`) needs to pass `source` explicitly. Validates via
+   * `marketPricesSchema` before writing, exactly like `update()` already
+   * does for the same field.
+   */
+  setMarket: (
+    id: string,
+    market: Portfolio['market'],
+    source?: AaveV4DataSource,
+  ) => MappingResult<Portfolio>;
+  /** Same discipline as `setMarket` above, independently, for `protocol`. */
+  setProtocol: (
+    id: string,
+    protocol: Portfolio['protocol'],
+    source?: AaveV4DataSource,
+  ) => MappingResult<Portfolio>;
+  /** Same role as `setAaveV4DebtStateCandidate` above, independently, for V3's `market`. See `hooks/useAaveLiveSync.ts`. */
+  setMarketCandidate: (id: string, candidate: Portfolio['market'] | undefined) => void;
+  /** Same role as `acceptAaveV4DebtStateCandidate` above, independently, for V3's `market`. */
+  acceptMarketCandidate: (id: string) => MappingResult<Portfolio>;
+  /** Same role as `dismissAaveV4DebtStateCandidate` above, independently, for V3's `market`. */
+  dismissMarketCandidate: (id: string) => void;
+  /** Same role as `setMarketCandidate` above, independently, for V3's `protocol`. */
+  setProtocolCandidate: (id: string, candidate: Portfolio['protocol'] | undefined) => void;
+  /** Same role as `acceptMarketCandidate` above, independently, for V3's `protocol`. */
+  acceptProtocolCandidate: (id: string) => MappingResult<Portfolio>;
+  /** Same role as `dismissMarketCandidate` above, independently, for V3's `protocol`. */
+  dismissProtocolCandidate: (id: string) => void;
+  /**
    * V4 Readiness Audit §12 — P0-4. Sets (or clears, via `undefined`) the
    * classified error currently displayed for one portfolio's
    * `v4DebtState` live sync. Called only by `hooks/useAaveV4LiveSync.ts`'s
@@ -456,11 +505,20 @@ function notFoundError(id: string): ApplicationError {
 /** V4 Readiness Audit §12 — P0-1. Defensive: the UI only ever calls an accept action when a candidate is actually pending. */
 function noPendingCandidateError(
   id: string,
-  dimension: 'v4DebtState' | 'v4CollateralRisk',
+  // V1.1 Batch 1 (Live-Data Trust Parity) — widened to also cover V3's
+  // `market`/`protocol` candidates, reusing this helper rather than
+  // duplicating it. The error code stays `AAVE_V4_*` for `v4DebtState`/
+  // `v4CollateralRisk` (unchanged, existing callers/tests depend on it);
+  // `market`/`protocol` get their own code below.
+  dimension: 'v4DebtState' | 'v4CollateralRisk' | 'market' | 'protocol',
 ): ApplicationError {
+  const code =
+    dimension === 'v4DebtState' || dimension === 'v4CollateralRisk'
+      ? 'AAVE_V4_NO_PENDING_CANDIDATE'
+      : 'AAVE_V3_NO_PENDING_CANDIDATE';
   return createApplicationError(
     'validation',
-    'AAVE_V4_NO_PENDING_CANDIDATE',
+    code,
     `No pending live ${dimension} candidate exists for portfolio "${id}".`,
   );
 }
@@ -572,23 +630,37 @@ export function aaveV4CollateralRiskEqual(
  * Maintains the same "source is defined if and only if the value is"
  * invariant `setAaveV4DebtState`/`setAaveV4CollateralRisk` themselves
  * enforce, for a portfolio that was never touched by an already-normalized write.
+ *
+ * **V1.1 Batch 1 (Live-Data Trust Parity) extends this to `marketSource`/
+ * `protocolSource`.** Same conservative reasoning, one difference:
+ * `market`/`protocol` are never themselves optional (every portfolio has
+ * held a value for both since Milestone 4), so there is no "defined iff
+ * the value is defined" condition to check here — a portfolio persisted
+ * before this batch simply gets `'manual'` for both, unconditionally.
+ * Renamed from `normalizeV4Provenance` since it now normalizes V3
+ * provenance too — one call site (`load()` below), no behavior change
+ * for the V4 fields it already handled.
  */
-function normalizeV4Provenance(portfolio: Portfolio): Portfolio {
+function normalizePortfolioProvenance(portfolio: Portfolio): Portfolio {
   const v4DebtStateSource =
     portfolio.v4DebtState !== undefined ? (portfolio.v4DebtStateSource ?? 'manual') : undefined;
   const v4CollateralRiskSource =
     portfolio.v4CollateralRisk !== undefined
       ? (portfolio.v4CollateralRiskSource ?? 'manual')
       : undefined;
+  const marketSource = portfolio.marketSource ?? 'manual';
+  const protocolSource = portfolio.protocolSource ?? 'manual';
 
   if (
     v4DebtStateSource === portfolio.v4DebtStateSource &&
-    v4CollateralRiskSource === portfolio.v4CollateralRiskSource
+    v4CollateralRiskSource === portfolio.v4CollateralRiskSource &&
+    marketSource === portfolio.marketSource &&
+    protocolSource === portfolio.protocolSource
   ) {
     return portfolio;
   }
 
-  return { ...portfolio, v4DebtStateSource, v4CollateralRiskSource };
+  return { ...portfolio, v4DebtStateSource, v4CollateralRiskSource, marketSource, protocolSource };
 }
 
 /**
@@ -616,6 +688,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   v4CollateralRiskCandidates: {},
   v4DebtStateErrors: {},
   v4CollateralRiskErrors: {},
+  marketCandidates: {},
+  protocolCandidates: {},
 
   load: async () => {
     set({ loadStatus: 'loading' });
@@ -645,7 +719,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
 
     const portfolios: Record<string, PortfolioRecord> = {};
     for (const raw of portfoliosResult.data) {
-      const portfolio = normalizeV4Provenance(raw);
+      const portfolio = normalizePortfolioProvenance(raw);
       portfolios[portfolio.id] = { portfolio, summary: buildSummary(portfolio) };
     }
 
@@ -681,6 +755,14 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       debt: data.debt,
       market: data.market,
       protocol: data.protocol,
+      // V1.1 Batch 1 (Live-Data Trust Parity) — a new portfolio's
+      // `market`/`protocol` always comes from this form's own manual
+      // entry; the live-sync hook is the only other writer, and it
+      // always passes `source: 'live'` explicitly. See `setMarket`'s own
+      // comment for the general default-to-`'live'` discipline this
+      // deliberately overrides here.
+      marketSource: 'manual',
+      protocolSource: 'manual',
       settings: data.settings,
       archivedAt: null,
       marketUpdatedAt: now,
@@ -1141,6 +1223,130 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   dismissAaveV4CollateralRiskCandidate: (id) => {
     set((state) => ({
       v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: undefined },
+    }));
+  },
+
+  setMarket: (id, market, source) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const parsed = marketPricesSchema.safeParse(market);
+    if (!parsed.success) {
+      const errors = zodErrorToErrors(parsed.error);
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const now = new Date().toISOString();
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      market: parsed.data,
+      marketSource: source ?? 'live',
+      marketUpdatedAt: now,
+      updatedAt: now,
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+      // Same reasoning as `setAaveV4DebtState`'s own centralized
+      // candidate-clear: any explicit write to canonical `market` makes a
+      // previously-pending candidate stale relative to the new baseline
+      // it was computed against (or, if this write IS the acceptance,
+      // the candidate has just become canonical).
+      marketCandidates: { ...state.marketCandidates, [id]: undefined },
+    }));
+    schedulePortfolioSave(portfolio);
+
+    return { ok: true, data: portfolio };
+  },
+
+  setProtocol: (id, protocol, source) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const parsed = protocolParametersSchema.safeParse(protocol);
+    if (!parsed.success) {
+      const errors = zodErrorToErrors(parsed.error);
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const now = new Date().toISOString();
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      protocol: parsed.data,
+      protocolSource: source ?? 'live',
+      protocolUpdatedAt: now,
+      updatedAt: now,
+    };
+
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      errors: [],
+      // Same reasoning as `setMarket` above.
+      protocolCandidates: { ...state.protocolCandidates, [id]: undefined },
+    }));
+    schedulePortfolioSave(portfolio);
+
+    return { ok: true, data: portfolio };
+  },
+
+  setMarketCandidate: (id, candidate) => {
+    set((state) => ({
+      marketCandidates: { ...state.marketCandidates, [id]: candidate },
+    }));
+  },
+
+  acceptMarketCandidate: (id) => {
+    const candidate = get().marketCandidates[id];
+    if (candidate === undefined) {
+      const errors = [noPendingCandidateError(id, 'market')];
+      set({ errors });
+      return { ok: false, errors };
+    }
+    // `setMarket` itself clears the candidate as part of its own write —
+    // no separate clear needed here.
+    return get().setMarket(id, candidate, 'live');
+  },
+
+  dismissMarketCandidate: (id) => {
+    set((state) => ({
+      marketCandidates: { ...state.marketCandidates, [id]: undefined },
+    }));
+  },
+
+  setProtocolCandidate: (id, candidate) => {
+    set((state) => ({
+      protocolCandidates: { ...state.protocolCandidates, [id]: candidate },
+    }));
+  },
+
+  acceptProtocolCandidate: (id) => {
+    const candidate = get().protocolCandidates[id];
+    if (candidate === undefined) {
+      const errors = [noPendingCandidateError(id, 'protocol')];
+      set({ errors });
+      return { ok: false, errors };
+    }
+    return get().setProtocol(id, candidate, 'live');
+  },
+
+  dismissProtocolCandidate: (id) => {
+    set((state) => ({
+      protocolCandidates: { ...state.protocolCandidates, [id]: undefined },
     }));
   },
 

@@ -98,18 +98,34 @@ function readyState(overrides: Record<string, unknown> = {}) {
 }
 
 describe('useAaveLiveSync — successful sync', () => {
-  it('syncs a genuinely different live price/protocol into the portfolio', async () => {
+  it('a genuinely different live price/protocol becomes a pending candidate, and syncs once accepted (V1.1 Batch 1 trust parity)', async () => {
     const portfolio = createPortfolio();
     renderHook(() => useAaveLiveSync(portfolio.id));
 
     useAaveLiveDataStore.setState(readyState());
 
+    // A fresh portfolio's market/protocol is manual-sourced; a genuinely
+    // different live fetch must not silently overwrite it — it becomes a
+    // pending candidate instead.
     await waitFor(() => {
-      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.market.btcPriceUsd).toBe(63000);
-      expect(updated.protocol.maxLoanToValue).toBe(0.73);
-      expect(updated.protocol.borrowApr).toBe(0.0399);
+      const state = usePortfolioStore.getState();
+      expect(state.marketCandidates[portfolio.id]).toEqual({ btcPriceUsd: 63000 });
+      expect(state.protocolCandidates[portfolio.id]?.maxLoanToValue).toBe(0.73);
     });
+    const unchanged = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(unchanged.market.btcPriceUsd).toBe(50000);
+    expect(unchanged.protocol.maxLoanToValue).toBe(0.75);
+
+    // "Use Live Data" — the candidate becomes canonical.
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    usePortfolioStore.getState().acceptProtocolCandidate(portfolio.id);
+
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(updated.market.btcPriceUsd).toBe(63000);
+    expect(updated.protocol.maxLoanToValue).toBe(0.73);
+    expect(updated.protocol.borrowApr).toBe(0.0399);
+    expect(updated.marketSource).toBe('live');
+    expect(updated.protocolSource).toBe('live');
   });
 
   it('fetches live Aave data on mount', () => {
@@ -206,10 +222,16 @@ describe('useAaveLiveSync — never overwrites collateral quantity, debt asset, 
 
     useAaveLiveDataStore.setState(readyState());
 
+    // The differing fetch becomes a candidate first (V1.1 Batch 1 trust
+    // parity) — accept it to reach the synced state this test cares about.
     await waitFor(() => {
-      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.market.btcPriceUsd).toBe(63000);
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
     });
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    usePortfolioStore.getState().acceptProtocolCandidate(portfolio.id);
+
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(updated.market.btcPriceUsd).toBe(63000);
 
     const after = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
     expect(after.collateral.quantity).toBe(2);
@@ -317,7 +339,9 @@ describe('useAaveLiveSync — mismatch guard: a live quote for a different asset
       0.05,
     );
 
-    // Then a matching USDT quote lands — must sync.
+    // Then a USDT-asset quote lands (the portfolio's own debt asset) —
+    // no longer mismatch-guarded, so it's free to reach the conflict
+    // logic below.
     useAaveLiveDataStore.setState(
       readyState({
         protocolQuote: {
@@ -336,10 +360,15 @@ describe('useAaveLiveSync — mismatch guard: a live quote for a different asset
       }),
     );
 
+    // Genuinely differs from the manual value — becomes a candidate first
+    // (V1.1 Batch 1 trust parity), not a direct write.
     await waitFor(() => {
-      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.protocol.borrowApr).toBe(0.09);
+      expect(usePortfolioStore.getState().protocolCandidates[portfolio.id]?.borrowApr).toBe(0.09);
     });
+    usePortfolioStore.getState().acceptProtocolCandidate(portfolio.id);
+
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(updated.protocol.borrowApr).toBe(0.09);
   });
 });
 
@@ -357,19 +386,26 @@ describe('useAaveLiveSync — mismatch guard: a live quote for a different asset
  * established.
  */
 describe('useAaveLiveSync — V4 protocol-parameter isolation (Stage 23A)', () => {
-  it('still writes protocol parameters for an explicit V3 portfolio — existing behavior byte-identical', async () => {
+  it('still reaches protocol parameters for an explicit V3 portfolio — gate unaffected by V1.1 Batch 1 trust parity', async () => {
     const portfolio = createPortfolio();
     usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
     renderHook(() => useAaveLiveSync(portfolio.id));
 
     useAaveLiveDataStore.setState(readyState());
 
+    // Differing manual values become candidates (V1.1 Batch 1), then sync
+    // once accepted — the V3 gate itself (this test's actual subject) is
+    // unaffected either way.
     await waitFor(() => {
-      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.market.btcPriceUsd).toBe(63000);
-      expect(updated.protocol.maxLoanToValue).toBe(0.73);
-      expect(updated.protocol.borrowApr).toBe(0.0399);
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
     });
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    usePortfolioStore.getState().acceptProtocolCandidate(portfolio.id);
+
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(updated.market.btcPriceUsd).toBe(63000);
+    expect(updated.protocol.maxLoanToValue).toBe(0.73);
+    expect(updated.protocol.borrowApr).toBe(0.0399);
   });
 
   it('V4 Readiness Audit §12 P1-C — no longer syncs market/price data for a V4 portfolio (V3 price ownership excludes V4)', async () => {
@@ -439,13 +475,19 @@ describe('useAaveLiveSync — V4 protocol-parameter isolation (Stage 23A)', () =
     usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v3');
     renderHook(() => useAaveLiveSync(portfolio.id));
 
-    // First cycle, still V3 — market and protocol both sync normally.
+    // First cycle, still V3 — the differing manual values become
+    // candidates (V1.1 Batch 1 trust parity); accept both to reach the
+    // synced, `'live'`-sourced state this test's second half depends on.
     useAaveLiveDataStore.setState(readyState());
     await waitFor(() => {
-      const updated = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
-      expect(updated.protocol.maxLoanToValue).toBe(0.73);
-      expect(updated.market.btcPriceUsd).toBe(63000);
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
+      expect(usePortfolioStore.getState().protocolCandidates[portfolio.id]).toBeDefined();
     });
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    usePortfolioStore.getState().acceptProtocolCandidate(portfolio.id);
+    const afterFirstCycle = usePortfolioStore.getState().portfolios[portfolio.id].portfolio;
+    expect(afterFirstCycle.protocol.maxLoanToValue).toBe(0.73);
+    expect(afterFirstCycle.market.btcPriceUsd).toBe(63000);
 
     // Switch to V4 — no live-sync fetch involved, a pure Store action.
     usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
@@ -489,5 +531,185 @@ describe('useAaveLiveSync — V4 protocol-parameter isolation (Stage 23A)', () =
     expect(after.protocol.maxLoanToValue).not.toBe(0.6);
     expect(after.market).toEqual(marketAfterSwitch);
     expect(after.market.btcPriceUsd).not.toBe(70000);
+  });
+});
+
+/**
+ * V1.1 Batch 1 — Live-Data Trust Parity. Full coverage of the
+ * manual/live conflict rule this file's own header comment documents:
+ * no pointless conflict on a coincidental match, no silent overwrite on
+ * a genuine difference, both confirmation actions, the post-adoption
+ * live→live refresh model, portfolio-scoped isolation, and V3/V4
+ * candidate-map isolation. Complements (does not replace) the
+ * `AaveV3ConflictConfirmation` component's own dedicated test file.
+ */
+describe('useAaveLiveSync — V1.1 Batch 1 manual/live conflict rule', () => {
+  it('a matching manual value creates no candidate at all — not a pointless conflict', async () => {
+    const portfolio = createPortfolio(); // market/protocol match readyState()'s defaults below
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(
+      readyState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh' as const,
+          price: 50000,
+          origin: 'provider' as const,
+          timestamp: new Date().toISOString(),
+        },
+        protocolQuote: {
+          available: true as const,
+          collateralAsset: 'WBTC',
+          borrowAsset: 'USDC',
+          parameters: {
+            maxLoanToValue: 0.75,
+            liquidationThreshold: 0.8,
+            borrowApr: 0.05,
+            supplyApr: 0.02,
+          },
+          origin: 'live' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const state = usePortfolioStore.getState();
+    expect(state.marketCandidates[portfolio.id]).toBeUndefined();
+    expect(state.protocolCandidates[portfolio.id]).toBeUndefined();
+    expect(state.portfolios[portfolio.id].portfolio.marketSource).toBe('manual');
+    expect(state.portfolios[portfolio.id].portfolio.protocolSource).toBe('manual');
+  });
+
+  it('"Keep Manual" discards the candidate, preserves manual state, and does not disable future live sync', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
+    });
+
+    usePortfolioStore.getState().dismissMarketCandidate(portfolio.id);
+    usePortfolioStore.getState().dismissProtocolCandidate(portfolio.id);
+
+    const afterDismiss = usePortfolioStore.getState();
+    expect(afterDismiss.marketCandidates[portfolio.id]).toBeUndefined();
+    expect(afterDismiss.protocolCandidates[portfolio.id]).toBeUndefined();
+    expect(afterDismiss.portfolios[portfolio.id].portfolio.market.btcPriceUsd).toBe(50000);
+    expect(afterDismiss.portfolios[portfolio.id].portfolio.marketSource).toBe('manual');
+
+    // A genuinely NEW, further-different fetch must still be able to
+    // surface a new candidate — dismissal is not a permanent opt-out.
+    useAaveLiveDataStore.setState(
+      readyState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh' as const,
+          price: 71000,
+          origin: 'provider' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]?.btcPriceUsd).toBe(71000);
+    });
+  });
+
+  it('after "Use Live Data", a further genuinely different fetch auto-applies directly — no repeat conflict', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
+    });
+    usePortfolioStore.getState().acceptMarketCandidate(portfolio.id);
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.marketSource).toBe(
+      'live',
+    );
+
+    // A further, genuinely different live quote lands — must apply
+    // directly (ordinary live→live refresh), never a new candidate.
+    useAaveLiveDataStore.setState(
+      readyState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh' as const,
+          price: 71000,
+          origin: 'provider' as const,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        usePortfolioStore.getState().portfolios[portfolio.id].portfolio.market.btcPriceUsd,
+      ).toBe(71000);
+    });
+    expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeUndefined();
+  });
+
+  it('portfolio switching does not leak a pending candidate between portfolios', async () => {
+    const portfolioA = createPortfolio({ name: 'A' });
+    const portfolioB = createPortfolio({ name: 'B', market: { btcPriceUsd: 63000 } }); // already matches the live fetch below
+
+    const { rerender } = renderHook(({ id }) => useAaveLiveSync(id), {
+      initialProps: { id: portfolioA.id },
+    });
+    useAaveLiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[portfolioA.id]).toBeDefined();
+    });
+
+    // Switch the active hook to portfolio B — A's own pending candidate
+    // must remain exactly where it was, scoped to A alone.
+    rerender({ id: portfolioB.id });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const state = usePortfolioStore.getState();
+    expect(state.marketCandidates[portfolioA.id]).toBeDefined();
+    expect(state.marketCandidates[portfolioB.id]).toBeUndefined();
+    // B's protocol still differs from the fetch — B gets its own,
+    // independent candidate; A's is untouched by B's evaluation.
+    expect(state.protocolCandidates[portfolioB.id]).toBeDefined();
+    expect(state.marketCandidates[portfolioA.id]).toEqual({ btcPriceUsd: 63000 });
+  });
+
+  it('a V3 market/protocol conflict never touches the V4 candidate maps, and vice versa', async () => {
+    const portfolio = createPortfolio();
+    renderHook(() => useAaveLiveSync(portfolio.id));
+
+    useAaveLiveDataStore.setState(readyState());
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[portfolio.id]).toBeDefined();
+      expect(usePortfolioStore.getState().protocolCandidates[portfolio.id]).toBeDefined();
+    });
+
+    const state = usePortfolioStore.getState();
+    expect(state.v4DebtStateCandidates[portfolio.id]).toBeUndefined();
+    expect(state.v4CollateralRiskCandidates[portfolio.id]).toBeUndefined();
+
+    // The reverse direction: a V4 candidate, set directly at the Store
+    // level (the same seam `useAaveV4LiveSync.ts` itself writes through),
+    // must never appear in the V3 maps.
+    usePortfolioStore.getState().setAaveV4DebtStateCandidate(portfolio.id, {
+      drawnDebt: 1000,
+      premiumDebt: 10,
+      baseDrawnApr: 0.04,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1,
+    });
+    const afterV4 = usePortfolioStore.getState();
+    expect(afterV4.marketCandidates[portfolio.id]).toEqual(state.marketCandidates[portfolio.id]);
+    expect(afterV4.protocolCandidates[portfolio.id]).toEqual(
+      state.protocolCandidates[portfolio.id],
+    );
   });
 });

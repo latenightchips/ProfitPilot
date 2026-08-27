@@ -36,6 +36,7 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
 
 import { AaveProtocolVersionForm } from './AaveProtocolVersionForm';
 import { AaveTechnicalDetails } from './AaveTechnicalDetails';
+import { AaveV3ConflictConfirmation } from './AaveV3ConflictConfirmation';
 
 /**
  * Portfolio Live-State Cleanup batch — supersedes the "Manual price
@@ -197,10 +198,16 @@ import { AaveTechnicalDetails } from './AaveTechnicalDetails';
  * previews are unaffected, unchanged from Batch 4.
  *
  * **"Price source" (M4-007) / "Price" (M4-008) — read-only, not
- * editable inputs.** No live price/rate source exists anywhere in this
+ * editable inputs.** Historical, Milestone 4: at the time this section
+ * was written, no live price/rate source existed anywhere in this
  * codebase (the `PriceProvider`/`AaveV3Provider` infrastructure layer
- * was never built — see PROJECT_STATUS.md's Milestone 3 findings), so
- * "Price source" can only ever read "Manual" today; rendered as
+ * had not yet been built), so "Price source" could only ever read
+ * "Manual." **No longer accurate as a description of current behavior**
+ * — see this file's own "Portfolio Live-State Cleanup batch" header
+ * comment above: BTC price is now live by default, sourced from Aave V3
+ * (or, opt-in, Aave V4), read-only for exactly that reason, not because
+ * no live source exists. Left here as the historical record of why this
+ * field became read-only in the first place; rendered as
  * informational text, not a selector with no second option. "Price" for
  * a debt position has no Engine-level counterpart at all —
  * `calculateDebtValue` (F-003)'s own equation is "Debt Value = Borrowed
@@ -1572,6 +1579,10 @@ export function PortfolioPageClient() {
           />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <AaveProtocolVersionForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
+          <AaveV3ConflictConfirmation
+            portfolioId={activePortfolioId}
+            portfolio={record.portfolio}
+          />
           <CollateralPositionForm
             portfolioId={activePortfolioId}
             portfolio={record.portfolio}

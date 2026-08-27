@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -489,6 +489,16 @@ describe('Aave V4 live flow — V3 behavior is unaffected', () => {
 
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
     await debtSection.findByText('Aave V3 · Live');
+
+    // V1.1 Batch 1 (Live-Data Trust Parity) — the fetched values differ
+    // from this portfolio's manual creation-time values, so they land as
+    // pending candidates rather than a silent direct write; accept both
+    // to reach the synced state this test's own assertions below check.
+    await waitFor(() => {
+      expect(usePortfolioStore.getState().marketCandidates[created.id]).toBeDefined();
+    });
+    usePortfolioStore.getState().acceptMarketCandidate(created.id);
+    usePortfolioStore.getState().acceptProtocolCandidate(created.id);
 
     const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
     expect(after.market).toEqual({ btcPriceUsd: 50000 });

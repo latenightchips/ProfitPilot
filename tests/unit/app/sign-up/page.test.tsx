@@ -34,10 +34,11 @@ beforeEach(() => {
 });
 
 describe('SignUpPage', () => {
-  it('explains that an account is optional and describes cloud sync', () => {
+  it('explains that an account is optional and does not promise cloud sync', () => {
     render(<SignUpPage />);
     expect(screen.getByText(/entirely optional/i)).toBeInTheDocument();
-    expect(screen.getByText(/sync your data across devices/i)).toBeInTheDocument();
+    expect(screen.getByText(/has no cloud sync/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sync your data across devices/i)).not.toBeInTheDocument();
   });
 
   it('shows a validation error and does not call signUp when passwords do not match', async () => {

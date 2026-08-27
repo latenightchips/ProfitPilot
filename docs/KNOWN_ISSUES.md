@@ -23,11 +23,28 @@ documentation-only inconsistency.
 
 ## A. Product limitations (intentional Version 1.0.0 scope — not defects)
 
-- **Manual Mode only.** No live BTC price feed, no live Aave connection
-  — every number is only as current as the last time a user updated it
-  by hand. Permanent, intentional Version 1.0.0 scope
-  (`docs/CHANGELOG.md`); a live price feed is Version 2 scope
-  (`01_PRD.md`'s own repeated "belongs to Version 2" framing).
+- **No wallet connection, real position import, or transaction
+  execution — a decision-support tool, not a live account.**
+  ProfitPilot never reads a real Aave position and never executes a
+  real transaction. This is the permanent, intentional Version 1.0.0
+  scope boundary — not "Manual Mode" in the sense of having no live
+  data at all (see below), a distinction `docs/CHANGELOG.md` did not
+  draw clearly and this entry corrects. Reading your real Aave
+  position/wallet balance directly is Version 2 scope
+  (`docs/VERSION_2_BACKLOG.md`'s "Live portfolio imports").
+- **BTC price and Aave V3 protocol parameters (max LTV, liquidation
+  threshold, borrow/supply APR) are live by default, read-only, and
+  refresh on page load — not manually entered.** `hooks/useAaveLiveSync.ts`
+  fetches these from Aave V3's own on-chain oracle/pool contracts with
+  no configuration required. Aave V4 support is separate and opt-in:
+  entering an on-chain address enables a live read of that position's
+  debt state and collateral risk factor (V3 and V4 support are not
+  identical — V4 has no manual-price toggle of its own once opted in).
+  All of this is read-only in every case — nothing here ever
+  constructs, signs, or submits a transaction. What remains genuinely
+  manual: collateral quantity and debt balance (position size), which
+  only you can enter — see `docs/USER_GUIDE.md` for the full
+  live-vs-manual breakdown.
 - **No wallet connection, no transaction execution.** ProfitPilot never
   reads a real Aave position and never executes a real transaction —
   this is a decision-support tool by design, not a gap.

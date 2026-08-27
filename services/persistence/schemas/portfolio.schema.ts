@@ -96,6 +96,11 @@ export const persistedPortfolioPayloadSchema = z.object({
   debt: debtPositionSchema,
   market: marketPricesSchema,
   protocol: protocolParametersSchema,
+  // V1.1 Batch 1 (Live-Data Trust Parity) — see `ApplicationPortfolio`'s
+  // own doc comment (`services/portfolio/models.ts`) for why this reuses
+  // `aaveV4DataSourceSchema` rather than a duplicate schema.
+  marketSource: aaveV4DataSourceSchema.optional(),
+  protocolSource: aaveV4DataSourceSchema.optional(),
   settings: portfolioSettingsSchema,
   protocolVersion: protocolVersionSchema.optional(),
   v4Position: aaveV4PositionIdentitySchema.optional(),

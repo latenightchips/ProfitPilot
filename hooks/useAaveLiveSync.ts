@@ -23,15 +23,75 @@ import {
  * by omission of matching UI): even if this hook's dependencies were
  * wrong, it has no code path capable of writing those fields.
  *
- * **Equality-gated, not unconditional.** `usePortfolioStore().update()`
- * always bumps `updatedAt` (and, transitively, clears any open Preview on
- * the Portfolio page's Collateral/Debt forms — see `PortfolioPageClient`'s
- * own `useEffect` keyed on `portfolio.updatedAt`). Calling `update()` on
- * every successful-but-identical refresh would silently discard an
- * in-progress Preview the moment a background refresh happened to land.
- * `marketPricesEqual`/`protocolParametersEqual` (exported from
- * `stores/portfolioStore.ts` for exactly this reuse) skip the call
- * entirely when the fetched values already match what's stored.
+ * **Equality-gated, not unconditional.** A write (whether direct or via
+ * candidate-acceptance) always bumps `updatedAt` (and, transitively,
+ * clears any open Preview on the Portfolio page's Collateral/Debt forms
+ * — see `PortfolioPageClient`'s own `useEffect` keyed on
+ * `portfolio.updatedAt`). Calling it on every successful-but-identical
+ * refresh would silently discard an in-progress Preview the moment a
+ * background refresh happened to land. `marketPricesEqual`/
+ * `protocolParametersEqual` (exported from `stores/portfolioStore.ts` for
+ * exactly this reuse) skip the write entirely when the fetched values
+ * already match what's stored — for either an already-`'live'` field
+ * (plain refresh) or a `'manual'` one (no pointless conflict manufactured
+ * merely because a manual guess happens to match reality).
+ *
+ * **V1.1 Batch 1 (Live-Data Trust Parity) — manual → live conflict
+ * confirmation, the V3 equivalent of `hooks/useAaveV4LiveSync.ts`'s own
+ * P0-1 model.** Before this batch, a live fetch that differed from an
+ * existing MANUAL `market`/`protocol` value silently overwrote it — the
+ * one asymmetry between V3 and V4's otherwise-parallel live-sync designs
+ * this batch closes. The rule, independently per field (`market`/BTC
+ * price, `protocol`/LTV+liquidation-threshold+borrow-APR+supply-APR — the
+ * same two atomic objects this hook has always fetched/compared as
+ * units, not four separate scalar conflicts):
+ *
+ * - `marketSource`/`protocolSource === 'live'` (an established live
+ *   field): any newly-fetched value auto-applies directly via
+ *   `setMarket`/`setProtocol` — the ordinary live→live refresh model,
+ *   unchanged, no confirmation. Equal to what's already stored: no-op,
+ *   exactly as before.
+ * - `marketSource`/`protocolSource !== 'live'` (still `'manual'` —
+ *   every portfolio's starting state, since `market`/`protocol` are
+ *   never optional and always come from the New Portfolio form's own
+ *   manual entry) and the fetched value is numerically EQUAL to what's
+ *   stored: a genuine no-op, exactly like the already-`'live'`
+ *   equal case above — no write, no candidate, source stays `'manual'`.
+ *   Nothing visibly changes, so no confirmation is warranted, and there
+ *   is nothing to promote: a coincidental match is not the user
+ *   accepting live data, only the two happening to agree right now — the
+ *   next genuinely different fetch still correctly asks first.
+ * - `marketSource`/`protocolSource !== 'live'` and the fetched value
+ *   GENUINELY DIFFERS: canonical state is left completely untouched
+ *   (still the user's manual value) and the fetched value is instead
+ *   registered as a pending candidate via `setMarketCandidate`/
+ *   `setProtocolCandidate` — actionable only through
+ *   `app/portfolio/AaveV3ConflictConfirmation.tsx`'s "Use Live Data"
+ *   (`acceptMarketCandidate`/`acceptProtocolCandidate`) or "Keep Manual"
+ *   (`dismissMarketCandidate`/`dismissProtocolCandidate`), never
+ *   automatically. Accepting is the only way a field ever transitions
+ *   from `'manual'` to `'live'` — see `setMarket`/`setProtocol`'s own
+ *   comment (`stores/portfolioStore.ts`) for why `'live'` is the correct
+ *   default `source` for that action generally, and `'manual'` is the
+ *   one deliberate exception (`create`).
+ *
+ * Deliberately NOT identical to V4's own rule in one respect: V4 also
+ * auto-adopts (no confirmation) when the canonical value is `undefined`
+ * — "nothing to protect." V3's `market`/`protocol` are never `undefined`
+ * (every portfolio has a real value from creation onward), so that case
+ * cannot occur here; there is always something to protect, which is
+ * exactly why every portfolio's first live fetch either matches (silent
+ * no-op) or conflicts (confirmation) — never a bare adopt.
+ *
+ * `marketCandidates`/`protocolCandidates` are portfolio-scoped, ephemeral
+ * Store state (`stores/portfolioStore.ts`), exactly like V4's
+ * `v4DebtStateCandidates`/`v4CollateralRiskCandidates` — switching the
+ * active portfolio, or a portfolio's `protocolVersion` moving to `'v4'`,
+ * cannot leak a pending V3 candidate into another portfolio or into any
+ * V4 field: candidates live in their own map keyed by portfolio id, and
+ * this hook's own `syncsMarketPrice`/`syncsProtocolParameters` gates
+ * below (unchanged from before this batch) mean it never even evaluates
+ * a conflict for a V4 portfolio in the first place.
  *
  * **On RPC failure, does nothing** — `useAaveLiveDataStore`'s error paths
  * already preserve the last successful `marketQuote`/`protocolQuote`
@@ -94,7 +154,10 @@ export function useAaveLiveSync(portfolioId: string | null): void {
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const fetchLiveAaveData = useAaveLiveDataStore((state) => state.fetchLiveAaveData);
-  const update = usePortfolioStore((state) => state.update);
+  const setMarket = usePortfolioStore((state) => state.setMarket);
+  const setProtocol = usePortfolioStore((state) => state.setProtocol);
+  const setMarketCandidate = usePortfolioStore((state) => state.setMarketCandidate);
+  const setProtocolCandidate = usePortfolioStore((state) => state.setProtocolCandidate);
   const portfolio = usePortfolioStore((state) =>
     portfolioId !== null ? state.portfolios[portfolioId]?.portfolio : undefined,
   );
@@ -131,14 +194,41 @@ export function useAaveLiveSync(portfolioId: string | null): void {
     const syncsProtocolParameters = portfolio.protocolVersion !== 'v4';
     const syncsMarketPrice = portfolio.protocolVersion !== 'v4';
 
-    const marketChanged = syncsMarketPrice && !marketPricesEqual(nextMarket, portfolio.market);
-    const protocolChanged =
-      syncsProtocolParameters && !protocolParametersEqual(nextProtocol, portfolio.protocol);
-    if (!marketChanged && !protocolChanged) return;
+    // V1.1 Batch 1 (Live-Data Trust Parity) — see this file's own header
+    // comment for the full manual/live conflict rule. Each field is
+    // resolved independently: an already-`'live'` field refreshes
+    // directly on a genuine change (equal-skip preserved); a `'manual'`
+    // field either stays a no-op (fetched value matches — nothing to
+    // promote) or becomes a pending candidate (fetched value genuinely
+    // differs) — never a silent overwrite of a manual value.
+    if (syncsMarketPrice) {
+      if (portfolio.marketSource === 'live') {
+        if (!marketPricesEqual(nextMarket, portfolio.market)) {
+          setMarket(portfolioId, nextMarket, 'live');
+        }
+      } else if (!marketPricesEqual(nextMarket, portfolio.market)) {
+        setMarketCandidate(portfolioId, nextMarket);
+      }
+    }
 
-    update(portfolioId, {
-      ...(syncsMarketPrice && { market: nextMarket }),
-      ...(syncsProtocolParameters && { protocol: nextProtocol }),
-    });
-  }, [portfolioId, portfolio, status, marketQuote, protocolQuote, update]);
+    if (syncsProtocolParameters) {
+      if (portfolio.protocolSource === 'live') {
+        if (!protocolParametersEqual(nextProtocol, portfolio.protocol)) {
+          setProtocol(portfolioId, nextProtocol, 'live');
+        }
+      } else if (!protocolParametersEqual(nextProtocol, portfolio.protocol)) {
+        setProtocolCandidate(portfolioId, nextProtocol);
+      }
+    }
+  }, [
+    portfolioId,
+    portfolio,
+    status,
+    marketQuote,
+    protocolQuote,
+    setMarket,
+    setProtocol,
+    setMarketCandidate,
+    setProtocolCandidate,
+  ]);
 }

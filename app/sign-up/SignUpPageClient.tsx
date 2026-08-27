@@ -88,8 +88,8 @@ export function SignUpPageClient() {
         <h1 className="text-xl font-semibold text-foreground">Create an account</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           An account is entirely optional. ProfitPilot works fully without one — your data stays on
-          this device. Creating an account will let you sync your data across devices once cloud
-          synchronization is available in a future update. Exporting your data works either way.
+          this device whether or not you create an account. ProfitPilot has no cloud sync; exporting
+          your data works either way.
         </p>
       </div>
 

@@ -504,8 +504,8 @@ export function SettingsPageClient() {
         <h2 className="text-sm font-semibold text-foreground">Account</h2>
         <p className="text-xs text-muted-foreground">
           Accounts are optional. ProfitPilot works fully without one — your data stays on this
-          device either way. Signing in will let you sync your data across devices once cloud
-          synchronization is available in a future update.
+          device either way, whether or not you sign in. Signing in does not change how or where
+          your portfolio data is stored; ProfitPilot has no cloud sync.
         </p>
 
         {authUser !== null ? (

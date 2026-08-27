@@ -47,7 +47,7 @@ test('Cover: sign-up explains accounts are optional and gracefully reports unava
 }) => {
   await page.goto('/sign-up', { waitUntil: 'networkidle' });
   await expect(page.getByText(/entirely optional/i)).toBeVisible();
-  await expect(page.getByText(/sync your data across devices/i)).toBeVisible();
+  await expect(page.getByText(/has no cloud sync/i)).toBeVisible();
 
   await page.getByLabel('Email').fill('test@example.com');
   await page.getByLabel('Password', { exact: true }).fill('password123');
