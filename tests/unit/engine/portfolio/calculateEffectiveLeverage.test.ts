@@ -72,6 +72,21 @@ describe('calculateEffectiveLeverage (F-011)', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('V1.1 Batch 4: returns 0 for a fully exited, zero-collateral/zero-debt portfolio (0/0, not a division-by-zero failure)', () => {
+    const portfolio: PortfolioInput = {
+      collateral: { asset: 'BTC', quantity: 0 },
+      debt: { asset: 'USDC', balance: 0 },
+      market: { btcPriceUsd: 60000 },
+      protocol,
+    };
+    const result = calculateEffectiveLeverage(portfolio);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe(0);
+      expect(result.warnings.some((w) => w.code === 'ZERO_EXPOSURE_ZERO_NET_WORTH')).toBe(true);
+    }
+  });
+
   it('warns when net worth is negative', () => {
     const portfolio: PortfolioInput = {
       collateral: { asset: 'BTC', quantity: 1 },

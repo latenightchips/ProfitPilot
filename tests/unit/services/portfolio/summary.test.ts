@@ -125,6 +125,70 @@ describe('calculatePortfolioSummary (M3-005)', () => {
     if (!result.ok) return;
     expect(result.data.liquidation).toBeNull();
   });
+
+  /**
+   * V1.1 Batch 4 — Full-Exit / Zero-State Robustness. Table-driven matrix
+   * covering the three collateral/debt zero-boundary states this batch's
+   * spec calls out explicitly: (A) both zero — a valid, fully-exited/empty
+   * portfolio; (B) collateral > 0, debt = 0 — the pre-existing, unchanged
+   * zero-debt state (conflict #20, covered above); (C) collateral = 0,
+   * debt > 0 — a dangerous/insolvent state that must fail closed, not be
+   * hidden behind friendly formatting.
+   */
+  describe('V1.1 Batch 4: zero-state engine boundary matrix', () => {
+    it('State A — zero collateral AND zero debt (fully exited/empty portfolio): succeeds with safe, finite values, no NaN/Infinity leaking anywhere except the documented HF=Infinity case', () => {
+      const empty = basePortfolio({
+        collateral: { asset: 'BTC', quantity: 0 },
+        debt: { asset: 'USDC', balance: 0 },
+      });
+      const result = calculatePortfolioSummary(empty, 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.collateralValue).toBe(0);
+      expect(result.data.debtValue).toBe(0);
+      expect(result.data.netEquity).toBe(0);
+      expect(result.data.loanToValue).toBe(0);
+      expect(result.data.leverage).toBe(0);
+      expect(result.data.healthFactor).toBe(Infinity);
+      expect(result.data.liquidation).toBeNull();
+      expect(result.data.interestCost).toBe(0);
+      expect(Number.isNaN(result.data.leverage)).toBe(false);
+      expect(Number.isNaN(result.data.loanToValue)).toBe(false);
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({ code: 'ZERO_EXPOSURE_ZERO_NET_WORTH' }),
+      );
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({ code: 'ZERO_COLLATERAL_ZERO_DEBT' }),
+      );
+    });
+
+    it('State B — non-zero collateral, zero debt: unchanged pre-existing healthy no-debt semantics (regression guard alongside the conflict #20 test above)', () => {
+      const debtFree = basePortfolio({ debt: { asset: 'USDC', balance: 0 } });
+      const result = calculatePortfolioSummary(debtFree, 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.leverage).toBeCloseTo(1, 6);
+      expect(result.data.healthFactor).toBe(Infinity);
+      expect(result.data.liquidation).toBeNull();
+    });
+
+    it('State C — zero collateral, non-zero debt: fails closed (a dangerous/insolvent state), never silently formatted as healthy', () => {
+      const insolvent = basePortfolio({ collateral: { asset: 'BTC', quantity: 0 } });
+      const result = calculatePortfolioSummary(insolvent, 'live');
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: 'DIVISION_BY_ZERO' });
+    });
+
+    it('an ordinary leveraged portfolio (neither collateral nor debt zero) is unaffected by the Batch 4 zero-state changes', () => {
+      const result = calculatePortfolioSummary(basePortfolio(), 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.leverage).toBeCloseTo(1.25, 6);
+      expect(result.data.healthFactor).toBe(4);
+      expect(result.data.liquidation).toEqual({ price: 12500, distance: 3, buffer: 75 });
+    });
+  });
 });
 
 /**
@@ -637,5 +701,35 @@ describe('calculatePortfolioSummary — V4 risk-capacity dispatch (Stage 23D)', 
     if (!result.ok) return;
     // Collateral: 3 BTC @ $50,000 = $150,000. HF = 0.65 * 150000 / 20000 = 4.875.
     expect(result.data.healthFactor).toBeCloseTo(4.875, 9);
+  });
+
+  /**
+   * V1.1 Batch 4 — a V4 full-exit (zero collateral, zero drawn/premium
+   * debt) produces the same State A safe values as V3's own zero-state
+   * matrix test above, proving the zero-state fix is protocol-agnostic:
+   * it operates on the already-resolved `collateralValue`/`debtValue`
+   * `calculatePortfolioSummary` computes for either protocol version, not
+   * on raw V3- or V4-shaped fields. `v4DebtState`/`v4CollateralRisk`
+   * still need to be present (guards above) even though the amounts they
+   * describe are zero — a V4 full-exit is "debt state synced and reads
+   * zero," never "no debt state at all."
+   */
+  it("V1.1 Batch 4: a V4 full exit (zero collateral, zero drawn/premium debt) matches V3's State A zero-state semantics", () => {
+    const portfolio = basePortfolio({
+      collateral: { asset: 'BTC', quantity: 0 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 },
+    });
+    const result = calculatePortfolioSummary(portfolio, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.collateralValue).toBe(0);
+    expect(result.data.debtValue).toBe(0);
+    expect(result.data.leverage).toBe(0);
+    expect(result.data.healthFactor).toBe(Infinity);
+    expect(result.data.liquidation).toBeNull();
+    expect(result.data.interestCost).toBe(0);
+    expect(Number.isNaN(result.data.leverage)).toBe(false);
   });
 });

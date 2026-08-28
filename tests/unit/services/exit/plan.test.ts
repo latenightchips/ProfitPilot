@@ -148,6 +148,45 @@ describe('planExit — full exit and conflict #20 interaction (M3-011)', () => {
     expect(result.data.after?.liquidation).toBeNull();
     expect(result.data.after?.netEquity).toBe(80000);
   });
+
+  it('V1.1 Batch 4: a full exit whose execution friction consumes 100% of collateral lands on the true zero/zero state and still succeeds, never DIVISION_BY_ZERO', () => {
+    // Collateral 1 BTC @ $50,000 = $50,000 (positive net worth at
+    // baseline: debt $49,000 < collateral value $50,000, so the "before"
+    // summary is unaffected by this batch and succeeds as always). A 2%
+    // swap fee means repaying the full $49,000 debt requires selling
+    // 49000 / (50000 x 0.98) = exactly 1 BTC — 100% of collateral — so
+    // btcRetained lands at exactly 0 too, not just remainingDebt. This is
+    // the genuine State A (0/0) boundary calculateExitPosition itself
+    // permits (btcRetained.isNegative() is the only rejection check,
+    // never btcRetained.isZero()) — before this batch's engine fix,
+    // calculatePortfolioSummary's leverage step would have failed this
+    // "after" summary with DIVISION_BY_ZERO.
+    const nearlyFullyCollateralizedPortfolio: ApplicationPortfolio = {
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 49000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    };
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(nearlyFullyCollateralizedPortfolio, target, 'live', undefined, {
+      swapFeeRate: 0.02,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.transaction?.btcRetained).toBe(0);
+    expect(result.data.after?.collateralValue).toBe(0);
+    expect(result.data.after?.debtValue).toBe(0);
+    expect(result.data.after?.leverage).toBe(0);
+    expect(result.data.after?.healthFactor).toBe(Infinity);
+    expect(result.data.after?.liquidation).toBeNull();
+    expect(Number.isNaN(result.data.after?.leverage)).toBe(false);
+  });
 });
 
 /**

@@ -84,6 +84,46 @@ describe('comparePortfolioHistoryEntries', () => {
     });
   });
 
+  it('V1.1 Batch 4: a full-exit transition (leveraged -> zero collateral/zero debt) produces a deterministic, NaN-free comparison across every metric at once', () => {
+    const before = entry();
+    const after = entry({
+      collateral: { quantity: 0, valueUsd: 0 },
+      debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      healthFactor: null,
+      liquidationPriceUsd: null,
+      loanToValue: 0,
+      leverage: 0,
+      annualizedInterestCost: 0,
+    });
+
+    const comparison = comparePortfolioHistoryEntries(before, after);
+
+    expect(comparison.healthFactor).toEqual({ before: 4, after: null, delta: null, changed: true });
+    expect(comparison.leverage).toEqual({ before: 1.25, after: 0, delta: -1.25, changed: true });
+    expect(comparison.loanToValue).toEqual({ before: 0.2, after: 0, delta: -0.2, changed: true });
+    expect(comparison.liquidationPriceUsd).toEqual({
+      before: 12500,
+      after: null,
+      delta: null,
+      changed: true,
+    });
+    expect(comparison.collateralValueUsd).toEqual({
+      before: 100000,
+      after: 0,
+      delta: -100000,
+      changed: true,
+    });
+    expect(comparison.debtValueUsd).toEqual({
+      before: 20000,
+      after: 0,
+      delta: -20000,
+      changed: true,
+    });
+    for (const metric of Object.values(comparison)) {
+      expect(Number.isNaN(metric.delta)).toBe(false);
+    }
+  });
+
   it('borrowApr undefined <-> defined renders as changed with an undefined delta', () => {
     const comparison = comparePortfolioHistoryEntries(
       entry({ borrowApr: undefined }),

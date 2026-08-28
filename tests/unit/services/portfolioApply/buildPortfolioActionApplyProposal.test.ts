@@ -48,11 +48,7 @@ describe('buildPortfolioActionApplyProposal — V3', () => {
     const portfolio = basePortfolio();
     // A realistic full exit sells only what's needed to repay the debt
     // (0.5 BTC at $50k = $25,000, more than covers the $20,000 debt),
-    // retaining the rest — never literally 0 collateral AND 0 debt at
-    // once, which `calculatePortfolioSummary`'s own leverage formula
-    // (collateralValue / netEquity) cannot represent (0/0). That is a
-    // pre-existing Engine-layer boundary, not something this batch
-    // introduces or needs to work around.
+    // retaining the rest.
     const result = buildPortfolioActionApplyProposal(
       'exitPlanner',
       'portfolio-1',
@@ -68,6 +64,32 @@ describe('buildPortfolioActionApplyProposal — V3', () => {
     // Zero-debt -> Infinity Health Factor, the real engine value (Section 6).
     expect(result.data.after.healthFactor).toBe(Infinity);
     expect(result.data.after.liquidation).toBeNull();
+  });
+
+  it('V1.1 Batch 4: builds a proposal for a full exit that lands on literally 0 collateral AND 0 debt (0/0) — previously unrepresentable, now succeeds', () => {
+    // Before this batch, `calculatePortfolioSummary`'s leverage formula
+    // (collateralValue / netEquity) failed with DIVISION_BY_ZERO for this
+    // exact case — see this test file's git history for the old
+    // documented workaround. The Batch 4 Engine fix makes this a normal,
+    // successful proposal: leverage 0, Health Factor Infinity.
+    const portfolio = basePortfolio();
+    const result = buildPortfolioActionApplyProposal(
+      'exitPlanner',
+      'portfolio-1',
+      '2026-01-01T00:00:00.000Z',
+      portfolio,
+      { collateralDelta: -2, debtDelta: -20000 },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.proposedPortfolio.collateral.quantity).toBe(0);
+    expect(result.data.proposedPortfolio.debt.balance).toBe(0);
+    expect(result.data.after.collateralValue).toBe(0);
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.leverage).toBe(0);
+    expect(result.data.after.healthFactor).toBe(Infinity);
+    expect(result.data.after.liquidation).toBeNull();
+    expect(Number.isNaN(result.data.after.leverage)).toBe(false);
   });
 });
 

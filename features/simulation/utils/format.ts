@@ -22,8 +22,9 @@ export function formatCurrency(value: number): string {
   return currencyFormatter.format(value);
 }
 
-/** `Intl.NumberFormat` renders `Infinity` as "∞" natively — the correct display for a zero-debt Health Factor / Liquidation Distance. */
+/** `Intl.NumberFormat` renders `Infinity` as "∞" natively — the correct display for a zero-debt Health Factor / Liquidation Distance. Only literal `NaN` is guarded, not `Infinity`. */
 export function formatHealthFactor(value: number): string {
+  if (Number.isNaN(value)) return '—';
   return twoDecimalFormatter.format(value);
 }
 

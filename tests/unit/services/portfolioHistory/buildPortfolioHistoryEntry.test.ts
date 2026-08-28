@@ -70,6 +70,45 @@ describe('buildPortfolioHistoryEntry — V3', () => {
     expect(entry.liquidationPriceUsd).toBeNull();
   });
 
+  it('V1.1 Batch 4: builds a valid, persistable entry for a full exit (zero collateral, zero debt) — no NaN, leverage 0, HF normalized to null', () => {
+    const portfolio = basePortfolio({
+      collateral: { asset: 'BTC', quantity: 0 },
+      debt: { asset: 'USDC', balance: 0 },
+    });
+    const summary = summaryFor(portfolio);
+    expect(summary.leverage).toBe(0);
+    expect(summary.healthFactor).toBe(Infinity);
+
+    const entry = buildPortfolioHistoryEntry(
+      'portfolio-1',
+      portfolio,
+      summary,
+      () => '2026-01-01T00:00:00.000Z',
+    );
+
+    expect(entry).toEqual({
+      portfolioId: 'portfolio-1',
+      protocolVersion: 'v3',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      collateral: { quantity: 0, valueUsd: 0 },
+      debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      marketPriceUsd: 50000,
+      healthFactor: null,
+      liquidationPriceUsd: null,
+      loanToValue: 0,
+      leverage: 0,
+      borrowApr: 0.05,
+      supplyApr: 0.02,
+      annualizedInterestCost: 0,
+      dataSource: 'manual',
+    });
+    for (const value of Object.values(entry.collateral)) {
+      expect(Number.isNaN(value)).toBe(false);
+    }
+    expect(Number.isNaN(entry.leverage)).toBe(false);
+    expect(Number.isNaN(entry.loanToValue)).toBe(false);
+  });
+
   it('reports dataSource "live" when market or protocol data is live-sourced', () => {
     const portfolio = basePortfolio({ marketSource: 'live' });
     const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));

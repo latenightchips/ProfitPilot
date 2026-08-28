@@ -185,6 +185,33 @@ describe('PortfolioHistoryPanel — with entries', () => {
     expect(screen.getByText('∞')).toBeInTheDocument();
   });
 
+  it('V1.1 Batch 4: renders a full-exit entry (zero collateral/debt) with leverage "0x" and HF "∞", never "NaN"', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        collateral: { quantity: 0, valueUsd: 0 },
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        loanToValue: 0,
+        leverage: 0,
+        annualizedInterestCost: 0,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.getByText('∞')).toBeInTheDocument();
+    expect(screen.getByText('0x')).toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
   it('renders "Not available" for an undefined borrowApr rather than a fabricated 0%', async () => {
     await recordPortfolioHistoryEntry(entry({ borrowApr: undefined }));
     render(

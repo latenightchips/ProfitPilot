@@ -2455,6 +2455,43 @@ describe('usePortfolioStore.applyPortfolioState (V1.1 Batch 3)', () => {
     expect(record.summary.data.liquidation).toBeNull();
   });
 
+  it('V1.1 Batch 4 — a full-exit proposal (zero collateral AND zero debt) applies successfully, never failing on the leverage step, and its history snapshot has leverage 0 / null Health Factor', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    const proposal = applyProposalFor(created, {
+      proposedPortfolio: {
+        ...created,
+        collateral: { asset: created.collateral.asset, quantity: 0 },
+        debt: { asset: created.debt.asset, balance: 0 },
+      },
+    });
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.collateral.quantity).toBe(0);
+    expect(result.data.debt.balance).toBe(0);
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+    expect(record.summary.data.collateralValue).toBe(0);
+    expect(record.summary.data.debtValue).toBe(0);
+    expect(record.summary.data.leverage).toBe(0);
+    expect(record.summary.data.healthFactor).toBe(Infinity);
+    expect(record.summary.data.liquidation).toBeNull();
+    expect(Number.isNaN(record.summary.data.leverage)).toBe(false);
+
+    await waitForHistoryLength(created.id, 2);
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const latest = listed.data[0].payload;
+    expect(latest.leverage).toBe(0);
+    expect(latest.healthFactor).toBeNull();
+  });
+
   it('Section 7 — creates exactly one history snapshot on success', async () => {
     const created = createValidPortfolio();
     await waitForHistoryLength(created.id, 1);

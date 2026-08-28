@@ -74,6 +74,27 @@ describe('recordPortfolioHistoryEntry', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('V1.1 Batch 4: persists and reloads a full-exit entry (zero collateral, zero debt) unchanged, including leverage 0 and a null Health Factor', async () => {
+    const service = createPersistenceService(createMemoryAdapter());
+    const fullExit = entry({
+      collateral: { quantity: 0, valueUsd: 0 },
+      debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      healthFactor: null,
+      liquidationPriceUsd: null,
+      loanToValue: 0,
+      leverage: 0,
+      annualizedInterestCost: 0,
+    });
+    const writeResult = await recordPortfolioHistoryEntry(fullExit, service);
+    expect(writeResult.ok).toBe(true);
+
+    const listResult = await listPortfolioHistoryForPortfolio('portfolio-1', service);
+    expect(listResult.ok).toBe(true);
+    if (!listResult.ok) return;
+    expect(listResult.data).toHaveLength(1);
+    expect(listResult.data[0].payload).toEqual(fullExit);
+  });
+
   it('prunes the oldest entry application-wide once more than the retained maximum exist', async () => {
     // `prunePortfolioHistory` runs a full `listPortfolioHistory` (list +
     // schema-validate + sort every existing entry) after every single

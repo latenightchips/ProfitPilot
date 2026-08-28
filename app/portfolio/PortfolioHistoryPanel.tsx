@@ -41,9 +41,10 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 }
 
-/** `null` means "zero-debt, Health Factor is Infinity" — rendered as "∞", matching `features/dashboard/utils/format.ts`'s own convention for this same value. */
+/** `null` means "zero-debt, Health Factor is Infinity" — rendered as "∞", matching `features/dashboard/utils/format.ts`'s own convention for this same value. Also used for `entry.leverage` (V1.1 Batch 4), which is a plain finite `number` per the persisted schema; the `NaN` guard is defensive only. */
 function formatHealthFactor(value: number | null): string {
   if (value === null) return '∞';
+  if (Number.isNaN(value)) return '—';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
 }
 

@@ -38,6 +38,10 @@ describe('formatHealthFactor', () => {
   it('renders Infinity as "∞" (zero-debt Health Factor, M2-009)', () => {
     expect(formatHealthFactor(Infinity)).toBe('∞');
   });
+
+  it('V1.1 Batch 4: renders NaN as an em dash rather than the literal string "NaN"', () => {
+    expect(formatHealthFactor(NaN)).toBe('—');
+  });
 });
 
 describe('formatNumber', () => {
