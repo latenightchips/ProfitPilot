@@ -173,3 +173,62 @@ export interface PersistedRecoverySnapshot {
   createdAt: string;
   records: Partial<Record<PersistedRecordType, StorageEnvelope<unknown>[]>>;
 }
+
+/**
+ * Portfolio History Entry — V1.1 Batch 2 ("Portfolio History & Risk
+ * Timeline"). A minimal, stable point-in-time snapshot of one
+ * portfolio's own derived risk/economic metrics — not a copy of the
+ * full `Portfolio`/`ApplicationPortfolio` object, and not the UI's own
+ * `PortfolioSummary` shape (which changes whenever a display concern
+ * changes, not when this history record's own persisted shape should).
+ * `AaveProtocolVersion` imported from `@/engine`, the lowest layer that
+ * already owns it — no reverse dependency on `services/portfolio/` or
+ * any Store, matching this file's own header comment above.
+ *
+ * **One record per snapshot, `portfolioId`-scoped, not a singleton.**
+ * Mirrors `PersistedRecoverySnapshot`'s own "many independent records of
+ * one type" shape (`../portfolioHistory.ts`'s `recordPortfolioHistoryEntry`
+ * writes each with its own `crypto.randomUUID()` id) rather than nesting
+ * an array inside one record — the same reasoning `recoverySnapshot.ts`
+ * already established for a genuinely append-only, unbounded-over-time
+ * collection.
+ *
+ * **`collateral`/`debt` carry both a native quantity and a resolved USD
+ * value** — the two are not interchangeable (V4's debt quantity and its
+ * USD value can genuinely differ once a debt-asset oracle price is
+ * involved; V3's do not, since its debt assets are treated as $1-pegged
+ * stablecoins). Both are cheap, already-derived numbers at the moment a
+ * snapshot is taken — no new calculation is invented for this file,
+ * everything here already exists on `PortfolioSummary`/`Portfolio`
+ * itself; see `services/portfolioHistory/buildPortfolioHistoryEntry.ts`
+ * for exactly which existing values map into which field.
+ *
+ * **`dataSource` is one summarizing flag, not the four separate
+ * provenance fields (`marketSource`/`protocolSource`/
+ * `v4DebtStateSource`/`v4CollateralRiskSource`) a live portfolio itself
+ * carries.** A history entry answers "was any of the data behind this
+ * snapshot live-sourced at the time," a coarser but still materially
+ * useful question for a timeline view — not "reconstruct this
+ * portfolio's exact live-sync state," which is not this feature's job.
+ */
+export interface PersistedPortfolioHistoryEntry {
+  portfolioId: string;
+  protocolVersion: 'v3' | 'v4';
+  /** ISO 8601 — the canonical "when" of this snapshot, set once at creation and never revised. */
+  createdAt: string;
+  collateral: { quantity: number; valueUsd: number };
+  debt: { asset: string; quantity: number; valueUsd: number };
+  marketPriceUsd: number;
+  /** `null` for a zero-debt portfolio (`PortfolioSummary.healthFactor` is `Infinity` there — see `features/dashboard/utils/format.ts`'s own note on this) — JSON cannot represent `Infinity` (it silently becomes `null` through `JSON.stringify`), so this field encodes the same "no liquidation risk" state `liquidationPriceUsd` already uses `null` for, rather than persisting a value JSON would corrupt anyway. */
+  healthFactor: number | null;
+  /** `null` for a zero-debt portfolio — mirrors `PortfolioLiquidationSummary`'s own `null` case, not a fabricated 0. */
+  liquidationPriceUsd: number | null;
+  loanToValue: number;
+  leverage: number;
+  /** `undefined` only when genuinely unavailable (a V4 portfolio with no synced debt state yet) — never a fabricated 0. */
+  borrowApr?: number;
+  /** `undefined` for a V4 portfolio without a trusted (manual) collateral-risk source — mirrors `resolveSupplyAprDisplay`'s own unavailable case, never a stale/fabricated V3-shaped number. */
+  supplyApr?: number;
+  annualizedInterestCost: number;
+  dataSource: 'manual' | 'live';
+}

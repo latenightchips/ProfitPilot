@@ -5,6 +5,7 @@ export type {
   ConflictStatus,
   PersistedActivePortfolio,
   PersistedApplicationMetadata,
+  PersistedPortfolioHistoryEntry,
   PersistedPreferences,
   PersistedRecoverySnapshot,
   PersistedSyncMetadata,

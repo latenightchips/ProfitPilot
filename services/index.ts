@@ -28,6 +28,7 @@ export * from './market';
 export * from './observability';
 export * from './persistence';
 export * from './portfolio';
+export * from './portfolioHistory';
 export * from './protocol';
 export * from './recommendation';
 export * from './shared';

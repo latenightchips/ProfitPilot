@@ -233,9 +233,11 @@ import {
   type AaveV4DebtState,
   type AaveV4PositionIdentity,
   type ApplicationError,
+  attemptPortfolioHistorySnapshot,
   autoSaveCoordinator,
   calculatePortfolioSummary,
   createApplicationError,
+  deletePortfolioHistoryForPortfolio,
   type MappingResult,
   type PersistedActivePortfolio,
   persistenceService,
@@ -677,6 +679,45 @@ function schedulePortfolioSave(portfolio: Portfolio): void {
   autoSaveCoordinator.schedule('portfolio', portfolio.id, portfolio);
 }
 
+/**
+ * V1.1 Batch 2 ("Portfolio History & Risk Timeline") — the one place
+ * every deliberate-action call site below reaches to attempt a history
+ * snapshot, fire-and-forget, mirroring `schedulePortfolioSave`'s own
+ * synchronous-caller/async-write split. `summary.ok === false` (a V4
+ * portfolio with no synced debt state yet, or any other calculation
+ * failure) is a genuine no-op, not an error to surface here — there is
+ * no meaningful snapshot to take of a portfolio state that cannot
+ * currently be summarized, and the next successful action will attempt
+ * one again.
+ */
+function attemptHistorySnapshot(
+  portfolio: Portfolio,
+  summary: ServiceResult<PortfolioSummary>,
+): void {
+  if (!summary.ok) return;
+  void attemptPortfolioHistorySnapshot(portfolio.id, portfolio, summary.data);
+}
+
+/**
+ * V1.1 Batch 2 — "Do not create a new permanent history entry for every
+ * live refresh tick." `setMarket`/`setProtocol`/`setAaveV4DebtState`/
+ * `setAaveV4CollateralRisk` are each called both by a deliberate,
+ * user-confirmed action (accepting a pending candidate, submitting a
+ * manual-entry form) AND by a hook's own silent, automatic live→live
+ * refresh — both pass `source: 'live'`, so the setter's own inputs alone
+ * cannot tell them apart. The one reliable signal available at write
+ * time is whether this write is a genuine MANUAL→LIVE transition (a
+ * real, one-time "the user accepted/entered this" event) versus an
+ * already-`'live'` field simply being refreshed again — exactly this
+ * function's own check.
+ */
+function isSilentLiveRefresh(
+  previousSource: AaveV4DataSource | undefined,
+  nextSource: AaveV4DataSource | undefined,
+): boolean {
+  return previousSource === 'live' && nextSource === 'live';
+}
+
 export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   portfolios: {},
   activePortfolioId: null,
@@ -771,14 +812,19 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: now,
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
       portfolios: {
         ...state.portfolios,
-        [portfolio.id]: { portfolio, summary: buildSummary(portfolio) },
+        [portfolio.id]: { portfolio, summary },
       },
       errors: [],
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — "portfolio creation" is always a snapshot attempt;
+    // `isMaterialPortfolioHistoryChange` sees no prior entry and always
+    // records the first one.
+    attemptHistorySnapshot(portfolio, summary);
 
     return { ok: true, data: portfolio };
   },
@@ -837,14 +883,21 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: now,
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
       portfolios: {
         ...state.portfolios,
-        [id]: { portfolio, summary: buildSummary(portfolio) },
+        [id]: { portfolio, summary },
       },
       errors: [],
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — "explicit portfolio save/update." Covers the
+    // Portfolio Details/Collateral/Debt forms' own "Apply Changes" (a
+    // deliberate, confirmed action, not per-keystroke — see those forms'
+    // own preview-then-apply design). Material-change dedup filters out
+    // a name/description-only edit, which never moves any risk metric.
+    attemptHistorySnapshot(portfolio, summary);
 
     return { ok: true, data: portfolio };
   },
@@ -955,6 +1008,12 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         errors: [],
       };
     });
+    // V1.1 Batch 2 — a deleted portfolio's history is deleted with it
+    // (never on Archive, which retains data — see
+    // `deletePortfolioHistoryForPortfolio`'s own comment). Fire-and-forget,
+    // the same async/synchronous-caller split every history write already
+    // uses.
+    void deletePortfolioHistoryForPortfolio(id);
   },
 
   recomputeSummary: (id) => {
@@ -1060,6 +1119,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       validated = parsed.data;
     }
 
+    const previousV4DebtStateSource = existing.portfolio.v4DebtStateSource;
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4DebtState: validated,
@@ -1081,8 +1141,9 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
       // V4 Readiness Audit §12 — P0-1. ANY explicit write to canonical
       // `v4DebtState` — a manual submit, the hook's own auto-adopt/live
@@ -1095,6 +1156,14 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       v4DebtStateCandidates: { ...state.v4DebtStateCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — same reasoning as `setMarket`, only attempted when a
+    // real value was actually set (never on a clear, e.g. address removal).
+    if (
+      validated !== undefined &&
+      !isSilentLiveRefresh(previousV4DebtStateSource, portfolio.v4DebtStateSource)
+    ) {
+      attemptHistorySnapshot(portfolio, summary);
+    }
 
     return { ok: true, data: portfolio };
   },
@@ -1124,6 +1193,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       validated = parsed.data;
     }
 
+    const previousV4CollateralRiskSource = existing.portfolio.v4CollateralRiskSource;
     const portfolio: Portfolio = {
       ...existing.portfolio,
       v4CollateralRisk: validated,
@@ -1134,13 +1204,21 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
       // Same reasoning as `setAaveV4DebtState`'s own identical clear above.
       v4CollateralRiskCandidates: { ...state.v4CollateralRiskCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — same reasoning as `setAaveV4DebtState` above.
+    if (
+      validated !== undefined &&
+      !isSilentLiveRefresh(previousV4CollateralRiskSource, portfolio.v4CollateralRiskSource)
+    ) {
+      attemptHistorySnapshot(portfolio, summary);
+    }
 
     return { ok: true, data: portfolio };
   },
@@ -1244,6 +1322,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     }
 
     const now = new Date().toISOString();
+    const previousMarketSource = existing.portfolio.marketSource;
     const portfolio: Portfolio = {
       ...existing.portfolio,
       market: parsed.data,
@@ -1252,8 +1331,9 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: now,
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
       // Same reasoning as `setAaveV4DebtState`'s own centralized
       // candidate-clear: any explicit write to canonical `market` makes a
@@ -1263,6 +1343,11 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       marketCandidates: { ...state.marketCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — "accepted live-data update," excluding a silent
+    // live→live refresh. See `isSilentLiveRefresh`'s own comment.
+    if (!isSilentLiveRefresh(previousMarketSource, portfolio.marketSource)) {
+      attemptHistorySnapshot(portfolio, summary);
+    }
 
     return { ok: true, data: portfolio };
   },
@@ -1285,6 +1370,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     }
 
     const now = new Date().toISOString();
+    const previousProtocolSource = existing.portfolio.protocolSource;
     const portfolio: Portfolio = {
       ...existing.portfolio,
       protocol: parsed.data,
@@ -1293,13 +1379,18 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: now,
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
       // Same reasoning as `setMarket` above.
       protocolCandidates: { ...state.protocolCandidates, [id]: undefined },
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 — same reasoning as `setMarket` above.
+    if (!isSilentLiveRefresh(previousProtocolSource, portfolio.protocolSource)) {
+      attemptHistorySnapshot(portfolio, summary);
+    }
 
     return { ok: true, data: portfolio };
   },

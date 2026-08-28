@@ -23,6 +23,7 @@ export { runLocalDataMigration } from './migrations/localDataMigration';
 export type { MigrationRegistry, MigrationStep } from './migrations/migrate';
 export { REGISTERED_MIGRATIONS, runMigrations } from './migrations/migrate';
 export * from './persistence.service';
+export * from './portfolioHistory';
 export * from './recoverySnapshot';
 export * from './schemas';
 export * from './syncMetadataModel';

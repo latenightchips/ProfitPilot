@@ -12,6 +12,7 @@ import {
   persistedSyncMetadataPayloadSchema,
 } from './metadata.schema';
 import { persistedPortfolioPayloadSchema } from './portfolio.schema';
+import { persistedPortfolioHistoryEntryPayloadSchema } from './portfolioHistory.schema';
 import { persistedRecoverySnapshotPayloadSchema } from './recoverySnapshot.schema';
 import {
   persistedActivePortfolioPayloadSchema,
@@ -27,6 +28,7 @@ import {
 export * from './envelope.schema';
 export * from './metadata.schema';
 export * from './portfolio.schema';
+export * from './portfolioHistory.schema';
 export * from './recoverySnapshot.schema';
 export * from './settings.schema';
 export * from './shared.schema';
@@ -43,4 +45,5 @@ export const PAYLOAD_SCHEMAS_BY_RECORD_TYPE: Record<PersistedRecordType, ZodType
   applicationMetadata: persistedApplicationMetadataPayloadSchema,
   activePortfolio: persistedActivePortfolioPayloadSchema,
   recoverySnapshot: persistedRecoverySnapshotPayloadSchema,
+  portfolioHistory: persistedPortfolioHistoryEntryPayloadSchema,
 };

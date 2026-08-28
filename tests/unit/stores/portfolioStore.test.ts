@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { autoSaveCoordinator, calculatePortfolioSummary } from '@/services';
 import { buildLocalStorageKey } from '@/services/persistence/adapters/localStorageKeys';
 import { computeChecksum } from '@/services/persistence/envelope';
+import { listPortfolioHistoryForPortfolio } from '@/services/persistence/portfolioHistory';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -2102,5 +2103,183 @@ describe('usePortfolioStore — V3/V4 multi-portfolio isolation (regression)', (
     usePortfolioStore.getState().select(v3Id);
     expect(usePortfolioStore.getState().portfolios[v4Id].summary).toEqual(v4Summary);
     expect(usePortfolioStore.getState().portfolios[v3Id].summary).toEqual(v3Summary);
+  });
+});
+
+/**
+ * V1.1 Batch 2 ("Portfolio History & Risk Timeline") — trigger wiring.
+ * `attemptHistorySnapshot`/`deletePortfolioHistoryForPortfolio` are
+ * fire-and-forget (`void`, never awaited by the synchronous Store action
+ * that calls them — see `stores/portfolioStore.ts`'s own comment), so
+ * every assertion here polls via `vi.waitFor` rather than asserting
+ * immediately after the store action returns.
+ */
+async function waitForHistoryLength(portfolioId: string, length: number) {
+  await vi.waitFor(async () => {
+    const listed = await listPortfolioHistoryForPortfolio(portfolioId);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(length);
+  });
+}
+
+describe('usePortfolioStore — Portfolio History trigger wiring (V1.1 Batch 2)', () => {
+  it('create() records a first history entry', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+  });
+
+  it('update() records a second entry once the update materially changes the portfolio', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().update(created.id, { market: { btcPriceUsd: 60000 } });
+    await waitForHistoryLength(created.id, 2);
+  });
+
+  it('update() does not record a duplicate entry for a name-only edit (dedup — no risk metric moved)', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().update(created.id, { name: 'Renamed' });
+    // Give the fire-and-forget attempt a real chance to run before
+    // asserting the negative — `waitForHistoryLength` above already
+    // proves the mechanism itself works, so this is not racing a slow
+    // write, it is confirming no write happens at all.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(1);
+  });
+
+  it('delete() removes all of that portfolio’s history entries', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().delete(created.id);
+    await waitForHistoryLength(created.id, 0);
+  });
+
+  it('archive() does not touch history (data is retained, not deleted)', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().archive(created.id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(1);
+  });
+
+  it('duplicate() starts the copy with no history of its own', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    const duplicated = usePortfolioStore.getState().duplicate(created.id);
+    expect(duplicated.ok).toBe(true);
+    if (!duplicated.ok) return;
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(duplicated.data.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(0);
+    // The original's own history is untouched by duplication.
+    const originalListed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(originalListed.ok && originalListed.data).toHaveLength(1);
+  });
+
+  it('setMarket() records an entry on a manual-to-live acceptance, but not on a repeated silent live refresh', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    // First live write: marketSource was 'manual' at creation -> not a
+    // silent refresh, a snapshot is attempted (and material, since the
+    // price actually changed).
+    usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 55000 });
+    await waitForHistoryLength(created.id, 2);
+
+    // Second live write with an unchanged price, simulating the live-sync
+    // hook's own silent refresh tick (source stays 'live' on both sides)
+    // — `isSilentLiveRefresh` must suppress the attempt entirely.
+    usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 55000 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(2);
+  });
+
+  it('setAaveV4DebtState() records an entry when a real value is set, but never on a clear', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    // `protocolVersion`/`v4CollateralRisk` must be set first — otherwise
+    // (per "no cross-inference") `calculatePortfolioSummary` still
+    // resolves this portfolio's debt from the legacy V3 `debt.balance`,
+    // so a bare `setAaveV4DebtState` call alone produces a candidate
+    // entry identical to the one already recorded and is correctly
+    // deduped, not skipped by the trigger itself.
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Neither call above records an entry yet: `setProtocolVersion` never
+    // triggers a snapshot at all, and `setAaveV4CollateralRisk`'s own
+    // attempt no-ops because `calculatePortfolioSummary` still fails
+    // closed (v4DebtState is not set yet).
+    const beforeDebtState = await listPortfolioHistoryForPortfolio(created.id);
+    expect(beforeDebtState.ok && beforeDebtState.data).toHaveLength(1);
+
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(created.id, 2);
+
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(2);
+  });
+
+  it('keeps multiple portfolios’ history fully isolated across several trigger points', async () => {
+    const a = createValidPortfolio();
+    const b = createValidPortfolio();
+    await waitForHistoryLength(a.id, 1);
+    await waitForHistoryLength(b.id, 1);
+
+    usePortfolioStore.getState().setMarket(a.id, { btcPriceUsd: 61000 });
+    await waitForHistoryLength(a.id, 2);
+
+    const listedB = await listPortfolioHistoryForPortfolio(b.id);
+    expect(listedB.ok).toBe(true);
+    if (!listedB.ok) return;
+    expect(listedB.data).toHaveLength(1);
+  });
+
+  it('records V3/V4 protocolVersion on each entry, matching the portfolio that produced it', async () => {
+    const v3 = createValidPortfolio();
+    await waitForHistoryLength(v3.id, 1);
+    const v3Listed = await listPortfolioHistoryForPortfolio(v3.id);
+    expect(v3Listed.ok && v3Listed.data[0]?.payload.protocolVersion).toBe('v3');
+
+    const v4 = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(v4.id, 'v4');
+    usePortfolioStore.getState().setAaveV4CollateralRisk(v4.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(v4.id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(v4.id, 2);
+    const v4Listed = await listPortfolioHistoryForPortfolio(v4.id);
+    // `.find()`, not `data[0]` — the initial (v3) and the V4-triggered
+    // entry can land in the same millisecond in a fast test run, and
+    // `listPortfolioHistoryForPortfolio`'s sort is only as precise as
+    // `createdAt` itself; what this test actually needs to prove is that
+    // one recorded entry for this portfolio carries `'v4'`, not which
+    // array index it lands at.
+    expect(v4Listed.ok).toBe(true);
+    if (!v4Listed.ok) return;
+    expect(v4Listed.data.map((e) => e.payload.protocolVersion).sort()).toEqual(['v3', 'v4']);
   });
 });

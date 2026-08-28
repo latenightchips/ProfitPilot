@@ -57,6 +57,15 @@ export const PERSISTED_RECORD_TYPES = [
   'applicationMetadata',
   'activePortfolio',
   'recoverySnapshot',
+  /**
+   * V1.1 Batch 2 ("Portfolio History & Risk Timeline") — many independent
+   * records per portfolio, each one point-in-time snapshot, the same
+   * "many records of one type, not a singleton" shape `'recoverySnapshot'`
+   * already established. See `./models.ts`'s `PersistedPortfolioHistoryEntry`
+   * for the payload shape and `../portfolioHistory.ts` for how entries are
+   * written/listed/pruned.
+   */
+  'portfolioHistory',
 ] as const;
 
 export type PersistedRecordType = (typeof PERSISTED_RECORD_TYPES)[number];
