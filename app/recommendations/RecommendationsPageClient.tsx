@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
@@ -12,12 +12,13 @@ import {
 } from '@/features/recommendations';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
+import { explainTargetHealthFactorActions } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
-import { deriveProtocolStatus } from '@/utils/protocolStatus';
+import { confidenceForProtocolStatus, deriveProtocolStatus } from '@/utils/protocolStatus';
 
 /**
  * Recommendation Center Route — 06_TASKS.md M7-031 ("Create
@@ -83,6 +84,7 @@ export function RecommendationsPageClient() {
   );
   const lastMetadata = useRecommendationCenterStore((state) => state.lastMetadata);
   const recalculate = useRecommendationCenterStore((state) => state.recalculate);
+  const actions = useRecommendationCenterStore((state) => state.actions);
   const aaveMarketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const aaveV4Status = useAaveV4LiveDataStore((state) => state.status);
   const aaveV4LastFetchedAt = useAaveV4LiveDataStore((state) => state.lastFetchedAt);
@@ -105,6 +107,47 @@ export function RecommendationsPageClient() {
     // triggers, nothing more.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePortfolioId, record?.portfolio.updatedAt]);
+
+  const protocolStatus =
+    record === undefined
+      ? null
+      : deriveProtocolStatus({
+          protocolVersion: record.portfolio.protocolVersion,
+          v4PositionSet: record.portfolio.v4Position !== undefined,
+          v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
+          aaveMarketQuote,
+          aaveV4Status,
+          aaveV4LastFetchedAt,
+          v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
+          aaveV4CollateralRiskStatus,
+          aaveV4CollateralRiskLastFetchedAt,
+          v4DebtStateSource: record.portfolio.v4DebtStateSource,
+          v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
+          now: new Date().toISOString(),
+        });
+  const confidence = protocolStatus === null ? null : confidenceForProtocolStatus(protocolStatus);
+
+  /**
+   * V1.1 Batch 5 ("Recommendation Quality & Explainability") — one
+   * explanation set for both recommendations, built once per recalculation
+   * rather than inside each row/detail render. `explainTargetHealthFactorActions`
+   * is a plain, synchronous function (Section 2's own domain-explanation
+   * model, `services/recommendation`) that internally calls
+   * `buildPortfolioActionApplyProposal` (Batch 3) to get real before/after
+   * `PortfolioSummary` values — worth memoizing since that includes a full
+   * `PortfolioApplyProposal`, not just a few numbers.
+   */
+  const explanations = useMemo(() => {
+    if (record === undefined || actions === null || confidence === null) return null;
+    return explainTargetHealthFactorActions(
+      record.portfolio,
+      record.portfolio.id,
+      record.portfolio.updatedAt,
+      actions,
+      confidence,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.portfolio.updatedAt, actions, confidence]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -131,21 +174,13 @@ export function RecommendationsPageClient() {
               portfolio={record.portfolio}
               metadata={lastMetadata}
               timeHorizonLabel={null}
-              protocolStatus={deriveProtocolStatus({
-                protocolVersion: record.portfolio.protocolVersion,
-                v4PositionSet: record.portfolio.v4Position !== undefined,
-                v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
-                aaveMarketQuote,
-                aaveV4Status,
-                aaveV4LastFetchedAt,
-                v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
-                aaveV4CollateralRiskStatus,
-                aaveV4CollateralRiskLastFetchedAt,
-                v4DebtStateSource: record.portfolio.v4DebtStateSource,
-                v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
-                now: new Date().toISOString(),
-              })}
+              protocolStatus={protocolStatus ?? undefined}
             />
+            {confidence !== null && (
+              <p className="text-xs text-muted-foreground">
+                Recommendation data quality: <span className="font-medium">{confidence}</span>
+              </p>
+            )}
             <AaveV4LiveErrorNotice portfolioId={record.portfolio.id} />
           </section>
 
@@ -160,7 +195,7 @@ export function RecommendationsPageClient() {
               className="flex flex-1 flex-col gap-2 rounded-md border border-border p-4"
             >
               <h2 className="text-sm font-medium text-foreground">Recommendations</h2>
-              <RecommendationList portfolio={record.portfolio} />
+              <RecommendationList portfolio={record.portfolio} explanations={explanations} />
             </section>
 
             <section
@@ -168,7 +203,7 @@ export function RecommendationsPageClient() {
               className="flex flex-1 flex-col gap-2 rounded-md border border-border p-4 lg:max-w-md"
             >
               <h2 className="text-sm font-medium text-foreground">Recommendation Detail</h2>
-              <RecommendationDetailPanel portfolio={record.portfolio} />
+              <RecommendationDetailPanel portfolio={record.portfolio} explanations={explanations} />
             </section>
           </div>
         </div>

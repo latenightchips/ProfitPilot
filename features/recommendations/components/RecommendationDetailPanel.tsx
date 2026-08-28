@@ -1,15 +1,24 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
-import { formatCurrency, formatHealthFactor } from '@/components/strategy/format';
+import {
+  formatCurrency,
+  formatHealthFactor,
+  formatLeverage,
+  formatPercent,
+} from '@/components/strategy/format';
+import { ApplyToPortfolioReview } from '@/features/portfolioApply';
 import {
   ADDITIONAL_COLLATERAL_VALUE_LABELS,
   BTC_VALUE_KEYS,
   HEALTH_FACTOR_VALUE_KEYS,
+  isActionableRecommendation,
   REPAYMENT_VALUE_LABELS,
   severityFor,
 } from '@/features/recommendations/utils/recommendationTaxonomy';
+import type { RecommendationExplanation, RecommendationExplanationSet } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
 import { useSimulationStore } from '@/stores/simulationStore';
@@ -46,25 +55,27 @@ import type { Portfolio } from '@/types/portfolio';
  * `afterPortfolio` object of its own without persisting it anywhere
  * (`services/simulation/portfolioAction.ts`).
  *
- * **The repayment action also calls `runExitCalculation` itself, not
- * just `setTargetInputs` — a real gap found and fixed during this
- * batch's own mandatory manual browser verification.** Without it,
- * Exit Planner's `currentResult` stays whatever it was before
- * navigating (often `null`), so the route would show "Configure an exit
- * target" even though every input needed was already supplied —
- * directly undermining M7-034's own DoD ("without re-entering known
- * data"). Pairs `setTargetInputs` with `runExitCalculation` the same way
- * `ExitTargetForm.tsx`'s own `pushTargetInputs` and Full Exit mount
- * effect already do — see that file's own header comment for the
- * matching fix on its side (the input field itself needed to start
- * showing the prefilled value, which is a separate, form-display-only
- * concern this component has no part in).
- *
  * **The action link is hidden, not disabled, when there is nothing real
  * to prefill** — `relevantValues.requiredRepayment`/`requiredUsd` of
  * `0` means "no repayment/collateral needed" (the Engine's own already-
  * computed answer), so there is nothing honest to hand to Exit Planner
  * or Simulation.
+ *
+ * **V1.1 Batch 5 ("Recommendation Quality & Explainability")** adds a
+ * `RecommendationExplanation` (`services/recommendation`) alongside the
+ * raw `Recommendation` for the currently selected item — Quantified
+ * Impact (real before/after `PortfolioSummary` values, reusing Batch 3's
+ * own `buildPortfolioActionApplyProposal`), Risk/Tradeoff, Cost Impact,
+ * and Data Confidence. **"Review/apply a valid proposal" (Section 7)
+ * reuses `ApplyToPortfolioReview` unmodified** — `explanation.applyProposal`
+ * IS a real `PortfolioApplyProposal`, the exact same type Simulation/Loop
+ * Builder/Exit Planner already apply through, so this is a second trigger
+ * for the SAME confirmation UX and the SAME `applyPortfolioState` Store
+ * action (V1.1 Batch 3), never a parallel apply path. This coexists with
+ * the pre-existing prefill-into-planner action below — Apply is a direct
+ * commit, prefill-into-planner is a lower-commitment way to explore
+ * further changes (e.g. a different repayment amount) before committing
+ * anything.
  */
 const RELATED_TOOL_BY_ITEM = {
   repayment: 'Exit Planner',
@@ -77,7 +88,158 @@ function formatRelevantValue(key: string, value: number): string {
   return formatCurrency(value);
 }
 
-export function RecommendationDetailPanel({ portfolio }: { portfolio: Portfolio }) {
+function ImpactRow({
+  label,
+  before,
+  after,
+  changed,
+}: {
+  label: string;
+  before: string;
+  after: string;
+  changed: boolean;
+}) {
+  return (
+    <div className="flex justify-between gap-2">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right text-foreground">
+        {changed ? (
+          <>
+            {before} <span aria-hidden="true">→</span>
+            <span className="sr-only"> to </span> {after}
+          </>
+        ) : (
+          after
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function ExplanationExtras({
+  explanation,
+  applyReviewOpen,
+  onOpenApplyReview,
+  onApplied,
+  onCancelApplyReview,
+  portfolio,
+}: {
+  explanation: RecommendationExplanation;
+  applyReviewOpen: boolean;
+  onOpenApplyReview: () => void;
+  onApplied: () => void;
+  onCancelApplyReview: () => void;
+  portfolio: Portfolio;
+}) {
+  const { impact } = explanation;
+
+  return (
+    <>
+      {impact !== null && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-foreground">Quantified Impact</span>
+          <dl className="flex flex-col gap-1">
+            <ImpactRow
+              label="Health Factor"
+              before={formatHealthFactor(impact.healthFactor.before)}
+              after={formatHealthFactor(impact.healthFactor.after)}
+              changed={impact.healthFactor.before !== impact.healthFactor.after}
+            />
+            <ImpactRow
+              label="Leverage"
+              before={formatLeverage(impact.leverage.before)}
+              after={formatLeverage(impact.leverage.after)}
+              changed={impact.leverage.before !== impact.leverage.after}
+            />
+            <ImpactRow
+              label="Loan-to-Value"
+              before={formatPercent(impact.loanToValue.before)}
+              after={formatPercent(impact.loanToValue.after)}
+              changed={impact.loanToValue.before !== impact.loanToValue.after}
+            />
+            <ImpactRow
+              label="Collateral Value"
+              before={formatCurrency(impact.collateralValue.before)}
+              after={formatCurrency(impact.collateralValue.after)}
+              changed={impact.collateralValue.before !== impact.collateralValue.after}
+            />
+            <ImpactRow
+              label="Debt Value"
+              before={formatCurrency(impact.debtValue.before)}
+              after={formatCurrency(impact.debtValue.after)}
+              changed={impact.debtValue.before !== impact.debtValue.after}
+            />
+            <ImpactRow
+              label="Annual Borrowing Cost"
+              before={formatCurrency(impact.interestCost.before)}
+              after={formatCurrency(impact.interestCost.after)}
+              changed={impact.interestCost.before !== impact.interestCost.after}
+            />
+            <ImpactRow
+              label="Liquidation Price"
+              before={
+                impact.liquidationPrice.before !== null
+                  ? formatCurrency(impact.liquidationPrice.before)
+                  : 'No liquidation risk'
+              }
+              after={
+                impact.liquidationPrice.after !== null
+                  ? formatCurrency(impact.liquidationPrice.after)
+                  : 'No liquidation risk'
+              }
+              changed={impact.liquidationPrice.before !== impact.liquidationPrice.after}
+            />
+          </dl>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-foreground">Risk / Tradeoff</span>
+        <span className="text-muted-foreground">{explanation.risk}</span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-foreground">Cost Impact</span>
+        <span className="text-muted-foreground">{explanation.costBenefit}</span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-foreground">Data Confidence</span>
+        <span className="text-muted-foreground">{explanation.confidence}</span>
+      </div>
+
+      {explanation.applyProposal !== null && (
+        <div className="flex flex-col gap-2 border-t border-border pt-3">
+          <span className="text-xs font-medium text-foreground">Apply to Portfolio</span>
+          {applyReviewOpen ? (
+            <ApplyToPortfolioReview
+              portfolio={portfolio}
+              proposal={explanation.applyProposal}
+              onApplied={onApplied}
+              onCancel={onCancelApplyReview}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenApplyReview}
+              className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/40"
+            >
+              Review Apply to Portfolio
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function RecommendationDetailPanel({
+  portfolio,
+  explanations,
+}: {
+  portfolio: Portfolio;
+  explanations: RecommendationExplanationSet | null;
+}) {
   const router = useRouter();
   const selectedItemId = useRecommendationCenterStore((state) => state.selectedItemId);
   const actions = useRecommendationCenterStore((state) => state.actions);
@@ -89,6 +251,13 @@ export function RecommendationDetailPanel({ portfolio }: { portfolio: Portfolio 
   const runPortfolioActionSimulation = useSimulationStore(
     (state) => state.runPortfolioActionSimulation,
   );
+  const [applyReviewOpen, setApplyReviewOpen] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  useEffect(() => {
+    setApplyReviewOpen(false);
+    setApplied(false);
+  }, [selectedItemId]);
 
   if (selectedItemId === null || actions === null) {
     return (
@@ -99,14 +268,12 @@ export function RecommendationDetailPanel({ portfolio }: { portfolio: Portfolio 
   }
 
   const recommendation = actions[selectedItemId];
-  const severity = severityFor(recommendation);
+  const explanation = explanations?.[selectedItemId] ?? null;
+  const severity = severityFor(selectedItemId, recommendation);
   const labels =
     selectedItemId === 'repayment' ? REPAYMENT_VALUE_LABELS : ADDITIONAL_COLLATERAL_VALUE_LABELS;
 
-  const isActionable =
-    selectedItemId === 'repayment'
-      ? recommendation.relevantValues.requiredRepayment > 0
-      : recommendation.relevantValues.requiredUsd > 0;
+  const isActionable = isActionableRecommendation(selectedItemId, recommendation);
 
   function runAction() {
     if (selectedItemId === 'repayment') {
@@ -166,6 +333,26 @@ export function RecommendationDetailPanel({ portfolio }: { portfolio: Portfolio 
         <span className="text-xs font-medium text-foreground">Expected Effect</span>
         <span className="text-muted-foreground">{recommendation.expectedEffect}</span>
       </div>
+
+      {explanation !== null && applied ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Applied to portfolio.
+        </p>
+      ) : (
+        explanation !== null && (
+          <ExplanationExtras
+            explanation={explanation}
+            applyReviewOpen={applyReviewOpen}
+            onOpenApplyReview={() => setApplyReviewOpen(true)}
+            onApplied={() => {
+              setApplyReviewOpen(false);
+              setApplied(true);
+            }}
+            onCancelApplyReview={() => setApplyReviewOpen(false)}
+            portfolio={portfolio}
+          />
+        )
+      )}
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Assumptions</span>

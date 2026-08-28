@@ -4,6 +4,7 @@ import type { MarketQuote, MarketQuoteAvailable } from '@/services/market/quote'
 import type { AaveV4CollateralRiskLiveDataStatus } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 import {
+  confidenceForProtocolStatus,
   deriveProtocolStatus,
   formatProtocolStatus,
   type ProtocolStatusInput,
@@ -602,5 +603,70 @@ describe('formatProtocolStatus — labels', () => {
 
   it('labels "stale" plainly, matching the V3 "Stale" convention exactly (no parenthetical)', () => {
     expect(formatProtocolStatus({ version: 'v4', status: 'stale' })).toBe('Aave V4 · Stale');
+  });
+});
+
+/**
+ * `confidenceForProtocolStatus` — V1.1 Batch 5 ("Recommendation Quality
+ * & Explainability"), Section 5. A deterministic mapping from every
+ * `ProtocolStatusKind` this module can produce to one of the three
+ * documented confidence categories, exhaustively covered per branch (no
+ * numeric percentage, no rule beyond this fixed table).
+ */
+describe('confidenceForProtocolStatus', () => {
+  it('V3 live -> High confidence', () => {
+    expect(confidenceForProtocolStatus({ version: 'v3', status: 'live' })).toBe('High confidence');
+  });
+
+  it('V3 stale -> Medium confidence', () => {
+    expect(confidenceForProtocolStatus({ version: 'v3', status: 'stale' })).toBe(
+      'Medium confidence',
+    );
+  });
+
+  it('V3 unavailable -> Limited data', () => {
+    expect(confidenceForProtocolStatus({ version: 'v3', status: 'unavailable' })).toBe(
+      'Limited data',
+    );
+  });
+
+  it('V4 live -> High confidence', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'live' })).toBe('High confidence');
+  });
+
+  it('V4 manual -> Medium confidence (a complete, deliberately user-entered value, not a data gap)', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'manual' })).toBe(
+      'Medium confidence',
+    );
+  });
+
+  it('V4 stale -> Medium confidence', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'stale' })).toBe(
+      'Medium confidence',
+    );
+  });
+
+  it('V4 loading -> Medium confidence (a previous successful value is still in use)', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'loading' })).toBe(
+      'Medium confidence',
+    );
+  });
+
+  it('V4 provider-error -> Limited data', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'provider-error' })).toBe(
+      'Limited data',
+    );
+  });
+
+  it('V4 waiting-for-address / missing-debt-state / missing-collateral-risk -> Limited data (defensive: unreachable alongside a successfully computed recommendation)', () => {
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'waiting-for-address' })).toBe(
+      'Limited data',
+    );
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'missing-debt-state' })).toBe(
+      'Limited data',
+    );
+    expect(confidenceForProtocolStatus({ version: 'v4', status: 'missing-collateral-risk' })).toBe(
+      'Limited data',
+    );
   });
 });

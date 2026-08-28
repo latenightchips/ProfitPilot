@@ -1,5 +1,6 @@
 import { FRESHNESS_THRESHOLD_MINUTES, type MarketQuote } from '@/services/market/quote';
 import type { AaveV4DataSource } from '@/services/portfolio/models';
+import type { RecommendationConfidence } from '@/services/recommendation';
 import type { AaveV4CollateralRiskLiveDataStatus } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import type { AaveV4LiveDataStatus } from '@/stores/aaveV4LiveDataStore';
 
@@ -272,5 +273,60 @@ export function formatProtocolStatus(kind: ProtocolStatusKind): string {
       return 'Aave V4 · Missing collateral-risk data';
     case 'manual':
       return 'Aave V4 · Manual entry';
+  }
+}
+
+/**
+ * Recommendation data-quality category — V1.1 Batch 5 ("Recommendation
+ * Quality & Explainability"), Section 5. Deterministic mapping from this
+ * module's own already-established, already-tested `ProtocolStatusKind`
+ * — never a new provenance/freshness rule of its own. `deriveProtocolStatus`
+ * already resolves live vs manual, fresh vs stale, and provider-error
+ * "showing last known value" for both V3 and V4 (see that function's own
+ * header comment); this only decides which of the three documented
+ * confidence categories each resolved status deserves, once.
+ *
+ * **Rule, by resolved status:**
+ * - **High confidence**: `'live'` (V3 or V4) — a confirmed-fresh live
+ *   read backs the numbers this recommendation was computed from.
+ * - **Medium confidence**: `'manual'` (V3 `'stale'`/V4 `'manual'`) — a
+ *   complete, usable value that is either deliberately user-entered (no
+ *   freshness claim to make) or a live read whose freshness window has
+ *   lapsed (V4's `'loading'` is grouped here too: a previous successful
+ *   value is still in use while a refresh is in flight, not a data gap).
+ * - **Limited data**: `'unavailable'`/`'provider-error'` (a live feed
+ *   could not be reached at all, even though a last-known value is being
+ *   shown) and the three states that, per `checkAaveV4DebtStateAvailable`/
+ *   `checkAaveV4CollateralRiskAvailable`, can never actually co-occur
+ *   with a successfully computed recommendation (`'waiting-for-address'`,
+ *   `'missing-debt-state'`, `'missing-collateral-risk'`) — kept in this
+ *   branch defensively rather than assumed unreachable, the same
+ *   "documented, not force-tested" precedent this module's own exhaustive
+ *   `switch` already follows elsewhere.
+ */
+export function confidenceForProtocolStatus(kind: ProtocolStatusKind): RecommendationConfidence {
+  if (kind.version === 'v3') {
+    switch (kind.status) {
+      case 'live':
+        return 'High confidence';
+      case 'stale':
+        return 'Medium confidence';
+      case 'unavailable':
+        return 'Limited data';
+    }
+  }
+
+  switch (kind.status) {
+    case 'live':
+      return 'High confidence';
+    case 'manual':
+    case 'stale':
+    case 'loading':
+      return 'Medium confidence';
+    case 'provider-error':
+    case 'waiting-for-address':
+    case 'missing-debt-state':
+    case 'missing-collateral-risk':
+      return 'Limited data';
   }
 }

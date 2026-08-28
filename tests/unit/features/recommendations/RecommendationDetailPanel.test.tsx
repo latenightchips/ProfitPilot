@@ -1,10 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RecommendationDetailPanel } from '@/features/recommendations';
-import type { TargetHealthFactorActions } from '@/services';
+import type { RecommendationExplanationSet, TargetHealthFactorActions } from '@/services';
+import { calculateTargetHealthFactorActions, explainTargetHealthFactorActions } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
+import { usePortfolioStore } from '@/stores/portfolioStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -110,10 +112,21 @@ const PORTFOLIO: Portfolio = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+const PORTFOLIO_STORE_INITIAL_STATE = {
+  portfolios: {},
+  activePortfolioId: null,
+  loadStatus: 'idle' as const,
+  saveStatus: 'idle' as const,
+  errors: [],
+  lastSynchronizedAt: null,
+};
+
 beforeEach(() => {
   useRecommendationCenterStore.setState(RECOMMENDATION_CENTER_INITIAL_STATE);
   useExitPlannerStore.setState(EXIT_PLANNER_INITIAL_STATE);
   useSimulationStore.setState(SIMULATION_INITIAL_STATE);
+  usePortfolioStore.setState(PORTFOLIO_STORE_INITIAL_STATE);
+  window.localStorage.clear();
   push.mockClear();
 });
 
@@ -137,7 +150,7 @@ function setReady(selectedItemId: 'repayment' | 'additionalCollateral' | null, o
 
 describe('RecommendationDetailPanel — no selection', () => {
   it('prompts the user to select a recommendation', () => {
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
     expect(
       screen.getByText('Select a recommendation from the list to see its full explanation.'),
     ).toBeInTheDocument();
@@ -147,7 +160,7 @@ describe('RecommendationDetailPanel — no selection', () => {
 describe('RecommendationDetailPanel — repayment (M7-033 Include items)', () => {
   it('shows the triggering condition, all current values, risk level, suggested action, and expected effect', () => {
     setReady('repayment');
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     expect(
       screen.getByText(
@@ -169,20 +182,20 @@ describe('RecommendationDetailPanel — repayment (M7-033 Include items)', () =>
 
   it('shows the Formula IDs and Formula Version', () => {
     setReady('repayment');
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText('F-062, F-040, F-041, F-042')).toBeInTheDocument();
     expect(screen.getByText('Engine 1.0 · Formula 1.0')).toBeInTheDocument();
   });
 
   it('omits Formula Version when no metadata is available', () => {
     setReady('repayment', { lastMetadata: null });
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.queryByText('Formula Version')).not.toBeInTheDocument();
   });
 
   it('clicking the related-tool action prefills Exit Planner and navigates, without mutating the portfolio', () => {
     setReady('repayment');
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     screen.getByRole('button', { name: 'Open Exit Planner with this target' }).click();
 
@@ -201,7 +214,7 @@ describe('RecommendationDetailPanel — repayment (M7-033 Include items)', () =>
         },
       },
     });
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     expect(
       screen.queryByRole('button', { name: 'Open Exit Planner with this target' }),
@@ -213,7 +226,7 @@ describe('RecommendationDetailPanel — repayment (M7-033 Include items)', () =>
 describe('RecommendationDetailPanel — additionalCollateral', () => {
   it('shows the collateral-specific current values', () => {
     setReady('additionalCollateral');
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByText('Current Collateral Value')).toBeInTheDocument();
     expect(screen.getByText('Required Additional Collateral (USD)')).toBeInTheDocument();
@@ -223,7 +236,7 @@ describe('RecommendationDetailPanel — additionalCollateral', () => {
   it('clicking the related-tool action runs a real Simulation action scenario and navigates, without mutating the live portfolio', async () => {
     const user = userEvent.setup();
     setReady('additionalCollateral');
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     await user.click(
       screen.getByRole('button', { name: 'Open Simulation Workspace with this target' }),
@@ -247,10 +260,171 @@ describe('RecommendationDetailPanel — additionalCollateral', () => {
         },
       },
     });
-    render(<RecommendationDetailPanel portfolio={PORTFOLIO} />);
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
 
     expect(
       screen.queryByRole('button', { name: 'Open Simulation Workspace with this target' }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * V1.1 Batch 5 ("Recommendation Quality & Explainability"). Uses a real
+ * portfolio (`usePortfolioStore().create(...)`) rather than the plain
+ * `PORTFOLIO` fixture above, since the Apply-to-Portfolio flow at the
+ * bottom of this describe block needs a real store record to write into
+ * — the same discipline `ApplyExitPlanToPortfolio.test.tsx` already
+ * establishes for the identical reason.
+ */
+function createValidPortfolio(): Portfolio {
+  const result = usePortfolioStore.getState().create({
+    name: 'My Portfolio',
+    baseCurrency: 'USD',
+    collateral: { asset: 'BTC', quantity: 2 },
+    debt: { asset: 'USDC', balance: 20000 },
+    market: { btcPriceUsd: 50000 },
+    protocol: { maxLoanToValue: 0.75, liquidationThreshold: 0.8, borrowApr: 0.05, supplyApr: 0.02 },
+    settings: { safetyTargets: { targetHealthFactor: 5 } },
+  });
+  if (!result.ok) throw new Error('setup failed');
+  return result.data;
+}
+
+function readyWithRealExplanations(portfolio: Portfolio): RecommendationExplanationSet {
+  const actionsResult = calculateTargetHealthFactorActions(portfolio, 5, 'manual');
+  if (!actionsResult.ok) throw new Error('setup failed');
+  const explanations = explainTargetHealthFactorActions(
+    portfolio,
+    portfolio.id,
+    portfolio.updatedAt,
+    actionsResult.data,
+    'High confidence',
+  );
+  useRecommendationCenterStore.setState({
+    ...RECOMMENDATION_CENTER_INITIAL_STATE,
+    status: 'ready',
+    portfolioId: portfolio.id,
+    targetHealthFactor: 5,
+    actions: actionsResult.data,
+    selectedItemId: 'repayment',
+  });
+  return explanations;
+}
+
+describe('RecommendationDetailPanel — V1.1 Batch 5: explanation extras', () => {
+  it('shows Quantified Impact, Risk/Tradeoff, Cost Impact, and Data Confidence for an actionable recommendation', () => {
+    const portfolio = createValidPortfolio();
+    const explanations = readyWithRealExplanations(portfolio);
+
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={explanations} />);
+
+    expect(screen.getByText('Quantified Impact')).toBeInTheDocument();
+    expect(screen.getByText('Risk / Tradeoff')).toBeInTheDocument();
+    expect(screen.getByText(explanations.repayment.risk)).toBeInTheDocument();
+    expect(screen.getByText('Cost Impact')).toBeInTheDocument();
+    expect(screen.getByText(explanations.repayment.costBenefit)).toBeInTheDocument();
+    expect(screen.getByText('Data Confidence')).toBeInTheDocument();
+    expect(screen.getByText('High confidence')).toBeInTheDocument();
+  });
+
+  it('omits Quantified Impact when the recommendation reports no action needed (no fabricated zero-change row)', () => {
+    const portfolio = createValidPortfolio();
+    // Target below the current HF — both recommendations report "no action needed."
+    const actionsResult = calculateTargetHealthFactorActions(portfolio, 1, 'manual');
+    if (!actionsResult.ok) throw new Error('setup failed');
+    const explanations = explainTargetHealthFactorActions(
+      portfolio,
+      portfolio.id,
+      portfolio.updatedAt,
+      actionsResult.data,
+      'High confidence',
+    );
+    useRecommendationCenterStore.setState({
+      ...RECOMMENDATION_CENTER_INITIAL_STATE,
+      status: 'ready',
+      portfolioId: portfolio.id,
+      targetHealthFactor: 1,
+      actions: actionsResult.data,
+      selectedItemId: 'repayment',
+    });
+
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={explanations} />);
+
+    expect(screen.queryByText('Quantified Impact')).not.toBeInTheDocument();
+    // Risk/Cost/Confidence still explain the (non-actionable) recommendation.
+    expect(screen.getByText('Risk / Tradeoff')).toBeInTheDocument();
+  });
+
+  it('renders nothing extra when explanations is null (backward compatible with the pre-Batch-5 Detail Panel)', () => {
+    const portfolio = createValidPortfolio();
+    readyWithRealExplanations(portfolio);
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={null} />);
+
+    expect(screen.queryByText('Quantified Impact')).not.toBeInTheDocument();
+    expect(screen.queryByText('Risk / Tradeoff')).not.toBeInTheDocument();
+    expect(screen.queryByText('Data Confidence')).not.toBeInTheDocument();
+  });
+});
+
+describe('RecommendationDetailPanel — V1.1 Batch 5, Section 7: Apply to Portfolio (reuses Batch 3 infrastructure)', () => {
+  it('reviewing then confirming Apply writes the real repaid debt to the tracked portfolio', () => {
+    const portfolio = createValidPortfolio();
+    const explanations = readyWithRealExplanations(portfolio);
+
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={explanations} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review Apply to Portfolio' }));
+    expect(screen.getByText(/does not execute transactions on Aave/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Apply to Portfolio$/i }));
+
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+    expect(record.portfolio.debt.balance).toBeCloseTo(
+      20000 - explanations.repayment.recommendation.relevantValues.requiredRepayment,
+      6,
+    );
+    expect(screen.getByText('Applied to portfolio.')).toBeInTheDocument();
+  });
+
+  it('Cancel discards the review without touching the portfolio', () => {
+    const portfolio = createValidPortfolio();
+    const explanations = readyWithRealExplanations(portfolio);
+
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={explanations} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review Apply to Portfolio' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(usePortfolioStore.getState().portfolios[portfolio.id].portfolio.debt.balance).toBe(
+      20000,
+    );
+    expect(screen.getByRole('button', { name: 'Review Apply to Portfolio' })).toBeInTheDocument();
+  });
+
+  it('does not show an Apply-to-Portfolio trigger when the recommendation reports no action needed', () => {
+    const portfolio = createValidPortfolio();
+    const actionsResult = calculateTargetHealthFactorActions(portfolio, 1, 'manual');
+    if (!actionsResult.ok) throw new Error('setup failed');
+    const explanations = explainTargetHealthFactorActions(
+      portfolio,
+      portfolio.id,
+      portfolio.updatedAt,
+      actionsResult.data,
+      'High confidence',
+    );
+    useRecommendationCenterStore.setState({
+      ...RECOMMENDATION_CENTER_INITIAL_STATE,
+      status: 'ready',
+      portfolioId: portfolio.id,
+      targetHealthFactor: 1,
+      actions: actionsResult.data,
+      selectedItemId: 'repayment',
+    });
+
+    render(<RecommendationDetailPanel portfolio={portfolio} explanations={explanations} />);
+
+    expect(
+      screen.queryByRole('button', { name: 'Review Apply to Portfolio' }),
     ).not.toBeInTheDocument();
   });
 });

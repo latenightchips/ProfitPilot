@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { RecommendationList } from '@/features/recommendations';
-import type { TargetHealthFactorActions } from '@/services';
+import type { RecommendationExplanationSet, TargetHealthFactorActions } from '@/services';
+import { explainTargetHealthFactorActions } from '@/services';
 import {
   type RecommendationCenterState,
   useRecommendationCenterStore,
@@ -80,6 +81,21 @@ const ACTIONS: TargetHealthFactorActions = {
   },
 };
 
+/** Both recommendations report "no action needed" — used for Section 6/9's healthy/no-action coverage. */
+const NO_ACTION_ACTIONS: TargetHealthFactorActions = {
+  targetHealthFactor: 1,
+  repayment: {
+    ...ACTIONS.repayment,
+    relevantValues: { ...ACTIONS.repayment.relevantValues, requiredRepayment: 0 },
+    suggestedAction: 'No repayment needed.',
+  },
+  additionalCollateral: {
+    ...ACTIONS.additionalCollateral,
+    relevantValues: { ...ACTIONS.additionalCollateral.relevantValues, requiredUsd: 0 },
+    suggestedAction: 'No additional collateral needed.',
+  },
+};
+
 beforeEach(() => {
   useRecommendationCenterStore.setState(INITIAL_STATE);
 });
@@ -96,13 +112,13 @@ function setReady(overrides: Partial<RecommendationCenterState> = {}) {
 
 describe('RecommendationList — status gates (M7-037 loading/empty states)', () => {
   it('shows a real "preparing" message before any recalculation has run', () => {
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText('Preparing recommendations…')).toBeInTheDocument();
   });
 
   it('shows a real message when no target Health Factor is configured', () => {
     useRecommendationCenterStore.setState({ ...INITIAL_STATE, status: 'noTarget' });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText(/No target Health Factor is configured/)).toBeInTheDocument();
   });
 });
@@ -115,7 +131,7 @@ describe('RecommendationList — error recovery (M7-038)', () => {
       portfolioId: 'portfolio-1',
       errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
     });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
     expect(screen.getByRole('link', { name: /Return to Portfolio/ })).toHaveAttribute(
@@ -133,7 +149,7 @@ describe('RecommendationList — error recovery (M7-038)', () => {
       actions: ACTIONS,
       errors: [{ category: 'calculation', code: 'X', message: 'Invalid collateral quantity.' }],
     });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Invalid collateral quantity.');
     expect(
@@ -152,7 +168,7 @@ describe('RecommendationList — unavailable categories', () => {
     ['leverage', /conflict #29/],
   ] as const)('shows a real, traceable reason for the %s filter', (category, expected) => {
     setReady({ categoryFilter: category });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
@@ -161,7 +177,7 @@ describe('RecommendationList — unavailable categories', () => {
 describe('RecommendationList — real recommendations, grouping and filtering', () => {
   it('shows both real recommendations under the same severity group when both share a Decision Priority tier', () => {
     setReady();
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByRole('heading', { name: 'High' })).toBeInTheDocument();
     expect(
@@ -176,7 +192,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('filters to only the Debt category', () => {
     setReady({ categoryFilter: 'debt' });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByText(/Current debt exceeds/)).toBeInTheDocument();
     expect(screen.queryByText(/Current collateral is insufficient/)).not.toBeInTheDocument();
@@ -184,7 +200,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('filters to only the Collateral category', () => {
     setReady({ categoryFilter: 'collateral' });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.queryByText(/Current debt exceeds/)).not.toBeInTheDocument();
     expect(screen.getByText(/Current collateral is insufficient/)).toBeInTheDocument();
@@ -192,7 +208,7 @@ describe('RecommendationList — real recommendations, grouping and filtering', 
 
   it('renders items in a fixed, deterministic order (repayment before additionalCollateral within the same severity group)', () => {
     setReady();
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     const rows = screen.getAllByRole('button', { name: /High · Maintain Target Health Factor/ });
     expect(rows[0]).toHaveTextContent('Current debt exceeds');
@@ -204,7 +220,7 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
   it('acknowledging an item moves it out of the active groups and into the Acknowledged section', async () => {
     const user = userEvent.setup();
     setReady();
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     const acknowledgeButtons = screen.getAllByRole('button', { name: 'Acknowledge' });
     expect(acknowledgeButtons).toHaveLength(2);
@@ -222,7 +238,7 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
         'portfolio-1': { repayment: { ...ACTIONS.repayment.relevantValues } },
       },
     });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByRole('heading', { name: 'Acknowledged' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Un-acknowledge' }));
@@ -238,9 +254,62 @@ describe('RecommendationList — acknowledgement (M7-035)', () => {
         'portfolio-1': { repayment: { ...ACTIONS.repayment.relevantValues } },
       },
     });
-    render(<RecommendationList portfolio={PORTFOLIO} />);
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
 
     expect(screen.getByText(/No active recommendations in this category/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Acknowledged' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * V1.1 Batch 5, Section 6/9 — a non-actionable ("no action needed")
+ * recommendation is demoted to the `'Informational'` severity tier and,
+ * once every currently-computed item is non-actionable, a dedicated
+ * healthy/no-action banner explains that plainly rather than leaving the
+ * user to infer it from two individually-worded rows.
+ */
+describe('RecommendationList — V1.1 Batch 5: healthy / no-action state', () => {
+  it('shows an explicit no-action banner naming the watched Target Health Factor when nothing needs to change', () => {
+    setReady({ actions: NO_ACTION_ACTIONS, targetHealthFactor: 1 });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('No action needed right now');
+    expect(screen.getByRole('status')).toHaveTextContent('(1)');
+  });
+
+  it('demotes both items to the Informational tier instead of High when no action is needed', () => {
+    setReady({ actions: NO_ACTION_ACTIONS, targetHealthFactor: 1 });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByRole('heading', { name: 'Informational' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'High' })).not.toBeInTheDocument();
+  });
+
+  it('does not show the no-action banner when at least one recommendation is actionable', () => {
+    setReady();
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('RecommendationList — V1.1 Batch 5: confidence badge', () => {
+  it('shows each row’s confidence category from the supplied explanations, without needing to open the Detail Panel', () => {
+    setReady();
+    const explanations: RecommendationExplanationSet = explainTargetHealthFactorActions(
+      PORTFOLIO,
+      PORTFOLIO.id,
+      PORTFOLIO.updatedAt,
+      ACTIONS,
+      'Medium confidence',
+    );
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={explanations} />);
+
+    expect(screen.getAllByText(/Medium confidence/)).toHaveLength(2);
+  });
+
+  it('renders no confidence text when explanations is null (backward compatible)', () => {
+    setReady();
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
   });
 });

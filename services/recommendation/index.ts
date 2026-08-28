@@ -17,6 +17,14 @@
  * Engine file changes were needed for that addition, only this barrel.
  */
 export {
+  explainTargetHealthFactorActions,
+  type RecommendationConfidence,
+  type RecommendationExplanation,
+  type RecommendationExplanationSet,
+  type RecommendationImpact,
+  type RecommendationMetricChange,
+} from './explainRecommendation';
+export {
   generateRecommendationSet,
   type RankedRecommendation,
   type RecommendationResult,

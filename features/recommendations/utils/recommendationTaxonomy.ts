@@ -1,5 +1,8 @@
 import type { DecisionPriority, Recommendation, RecommendationCategory } from '@/services';
-import type { RecommendationFilterCategory } from '@/stores/recommendationCenterStore';
+import type {
+  RecommendationFilterCategory,
+  RecommendationItemId,
+} from '@/stores/recommendationCenterStore';
 
 /**
  * Recommendation Center taxonomy — 06_TASKS.md M7-032 ("Implement
@@ -69,7 +72,50 @@ const SEVERITY_BY_DECISION_PRIORITY: Record<DecisionPriority, RecommendationSeve
   'Achieve User Goals': 'Informational',
 };
 
-export function severityFor(recommendation: Recommendation): RecommendationSeverity {
+/**
+ * Whether a computed recommendation has a real, non-zero action to take —
+ * V1.1 Batch 5, Section 6/9. Both `calculateRepaymentRecommendation`
+ * (F-062) and `calculateAdditionalCollateralRecommendation` (F-063)
+ * always return a `Recommendation` object even when nothing needs to
+ * change (`requiredRepayment`/`requiredUsd` clamped to `0`,
+ * `suggestedAction: 'No repayment/collateral needed.'`) — the ENGINE's
+ * own "state the current-state trigger regardless" contract (M2-026).
+ * This is the one place that decides, from the same two fixed
+ * `relevantValues` keys `RecommendationDetailPanel.tsx`'s own
+ * `isActionable` already reads, whether that object represents a real
+ * suggestion or a "you're fine" confirmation — centralized here (not
+ * duplicated per-component) so `severityFor` and the Detail Panel's
+ * action-link gating can never disagree about which case they're in.
+ */
+export function isActionableRecommendation(
+  id: RecommendationItemId,
+  recommendation: Recommendation,
+): boolean {
+  return id === 'repayment'
+    ? recommendation.relevantValues.requiredRepayment > 0
+    : recommendation.relevantValues.requiredUsd > 0;
+}
+
+/**
+ * Severity — Section 6/9. A non-actionable recommendation ("no action
+ * needed") is always `'Informational'`, regardless of its
+ * `decisionPriority` — a "you're fine" confirmation must never sit in the
+ * same visual tier as a real, urgent action, even though both
+ * `repayment`/`additionalCollateral` share the identical hardcoded
+ * `'Maintain Target Health Factor'` decision priority today (see
+ * `RecommendationList.tsx`'s own `sortItems` comment on why the priority
+ * comparison itself is currently a no-op). This is the one real ranking
+ * change this batch makes: it does not reorder actionable recommendations
+ * relative to each other (nothing in this Recommendation Center yet
+ * produces two actionable items at different decision priorities — see
+ * PROJECT_STATUS.md conflict #29), it only demotes a non-actionable one
+ * out of the tier a real action would occupy.
+ */
+export function severityFor(
+  id: RecommendationItemId,
+  recommendation: Recommendation,
+): RecommendationSeverity {
+  if (!isActionableRecommendation(id, recommendation)) return 'Informational';
   return SEVERITY_BY_DECISION_PRIORITY[recommendation.decisionPriority];
 }
 

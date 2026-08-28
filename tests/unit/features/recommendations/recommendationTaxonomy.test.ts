@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ADDITIONAL_COLLATERAL_VALUE_LABELS,
   filterCategoryFor,
+  isActionableRecommendation,
   RECOMMENDATION_FILTER_CATEGORIES,
   REPAYMENT_VALUE_LABELS,
   SEVERITY_ORDER,
@@ -20,7 +21,7 @@ function recommendation(overrides: Partial<Recommendation> = {}): Recommendation
   return {
     category: 'debtManagement',
     triggeringCondition: 'x',
-    relevantValues: {},
+    relevantValues: { requiredRepayment: 100 },
     expectedEffect: 'x',
     decisionPriority: 'Maintain Target Health Factor',
     suggestedAction: 'x',
@@ -30,26 +31,75 @@ function recommendation(overrides: Partial<Recommendation> = {}): Recommendation
 }
 
 describe('severityFor', () => {
-  it('maps all five documented Decision Priority tiers to a severity, preserving safety-first order', () => {
-    expect(severityFor(recommendation({ decisionPriority: 'Prevent Liquidation' }))).toBe(
-      'Critical',
-    );
-    expect(severityFor(recommendation({ decisionPriority: 'Maintain Target Health Factor' }))).toBe(
-      'High',
-    );
-    expect(severityFor(recommendation({ decisionPriority: 'Reduce Interest Costs' }))).toBe(
-      'Medium',
-    );
-    expect(severityFor(recommendation({ decisionPriority: 'Improve Capital Efficiency' }))).toBe(
-      'Medium',
-    );
-    expect(severityFor(recommendation({ decisionPriority: 'Achieve User Goals' }))).toBe(
-      'Informational',
-    );
+  it('maps all five documented Decision Priority tiers to a severity, preserving safety-first order, for an actionable recommendation', () => {
+    expect(
+      severityFor('repayment', recommendation({ decisionPriority: 'Prevent Liquidation' })),
+    ).toBe('Critical');
+    expect(
+      severityFor(
+        'repayment',
+        recommendation({ decisionPriority: 'Maintain Target Health Factor' }),
+      ),
+    ).toBe('High');
+    expect(
+      severityFor('repayment', recommendation({ decisionPriority: 'Reduce Interest Costs' })),
+    ).toBe('Medium');
+    expect(
+      severityFor('repayment', recommendation({ decisionPriority: 'Improve Capital Efficiency' })),
+    ).toBe('Medium');
+    expect(
+      severityFor('repayment', recommendation({ decisionPriority: 'Achieve User Goals' })),
+    ).toBe('Informational');
+  });
+
+  it('V1.1 Batch 5: demotes a non-actionable ("no action needed") recommendation to Informational, regardless of decisionPriority', () => {
+    const noActionNeeded = recommendation({
+      decisionPriority: 'Prevent Liquidation',
+      relevantValues: { requiredRepayment: 0 },
+    });
+    expect(severityFor('repayment', noActionNeeded)).toBe('Informational');
   });
 
   it('SEVERITY_ORDER lists all four buckets, most severe first', () => {
     expect(SEVERITY_ORDER).toEqual(['Critical', 'High', 'Medium', 'Informational']);
+  });
+});
+
+describe('isActionableRecommendation', () => {
+  it('is true for repayment when requiredRepayment is positive', () => {
+    expect(
+      isActionableRecommendation(
+        'repayment',
+        recommendation({ relevantValues: { requiredRepayment: 5 } }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false for repayment when requiredRepayment is 0', () => {
+    expect(
+      isActionableRecommendation(
+        'repayment',
+        recommendation({ relevantValues: { requiredRepayment: 0 } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('is true for additionalCollateral when requiredUsd is positive', () => {
+    expect(
+      isActionableRecommendation(
+        'additionalCollateral',
+        recommendation({ relevantValues: { requiredUsd: 5 } }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false for additionalCollateral when requiredUsd is 0', () => {
+    expect(
+      isActionableRecommendation(
+        'additionalCollateral',
+        recommendation({ relevantValues: { requiredUsd: 0 } }),
+      ),
+    ).toBe(false);
   });
 });
 

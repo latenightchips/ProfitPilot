@@ -3,12 +3,13 @@
 import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import {
   filterCategoryFor,
+  isActionableRecommendation,
   type RecommendationSeverity,
   SEVERITY_ORDER,
   severityFor,
   UNAVAILABLE_FILTER_REASONS,
 } from '@/features/recommendations/utils/recommendationTaxonomy';
-import type { Recommendation } from '@/services';
+import type { Recommendation, RecommendationExplanationSet } from '@/services';
 import {
   type RecommendationItemId,
   useRecommendationCenterStore,
@@ -62,21 +63,28 @@ interface ListItem {
 
 function sortItems(items: ListItem[]): ListItem[] {
   return [...items].sort((a, b) => {
-    // `severityDelta !== 0` is unreachable given today's real data —
-    // both `repayment` and `additionalCollateral` always carry the same
-    // `decisionPriority` ('Maintain Target Health Factor', hardcoded in
-    // `calculateRepaymentRecommendation`/`calculateAdditionalCollateralRecommendation`),
-    // so they always land in the same severity group. Written generically
-    // (primary severity key, `ITEM_ORDER` tiebreak) rather than assuming
-    // that correlation, the same defense-in-depth precedent this file's
-    // own other documented-unreachable branches already establish.
+    // V1.1 Batch 5: `severityDelta !== 0` IS now reachable —
+    // `severityFor` (`recommendationTaxonomy.ts`) demotes a non-actionable
+    // "no action needed" item to `'Informational'` regardless of its
+    // `decisionPriority`, so a genuinely actionable `repayment` and a
+    // non-actionable `additionalCollateral` (or vice versa) land in
+    // different severity groups and this comparison decides their
+    // relative order. `ITEM_ORDER` remains the tiebreak for two items
+    // that land in the same group (still the common case: both
+    // actionable, or both not).
     const severityDelta = SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
     if (severityDelta !== 0) return severityDelta;
     return ITEM_ORDER.indexOf(a.id) - ITEM_ORDER.indexOf(b.id);
   });
 }
 
-function RecommendationRow({ item }: { item: ListItem }) {
+function RecommendationRow({
+  item,
+  explanations,
+}: {
+  item: ListItem;
+  explanations: RecommendationExplanationSet | null;
+}) {
   const selectedItemId = useRecommendationCenterStore((state) => state.selectedItemId);
   const selectItem = useRecommendationCenterStore((state) => state.selectItem);
   const acknowledgements = useRecommendationCenterStore((state) => state.acknowledgements);
@@ -87,6 +95,7 @@ function RecommendationRow({ item }: { item: ListItem }) {
   const isAcknowledged =
     portfolioId !== null && acknowledgements[portfolioId]?.[item.id] !== undefined;
   const isSelected = selectedItemId === item.id;
+  const confidence = explanations?.[item.id].confidence ?? null;
 
   return (
     <li
@@ -99,8 +108,11 @@ function RecommendationRow({ item }: { item: ListItem }) {
         onClick={() => selectItem(item.id)}
         className="flex flex-col items-start gap-1 text-left"
       >
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {item.severity} · {item.recommendation.decisionPriority}
+        <span className="flex flex-wrap items-center gap-x-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span>
+            {item.severity} · {item.recommendation.decisionPriority}
+          </span>
+          {confidence !== null && <span className="normal-case">· {confidence}</span>}
         </span>
         <span className="font-medium text-foreground">
           {item.recommendation.triggeringCondition}
@@ -120,13 +132,20 @@ function RecommendationRow({ item }: { item: ListItem }) {
   );
 }
 
-export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
+export function RecommendationList({
+  portfolio,
+  explanations,
+}: {
+  portfolio: Portfolio;
+  explanations: RecommendationExplanationSet | null;
+}) {
   const status = useRecommendationCenterStore((state) => state.status);
   const actions = useRecommendationCenterStore((state) => state.actions);
   const errors = useRecommendationCenterStore((state) => state.errors);
   const categoryFilter = useRecommendationCenterStore((state) => state.categoryFilter);
   const acknowledgements = useRecommendationCenterStore((state) => state.acknowledgements);
   const portfolioId = useRecommendationCenterStore((state) => state.portfolioId);
+  const targetHealthFactor = useRecommendationCenterStore((state) => state.targetHealthFactor);
 
   if (status === 'idle') {
     return <p className="text-sm text-muted-foreground">Preparing recommendations…</p>;
@@ -149,7 +168,7 @@ export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
       ? []
       : ITEM_ORDER.map((id) => {
           const recommendation = actions[id];
-          return { id, recommendation, severity: severityFor(recommendation) };
+          return { id, recommendation, severity: severityFor(id, recommendation) };
         }).filter((item) =>
           categoryFilter === 'all'
             ? true
@@ -167,6 +186,23 @@ export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
   );
   const activeItems = sortItems(allItems.filter((item) => !acknowledgedIds.has(item.id)));
   const acknowledgedItems = sortItems(allItems.filter((item) => acknowledgedIds.has(item.id)));
+
+  /**
+   * V1.1 Batch 5, Section 9 — "A healthy portfolio should not receive
+   * artificial recommendations merely to fill the screen." Every
+   * currently-computed item (`repayment`/`additionalCollateral`) already
+   * exists even when nothing needs to change (`suggestedAction: 'No ...
+   * needed.'`); this banner states that plainly instead of leaving the
+   * user to infer it from two individually-worded "no action" rows, and
+   * names the one metric actually being watched (this portfolio's own
+   * configured Target Health Factor) plus the fact that conditions can
+   * change. The individual rows remain visible below (now demoted to the
+   * `'Informational'` tier by `severityFor`) — this is a clarifying
+   * banner, not a replacement for them.
+   */
+  const allHealthy =
+    allItems.length > 0 &&
+    allItems.every((item) => !isActionableRecommendation(item.id, item.recommendation));
 
   return (
     <div className="flex flex-col gap-4">
@@ -198,6 +234,16 @@ export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
             <p className="text-sm text-muted-foreground">No recommendations in this category.</p>
           )}
 
+          {allHealthy && (
+            <p role="status" className="text-sm text-foreground">
+              No action needed right now — this portfolio&rsquo;s risk looks acceptable against its
+              configured Target Health Factor
+              {targetHealthFactor !== null ? ` (${targetHealthFactor})` : ''}. Health Factor and
+              debt/collateral levels are still being watched here and will change if price, rates,
+              or your position change.
+            </p>
+          )}
+
           {SEVERITY_ORDER.filter((severity) =>
             activeItems.some((item) => item.severity === severity),
           ).map((severity) => (
@@ -209,7 +255,7 @@ export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
                 {activeItems
                   .filter((item) => item.severity === severity)
                   .map((item) => (
-                    <RecommendationRow key={item.id} item={item} />
+                    <RecommendationRow key={item.id} item={item} explanations={explanations} />
                   ))}
               </ul>
             </div>
@@ -228,7 +274,7 @@ export function RecommendationList({ portfolio }: { portfolio: Portfolio }) {
               </h3>
               <ul className="flex flex-col gap-2">
                 {acknowledgedItems.map((item) => (
-                  <RecommendationRow key={item.id} item={item} />
+                  <RecommendationRow key={item.id} item={item} explanations={explanations} />
                 ))}
               </ul>
             </div>
