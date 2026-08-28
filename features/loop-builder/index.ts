@@ -29,6 +29,7 @@
  * `LoopStrategyLibrary` (M7-017), and `LoopStrategyExport` (M7-018).
  */
 export { ApplyLoopAsSimulation } from './components/ApplyLoopAsSimulation';
+export { ApplyLoopToPortfolio } from './components/ApplyLoopToPortfolio';
 export { LoopCostAnalysis } from './components/LoopCostAnalysis';
 export { LoopPresets } from './components/LoopPresets';
 export { LoopSafetyAnalysis } from './components/LoopSafetyAnalysis';

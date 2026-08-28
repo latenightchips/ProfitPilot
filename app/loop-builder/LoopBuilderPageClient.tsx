@@ -9,6 +9,7 @@ import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import { StrategyWarnings } from '@/components/strategy/StrategyWarnings';
 import {
   ApplyLoopAsSimulation,
+  ApplyLoopToPortfolio,
   LoopCostAnalysis,
   LoopPresets,
   LoopSafetyAnalysis,
@@ -303,6 +304,10 @@ export function LoopBuilderPageClient() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Apply as Simulation</h2>
               <ApplyLoopAsSimulation portfolio={record.portfolio} />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Apply to Portfolio</h2>
+              <ApplyLoopToPortfolio portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Save Strategy</h2>

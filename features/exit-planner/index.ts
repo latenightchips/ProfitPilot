@@ -17,6 +17,7 @@
  * for why a nominally test-only task added a real production component.
  */
 export { ApplyExitPlanAsSimulation } from './components/ApplyExitPlanAsSimulation';
+export { ApplyExitPlanToPortfolio } from './components/ApplyExitPlanToPortfolio';
 export { ExitFeasibilityAnalysis } from './components/ExitFeasibilityAnalysis';
 export { ExitPlanExport } from './components/ExitPlanExport';
 export { ExitPlanLibrary } from './components/ExitPlanLibrary';

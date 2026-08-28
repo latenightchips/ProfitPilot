@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { autoSaveCoordinator, calculatePortfolioSummary } from '@/services';
+import {
+  autoSaveCoordinator,
+  calculatePortfolioSummary,
+  type PortfolioApplyProposal,
+} from '@/services';
 import { buildLocalStorageKey } from '@/services/persistence/adapters/localStorageKeys';
 import { computeChecksum } from '@/services/persistence/envelope';
 import { listPortfolioHistoryForPortfolio } from '@/services/persistence/portfolioHistory';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import type { Portfolio } from '@/types/portfolio';
 
 /**
  * Portfolio Store — 06_TASKS.md M4-003.
@@ -2281,5 +2286,203 @@ describe('usePortfolioStore — Portfolio History trigger wiring (V1.1 Batch 2)'
     expect(v4Listed.ok).toBe(true);
     if (!v4Listed.ok) return;
     expect(v4Listed.data.map((e) => e.payload.protocolVersion).sort()).toEqual(['v3', 'v4']);
+  });
+});
+
+/**
+ * V1.1 Batch 3 ("Apply to Portfolio") — `applyPortfolioState`. Proposals
+ * are constructed directly here (a plain `PortfolioApplyProposal`
+ * object, using the real `calculatePortfolioSummary` for `before`/
+ * `after`) rather than via `services/portfolioApply`'s own builders —
+ * the same "isolate the layer under test" discipline every other test in
+ * this file already follows (`validInput()` fixtures, not real
+ * Loop/Simulation results). `services/portfolioApply`'s own tests prove
+ * the builders themselves produce a correct proposal; these tests prove
+ * the Store correctly turns any well-formed proposal into a real state
+ * change.
+ */
+function applyProposalFor(
+  portfolio: Portfolio,
+  overrides: Partial<PortfolioApplyProposal> = {},
+): PortfolioApplyProposal {
+  const proposedPortfolio = {
+    ...portfolio,
+    collateral: { asset: portfolio.collateral.asset, quantity: 3 },
+    debt: { asset: portfolio.debt.asset, balance: 30000 },
+  };
+  const before = calculatePortfolioSummary(portfolio, 'manual');
+  const after = calculatePortfolioSummary(proposedPortfolio, 'manual');
+  if (!before.ok || !after.ok) throw new Error('setup failed: expected summaries to succeed');
+
+  return {
+    sourceWorkflow: 'loopBuilder',
+    portfolioId: portfolio.id,
+    sourcePortfolioUpdatedAt: portfolio.updatedAt,
+    protocolVersion: portfolio.protocolVersion === 'v4' ? 'v4' : 'v3',
+    proposedPortfolio,
+    unchangedAssumptions: ['Market price'],
+    before: before.data,
+    after: after.data,
+    valueBasis: 'hypothetical',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('usePortfolioStore.applyPortfolioState (V1.1 Batch 3)', () => {
+  it('writes the proposed collateral/debt and bumps updatedAt', () => {
+    const created = createValidPortfolio();
+    const proposal = applyProposalFor(created);
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.collateral.quantity).toBe(3);
+    expect(result.data.debt.balance).toBe(30000);
+    expect(result.data.updatedAt).not.toBe(created.updatedAt);
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+    expect(record.summary.data.debtValue).toBe(30000);
+  });
+
+  it('fails for a portfolio that does not exist', () => {
+    const created = createValidPortfolio();
+    const proposal = applyProposalFor(created, { portfolioId: 'missing-id' });
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('PORTFOLIO_NOT_FOUND');
+  });
+
+  it('Section 9 — refuses a stale proposal (portfolio changed since it was generated), and does not mutate the portfolio', () => {
+    const created = createValidPortfolio();
+    const proposal = applyProposalFor(created);
+    // A forced later system time, not just a second `update()` call —
+    // `updatedAt` is millisecond-precision and a same-tick create+update
+    // in a fast test run can otherwise land on the identical timestamp,
+    // which would make this test pass for the wrong reason (a real clock
+    // gap, not the staleness check itself). Same pattern this file's own
+    // `marketUpdatedAt`/`protocolUpdatedAt` tests already use.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.updatedAt) + 60_000));
+    // The portfolio changes after the proposal was built (e.g. a name edit).
+    usePortfolioStore.getState().update(created.id, { name: 'Renamed after proposal' });
+    vi.useRealTimers();
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('PORTFOLIO_APPLY_STALE_RESULT');
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.collateral.quantity).toBe(created.collateral.quantity);
+    expect(record.portfolio.debt.balance).toBe(created.debt.balance);
+  });
+
+  it('Section 2 — refuses a proposal built for the other protocol version, and does not mutate the portfolio', () => {
+    const created = createValidPortfolio();
+    const proposal = applyProposalFor(created, { protocolVersion: 'v4' });
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('PORTFOLIO_APPLY_PROTOCOL_VERSION_MISMATCH');
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.collateral.quantity).toBe(created.collateral.quantity);
+  });
+
+  it('Section 8 — a V4 proposal writes v4DebtStateSource "manual", never "live", and clears any pending live candidate', () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    // 'manual' (not 'live') — a live-sourced v4DebtState with no
+    // authoritative debtAssetPriceUsd fails closed
+    // (AAVE_V4_DEBT_ASSET_PRICE_MISSING); this test's own concern is
+    // provenance after Apply, not live-price validation.
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtStateCandidate(created.id, {
+      ...VALID_V4_DEBT_STATE,
+      drawnDebt: 99999,
+    });
+    const current = usePortfolioStore.getState().portfolios[created.id].portfolio;
+
+    const proposedV4DebtState = {
+      drawnDebt: 5000,
+      premiumDebt: 100,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    };
+    const proposal = applyProposalFor(current, {
+      protocolVersion: 'v4',
+      proposedPortfolio: {
+        ...current,
+        collateral: { asset: current.collateral.asset, quantity: 3 },
+        debt: { asset: current.debt.asset, balance: 5100 },
+        v4DebtState: proposedV4DebtState,
+      },
+    });
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.v4DebtState).toEqual(proposedV4DebtState);
+    expect(result.data.v4DebtStateSource).toBe('manual');
+    expect(usePortfolioStore.getState().v4DebtStateCandidates[created.id]).toBeUndefined();
+  });
+
+  it('Section 6 — a full-repay proposal produces a real Infinity Health Factor, not a fabricated finite one', () => {
+    const created = createValidPortfolio();
+    const proposal = applyProposalFor(created, {
+      proposedPortfolio: {
+        ...created,
+        collateral: created.collateral,
+        debt: { asset: created.debt.asset, balance: 0 },
+      },
+    });
+
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(true);
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+    expect(record.summary.data.healthFactor).toBe(Infinity);
+    expect(record.summary.data.liquidation).toBeNull();
+  });
+
+  it('Section 7 — creates exactly one history snapshot on success', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    const proposal = applyProposalFor(created);
+    usePortfolioStore.getState().applyPortfolioState(proposal);
+    await waitForHistoryLength(created.id, 2);
+
+    // No further snapshot from a stale/duplicate re-apply attempt of the
+    // SAME (now-stale) proposal — it is refused outright (Section 9),
+    // never reaching the point where a snapshot could be taken.
+    const reapplied = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(reapplied.ok).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok && listed.data).toHaveLength(2);
+  });
+
+  it('Section 9 — applying to one portfolio never affects another (portfolio isolation)', () => {
+    const a = createValidPortfolio();
+    const b = createValidPortfolio();
+    const proposal = applyProposalFor(a);
+
+    usePortfolioStore.getState().applyPortfolioState(proposal);
+
+    const recordB = usePortfolioStore.getState().portfolios[b.id];
+    expect(recordB.portfolio.collateral.quantity).toBe(b.collateral.quantity);
+    expect(recordB.portfolio.debt.balance).toBe(b.debt.balance);
+    expect(recordB.portfolio.updatedAt).toBe(b.updatedAt);
   });
 });

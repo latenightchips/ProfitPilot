@@ -96,6 +96,7 @@ import {
 } from '@/services/shared/formulaStep';
 import {
   createServiceSuccess,
+  type ServiceFailure,
   type ServiceResult,
   type ServiceSuccess,
   type ServiceWarning,
@@ -108,6 +109,80 @@ export interface PortfolioActionSimulationInput {
 
 export interface PortfolioActionSimulationResult extends PortfolioActionPreview {
   profitOrLoss: number;
+}
+
+/**
+ * Builds the resulting "after" portfolio for a collateral/debt delta,
+ * without computing any before/after comparison — extracted at V1.1
+ * Batch 3 ("Apply to Portfolio") from `simulatePortfolioAction`'s own
+ * inline construction, which now calls the same private step
+ * (`buildAfterPortfolioStep` below) internally rather than duplicating
+ * it. The one new external consumer is `services/portfolioApply`'s
+ * Simulation and Exit Planner proposal builders: both features already
+ * reduce their own result to exactly this `{collateralDelta, debtDelta}`
+ * shape (Exit Planner via `-transaction.btcSold`/`-transaction.repayment`
+ * — the same numbers `ApplyExitPlanAsSimulation.tsx` already uses), so
+ * reusing this one function — rather than re-deriving
+ * `deriveV4DebtStateAfterDelta`'s V4 fail-closed rule a second, subtly
+ * different way — is what keeps "Apply to Portfolio" and "Apply as
+ * Simulation" from ever silently disagreeing about what a given delta
+ * produces.
+ */
+function buildAfterPortfolioStep(
+  portfolio: ApplicationPortfolio,
+  input: PortfolioActionSimulationInput,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+):
+  | { ok: true; data: ApplicationPortfolio; warnings: ServiceWarning[] }
+  | { ok: false; failure: ServiceFailure } {
+  const warnings: ServiceWarning[] = [];
+  let afterV4DebtState: AaveV4DebtState | undefined;
+  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
+    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
+      portfolio.v4DebtState,
+      input.debtDelta,
+      tracked,
+      sourceStatus,
+    );
+    if (!v4DebtStateStep.ok) return { ok: false, failure: v4DebtStateStep.failure };
+    warnings.push(...v4DebtStateStep.warnings);
+    afterV4DebtState = v4DebtStateStep.value;
+  }
+
+  const afterPortfolio: ApplicationPortfolio = {
+    ...portfolio,
+    collateral: {
+      ...portfolio.collateral,
+      quantity: portfolio.collateral.quantity + input.collateralDelta,
+    },
+    debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
+    ...(portfolio.protocolVersion === 'v4' &&
+      portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
+  };
+
+  return { ok: true, data: afterPortfolio, warnings };
+}
+
+export function buildPortfolioActionAfterPortfolio(
+  portfolio: ApplicationPortfolio,
+  input: PortfolioActionSimulationInput,
+  sourceStatus: string,
+): ServiceResult<ApplicationPortfolio> {
+  const beforeResult = calculatePortfolioSummary(portfolio, sourceStatus);
+  if (!beforeResult.ok) return beforeResult;
+
+  const tracked: TrackedFormulaVersion = {
+    engineVersion: beforeResult.metadata.engineVersion,
+    formulaVersion: beforeResult.metadata.formulaVersion,
+  };
+  const step = buildAfterPortfolioStep(portfolio, input, tracked, sourceStatus);
+  if (!step.ok) return step.failure;
+
+  return createServiceSuccess(step.data, optionsFromTracked(sourceStatus, tracked), [
+    ...beforeResult.warnings,
+    ...step.warnings,
+  ]);
 }
 
 /**
@@ -184,36 +259,18 @@ export function simulatePortfolioAction(
   const beforeResult = calculatePortfolioSummary(portfolio, sourceStatus);
   if (!beforeResult.ok) return beforeResult;
 
-  const warnings: ServiceWarning[] = [...beforeResult.warnings];
-  let afterV4DebtState: AaveV4DebtState | undefined;
-  if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
-    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
-      portfolio.v4DebtState,
-      input.debtDelta,
-      {
-        engineVersion: beforeResult.metadata.engineVersion,
-        formulaVersion: beforeResult.metadata.formulaVersion,
-      },
-      sourceStatus,
-    );
-    if (!v4DebtStateStep.ok) return v4DebtStateStep.failure;
-    warnings.push(...v4DebtStateStep.warnings);
-    afterV4DebtState = v4DebtStateStep.value;
-  }
-
-  const afterPortfolio: ApplicationPortfolio = {
-    ...portfolio,
-    collateral: {
-      ...portfolio.collateral,
-      quantity: portfolio.collateral.quantity + input.collateralDelta,
-    },
-    debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
-    ...(portfolio.protocolVersion === 'v4' &&
-      portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
+  const tracked: TrackedFormulaVersion = {
+    engineVersion: beforeResult.metadata.engineVersion,
+    formulaVersion: beforeResult.metadata.formulaVersion,
   };
+  const step = buildAfterPortfolioStep(portfolio, input, tracked, sourceStatus);
+  if (!step.ok) return step.failure;
 
-  const result = compareAgainstBefore(beforeResult, afterPortfolio, sourceStatus);
+  const result = compareAgainstBefore(beforeResult, step.data, sourceStatus);
   if (!result.ok) return result;
 
-  return { ...result, warnings: [...warnings, ...result.warnings] };
+  return {
+    ...result,
+    warnings: [...beforeResult.warnings, ...step.warnings, ...result.warnings],
+  };
 }

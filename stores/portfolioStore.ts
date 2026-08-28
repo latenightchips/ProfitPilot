@@ -241,6 +241,7 @@ import {
   type MappingResult,
   type PersistedActivePortfolio,
   persistenceService,
+  type PortfolioApplyProposal,
   type PortfolioSummary,
   type ServiceResult,
   SINGLETON_RECORD_ID,
@@ -250,6 +251,8 @@ import {
   aaveV4CollateralRiskConfigSchema,
   aaveV4DebtStateSchema,
   aaveV4PositionIdentitySchema,
+  collateralPositionSchema,
+  debtPositionSchema,
   marketPricesSchema,
   type PortfolioInput,
   portfolioInputSchema,
@@ -328,6 +331,49 @@ export interface PortfolioStoreActions {
   load: () => Promise<void>;
   create: (input: unknown) => MappingResult<Portfolio>;
   update: (id: string, input: unknown) => MappingResult<Portfolio>;
+  /**
+   * V1.1 Batch 3 ("Apply to Portfolio") — turns an already-confirmed
+   * `PortfolioApplyProposal` (built by `services/portfolioApply`,
+   * `stores/simulationStore.ts`/`loopBuilderStore.ts`/`exitPlannerStore.ts`'s
+   * own current result) into a real change to this portfolio's
+   * `collateral`/`debt`/`protocolVersion`/`v4DebtState`. Deliberately NOT
+   * routed through `update`'s full-form `portfolioInputSchema` — the same
+   * "narrow, own-schema action" precedent `setAaveV4DebtState`/
+   * `setAaveV4Position` already establish for a value that isn't
+   * form-driven — validating only `collateral`/`debt`/`v4DebtState`
+   * against their own existing schemas.
+   *
+   * **Stale-result protection (Section 9)**: fails with
+   * `PORTFOLIO_APPLY_STALE_RESULT` when `proposal.sourcePortfolioUpdatedAt`
+   * no longer matches this portfolio's current `updatedAt` — the portfolio
+   * changed since the proposal was generated (a live sync landed, a form
+   * edit was saved, or the protocol version was switched), so the proposed
+   * before/after numbers are no longer trustworthy. Never applies stale
+   * assumptions; the caller must regenerate the proposal and reconfirm.
+   *
+   * **V3/V4 isolation (Section 2)**: also fails
+   * (`PORTFOLIO_APPLY_PROTOCOL_VERSION_MISMATCH`) when
+   * `proposal.protocolVersion` no longer matches this portfolio's own —
+   * defense in depth alongside the staleness check above, since a
+   * protocol-version switch always bumps `updatedAt` too.
+   *
+   * **Ownership after Apply (Section 8)**: a proposal's `v4DebtState`, if
+   * present, is written with `v4DebtStateSource: 'manual'`, never
+   * `'live'` — `proposal.valueBasis` is always `'hypothetical'`, and this
+   * is the concrete mechanism ensuring the next live sync
+   * (`hooks/useAaveV4LiveSync.ts`) proposes a confirmable CANDIDATE
+   * against this newly-applied value rather than silently overwriting it
+   * (that hook's own existing manual-vs-live conflict model, unchanged —
+   * see this action's own implementation comment).
+   *
+   * **History (Section 7)**: calls `attemptHistorySnapshot` unconditionally
+   * on success, the same unconditional-attempt discipline `create`/
+   * `update` already use (Apply is always a deliberate, user-confirmed
+   * action) — `isMaterialPortfolioHistoryChange`'s own dedup still
+   * applies, but a successful Apply always changes `collateral`/`debt`
+   * structurally, which that function always treats as material.
+   */
+  applyPortfolioState: (proposal: PortfolioApplyProposal) => MappingResult<Portfolio>;
   select: (id: string | null) => void;
   duplicate: (id: string) => MappingResult<Portfolio>;
   archive: (id: string) => void;
@@ -501,6 +547,24 @@ function notFoundError(id: string): ApplicationError {
     'validation',
     'PORTFOLIO_NOT_FOUND',
     `No portfolio exists with id "${id}".`,
+  );
+}
+
+/** V1.1 Batch 3 ("Apply to Portfolio") Section 9 — the portfolio changed since this apply proposal was generated. */
+function staleApplyProposalError(id: string): ApplicationError {
+  return createApplicationError(
+    'validation',
+    'PORTFOLIO_APPLY_STALE_RESULT',
+    `Portfolio "${id}" has changed since this result was generated. Regenerate and reconfirm before applying.`,
+  );
+}
+
+/** V1.1 Batch 3 ("Apply to Portfolio") Section 2 — a proposal built for one protocol version cannot be applied to a portfolio now on the other. */
+function protocolVersionMismatchApplyError(id: string): ApplicationError {
+  return createApplicationError(
+    'validation',
+    'PORTFOLIO_APPLY_PROTOCOL_VERSION_MISMATCH',
+    `Portfolio "${id}"'s protocol version has changed since this result was generated. Regenerate and reconfirm before applying.`,
   );
 }
 
@@ -897,6 +961,129 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     // deliberate, confirmed action, not per-keystroke — see those forms'
     // own preview-then-apply design). Material-change dedup filters out
     // a name/description-only edit, which never moves any risk metric.
+    attemptHistorySnapshot(portfolio, summary);
+
+    return { ok: true, data: portfolio };
+  },
+
+  applyPortfolioState: (proposal) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[proposal.portfolioId];
+    if (existing === undefined) {
+      const errors = [notFoundError(proposal.portfolioId)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    // Section 9 — stale-result protection. The portfolio changed since
+    // this proposal was generated (a live sync landed, a form edit was
+    // saved, the portfolio was switched away from and back, etc.) — the
+    // proposal's `before`/`after`/`unchangedAssumptions` no longer
+    // describe this portfolio's real current state, so applying it would
+    // silently apply stale assumptions. Refused, not best-effort-applied.
+    if (existing.portfolio.updatedAt !== proposal.sourcePortfolioUpdatedAt) {
+      const errors = [staleApplyProposalError(proposal.portfolioId)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    // Section 2 — V3/V4 isolation. Defense in depth alongside the
+    // staleness check above (a protocol-version switch always bumps
+    // `updatedAt` too, via `setProtocolVersion`) — a proposal built for
+    // one protocol version must never be interpreted under the other.
+    const existingProtocolVersion = existing.portfolio.protocolVersion === 'v4' ? 'v4' : 'v3';
+    if (existingProtocolVersion !== proposal.protocolVersion) {
+      const errors = [protocolVersionMismatchApplyError(proposal.portfolioId)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const collateralParsed = collateralPositionSchema.safeParse(
+      proposal.proposedPortfolio.collateral,
+    );
+    if (!collateralParsed.success) {
+      const errors = zodErrorToErrors(collateralParsed.error);
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+    const debtParsed = debtPositionSchema.safeParse({
+      // Apply never changes WHICH asset debt is denominated in — only the
+      // balance. Validating against the portfolio's own existing asset
+      // (not whatever `proposal.proposedPortfolio.debt.asset` happens to
+      // carry, a wider `string` on `ApplicationPortfolio`) is what keeps
+      // that invariant enforced here, not merely assumed.
+      asset: existing.portfolio.debt.asset,
+      balance: proposal.proposedPortfolio.debt.balance,
+    });
+    if (!debtParsed.success) {
+      const errors = zodErrorToErrors(debtParsed.error);
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+    let validatedV4DebtState: AaveV4DebtState | undefined;
+    if (proposal.proposedPortfolio.v4DebtState !== undefined) {
+      const v4DebtStateParsed = aaveV4DebtStateSchema.safeParse(
+        proposal.proposedPortfolio.v4DebtState,
+      );
+      if (!v4DebtStateParsed.success) {
+        const errors = zodErrorToErrors(v4DebtStateParsed.error);
+        set({ errors, saveStatus: 'error' });
+        return { ok: false, errors };
+      }
+      validatedV4DebtState = v4DebtStateParsed.data;
+    }
+
+    const now = new Date().toISOString();
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      collateral: {
+        asset: existing.portfolio.collateral.asset,
+        quantity: collateralParsed.data.quantity,
+      },
+      debt: debtParsed.data,
+      ...(proposal.proposedPortfolio.protocolVersion !== undefined && {
+        protocolVersion: proposal.proposedPortfolio.protocolVersion,
+      }),
+      // Section 8 — ownership after Apply. `'manual'`, never `'live'`:
+      // `proposal.valueBasis` is always `'hypothetical'` (never an
+      // on-chain-confirmed value), and this is the concrete mechanism
+      // that keeps a future live sync from silently overwriting it —
+      // `hooks/useAaveV4LiveSync.ts`'s own existing manual-vs-live model
+      // proposes a confirmable candidate against a `'manual'`-sourced
+      // value instead of auto-adopting, exactly like any other manually
+      // entered V4 debt state.
+      ...(validatedV4DebtState !== undefined && {
+        v4DebtState: validatedV4DebtState,
+        v4DebtStateSource: 'manual' as const,
+        v4DebtStateUpdatedAt: now,
+      }),
+      updatedAt: now,
+    };
+
+    const summary = buildSummary(portfolio);
+    set((state) => ({
+      portfolios: { ...state.portfolios, [proposal.portfolioId]: { portfolio, summary } },
+      errors: [],
+      // Same reasoning as `setAaveV4DebtState`'s own identical clear —
+      // this IS an explicit write to canonical `v4DebtState` (when
+      // present), making any previously-pending live candidate stale
+      // relative to the new baseline it was computed against.
+      ...(validatedV4DebtState !== undefined && {
+        v4DebtStateCandidates: {
+          ...state.v4DebtStateCandidates,
+          [proposal.portfolioId]: undefined,
+        },
+      }),
+    }));
+    schedulePortfolioSave(portfolio);
+    // Section 7 — a successful Apply always creates exactly one
+    // meaningful history snapshot. Unconditional, the same discipline
+    // `create`/`update` already use (Apply is always deliberate) —
+    // `isMaterialPortfolioHistoryChange`'s own dedup still runs, but a
+    // structural collateral/debt/protocol-version change is always
+    // material, so it always records here. Never called on Cancel — the
+    // confirmation UI simply never calls this action at all in that case.
     attemptHistorySnapshot(portfolio, summary);
 
     return { ok: true, data: portfolio };

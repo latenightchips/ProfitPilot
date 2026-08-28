@@ -24,6 +24,7 @@
  * `tests/integration/`, `tests/e2e/` — M1-003's own convention too),
  * never inside a feature-local `tests/` folder.
  */
+export * from './components/ApplySimulationToPortfolio';
 export * from './components/ExportSimulation';
 export * from './components/SaveSimulationForm';
 export * from './components/ScenarioBuilder';

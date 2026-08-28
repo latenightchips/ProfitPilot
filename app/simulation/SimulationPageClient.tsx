@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import {
+  ApplySimulationToPortfolio,
   ExportSimulation,
   SaveSimulationForm,
   ScenarioBuilder,
@@ -284,6 +285,10 @@ export function SimulationPageClient() {
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
               <ScenarioSummary />
+            </section>
+            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+              <h2 className="text-sm font-medium text-foreground">Apply to Portfolio</h2>
+              <ApplySimulationToPortfolio portfolio={record.portfolio} />
             </section>
             <section className="flex flex-col gap-2 rounded-md border border-border p-4">
               <h2 className="text-sm font-medium text-foreground">Simulation Assumptions</h2>

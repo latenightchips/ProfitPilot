@@ -30,8 +30,16 @@
  * `TimelinePoint` (Scenario Timeline, M6-012) to hold each projected
  * point's full set of already-computed fields — the same
  * re-export-through-the-Service-barrel pattern as the others above.
+ *
+ * **`buildPortfolioActionAfterPortfolio` re-exported here (V1.1 Batch 3,
+ * "Apply to Portfolio")**: extracted from `simulatePortfolioAction`'s own
+ * internals — see `portfolioAction.ts`'s own header comment. The one
+ * external consumer is `services/portfolioApply`, which needs the
+ * resulting portfolio itself (never available from `SimulationResult`),
+ * not a before/after comparison.
  */
 export {
+  buildPortfolioActionAfterPortfolio,
   type PortfolioActionSimulationInput,
   type PortfolioActionSimulationResult,
   simulatePortfolioAction,
