@@ -318,16 +318,56 @@ describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
  * (including every test above, which never passes it) keeps rendering the
  * exact original static Manual Mode copy — no test file above needed to
  * change for this stage.
+ *
+ * **V1.1 Batch 6 — a supplied V3 `protocolStatus` is no longer
+ * discarded.** See `StrategyAssumptionsPanel.tsx`'s own updated header
+ * comment: before this batch, an explicit `{version:'v3',...}` status
+ * rendered the exact same static "No live data provider is connected"
+ * copy as no status at all — a real inconsistency with
+ * `PortfolioPageClient.tsx`'s own already-fixed local badges. The test
+ * below now pins the corrected behavior.
  */
-describe('StrategyAssumptionsPanel — protocol-aware Manual-Data Status (Stage 21)', () => {
-  it('renders the exact original static V3 copy when protocolStatus is explicitly a v3 status, byte-identical to the no-prop case', () => {
-    const v3Status: ProtocolStatusKind = { version: 'v3', status: 'live' };
+describe('StrategyAssumptionsPanel — protocol-aware Manual-Data Status (Stage 21 / V1.1 Batch 6)', () => {
+  it.each([
+    { version: 'v3', status: 'live' },
+    { version: 'v3', status: 'stale' },
+    { version: 'v3', status: 'unavailable' },
+  ] satisfies ProtocolStatusKind[])(
+    'V1.1 Batch 6: renders the real V3 status ($status) via formatProtocolStatus, never the static "No live data provider" copy',
+    (protocolStatus) => {
+      render(
+        <StrategyAssumptionsPanel
+          portfolio={basePortfolio()}
+          metadata={null}
+          timeHorizonLabel={null}
+          protocolStatus={protocolStatus}
+        />,
+      );
+      expect(screen.getByText(formatProtocolStatus(protocolStatus))).toBeInTheDocument();
+      expect(screen.queryByText(/No live data provider is connected/)).not.toBeInTheDocument();
+    },
+  );
+
+  it('V1.1 Batch 6: with no protocolStatus but marketSource "live", states the portfolio is live-synced rather than claiming no provider is connected', () => {
     render(
       <StrategyAssumptionsPanel
-        portfolio={basePortfolio()}
+        portfolio={basePortfolio({ marketSource: 'live' })}
         metadata={null}
         timeHorizonLabel={null}
-        protocolStatus={v3Status}
+      />,
+    );
+    expect(screen.getByText(/Live-synced/)).toBeInTheDocument();
+    expect(screen.getByText(/last updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/No live data provider is connected/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Manual Mode/)).not.toBeInTheDocument();
+  });
+
+  it('V1.1 Batch 6: with no protocolStatus and marketSource "manual" (or unset — a V1-era save), keeps the original Manual Mode copy unchanged', () => {
+    render(
+      <StrategyAssumptionsPanel
+        portfolio={basePortfolio({ marketSource: undefined })}
+        metadata={null}
+        timeHorizonLabel={null}
       />,
     );
     expect(screen.getByText(/Manual Mode/)).toBeInTheDocument();

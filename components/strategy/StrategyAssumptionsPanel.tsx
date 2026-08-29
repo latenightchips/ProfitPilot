@@ -5,7 +5,7 @@ import {
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 import type { ProtocolStatusKind } from '@/utils/protocolStatus';
-import { formatProtocolStatus } from '@/utils/protocolStatus';
+import { resolveManualDataStatusText } from '@/utils/protocolStatus';
 
 import { formatCurrency, formatDateTime, formatPercent } from './format';
 import { resolveEffectiveBorrowRate } from './resolveEffectiveBorrowRate';
@@ -90,13 +90,29 @@ import { resolveEffectiveBorrowRate } from './resolveEffectiveBorrowRate';
  *    Zustand, per the same "panel is a pure view, caller supplies
  *    already-computed state" boundary `SimulationAssumptions.tsx` and
  *    `DashboardSummaryHeader` already establish for the same status kind.
- *    `undefined` (every pre-Stage-21 caller, including this component's
- *    own existing tests) or an explicit `{ version: 'v3', ... }` both
- *    render the exact original static Manual Mode copy — a V4 status
- *    renders `formatProtocolStatus` instead, so a user on a live-synced V4
- *    portfolio sees real Live/Stale/Loading/Provider-error/Missing-debt-state
- *    status rather than a copy that always claims "No live data provider is
- *    connected" regardless of protocol.
+ *    A V4 status renders via `formatProtocolStatus`, so a user on a
+ *    live-synced V4 portfolio sees real Live/Stale/Loading/Provider-error/
+ *    Missing-debt-state status rather than a copy that always claims "No
+ *    live data provider is connected" regardless of protocol.
+ *
+ *    **V1.1 Batch 6 ("Data Freshness & Live-Status UX") — a V3
+ *    `protocolStatus` is no longer discarded.** Before this batch, an
+ *    explicit `{ version: 'v3', ... }` status rendered the exact same
+ *    static "Manual Mode... No live data provider is connected" copy as
+ *    `undefined` — a real inconsistency with `PortfolioPageClient.tsx`'s
+ *    own "Stage 25B" fix for its local Collateral/Debt badges, which
+ *    already switched to real V3 live/stale/unavailable text via this
+ *    exact `deriveProtocolStatus`/`formatProtocolStatus` pair. A user on
+ *    Loop Builder or Exit Planner with a genuinely live-synced Aave V3
+ *    portfolio was being told no live provider was connected, which was
+ *    false. Now delegates to the shared `resolveManualDataStatusText`
+ *    (`@/utils/protocolStatus`) for all three cases: a supplied
+ *    `protocolStatus` (V3 or V4) always renders its real text; with none
+ *    supplied, a portfolio whose `marketSource` is already `'live'` (live-
+ *    synced on a different page, e.g. `SimulationPageClient`, which
+ *    deliberately never mounts V3 sync itself) says so truthfully instead
+ *    of claiming no provider is connected; only a genuinely manual
+ *    portfolio keeps the original copy.
  *
  * **V4 Readiness Audit §12 Stage 23E** — "Protocol Parameters" previously
  * always showed `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
@@ -202,13 +218,10 @@ export function StrategyAssumptionsPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Manual-Data Status</span>
         <span className="text-muted-foreground">
-          {protocolStatus === undefined || protocolStatus.version === 'v3' ? (
-            <>
-              Manual Mode — reflects the values you last entered, updated{' '}
-              {formatDateTime(portfolio.marketUpdatedAt)}. No live data provider is connected.
-            </>
-          ) : (
-            formatProtocolStatus(protocolStatus)
+          {resolveManualDataStatusText(
+            portfolio.marketSource,
+            formatDateTime(portfolio.marketUpdatedAt),
+            protocolStatus,
           )}
         </span>
       </div>

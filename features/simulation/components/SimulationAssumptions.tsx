@@ -7,8 +7,9 @@ import {
   resolveSupplyAprDisplay,
 } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
+import { type ProtocolStatusKind, resolveManualDataStatusText } from '@/utils/protocolStatus';
 
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatDateTime } from '../utils/format';
 import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate';
 
 /**
@@ -99,6 +100,19 @@ import { resolveEffectiveBorrowRate } from '../utils/resolveEffectiveBorrowRate'
  * `formulaVersion` the most recent successful calculation actually
  * returned, not a hardcoded constant duplicated in the UI layer.
  *
+ * **"Manual-Data Status" — V1.1 Batch 6 ("Data Freshness & Live-Status
+ * UX"), new.** Before this batch, Simulation was the one strategy tool
+ * with no way to tell whether a hypothetical result was based on fresh
+ * live data, stale live data, or manual assumptions — Loop Builder/Exit
+ * Planner/Recommendation Center all show this via the shared
+ * `StrategyAssumptionsPanel`, which Simulation has never used (it keeps
+ * its own, differently-shaped panel; see this file's own earlier
+ * comments for why). Reuses the exact same `resolveManualDataStatusText`
+ * rule that component now uses (`@/utils/protocolStatus`) — no second,
+ * independently-invented status text. Both new props are optional and
+ * omitted by every pre-Batch-6 test in this file, which keeps rendering
+ * with no Manual-Data Status row at all, exactly as before.
+ *
  * **V4 Readiness Audit §12 Stage 23E** — the risk-capacity line of
  * "Protocol Parameters" previously always showed
  * `portfolio.protocol.maxLoanToValue`/`.liquidationThreshold`
@@ -121,7 +135,27 @@ function formatPriceScenario(priceScenario: PriceScenarioInput): string {
   return `${sign}${formatPercent(priceScenario.percentageChange)}`;
 }
 
-export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPortfolio }) {
+export function SimulationAssumptions({
+  portfolio,
+  protocolStatus,
+  marketUpdatedAt,
+}: {
+  portfolio: ApplicationPortfolio;
+  /**
+   * V1.1 Batch 6 ("Data Freshness & Live-Status UX") — optional so every
+   * pre-existing caller/test (none of which pass it) renders exactly as
+   * before. `SimulationPageClient.tsx` deliberately never mounts V3 live
+   * sync (see that page's own header comment), so its own `protocolStatus`
+   * computation only ever has a real, non-fabricated status for the
+   * `'v4'` branch — the caller passes `undefined` for a V3/unset
+   * portfolio so this component falls back to the portfolio's own
+   * `marketSource`/`marketUpdatedAt` below, rather than rendering a
+   * `'v3'` status this page never genuinely attempted to check.
+   */
+  protocolStatus?: ProtocolStatusKind;
+  /** `Portfolio.marketUpdatedAt` — optional for the same reason as `protocolStatus` above; omitted entirely skips the Manual-Data Status row rather than rendering one with no timestamp. */
+  marketUpdatedAt?: string;
+}) {
   const currentResult = useSimulationStore((state) => state.currentResult);
   const portfolioActionPreview = useSimulationStore((state) => state.portfolioActionPreview);
   const lastMetadata = useSimulationStore((state) => state.lastMetadata);
@@ -187,6 +221,19 @@ export function SimulationAssumptions({ portfolio }: { portfolio: ApplicationPor
           Supply APR {supplyAprText}
         </span>
       </div>
+
+      {marketUpdatedAt !== undefined && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-foreground">Manual-Data Status</span>
+          <span className="text-muted-foreground">
+            {resolveManualDataStatusText(
+              portfolio.marketSource,
+              formatDateTime(marketUpdatedAt),
+              protocolStatus,
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Fees &amp; Slippage</span>

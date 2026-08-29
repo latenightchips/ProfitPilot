@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { SimulationAssumptions } from '@/features/simulation';
 import type { ApplicationPortfolio } from '@/services';
 import { useSimulationStore } from '@/stores/simulationStore';
+import type { ProtocolStatusKind } from '@/utils/protocolStatus';
 
 /**
  * Simulation Assumptions Panel — 06_TASKS.md M6-013 ("Implement
@@ -327,5 +328,56 @@ describe('SimulationAssumptions — portfolio action', () => {
 
     expect(screen.getByText('$50,000.00 (current, unmodified)')).toBeInTheDocument();
     expect(screen.queryByText('Rate Assumptions')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * "Manual-Data Status" — V1.1 Batch 6 ("Data Freshness & Live-Status
+ * UX"), new. Before this batch Simulation had no way to tell a user
+ * whether a result was based on fresh live data, stale live data, or
+ * manual assumptions at all — see this component's own updated header
+ * comment. Both new props are optional; every test above (which never
+ * passes them) proves the row is simply omitted, not broken.
+ */
+describe('SimulationAssumptions — V1.1 Batch 6: Manual-Data Status', () => {
+  function runAndRender(
+    protocolStatus?: ProtocolStatusKind,
+    marketUpdatedAt?: string,
+    portfolio: ApplicationPortfolio = PORTFOLIO,
+  ) {
+    useSimulationStore
+      .getState()
+      .runPortfolioActionSimulation(portfolio, { collateralDelta: 0, debtDelta: 0 });
+    render(
+      <SimulationAssumptions
+        portfolio={portfolio}
+        protocolStatus={protocolStatus}
+        marketUpdatedAt={marketUpdatedAt}
+      />,
+    );
+  }
+
+  it('omits the row entirely when marketUpdatedAt is not supplied (every pre-Batch-6 caller)', () => {
+    runAndRender(undefined, undefined);
+    expect(screen.queryByText('Manual-Data Status')).not.toBeInTheDocument();
+  });
+
+  it('shows a real V4 status (e.g. stale) when both props are supplied', () => {
+    const status: ProtocolStatusKind = { version: 'v4', status: 'stale' };
+    runAndRender(status, '2026-01-01T00:00:00.000Z');
+    expect(screen.getByText('Manual-Data Status')).toBeInTheDocument();
+    expect(screen.getByText('Aave V4 · Stale')).toBeInTheDocument();
+  });
+
+  it('with marketUpdatedAt but no protocolStatus and marketSource "manual": shows the original Manual Mode copy', () => {
+    runAndRender(undefined, '2026-01-01T00:00:00.000Z', { ...PORTFOLIO, marketSource: 'manual' });
+    expect(screen.getByText(/Manual Mode/)).toBeInTheDocument();
+    expect(screen.getByText(/No live data provider is connected/)).toBeInTheDocument();
+  });
+
+  it('with marketUpdatedAt but no protocolStatus and marketSource "live" (V3, live-synced on a different page): states it is live-synced, never "No live data provider is connected"', () => {
+    runAndRender(undefined, '2026-01-01T00:00:00.000Z', { ...PORTFOLIO, marketSource: 'live' });
+    expect(screen.getByText(/Live-synced/)).toBeInTheDocument();
+    expect(screen.queryByText(/No live data provider is connected/)).not.toBeInTheDocument();
   });
 });

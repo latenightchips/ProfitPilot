@@ -330,3 +330,67 @@ export function confidenceForProtocolStatus(kind: ProtocolStatusKind): Recommend
       return 'Limited data';
   }
 }
+
+/**
+ * "Manual-Data Status" text — V1.1 Batch 6 ("Data Freshness & Live-Status
+ * UX"), Section 1/6. The one shared rule for the compact status line every
+ * strategy-tool assumptions panel shows, closing a real inconsistency
+ * found while auditing this module's existing callers:
+ *
+ * **`components/strategy/StrategyAssumptionsPanel.tsx` (used by Loop
+ * Builder/Exit Planner/Recommendation Center) previously ignored a
+ * caller-supplied V3 `protocolStatus` entirely** — its own Stage 21
+ * comment documented, as an explicit invariant with a passing test, that
+ * `protocolStatus.version === 'v3'` always rendered the same static
+ * "Manual Mode... No live data provider is connected" text regardless of
+ * whether `protocolStatus.status` was `'live'`/`'stale'`/`'unavailable'`.
+ * That was already known to be wrong for V4 and fixed at Stage 21 (a V4
+ * status renders via `formatProtocolStatus` instead of the same static
+ * copy) and fixed a second time, independently, for `app/portfolio/PortfolioPageClient.tsx`'s
+ * own local Collateral/Debt badges at "Stage 25B" (see that component's
+ * own comment: "this badge used to be computed via the pre-V4
+ * `formatAaveDataStatus(deriveAaveDataStatus(marketQuote))` pair...
+ * Switched to the same protocol-aware `deriveProtocolStatus`/
+ * `formatProtocolStatus` pair") — but `StrategyAssumptionsPanel` itself
+ * was never brought up to the same standard. A user on Loop Builder or
+ * Exit Planner with a real, live-synced Aave V3 portfolio was told "No
+ * live data provider is connected," which is simply false — exactly the
+ * "duplicated/inconsistent status semantics" this batch's own Section 1
+ * asks to find before adding new UI, and the "users should know when a
+ * hypothetical result is based on fresh live data, stale live data, or
+ * manual assumptions" requirement Section 6 states explicitly.
+ *
+ * **Three cases, in order:**
+ * 1. `protocolStatus` supplied (the caller mounted a live-sync hook and
+ *    computed a real status this render) — always `formatProtocolStatus`,
+ *    for BOTH V3 and V4. This is the only behavior change from before:
+ *    V3 no longer discards a real status it was handed.
+ * 2. No `protocolStatus`, but the portfolio's own persisted `marketSource`
+ *    is `'live'` — the CURRENT page did not itself run a live fetch (e.g.
+ *    `SimulationPageClient` deliberately does not mount V3 sync, see that
+ *    page's own header comment), but the portfolio's `market` value was
+ *    live-synced on a previous visit to another page and is still that
+ *    live value now. Saying "No live data provider is connected" here
+ *    would be equally false; this instead states the truth already
+ *    available on the portfolio object — that it is live-synced, and
+ *    when.
+ * 3. No `protocolStatus` and `marketSource` is `'manual'`/`undefined`
+ *    (a portfolio that has never had a live fetch confirmed, or a
+ *    pre-Live-Data-Trust-Parity save `normalizePortfolioProvenance`
+ *    defaults to `'manual'`) — the original, unchanged Manual Mode copy.
+ *
+ * No new provenance concept is introduced — this only decides which of
+ * the ALREADY-EXISTING signals (`ProtocolStatusKind`, `marketSource`,
+ * `marketUpdatedAt`) to read, given what the caller has available.
+ */
+export function resolveManualDataStatusText(
+  marketSource: 'manual' | 'live' | undefined,
+  formattedMarketUpdatedAt: string,
+  protocolStatus: ProtocolStatusKind | undefined,
+): string {
+  if (protocolStatus !== undefined) return formatProtocolStatus(protocolStatus);
+  if (marketSource === 'live') {
+    return `Live-synced — last updated ${formattedMarketUpdatedAt}.`;
+  }
+  return `Manual Mode — reflects the values you last entered, updated ${formattedMarketUpdatedAt}. No live data provider is connected.`;
+}

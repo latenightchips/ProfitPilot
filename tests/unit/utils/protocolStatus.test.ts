@@ -8,6 +8,8 @@ import {
   deriveProtocolStatus,
   formatProtocolStatus,
   type ProtocolStatusInput,
+  type ProtocolStatusKind,
+  resolveManualDataStatusText,
 } from '@/utils/protocolStatus';
 
 /**
@@ -668,5 +670,59 @@ describe('confidenceForProtocolStatus', () => {
     expect(confidenceForProtocolStatus({ version: 'v4', status: 'missing-collateral-risk' })).toBe(
       'Limited data',
     );
+  });
+});
+
+/**
+ * `resolveManualDataStatusText` — V1.1 Batch 6 ("Data Freshness &
+ * Live-Status UX"). The one shared rule `StrategyAssumptionsPanel.tsx`
+ * and `SimulationAssumptions.tsx` both now call for their "Manual-Data
+ * Status" row. See this function's own doc comment for the real
+ * inconsistency it closes: a supplied V3 `protocolStatus` used to be
+ * silently discarded.
+ */
+describe('resolveManualDataStatusText', () => {
+  it('a supplied protocolStatus always wins, for V3', () => {
+    const status: ProtocolStatusKind = { version: 'v3', status: 'live' };
+    expect(resolveManualDataStatusText('manual', '2026-01-01', status)).toBe(
+      formatProtocolStatus(status),
+    );
+  });
+
+  it.each(['live', 'stale', 'unavailable'] as const)(
+    'a supplied V3 status (%s) always wins, even when marketSource is "live" (no conflicting fallback logic)',
+    (v3Status) => {
+      const status: ProtocolStatusKind = { version: 'v3', status: v3Status };
+      expect(resolveManualDataStatusText('live', '2026-01-01', status)).toBe(
+        formatProtocolStatus(status),
+      );
+    },
+  );
+
+  it('a supplied protocolStatus always wins, for V4', () => {
+    const status: ProtocolStatusKind = { version: 'v4', status: 'stale' };
+    expect(resolveManualDataStatusText(undefined, '2026-01-01', status)).toBe(
+      formatProtocolStatus(status),
+    );
+  });
+
+  it('no protocolStatus, marketSource "live": states the portfolio is live-synced with the formatted timestamp, never the "no provider" claim', () => {
+    const text = resolveManualDataStatusText('live', 'January 1, 2026, 12:00 AM', undefined);
+    expect(text).toContain('Live-synced');
+    expect(text).toContain('January 1, 2026, 12:00 AM');
+    expect(text).not.toContain('No live data provider is connected');
+  });
+
+  it('no protocolStatus, marketSource "manual": the original Manual Mode copy, unchanged', () => {
+    const text = resolveManualDataStatusText('manual', 'January 1, 2026, 12:00 AM', undefined);
+    expect(text).toContain('Manual Mode');
+    expect(text).toContain('No live data provider is connected');
+    expect(text).toContain('January 1, 2026, 12:00 AM');
+  });
+
+  it('no protocolStatus, marketSource undefined (a V1-era save with no recorded provenance): the same Manual Mode copy, never a crash or "undefined" in the text', () => {
+    const text = resolveManualDataStatusText(undefined, 'January 1, 2026, 12:00 AM', undefined);
+    expect(text).toContain('Manual Mode');
+    expect(text).not.toContain('undefined');
   });
 });

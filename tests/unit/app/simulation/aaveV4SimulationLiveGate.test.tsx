@@ -204,7 +204,12 @@ describe('Simulation V4 live-status gate — persisted-but-not-yet-refreshed val
     expect(screen.getByText('Aave V4 · Loading')).toBeInTheDocument();
   });
 
-  it('does not render results once the persisted data is stale (both fetches succeeded, but long ago)', () => {
+  it('V1.1 Batch 6: renders results for stale (but present) persisted data, with a visible non-blocking stale warning, rather than blocking the whole page', () => {
+    // Batch 6 narrows this gate: `stale` means v4DebtState/v4CollateralRisk
+    // ARE present and were confirmed live at some past point — the engine's
+    // own guards only fail closed on absence, never staleness, so blocking
+    // here was stricter than what the calculation actually requires. See
+    // `SimulationPageClient.tsx`'s own updated header comment.
     createAndSelectV4(V4_ADDRESS, {
       v4DebtState: V4_DEBT_STATE_FIXTURE,
       v4CollateralRisk: V4_COLLATERAL_RISK_FIXTURE,
@@ -225,8 +230,13 @@ describe('Simulation V4 live-status gate — persisted-but-not-yet-refreshed val
     });
     render(<SimulationPage />);
 
-    expect(resultsAreRendered()).toBe(false);
-    expect(screen.getByText('Aave V4 · Stale')).toBeInTheDocument();
+    expect(resultsAreRendered()).toBe(true);
+    expect(screen.queryByText(/Simulation is not available yet/)).not.toBeInTheDocument();
+    // The compact, always-visible (not gated on running a simulation)
+    // warning banner — role="status", not "alert": stale data present is
+    // not a failure.
+    const staleNotice = screen.getByText(/Aave V4 · Stale/);
+    expect(staleNotice.closest('[role="status"]')).not.toBeNull();
   });
 });
 
@@ -424,5 +434,96 @@ describe('Simulation V4 live-status gate — identity-switch race protection (St
       usePortfolioStore.getState().portfolios[second.id].portfolio.v4DebtState,
     ).toBeUndefined();
     expect(usePortfolioStore.getState().portfolios[first.id].portfolio.v4DebtState).toBeUndefined();
+  });
+});
+
+/**
+ * V1.1 Batch 6, Section 3/11 — "should not automatically mutate the
+ * portfolio" / "no silent portfolio mutation due to staleness." Un-gating
+ * `stale` is purely a rendering decision; nothing about it writes to the
+ * portfolio.
+ */
+describe('Simulation V4 live-status gate — V1.1 Batch 6: staleness never mutates the portfolio', () => {
+  it('rendering with stale V4 data leaves the portfolio object completely unchanged', () => {
+    const created = createAndSelectV4(V4_ADDRESS, {
+      v4DebtState: V4_DEBT_STATE_FIXTURE,
+      v4CollateralRisk: V4_COLLATERAL_RISK_FIXTURE,
+    });
+    // `useAaveV4CollateralRiskLiveSync`'s own mount-time equality-gated
+    // sync (unrelated to this batch, and unrelated to staleness — it
+    // fires the same way whether the resulting status ends up 'live' or
+    // 'stale') would otherwise apply `V4_COLLATERAL_RISK_FIXTURE`'s own
+    // `collateralPriceUsd` as a real market-price write the moment the
+    // live-data store below is marked 'ready'. Pre-aligning the
+    // portfolio's stored market price with that same value first means
+    // the equality-gate finds nothing new to apply, isolating this test
+    // to its actual claim: staleness ITSELF causes no write, not "no
+    // unrelated sync ever fires."
+    usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 69000 }, 'live');
+    const before = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const staleTime = new Date(Date.now() - 60 * 60_000).toISOString();
+    useAaveV4LiveDataStore.setState({
+      status: 'ready',
+      engineInputs: V4_DEBT_STATE_FIXTURE,
+      userAddress: V4_ADDRESS,
+      debtAsset: 'USDC',
+      lastFetchedAt: staleTime,
+    });
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'ready',
+      canonical: V4_COLLATERAL_RISK_FIXTURE,
+      userAddress: V4_ADDRESS,
+      lastFetchedAt: staleTime,
+    });
+    render(<SimulationPage />);
+
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    // `v4DebtStateUpdatedAt`/`v4CollateralRiskUpdatedAt` legitimately
+    // refresh on ANY mount that finds a matching 'ready' live value (the
+    // pre-existing "live→live, fetch confirms the same value" freshness
+    // stamp — see `hooks/useAaveV4LiveSync.ts`'s own header comment) —
+    // unrelated to display-staleness classification, and deliberately NOT
+    // what this test is about. Every actual DATA field, and `updatedAt`
+    // itself (which staying put proves no real write/history-triggering
+    // mutation occurred), must be identical.
+    expect(after.collateral).toEqual(before.collateral);
+    expect(after.debt).toEqual(before.debt);
+    expect(after.market).toEqual(before.market);
+    expect(after.marketSource).toBe(before.marketSource);
+    expect(after.v4DebtState).toEqual(before.v4DebtState);
+    expect(after.v4DebtStateSource).toBe(before.v4DebtStateSource);
+    expect(after.v4CollateralRisk).toEqual(before.v4CollateralRisk);
+    expect(after.v4CollateralRiskSource).toBe(before.v4CollateralRiskSource);
+    expect(after.updatedAt).toBe(before.updatedAt);
+  });
+});
+
+/**
+ * V1.1 Batch 6, Section 9 — V3/V4 isolation for the new stale-warning
+ * banner specifically: a V3 (or unset) portfolio must never show a V4
+ * status banner, and the new banner's presence for a V4 portfolio must
+ * never depend on anything V3-shaped.
+ */
+describe('Simulation V4 live-status gate — V1.1 Batch 6: V3/V4 isolation of the stale banner', () => {
+  it('a V3 portfolio never renders the Aave V4 stale banner, even if the V4 live-data stores happen to hold stale-looking state', () => {
+    createAndSelect();
+    const staleTime = new Date(Date.now() - 60 * 60_000).toISOString();
+    useAaveV4LiveDataStore.setState({
+      status: 'ready',
+      engineInputs: V4_DEBT_STATE_FIXTURE,
+      userAddress: V4_ADDRESS,
+      debtAsset: 'USDC',
+      lastFetchedAt: staleTime,
+    });
+    useAaveV4CollateralRiskLiveDataStore.setState({
+      status: 'ready',
+      canonical: V4_COLLATERAL_RISK_FIXTURE,
+      userAddress: V4_ADDRESS,
+      lastFetchedAt: staleTime,
+    });
+    render(<SimulationPage />);
+
+    expect(resultsAreRendered()).toBe(true);
+    expect(screen.queryByText(/Aave V4/)).not.toBeInTheDocument();
   });
 });

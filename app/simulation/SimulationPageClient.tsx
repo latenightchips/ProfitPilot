@@ -127,16 +127,16 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * new gate, computed via the SAME canonical `deriveProtocolStatus`
  * (`utils/protocolStatus.ts`) every other page already uses for its own
  * status badge — never a second, Simulation-only definition of
- * "current." When `protocolStatus.version === 'v4'` and
- * `protocolStatus.status !== 'live'` (covers `waiting-for-address`,
- * `loading`, `provider-error`, `missing-debt-state`,
- * `missing-collateral-risk`, and `stale` uniformly, via the exact same
- * composed worse-of-two-stores logic `deriveProtocolStatus` already
- * implements — no new sub-state vocabulary invented here), the ENTIRE
- * portfolio-dependent subtree (Scenario Controls aside AND every results
- * section) is replaced by a single status panel instead of rendering
- * `ScenarioBuilder`/`ScenarioSummary`/etc. against untrustworthy data —
- * the same "replace the whole thing with one message" shape the
+ * "current." Originally (this stage), `protocolStatus.version === 'v4'`
+ * and `protocolStatus.status !== 'live'` blocked uniformly for
+ * `waiting-for-address`, `loading`, `provider-error`,
+ * `missing-debt-state`, `missing-collateral-risk`, AND `stale` — see
+ * V1.1 Batch 6's own note further down for why `stale` was narrowed out
+ * of the blocking set. The ENTIRE portfolio-dependent subtree (Scenario
+ * Controls aside AND every results section) is replaced by a single
+ * status panel instead of rendering `ScenarioBuilder`/`ScenarioSummary`/
+ * etc. against genuinely untrustworthy (i.e. absent or unconfirmed) data
+ * — the same "replace the whole thing with one message" shape the
  * pre-existing "no active portfolio" branch already uses one level up,
  * not a new pattern. This also means `missing-debt-state`/
  * `missing-collateral-risk` are now caught by this outer gate BEFORE
@@ -147,11 +147,13 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  *
  * **`provider-error` renders as a real alert (`role="alert"`,
  * destructive styling)** — a failed refresh must fail visibly, not read
- * as an ordinary transient loading state. Every other non-live sub-state
- * (`loading`, `waiting-for-address`, `missing-debt-state`,
- * `missing-collateral-risk`, `stale`) renders as a neutral `role="status"`
+ * as an ordinary transient loading state. Every other still-blocking
+ * sub-state (`loading`, `waiting-for-address`, `missing-debt-state`,
+ * `missing-collateral-risk`) renders as a neutral `role="status"`
  * panel — none of them are wrong data, they are "not yet confirmed
  * current," which is a different severity than a confirmed failure.
+ * `stale` no longer reaches this branch at all as of V1.1 Batch 6 — see
+ * below.
  *
  * **V3/unset is completely untouched.** `protocolStatus.version === 'v3'`
  * is never read by the gate above — only the `'v4'` branch's `status` is
@@ -215,13 +217,32 @@ export function SimulationPageClient() {
   // V4 Readiness Audit §12 Stage 25 — `'manual'` is calculation-ready,
   // exactly like `'live'` (see `deriveProtocolStatus`'s own header
   // comment): a manual/hypothetical V4 portfolio must not be blocked
-  // here merely because it has no wallet address. This is the ONE
-  // targeted change to the Stage 24 gate itself — the gate's own
-  // fail-closed shape (block on anything else) is unchanged.
+  // here merely because it has no wallet address.
+  //
+  // V1.1 Batch 6 ("Data Freshness & Live-Status UX") — `'stale'` no
+  // longer blocks either. Stale means `v4DebtState`/`v4CollateralRisk`
+  // ARE present and were confirmed live at some past point — the engine
+  // (`checkAaveV4DebtStateAvailable`/`checkAaveV4CollateralRiskAvailable`)
+  // only ever fails closed on ABSENCE, never on staleness, so blocking
+  // the whole page here was stricter than what the calculation itself
+  // requires — directly the "Do not block simulation merely because data
+  // is manual. Block or warn only where the existing engine genuinely
+  // lacks required data" instruction this batch was given, and
+  // inconsistent with Loop Builder/Exit Planner, which never block on
+  // `'stale'` for this exact same `StrategyAssumptionsPanel`-rendered
+  // status at all. `'stale'` now renders normally — the "Manual-Data
+  // Status" row this batch adds to `SimulationAssumptions` below states
+  // it plainly (`resolveManualDataStatusText` → `formatProtocolStatus` →
+  // "Aave V4 · Stale"), which is warning, not blocking. Every other
+  // non-live/non-manual state is unchanged and still blocks — none of
+  // `waiting-for-address`/`loading`/`provider-error`/`missing-debt-state`/
+  // `missing-collateral-risk` represent data the engine could actually
+  // compute from.
   const v4NotLive =
     protocolStatus?.version === 'v4' &&
     protocolStatus.status !== 'live' &&
-    protocolStatus.status !== 'manual';
+    protocolStatus.status !== 'manual' &&
+    protocolStatus.status !== 'stale';
   const v4ProviderError =
     protocolStatus?.version === 'v4' && protocolStatus.status === 'provider-error';
 
@@ -272,55 +293,78 @@ export function SimulationPageClient() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-6 lg:flex-row" key={activePortfolioId}>
-          <aside
-            aria-label="Scenario Controls"
-            className="flex flex-col gap-2 rounded-md border border-border p-4 lg:w-80 lg:shrink-0"
-          >
-            <h2 className="text-sm font-medium text-foreground">Scenario Controls</h2>
-            <ScenarioBuilder portfolio={record.portfolio} portfolioId={record.portfolio.id} />
-          </aside>
+        <div className="flex flex-col gap-4" key={activePortfolioId}>
+          {/* V1.1 Batch 6 — the one visible replacement for the old
+              full-page block on `'stale'`: a compact, always-visible (not
+              gated on having run a simulation yet, unlike the per-result
+              "Manual-Data Status" row `SimulationAssumptions` now also
+              shows) warning that this portfolio's V4 data is present but
+              not confirmed current. `role="status"`, not `"alert"` — this
+              is not a failure (see this file's own header comment on why
+              `provider-error` alone gets alert severity). */}
+          {protocolStatus?.version === 'v4' && protocolStatus.status === 'stale' && (
+            <p
+              role="status"
+              className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {formatProtocolStatus(protocolStatus)} — this simulation may not reflect this
+              portfolio&rsquo;s current on-chain position.
+            </p>
+          )}
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <aside
+              aria-label="Scenario Controls"
+              className="flex flex-col gap-2 rounded-md border border-border p-4 lg:w-80 lg:shrink-0"
+            >
+              <h2 className="text-sm font-medium text-foreground">Scenario Controls</h2>
+              <ScenarioBuilder portfolio={record.portfolio} portfolioId={record.portfolio.id} />
+            </aside>
 
-          <div className="flex flex-1 flex-col gap-6">
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
-              <ScenarioSummary />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Apply to Portfolio</h2>
-              <ApplySimulationToPortfolio portfolio={record.portfolio} />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Simulation Assumptions</h2>
-              <SimulationAssumptions portfolio={record.portfolio} />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Simulation Warnings</h2>
-              <SimulationWarnings portfolio={record.portfolio} />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Export</h2>
-              <ExportSimulation portfolio={record.portfolio} />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Save Scenario</h2>
-              <SaveSimulationForm
-                portfolioId={record.portfolio.id}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
-              <ScenarioComparison portfolio={record.portfolio} portfolioNames={portfolioNames} />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>
-              <ScenarioCharts />
-            </section>
-            <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-              <h2 className="text-sm font-medium text-foreground">Scenario Timeline</h2>
-              <ScenarioTimeline />
-            </section>
+            <div className="flex flex-1 flex-col gap-6">
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Simulation Results</h2>
+                <ScenarioSummary />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Apply to Portfolio</h2>
+                <ApplySimulationToPortfolio portfolio={record.portfolio} />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Simulation Assumptions</h2>
+                <SimulationAssumptions
+                  portfolio={record.portfolio}
+                  protocolStatus={protocolStatus?.version === 'v4' ? protocolStatus : undefined}
+                  marketUpdatedAt={record.portfolio.marketUpdatedAt}
+                />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Simulation Warnings</h2>
+                <SimulationWarnings portfolio={record.portfolio} />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Export</h2>
+                <ExportSimulation portfolio={record.portfolio} />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Save Scenario</h2>
+                <SaveSimulationForm
+                  portfolioId={record.portfolio.id}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Portfolio Comparison</h2>
+                <ScenarioComparison portfolio={record.portfolio} portfolioNames={portfolioNames} />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Scenario Charts</h2>
+                <ScenarioCharts />
+              </section>
+              <section className="flex flex-col gap-2 rounded-md border border-border p-4">
+                <h2 className="text-sm font-medium text-foreground">Scenario Timeline</h2>
+                <ScenarioTimeline />
+              </section>
+            </div>
           </div>
         </div>
       )}
