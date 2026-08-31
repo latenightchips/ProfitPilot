@@ -222,3 +222,54 @@ test('Cover: Recover from invalid input — calculation failure (M4-017)', async
 
   await expect(page.getByText(/cannot compute/i)).not.toBeVisible();
 });
+
+/**
+ * V3 New-Portfolio Live Bootstrap — production smoke-test finding.
+ * Every unit test locks down the exact prefill/dirty-tracking/provenance
+ * logic against mocked, deterministic quotes
+ * (`tests/unit/app/portfolios/new/NewPortfolioPageClient.liveBootstrap.test.tsx`);
+ * this is the one real-browser proof that the flow works against the
+ * actual `/api/aave/reserve` route this sandbox's public-RPC fallback
+ * serves, end to end, without blocking creation either way.
+ */
+test('Cover: New Portfolio live bootstrap does not block creation whether live data resolves or not', async ({
+  page,
+}) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+
+  // Whatever the real result is (this sandbox's outbound network reach
+  // is not something this test controls or assumes), the status line
+  // must leave the checking/idle state and never silently stay silent.
+  const statusLine = page
+    .getByText(/checking for live aave v3 data|aave v3 ·|live aave v3 data is unavailable/i)
+    .first();
+  await expect(statusLine).toBeVisible({ timeout: 15_000 });
+
+  const priceField = page.getByLabel('Current BTC price (USD)', { exact: false });
+  const priceValue = await priceField.inputValue();
+
+  if (Number(priceValue) > 0) {
+    // Live data landed — prefilled, and honestly labeled as such.
+    await expect(page.getByText('Aave V3 · Live').first()).toBeVisible();
+  } else {
+    // Live data did not land — the field is honestly still at its
+    // manual-entry default, never a fabricated non-zero value.
+    await expect(priceField).toHaveValue('0');
+  }
+
+  // Either way, the rest of the flow — including overriding whatever is
+  // currently in the field — must still work and must not be blocked.
+  await fillByLabel(page, 'Portfolio name', 'Live Bootstrap Check');
+  await fillByLabel(page, 'BTC quantity', '2');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '20000');
+  await fillByLabel(page, 'Current BTC price (USD)', '50000');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+
+  await expect(page.getByLabel('Portfolio name')).toHaveValue('Live Bootstrap Check');
+});

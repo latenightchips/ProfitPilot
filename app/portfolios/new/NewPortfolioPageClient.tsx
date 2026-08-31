@@ -2,11 +2,14 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { type PortfolioInput, portfolioInputSchema } from '@/types/portfolio.schema';
+import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
 
 /**
  * `baseCurrency`'s `.default('USD')` in the schema gives `PortfolioInput`
@@ -39,16 +42,19 @@ type PortfolioFormValues = z.input<typeof portfolioInputSchema>;
  * through clearly labeled, logically ordered sections matching the
  * task's own "Collect" list order.
  *
- * **"Protocol parameters or preset" — manual entry only, no preset,
- * documented gap.** No numeric Aave V3 parameter values (a real-world
+ * **"Protocol parameters or preset" — was manual entry only; now live
+ * bootstrap, still no fabricated preset (V3 New-Portfolio Live
+ * Bootstrap).** No numeric Aave V3 parameter values (a real-world
  * maxLTV/liquidationThreshold/borrowApr/supplyApr) are documented
- * anywhere in this specification — 04_BUILD_GUIDE.md's "PROTOCOL
- * SERVICE" section names the required *fields* but no values, and no
- * `AaveV3Provider` (the only place such values would legitimately come
- * from) has ever been built (see PROJECT_STATUS.md's Milestone 3
- * infrastructure-layer findings). Inventing a specific preset number
- * would mean fabricating real-world financial data the specification
- * never states. Only manual entry is offered.
+ * anywhere in this specification, so this form never hardcodes one — but
+ * `infrastructure/protocols/aave/v3` (built well after this comment was
+ * first written) now provides a real, live one via the same
+ * `stores/aaveLiveDataStore.ts` every other page already uses. This form
+ * reuses that store directly — no duplicate fetch logic — to prefill
+ * BTC price and the four protocol fields the moment a real value is
+ * available, always still editable, always falling back to today's
+ * manual-entry behavior (including submission) when it isn't. See the
+ * "Live bootstrap" section below for the full design.
  *
  * **"Saved" (DoD) means committed to the in-memory Portfolio Store**
  * (Conflict B, Milestone 4 plan) — `store.create()` is exactly this
@@ -102,23 +108,169 @@ const DEFAULT_VALUES: PortfolioFormValues = {
   settings: {},
 };
 
+/**
+ * V3 New-Portfolio Live Bootstrap — production smoke-test finding. This
+ * form previously always started BTC price and every protocol field at
+ * `0` and offered manual entry as the only path, even though
+ * `stores/aaveLiveDataStore.ts` (built well after this form, for
+ * `hooks/useAaveLiveSync.ts`'s post-creation sync) already provides
+ * exactly this data with zero configuration (a public RPC fallback —
+ * see that store's own header comment). **Reuses that store directly —
+ * `fetchLiveAaveData(debtAsset)` is the one and only fetch call, no
+ * duplicate Aave-fetch logic written here.**
+ *
+ * **Not `hooks/useAaveLiveSync.ts` itself** — deliberately. That hook is
+ * portfolio-scoped (it reads/writes `portfolios[portfolioId]`, which
+ * cannot exist before creation) and owns the *post-creation*
+ * manual-vs-live conflict-confirmation model. This form only needs the
+ * portfolio-independent fetch layer underneath it.
+ *
+ * **Prefill, never overwrite.** `setValue(..., { shouldDirty: false })`
+ * only ever targets a field the user has not yet touched
+ * (`formState.dirtyFields`, checked per field before every prefill call)
+ * — a field the user is already typing into, or has already edited, is
+ * never clobbered by a landing fetch, on mount or after a debt-asset
+ * change. `shouldDirty: false` is also what keeps a successful,
+ * untouched prefill distinguishable from a real edit at submit time:
+ * RHF computes `dirtyFields` by comparing against `DEFAULT_VALUES`
+ * (`0` for every numeric field here), and a prefill that opts out of
+ * that comparison never marks the field dirty on its own.
+ *
+ * **Provenance, tracked independently, decided only at submit time.**
+ * `marketPrefilled`/`protocolPrefilled` record whether a real live value
+ * was EVER successfully written into that group's field(s) this session
+ * — necessary because "not dirty" alone is ambiguous (it's also true of
+ * a field still sitting at its original `0` because live data never
+ * arrived). At submit: a group counts as `'live'` only if it was
+ * prefilled AND is still not dirty; any edit to even one of the four
+ * protocol fields marks the whole `protocol` group `'manual'` (the same
+ * atomic-unit treatment `Portfolio.protocolSource` already gives it
+ * everywhere else in this codebase — `hooks/useAaveLiveSync.ts`,
+ * `app/portfolio/AaveV3ConflictConfirmation.tsx`). `market` and
+ * `protocol` are otherwise fully independent — editing BTC price alone
+ * never affects `protocolSource`, and vice versa.
+ *
+ * **Race protection is entirely inherited, not reimplemented.**
+ * `aaveLiveDataStore.fetchLiveAaveData`'s own monotonic request-id guard
+ * already discards a stale response if the debt asset changes again
+ * before an in-flight fetch resolves — the same protection every other
+ * live-sync caller in this codebase already relies on. This form adds
+ * one more defensive check on top, mirroring `useAaveLiveSync`'s own
+ * identical guard verbatim: a landed `protocolQuote` is only prefilled
+ * if its own `borrowAsset` still matches the form's *currently selected*
+ * debt asset (`watch('debt.asset')`), never a value that was true when
+ * the request was fired.
+ *
+ * **Failure is silent and honest, never blocking.** `aaveLiveDataStore`'s
+ * own error path leaves `marketQuote`/`protocolQuote` at `null` (nothing
+ * to prefill from) without throwing; this form's own status line
+ * (`liveBootstrapStatusText` below) says so in plain language rather
+ * than ever claiming a manually-entered `0` default is live. Nothing
+ * about submission is gated on live data succeeding — today's manual-only
+ * validation (BTC price must be positive, etc.) is completely unchanged.
+ *
+ * **V4 is untouched.** This form has never had a `protocolVersion`
+ * field — every portfolio it creates is V3-shaped, exactly as before;
+ * V4 is opted into afterward, on the Portfolio page, via a real on-chain
+ * address. None of `hooks/useAaveV4LiveSync.ts`,
+ * `hooks/useAaveV4CollateralRiskLiveSync.ts`, or their own conflict UI
+ * are reachable from, or modified by, this file.
+ */
+function liveBootstrapStatusText(
+  status: ReturnType<typeof useAaveLiveDataStore.getState>['status'],
+  marketQuote: ReturnType<typeof useAaveLiveDataStore.getState>['marketQuote'],
+): string {
+  if (status === 'idle' || status === 'loading') {
+    return 'Checking for live Aave V3 data…';
+  }
+  if (status === 'error') {
+    return 'Live Aave V3 data is unavailable right now — enter values manually below.';
+  }
+  // status === 'ready'
+  return formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
+}
+
 export function NewPortfolioPageClient() {
   const router = useRouter();
   const create = usePortfolioStore((state) => state.create);
   const select = usePortfolioStore((state) => state.select);
 
+  const liveStatus = useAaveLiveDataStore((state) => state.status);
+  const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
+  const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
+  const fetchLiveAaveData = useAaveLiveDataStore((state) => state.fetchLiveAaveData);
+
+  const [marketPrefilled, setMarketPrefilled] = useState(false);
+  const [protocolPrefilled, setProtocolPrefilled] = useState(false);
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    watch,
+    setValue,
+    formState: { errors, isSubmitting, dirtyFields },
     setError,
   } = useForm<PortfolioFormValues, unknown, PortfolioInput>({
     resolver: zodResolver(portfolioInputSchema),
     defaultValues: DEFAULT_VALUES,
   });
 
+  const debtAsset = watch('debt.asset');
+
+  // Fetch on initial load and whenever the selected debt asset changes —
+  // `fetchLiveAaveData`'s own request-id guard (`aaveLiveDataStore.ts`)
+  // makes a rapid asset switch safe without any coordination here.
+  useEffect(() => {
+    void fetchLiveAaveData(debtAsset);
+  }, [fetchLiveAaveData, debtAsset]);
+
+  // Prefill only fields the user has not yet touched. Runs whenever a
+  // fresh quote lands (including a re-fetch after a debt-asset change).
+  useEffect(() => {
+    if (liveStatus !== 'ready') return;
+
+    if (marketQuote !== null && marketQuote.freshness !== 'unavailable') {
+      if (!dirtyFields.market?.btcPriceUsd) {
+        setValue('market.btcPriceUsd', marketQuote.price, { shouldDirty: false });
+      }
+      setMarketPrefilled(true);
+    }
+
+    if (
+      protocolQuote !== null &&
+      protocolQuote.available &&
+      protocolQuote.borrowAsset === debtAsset
+    ) {
+      const { maxLoanToValue, liquidationThreshold, borrowApr, supplyApr } =
+        protocolQuote.parameters;
+      if (!dirtyFields.protocol?.maxLoanToValue) {
+        setValue('protocol.maxLoanToValue', maxLoanToValue * 100, { shouldDirty: false });
+      }
+      if (!dirtyFields.protocol?.liquidationThreshold) {
+        setValue('protocol.liquidationThreshold', liquidationThreshold * 100, {
+          shouldDirty: false,
+        });
+      }
+      if (!dirtyFields.protocol?.borrowApr) {
+        setValue('protocol.borrowApr', borrowApr * 100, { shouldDirty: false });
+      }
+      if (!dirtyFields.protocol?.supplyApr) {
+        setValue('protocol.supplyApr', supplyApr * 100, { shouldDirty: false });
+      }
+      setProtocolPrefilled(true);
+    }
+  }, [liveStatus, marketQuote, protocolQuote, debtAsset, dirtyFields, setValue]);
+
   const onSubmit = handleSubmit((data) => {
-    const result = create(data);
+    const marketSource = marketPrefilled && !dirtyFields.market?.btcPriceUsd ? 'live' : 'manual';
+    const protocolFieldsDirty =
+      dirtyFields.protocol?.maxLoanToValue ||
+      dirtyFields.protocol?.liquidationThreshold ||
+      dirtyFields.protocol?.borrowApr ||
+      dirtyFields.protocol?.supplyApr;
+    const protocolSource = protocolPrefilled && !protocolFieldsDirty ? 'live' : 'manual';
+
+    const result = create(data, { marketSource, protocolSource });
     if (!result.ok) {
       setError('root', { message: result.errors.map((error) => error.message).join(' ') });
       return;
@@ -132,7 +284,9 @@ export function NewPortfolioPageClient() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Create Portfolio</h1>
         <p className="text-sm text-muted-foreground">
-          Enter your current position manually — no live price or protocol data is fetched.
+          Enter your collateral and debt manually. BTC price and Aave V3 protocol parameters are
+          prefilled from live data when available — every value stays editable, and you can enter
+          everything by hand if live data is unavailable.
         </p>
       </div>
 
@@ -244,7 +398,10 @@ export function NewPortfolioPageClient() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
-          <legend className="text-sm font-semibold text-foreground">Manual BTC price</legend>
+          <legend className="text-sm font-semibold text-foreground">BTC price</legend>
+          <p role="status" className="text-xs text-muted-foreground">
+            {liveBootstrapStatusText(liveStatus, marketQuote)}
+          </p>
           <label className="flex flex-col gap-1 text-sm">
             <span>
               Current BTC price (USD) <RequiredMark />
@@ -268,9 +425,10 @@ export function NewPortfolioPageClient() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
-          <legend className="text-sm font-semibold text-foreground">
-            Protocol parameters (manual entry — no preset available)
-          </legend>
+          <legend className="text-sm font-semibold text-foreground">Protocol parameters</legend>
+          <p className="text-xs text-muted-foreground">
+            {liveBootstrapStatusText(liveStatus, marketQuote)}
+          </p>
           <label className="flex flex-col gap-1 text-sm">
             <span>
               Maximum LTV (%) <RequiredMark />

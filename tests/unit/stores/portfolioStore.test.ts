@@ -1564,6 +1564,46 @@ describe('usePortfolioStore.create — marketSource/protocolSource default to "m
 });
 
 /**
+ * V3 New-Portfolio Live Bootstrap — `create`'s new, optional second
+ * parameter. Only `NewPortfolioPageClient.tsx` passes one; every call
+ * above this block omits it and is unaffected (already covered by the
+ * "default to manual" tests above, unchanged).
+ */
+describe('usePortfolioStore.create — optional sourceOverrides (V3 New-Portfolio Live Bootstrap)', () => {
+  it('stamps marketSource/protocolSource from sourceOverrides when provided', () => {
+    const result = usePortfolioStore
+      .getState()
+      .create(validInput(), { marketSource: 'live', protocolSource: 'live' });
+    if (!result.ok) throw new Error('setup failed');
+    expect(result.data.marketSource).toBe('live');
+    expect(result.data.protocolSource).toBe('live');
+  });
+
+  it('tracks marketSource and protocolSource independently', () => {
+    const result = usePortfolioStore
+      .getState()
+      .create(validInput(), { marketSource: 'live', protocolSource: 'manual' });
+    if (!result.ok) throw new Error('setup failed');
+    expect(result.data.marketSource).toBe('live');
+    expect(result.data.protocolSource).toBe('manual');
+  });
+
+  it('falls back to "manual" for a field sourceOverrides omits', () => {
+    const result = usePortfolioStore.getState().create(validInput(), { marketSource: 'live' });
+    if (!result.ok) throw new Error('setup failed');
+    expect(result.data.marketSource).toBe('live');
+    expect(result.data.protocolSource).toBe('manual');
+  });
+
+  it('defaults both to "manual" when sourceOverrides itself is omitted (backward compatible)', () => {
+    const result = usePortfolioStore.getState().create(validInput());
+    if (!result.ok) throw new Error('setup failed');
+    expect(result.data.marketSource).toBe('manual');
+    expect(result.data.protocolSource).toBe('manual');
+  });
+});
+
+/**
  * V1.1 Batch 1 (Live-Data Trust Parity) — `setMarket`/`setProtocol` and
  * their candidate actions, mirroring the equivalent V4 action tests
  * elsewhere in this file. `hooks/useAaveLiveSync.ts`'s own test suite

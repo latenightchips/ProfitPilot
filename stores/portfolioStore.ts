@@ -329,7 +329,25 @@ export interface PortfolioStoreState {
 
 export interface PortfolioStoreActions {
   load: () => Promise<void>;
-  create: (input: unknown) => MappingResult<Portfolio>;
+  /**
+   * `sourceOverrides` (V3 New-Portfolio Live Bootstrap) — optional,
+   * defaults to `marketSource: 'manual'`/`protocolSource: 'manual'` for
+   * every existing caller (every caller before this feature always typed
+   * `market`/`protocol` in by hand — the opposite default discipline
+   * from `setAaveV4DebtState`'s own optional `source?`, which defaults
+   * to `'live'` because most of *that* action's callers are live-sync
+   * hooks; here the reverse is true, so the reverse default preserves
+   * existing behavior). Only `app/portfolios/new/NewPortfolioPageClient.tsx`
+   * passes an explicit `'live'` for a field the user never edited away
+   * from a successful live prefill — independently per field, matching
+   * `market`/`protocol`'s own already-independent provenance tracking
+   * everywhere else in this Store (`setMarket`/`setProtocol`,
+   * `marketCandidates`/`protocolCandidates`).
+   */
+  create: (
+    input: unknown,
+    sourceOverrides?: { marketSource?: AaveV4DataSource; protocolSource?: AaveV4DataSource },
+  ) => MappingResult<Portfolio>;
   update: (id: string, input: unknown) => MappingResult<Portfolio>;
   /**
    * V1.1 Batch 3 ("Apply to Portfolio") — turns an already-confirmed
@@ -839,7 +857,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     });
   },
 
-  create: (input) => {
+  create: (input, sourceOverrides) => {
     set({ saveStatus: 'saving' });
 
     const parsed = portfolioInputSchema.safeParse(input);
@@ -866,8 +884,15 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       // always passes `source: 'live'` explicitly. See `setMarket`'s own
       // comment for the general default-to-`'live'` discipline this
       // deliberately overrides here.
-      marketSource: 'manual',
-      protocolSource: 'manual',
+      //
+      // V3 New-Portfolio Live Bootstrap — `sourceOverrides` lets the
+      // form record 'live' truthfully for a field the user never edited
+      // away from a successful live prefill, independently per field.
+      // Defaults to 'manual' for every caller that doesn't pass it
+      // (every caller before this feature), so this remains the exact
+      // previous unconditional behavior unless the form opts in.
+      marketSource: sourceOverrides?.marketSource ?? 'manual',
+      protocolSource: sourceOverrides?.protocolSource ?? 'manual',
       settings: data.settings,
       archivedAt: null,
       marketUpdatedAt: now,

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import NewPortfolioPage from '@/app/portfolios/new/page';
+import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -17,6 +18,15 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * match against the old, marker-less string would fail for every
  * required field; `{ exact: false }` matches the original text as a
  * substring instead, unaffected by whether a given field is required.
+ *
+ * **`useAaveLiveDataStore` reset to idle in `beforeEach` (V3 New-Portfolio
+ * Live Bootstrap)** — the same technique
+ * `tests/unit/hooks/useAaveLiveSync.test.ts` already established:
+ * `fetchLiveAaveData` mocked to a no-op so this file's tests (which don't
+ * exercise the live-bootstrap behavior itself — see
+ * `NewPortfolioPageClient.liveBootstrap.test.tsx` for that) never attempt
+ * a real `fetch` call, and stay isolated from the fetch-and-normalize
+ * pipeline already covered elsewhere.
  */
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -32,8 +42,20 @@ const INITIAL_STATE = {
   lastSynchronizedAt: null,
 };
 
+const IDLE_AAVE_STATE = {
+  status: 'idle' as const,
+  marketQuote: null,
+  protocolQuote: null,
+  collateralSymbol: null,
+  borrowSymbol: null,
+  source: null,
+  errorMessage: null,
+  fetchLiveAaveData: vi.fn().mockResolvedValue(undefined),
+};
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  useAaveLiveDataStore.setState(IDLE_AAVE_STATE);
   push.mockClear();
 });
 
@@ -77,9 +99,13 @@ describe('NewPortfolioPage — Portfolio Creation Flow (M4-005)', () => {
     expect(screen.getByLabelText('Safety buffer (%)', { exact: false })).toBeInTheDocument();
   });
 
-  it('does not offer a protocol preset option (documented gap, conflict — no values exist anywhere)', () => {
+  it('shows a live-bootstrap status line for protocol parameters, not a fabricated preset (documented gap — no static values exist anywhere)', () => {
     render(<NewPortfolioPage />);
-    expect(screen.getByText(/no preset available/i)).toBeInTheDocument();
+    expect(screen.getByText('Protocol parameters')).toBeInTheDocument();
+    // Idle (this file's own `IDLE_AAVE_STATE`) — no value is claimed live
+    // or preset; see `NewPortfolioPageClient.liveBootstrap.test.tsx` for
+    // the live/error/unavailable states themselves.
+    expect(screen.getAllByText('Checking for live Aave V3 data…').length).toBeGreaterThan(0);
   });
 
   it('creates, selects, and navigates to the portfolio on valid submission (DoD)', async () => {
