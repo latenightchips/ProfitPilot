@@ -8,12 +8,62 @@ upgrade instructions." DoD: "Release notes accurately describe Version 1."
 
 This document is new — distinct from `docs/CHANGELOG.md`, which is an
 engineering audit trail organized by version/milestone. This is a
-release-facing summary of what Version 1.0.0 actually is, for someone
-deciding whether and how to run it. See `docs/USER_GUIDE.md` for full
-usage instructions and `docs/CHANGELOG.md` for the complete build
+release-facing summary of what the current release actually is, for
+someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
+full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.0.0
+## Version 1.1.0
+
+**Current release.** Quality Sign-Off completed via the V1.1 Release
+Candidate audit (Batches 1–7), with zero release-blocking (P0/P1)
+defects — see `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate
+Review" section for the full review. Everything in "Version 1.0.0" below
+still applies; this section covers only what is new since that release.
+**Still a self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.1.0
+
+- **Live-data trust parity for Aave V3.** A live V3 fetch that disagrees
+  with a manually entered market price or protocol parameter is now held
+  as a pending candidate and surfaced as an explicit confirmation ("Use
+  Live Data" / "Keep Manual") on the Portfolio page — it is never applied
+  silently. V4 already worked this way; V3 previously did not.
+- **Portfolio History.** Every portfolio now keeps an automatic timeline
+  of its own meaningful changes — a Health Factor trend chart plus a
+  table of before/after deltas (timestamp, Health Factor, collateral/debt
+  value, LTV, leverage, borrow APR), recorded on creation, on save, and
+  whenever an accepted live update or an applied change is material.
+- **Apply-to-Portfolio.** Simulation, Loop Builder, Exit Planner, and
+  Recommendation Detail results can now be written directly to your
+  tracked portfolio, through one shared review step showing current vs.
+  proposed Health Factor, leverage, LTV, liquidation price, and annual
+  borrowing cost before you confirm. Refuses to apply (rather than
+  applying stale assumptions) if the portfolio changed since the review
+  was generated.
+- **More explainable recommendations.** Each recommendation now shows a
+  quantified before/after impact, a plain-language risk/tradeoff and cost
+  statement, and a data-confidence note, and can be applied directly
+  through the same Apply-to-Portfolio review.
+- **Clearer live-vs-manual data status.** Anywhere a manually entered
+  value has a live counterpart, the interface now states plainly whether
+  it is live, manual, or manual-and-stale, rather than leaving that
+  implicit.
+- **Usable on a phone.** Primary navigation now works below the tablet
+  breakpoint (previously reachable only via the Dashboard's own Quick
+  Actions shortcuts); Portfolio History and the Apply-to-Portfolio review
+  are both readable at narrow widths without horizontal scrolling.
+
+### Explicitly unchanged in 1.1.0
+
+No financial formula changed, no persisted-data schema changed, still no
+live wallet connection or transaction execution, still no cloud backup or
+synchronization, and still no publicly operated production deployment —
+see "Known limitations" and "Deployment" below, both unchanged from
+Version 1.0.0.
+
+## Version 1.0.0 (previous release)
 
 Quality Sign-Off completed Milestone 9 Batch 11 (`06_TASKS.md` M9-064),
 with zero release-blocking (P0/P1) defects — see

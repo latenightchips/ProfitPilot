@@ -170,3 +170,71 @@ above with real user-facing relevance is named there in plain language.
 defects. Every P2 has a documented workaround; every P3 and N/A item has
 a documented decision. Per §2's release-blocking rules, **nothing found
 in this review blocks a Version 1 release.**
+
+## 7. V1.1 Release Candidate Review
+
+Seven capability batches (V3 live-data trust parity, Portfolio History,
+Apply-to-Portfolio, full-exit/zero-state robustness, recommendation
+explainability, data freshness/live-status UX, mobile & responsive
+product pass — `docs/CHANGELOG.md`'s `[1.1.0]` entry has the full
+per-batch summary) were reviewed against current `origin/main`
+(`60ab26a78f50a8488735f2c31356057ff7af94f5`) in a dedicated V1.1 Release
+Candidate audit, using this section's own §1–§5 severity/release-blocking
+rules — not re-asserted from any individual batch's own prior report.
+
+**Method**: direct source inspection of the integration points named in
+the audit's own scope (V3/V4 isolation and staleness handling in
+`stores/portfolioStore.ts`'s `applyPortfolioState`, the trust-confirmation
+model's interaction with a subsequent live sync, History's write-on-Apply
+path, mobile navigation route coverage), a repository-wide grep for
+existing boundary-condition test coverage, a fresh `pnpm validate`
+(typecheck/lint/format/3914 unit tests/production build — all passing),
+and a full Playwright run (163 tests).
+
+**Open P0 defects: none found.**
+
+**Open P1 defects: none found.**
+
+**New item found by this review:**
+
+| Item | Severity | Disposition |
+|---|---|---|
+| Full Playwright suite (163 tests, one server, one session) produced 1 failure — `productionSmoke.spec.ts`'s rate-limit-boundary assertion received `429` instead of the expected `400` | Not a defect | The rate limiter (R1-2, `services/rateLimit/`) correctly fired after the ~150 preceding tests in the same run exhausted its 30-request/60-second window against `/api/aave/*` — the limiter doing exactly what it is designed to do under concentrated automated-test load a real client would not produce. Re-run in isolation on a fresh server: 3/3 pass. Confirmed non-regressive, not release-blocking, and not new — the identical pattern was already observed and diagnosed during Batch 7's own validation. No workaround needed; `docs/CHANGELOG.md`'s existing "Manual full-E2E release workflow" entry already documents why the full suite deliberately excludes `productionSmoke.spec.ts` from the same run for this exact reason. |
+
+**Carried forward from §6, unchanged by V1.1** (none of the seven
+batches touches any of these areas):
+
+| Item | Severity | Status |
+|---|---|---|
+| CI does not run the full `pnpm test:e2e` suite automatically | P2 → resolved (R1-3/R2-4) | Unchanged — manual `workflow_dispatch` release gate, per §6 |
+| `pnpm audit --prod` findings | P2 → substantially resolved (R2-4) | Unchanged — 1 remaining (`sharp`), confirmed unused, tracked |
+| Firefox/Safari have no automated test coverage | P2 → non-blocking | Unchanged — `docs/CROSS_BROWSER_REVIEW.md` |
+| No live assistive-technology session recorded | P2 → non-blocking | Unchanged — `docs/ACCESSIBILITY_CONFORMANCE.md` §9 |
+| Health Factor risk-band classification not implemented | P3 (documented scope exclusion) | Unchanged — Conflict #1 |
+| 33 of 69 Formula IDs out of scope | N/A — documented Version 1 scope decision | Unchanged — no V1.1 batch touches a Formula ID |
+| Cloud Database, Cloud Synchronization, Row-Level Security | N/A — cancelled by product decision | Unchanged |
+| Performance measured against `localhost` only | P3 (documented caveat) | Unchanged |
+| No license-audit tooling configured | P3 (documented gap) | Unchanged |
+| Per-layer coverage breakdown uses a line-coverage proxy | P3 (documentation precision) | Unchanged |
+| `01_PRD.md`/`04_BUILD_GUIDE.md` documentation conflicts (#35–37) | N/A (documentation conflict, not a code defect) | Unchanged |
+
+**Separately observed, not release-blocking**: of the entire `docs/`
+tree, only `docs/KNOWN_ISSUES.md` and `docs/USER_GUIDE.md` were updated
+across the seven V1.1 batches (both in Batch 1 only) before this
+reconciliation batch. This reconciliation batch itself closes the
+resulting version-metadata/changelog/release-notes/project-status gap
+(`docs/CHANGELOG.md`, `docs/RELEASE_NOTES.md`, `PROJECT_STATUS.md`, this
+section). One residual, pre-existing (not V1.1-caused) wording nuance
+was noticed but is out of this reconciliation batch's scope to fix:
+`docs/CHANGELOG.md`'s "Known limitations" list still frames "Manual Mode
+only... no live Aave connection" without the qualification
+`docs/KNOWN_ISSUES.md` already added in Batch 1 (V3 market/protocol data
+is live by default; only position size remains manual) — the same
+underlying fact is stated correctly in `docs/KNOWN_ISSUES.md`, just not
+mirrored in `docs/CHANGELOG.md`'s own copy of the same list. Not a defect
+in the application; a documentation-consistency item for a future batch.
+
+**Conclusion**: zero open P0 defects, zero open (or unapproved) P1
+defects. Every carried-forward P2/P3/N/A item retains its existing
+documented disposition, unchanged by V1.1. Per §2's release-blocking
+rules, **nothing found in this review blocks tagging `v1.1.0`.**

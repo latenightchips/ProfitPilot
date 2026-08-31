@@ -1,6 +1,14 @@
 # ProfitPilot — Project Status
 
-Last updated: 2026-08-08
+Last updated: 2026-08-31
+**V1.1 Release Candidate reconciliation note (2026-08-31): the current
+release candidate is Version `1.1.0` (seven capability batches complete
+on top of the immutable, unmodified `v1.0.0` tag) — see `## V1.1
+Release Reconciliation` (after the P-series/R1/R2 section, before
+`## Unresolved documentation conflicts`) for the current-state summary.
+Everything below this note, through the R1/R2 section, is preserved
+historical content describing Version 1.0.0's own build and closure —
+accurate as a record of that release, not restated for V1.1.**
 **Milestone 9 — Quality, Accessibility, Security, Performance & Release Hardening is complete and fully synchronized to GitHub** (all 11 batches, M9-001–M9-064). Version 1 Quality Sign-Off passed with zero release-blocking defects; `package.json`/`APP_VERSION`/`ENGINE_VERSION` are `1.0.0` (sign-off commit `865d9d5cdcdd88f2714f8bd14389e7b43f83feed`, confirmed on `origin/main`) — see `## Milestone 9 progress` → Batch 11 below for the full record. Current milestone: **Milestone 10 — Production Launch, Version 1 Completion & Post-Launch Operations**: Batches 1–6 (M10-001–M10-020, M10-021–M10-024, M10-005–M10-011) are complete and synchronized to GitHub. Batch 7 (Finalize Version 1, Celebrate the Release — final project closure audit, M10-025–M10-026) is implemented, validated, and awaiting this batch's own commit approval, not yet pushed — see `## Milestone 10 progress` below. **Reconciliation note (2026-08-27): this sentence is a preserved historical statement, accurate at the time it was written — Batch 7 is now merged and pushed to `origin/main`.** Substantial P-series (Aave V4 correctness/provenance/execution-cost) hardening, followed by two rounds of post-M10 production-readiness and security hardening (R1, R2), have since been completed and merged — none of it recorded contemporaneously in this file. See `## Post-Milestone-10 Hardening (P-series, R1, R2) — V1 Documentation Reconciliation` (after `## Milestone 10 progress`) for the full reconciliation record and the current V1 technical-readiness verdict. **Full, final Milestone 10 ledger (M10-001–M10-026)**: 16 COMPLETE; 5 COMPLETE UNDER APPROVED DISPOSITION (M10-002, M10-005, M10-008, M10-021, M10-025); 5 DEFERRED BY EXPLICIT PRODUCT/RELEASE DECISION (M10-006, M10-007, M10-009, M10-010, M10-011 — "Deferred by explicit product/release decision — no operated production deployment exists for Version 1.0.0," not "N/A," which is reserved for cancelled Cloud Database/Cloud Sync); 0 UNRESOLVED/BLOCKING. **This is not summarized as "all M10 tasks complete."** Pending this batch's own commit approval: **ProfitPilot Version 1.0.0 software release: COMPLETE. Version 1 quality sign-off: COMPLETE. Milestone 10: COMPLETE UNDER APPROVED PATH B DISPOSITION. Version 1 project/repository closure: COMPLETE UNDER APPROVED PATH B DISPOSITION. Operated public production deployment: DEFERRED. Live production monitoring: DEFERRED. Cloud Database/Cloud Sync: CANCELLED. Version 2: NOT STARTED.**
 
 The remainder of this summary paragraph is historical: Milestone 9 Batch 1 (Quality Foundation, M9-001–004) is complete — `docs/QUALITY_PLAN.md`, `docs/REQUIREMENTS_TRACEABILITY_MATRIX.md`, `docs/DOD_COMPLIANCE_AUDIT.md`, and `docs/DEFECT_CLASSIFICATION.md` are new; the Milestone 8 cloud cancellation (Conflict #34) is applied throughout the Requirements Traceability Matrix from the start, and three new specification conflicts (#35–37) were found and recorded, none resolved yet. Batch 2 (Formula Engine Verification, M9-005–010) is also complete: the existing formula coverage registry, Golden Reference fixtures, and invariant suite were audited and extended rather than duplicated — Golden Reference coverage now includes Loop/Simulation/Exit outputs (independently derived via Python `decimal`), 3 genuinely missing boundary conditions (very small/large balances, extreme interest rate) and 2 genuinely missing cross-formula invariants (debt repayment, collateral addition) were closed, and `fast-check` was added to implement 4 of 5 named property tests (the 5th, fee removal, is not applicable — this Engine computes no fees). Batch 3 (Service and State Verification, M9-011–014) is also complete: a genuine cross-portfolio state-contamination bug was found and fixed (Simulation/Loop Builder/Exit Planner Stores never cleared their unsaved working state when the active portfolio changed), concurrent-state-update races were verified with new tests, and full multi-Store application-restart recovery was verified through the real `PersistenceProvider` mount path rather than only per-Store in isolation. Batch 4 (Application Workflow Testing, M9-015–021) is also complete: a genuine, live defect was found and fixed (the Dashboard's own Quick Actions had silently hardcoded "Run simulation"/"Build loop strategy"/"Create exit plan" as permanently unavailable since Milestone 5, never revisited once Milestones 6/7 shipped those routes for real — the _only_ mobile-reachable navigation path to them, since the sidebar has no mobile equivalent); new e2e coverage closed 3 real gaps (offline application usage, interactive mobile/tablet workflows, expanded browser navigation behavior) and one real untested feature (the Import service's own `mergeNonConflicting`/`replaceSelected` conflict-resolution merge modes); a documented, approved cross-browser testing record was produced for the two browsers this environment cannot automate. Batch 5 (Accessibility Hardening, M9-022–028) is also complete. Batch 6 (Security Hardening, M9-029–036) is also complete. Batch 7 (Performance Hardening, M9-037–042) is also complete. Batch 8 (Reliability and Error Handling, M9-043–048) is also complete: React error boundaries (`app/error.tsx`, `app/global-error.tsx`) were added where none existed before, and `docs/DISASTER_RECOVERY.md` was extended. Batch 9 (Observability, M9-049–052) is also complete: privacy-safe Sentry error monitoring, structured diagnostic logging, and an incident response procedure were built, gated entirely on an unconfigured-by-default `NEXT_PUBLIC_SENTRY_DSN`; a real ~76 kB bundle-size regression from a first, static-import implementation was found and fixed before commit. Batch 10 (Documentation Hardening, M9-053–056) is also complete: this project's first real user-facing guide (`docs/USER_GUIDE.md`) and first changelog (`docs/CHANGELOG.md`) were written, `CONTRIBUTING.md` was extended with previously-missing operational sections (persistence migrations, deployment, release process, incident response, Sentry configuration), and one genuine financial-disclosure defect was found and fixed (the Dashboard KPI Grid's liquidation-price card disagreed with the Liquidation Risk Panel's own card over the identical F-024 figure on whether to label it as an estimate — both now read "Estimated Liquidation Price"). Batch 11 (Release Candidate and Version 1 Quality Sign-Off, M9-057–064) is also complete: a real production build/server was verified directly (security headers confirmed on a live response, not just source), the full regression suite passed (2123/2123 unit tests, 151/151 Playwright including 43/43 accessibility), 8 AI-agent-driven exploratory scenarios found zero defects, the local storage migration/rollback mechanism was confirmed genuinely wired into the real app boot path (not just unit-tested), and the open-defect review found zero P0/P1 defects — one non-blocking P2 (CI does not yet run the Playwright suite automatically) was found, classified, and documented rather than silently left unmentioned. Version 1 Quality Sign-Off passed; `package.json`/`APP_VERSION`/`ENGINE_VERSION` bumped from `0.1.0` to `1.0.0` per `01_PRD.md` REQ-017's own definition of what "Version 1.0" means, `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` left unchanged. See `## Milestone 9 progress` below for the full record. **Milestone 4 — Portfolio Management is complete and synchronized to GitHub** — all 18 tasks (M4-001 through M4-018) addressed across Batch 0 (standalone Conflict #20 follow-up) and Batches 1–10, per `docs/06_TASKS.md`; a permanent snapshot lives in `MILESTONE_4_COMPLETION.md`. **Milestone 5 — Dashboard is complete and synchronized to GitHub**: all 18 batches (M5-001–M5-007, M5-009–M5-028, excluding M5-008) are synchronized; a permanent snapshot lives in `MILESTONE_5_COMPLETION.md`. M5-008 remains wholly blocked on Conflict #1. Milestone 5 found and documented Conflict #30, a large drift between `03_UI.md`'s own Page 3 Dashboard mockup and the `06_TASKS.md`-driven implementation this milestone actually followed. **Milestone 6 — Simulation Workspace is complete and synchronized to GitHub**: all 26 tasks (M6-001–M6-026) addressed across Batches 1–25; a permanent snapshot lives in `MILESTONE_6_COMPLETION.md` (backfilled). Milestone 6 found and documented Conflict #31, a missing "Recommendation" feature named in `03_UI.md` Page 5 and corroborated twice in `01_PRD.md` REQ-004-A, with zero Engine/Service-layer support. **Milestone 7 — Strategy Tools is complete and synchronized to GitHub**: all 45 tasks (M7-001–M7-045) addressed across 8 batches, using coarser "logical feature batch" grouping (5–8 related tasks per batch) rather than Milestone 5/6's one-task-per-batch density, per explicit instruction; a permanent snapshot lives in `MILESTONE_7_COMPLETION.md`. Milestone 7 found and documented two new conflicts at Batch 1 (before any code was written): Conflict #32, `03_UI.md` Page 6's "Auto Loop Engine" design directly contradicting `06_TASKS.md`'s own M7-008 manual-`maxLoops`-input task and the already-built Engine; and Conflict #33, the Recommendation Center having no page or sidebar entry anywhere in `03_UI.md`'s 10-page index. Both were resolved in favor of `06_TASKS.md`'s own buildable task text, the same precedence Conflicts #30/#31 already established. **Milestone 8 — Persistence, Authentication, Cloud Synchronization & Import/Export is complete under a re-scoped, local-only product decision, and synchronized to GitHub**: of the section's 62 tasks, 43 are implemented (Persistence Foundation, Local Storage, Authentication, Import/Export, Backup and Recovery excluding M8-049, Privacy and Security, and 3 of 8 Quality/Testing tasks), 16 are cancelled by explicit product decision (Cloud Database M8-022–025, Cloud Synchronization M8-027–035, Cloud Data Deletion M8-049, and the two cloud-only test tasks M8-057/058 — Supabase is not used for persistence or synchronization in this application), and the remaining 3 (M8-060–062) are satisfied without dedicated new code, since their local-only requirements were already proven by other Milestone 8 tests and their cloud-only requirements are no longer applicable. The Synchronization Model (M8-026) is retained as generic domain infrastructure; Authentication (M8-014–021) remains fully implemented as an optional, dormant capability. See `## Milestone 8 progress` below and `docs/MILESTONE_8_SCOPE_CHANGE.md` for the full record; no `MILESTONE_8_COMPLETION.md` snapshot file was created, unlike Milestones 4–7 — this file's own new section is the permanent record instead. **Milestone 3 — Core Services is complete** — all 14 tasks (M3-001 through M3-014) addressed. **Milestone 2 — Formula Engine is complete within the documented Version 1 scope** (M2-001 through M2-032 all addressed; M2-013/M2-014 formally blocked; 33 of 69 Formula IDs and multi-asset scenarios intentionally documented as out of scope rather than implemented — see that section's Batch 16 write-up and conflicts #5/#7/#15).
@@ -13097,6 +13105,62 @@ any later hardening work. `docs/DEPLOYMENT_DISPOSITION.md`'s own
 exactly how the R1-2 rate-limiting/middleware evidence updates that
 document's M10-005/M10-006 evidence rows without changing either
 task's classification.
+
+---
+
+## V1.1 Release Reconciliation
+
+**Current release candidate: `1.1.0`. Version `1.0.0` remains the
+immutable previous release** — the `v1.0.0` git tag is unchanged and
+untouched by any of the work below; nothing in V1.1 rewrites or reopens
+it. This section is added by the V1.1 release-reconciliation batch
+(2026-08-31), the same "reconciliation record added after the fact, not
+a rewritten history" convention the P-series/R1/R2 section above already
+established — none of the seven batches below were tracked contemporaneously
+in this file as they happened.
+
+**Seven capability batches, `v1.0.0..HEAD`, all complete**: (1) V3
+live-data trust parity, closing the one asymmetry between V3 and V4's
+manual/live conflict handling; (2) Portfolio History, an automatic
+append-only change timeline; (3) Apply-to-Portfolio, one shared
+review-and-confirm component reused by Simulation, Loop Builder, Exit
+Planner, and Recommendation Detail; (4) full-exit/zero-state robustness
+across the Engine, History, and Apply paths; (5) recommendation
+explainability (quantified impact, risk/cost framing, data confidence);
+(6) data freshness/live-status UX (explicit live/manual/stale labeling);
+(7) a mobile & responsive product pass, closing the previously accepted
+"no mobile navigation below `md:`" gap. Full per-batch audit/implement/
+test/validate detail was delivered as each batch's own report, not
+reproduced here; `docs/CHANGELOG.md`'s `[1.1.0]` entry is the
+user-facing summary.
+
+**V1.1 Release Candidate audit (read-only, this same date)** independently
+re-verified the above against current `origin/main` — a fresh clean
+worktree at `60ab26a78f50a8488735f2c31356057ff7af94f5`, `pnpm validate`
+(typecheck/lint/format/3914 unit tests/production build, all passing),
+and a full Playwright run (163 tests; 162 passed directly, the 1
+remaining failure reproduced as the rate limiter (R1-2) correctly firing
+under full-suite-in-one-session load and confirmed non-regressive by an
+isolated re-run passing 3/3) — not merely re-asserted from each batch's
+own prior report. **Result: zero open P0 defects, zero open P1 defects.**
+See `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review"
+section for the full classified review.
+
+**Deployment disposition: unchanged, still Path B.** None of the seven
+V1.1 batches introduces a new external service dependency or changes
+this repository's self-hostable, no-operated-production-deployment
+posture — see `docs/DEPLOYMENT_DISPOSITION.md`. The application/
+repository remains deployment-ready in the same sense Version 1.0.0
+was; whether to actually operate a production deployment remains the
+same deliberately deferred product decision it always was, not a new
+gap V1.1 introduces.
+
+**Scope explicitly unchanged**: no `FORMULA_VERSION` or
+`STORAGE_SCHEMA_VERSION` bump — no batch touched a financial formula or
+the persisted-data schema. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` are bumped to `1.1.0` as part of this same reconciliation
+batch (see `docs/CHANGELOG.md`'s version-metadata table for the full
+per-axis record).
 
 ---
 

@@ -32,15 +32,26 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.0.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.0.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`)  |
+| Application version           | `1.1.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.1.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1** — none of the seven V1.1 batches modified a financial formula. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1** — Portfolio History and Apply-to-Portfolio both persist through the existing envelope/schema, adding no new schema version. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
-| Sign-off completed             | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
+| Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
+| Sign-off completed (1.1.0)     | 2026-08-31     | V1.1 Release Candidate audit (Batches 1–7) — see `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review" section and the `[1.1.0]` entry below. Also not a deployment date. |
 
-**Why the Application/Engine version is now `1.0.0`, not `0.1.0`**:
+**Why the Application/Engine version is `1.1.0`, not a new `2.0.0`**:
+V1.1 adds seven feature batches on top of Version 1.0.0's already-complete
+scope (below) without changing the Engine's calculation surface,
+persisted-data shape, or the Manual-Mode-by-default product boundary that
+`01_PRD.md` reserves Version 2 for (a real, connected live price
+feed/account is still not what this release does — see the `[1.1.0]`
+entry below for exactly what "live" means in V1.1's own V3/V4 trust-parity
+feature). A minor version bump, not a major one.
+
+**Why the Application/Engine version was `1.0.0`, not `0.1.0`, at first
+release**:
 `01_PRD.md`'s own REQ-017 "FINAL ACCEPTANCE CRITERIA" defines "Version
 1.0" as exactly this feature set (Portfolio Management, Mathematical
 Engine, Risk Engine, Simulation Engine, Recommendation Engine, Exit
@@ -94,6 +105,73 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.1.0] — 2026-08-31
+
+Seven capability batches built on top of Version 1.0.0 (which already
+includes the R1/R2 production-readiness hardening recorded below this
+entry, completed before the `v1.0.0` tag was created). Full detail on
+every batch's own audit, implementation, and test record lives in
+`PROJECT_STATUS.md`'s "V1.1 Release Reconciliation" section; this entry
+summarizes what changed for a user.
+
+- **Live-data trust parity (Aave V3).** Before this release, a live V3
+  fetch that disagreed with an existing manually entered market price or
+  protocol parameter silently overwrote it. V3 now behaves exactly like
+  V4 already did: a disagreement is held as a pending candidate and
+  surfaced as an explicit "Use Live Data" / "Keep Manual" confirmation on
+  the Portfolio page, never applied silently.
+- **Portfolio History.** Every portfolio now keeps an automatic,
+  append-only timeline of meaningful changes — a snapshot is recorded on
+  creation, on an explicit save, and whenever accepted live data or an
+  applied change materially moves Health Factor, collateral/debt value,
+  LTV, leverage, or borrow APR. Shown as a Health Factor trend chart plus
+  a table of before/after deltas (a responsive card list below `sm:` on
+  mobile), with the table remaining the accessible primary source.
+- **Apply-to-Portfolio.** Simulation, Loop Builder, Exit Planner, and
+  Recommendation Detail can now write a proposed outcome directly to the
+  tracked portfolio, through one shared review-and-confirm component
+  (current vs. proposed Health Factor, leverage, LTV, liquidation price,
+  and annual borrowing cost). Never applies silently; refuses outright if
+  the portfolio changed since the proposal was generated (a stale-apply
+  guard) rather than applying stale assumptions.
+- **Full-exit / zero-state robustness.** Hardened the zero-debt,
+  zero-collateral, and zero-collateral-plus-zero-debt boundary cases
+  across the Engine, History, and Apply paths so a full exit (or a
+  freshly created, not-yet-funded portfolio) never produces a fabricated
+  number, a `NaN`, or an inconsistent Infinity-Health-Factor rendering
+  anywhere it now appears (History rows, Apply review, recommendation
+  impact figures).
+- **Recommendation explainability.** Each recommendation now shows a
+  Quantified Impact (real before/after portfolio figures, reusing the
+  same Apply proposal machinery above), a plain-language Risk/Tradeoff
+  and Cost Impact statement, and a Data Confidence note — and can be
+  applied directly via the same Apply-to-Portfolio review, alongside its
+  existing "open in Exit Planner/Simulation" prefill action.
+- **Data freshness / live-status UX.** Every place that shows a
+  manually-entered value that has a live counterpart (Strategy
+  Assumptions, Simulation Assumptions) now states plainly whether that
+  value is live, manual, or manual-and-stale, instead of leaving the
+  distinction implicit. Simulation's own V4 staleness gate now warns
+  rather than blocking the workspace outright.
+- **Mobile & responsive product pass.** Closed a real, previously
+  accepted gap: primary navigation had no mobile equivalent at all below
+  768px (worked around only via Dashboard Quick Actions since Milestone
+  9). A mobile navigation panel now reaches every route; Portfolio
+  History, the Apply-to-Portfolio review grid, and a real header
+  horizontal-overflow bug (found empirically, not assumed) were also
+  fixed. No visual redesign — existing desktop layout is pixel-identical.
+
+**Explicitly unchanged in V1.1**: no financial formula (`FORMULA_VERSION`
+stays `1.0`), no persisted-data schema (`STORAGE_SCHEMA_VERSION` stays
+`1.0.0`), no live wallet/transaction capability, no new external service
+dependency, and no change to the Path B (self-hostable, no operated
+production deployment) deployment disposition — see
+`docs/DEPLOYMENT_DISPOSITION.md`.
+
+**Release-blocking defects at RC sign-off**: zero P0, zero unapproved P1.
+See `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review"
+section for the full review.
 
 ## [Unreleased] — Post-M10 hardening (R1/R2)
 

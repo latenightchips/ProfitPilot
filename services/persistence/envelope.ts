@@ -18,7 +18,7 @@ import type { PersistedRecordType, StorageEnvelope } from './types/envelope';
 import { PERSISTED_RECORD_TYPES } from './types/envelope';
 
 export const APP_NAME = 'ProfitPilot';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 export const STORAGE_SCHEMA_VERSION = '1.0.0';
 
 /**
