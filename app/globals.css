@@ -111,3 +111,34 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * V1.1 Batch 7, Section 9 ("no zoom-triggering tiny form fonts on mobile
+ * browsers") — a real, well-known bug, not assumed: iOS Safari
+ * auto-zooms the viewport on focusing any form control whose *computed*
+ * font-size is below 16px, and every `<input>`/`<select>`/`<textarea>`
+ * across this codebase inherits `text-sm` (14px) or `text-xs` (12px)
+ * from its wrapping `<label>` (Tailwind's own Preflight sets
+ * `font-size: 100%` on form elements, i.e. "inherit the computed
+ * value") — confirmed by reading every form component's own input
+ * className before writing this rule, not assumed.
+ *
+ * Global and unlayered, the same "one rule covers every current and
+ * future usage without hunting down each component individually"
+ * reasoning as the `prefers-reduced-motion` rule above — scoped to
+ * below this codebase's own `md:` (768px) breakpoint so desktop
+ * typography is entirely unaffected. An unlayered rule beats Tailwind's
+ * own layered Preflight/utility CSS in the cascade regardless of
+ * selector specificity or source order, so this does not need `!important`
+ * and does not require editing any component's own `text-xs`/`text-sm`
+ * utility classes (which remain the correct, deliberate size for
+ * *labels* — only the interactive form control's own rendered size
+ * changes here).
+ */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

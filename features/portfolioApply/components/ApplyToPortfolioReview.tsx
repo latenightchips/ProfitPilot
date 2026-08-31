@@ -39,6 +39,18 @@ import type { Portfolio } from '@/types/portfolio';
  * guarantees Section 7's "no history snapshot on Cancel" — there is
  * nothing to dedupe or suppress, the mutating action is simply never
  * invoked.
+ *
+ * **`dl` stacks to a single column below `sm:` (V1.1 Batch 7, Section
+ * 7)**: previously `grid-cols-2 sm:grid-cols-3`, i.e. already two columns
+ * at 320–375px — narrow enough that a changed row's "$123,456.78 →
+ * $130,000.00 (+$6,543.22)" value wraps awkwardly inside roughly half the
+ * viewport width. Section 7's own explicit guidance ("prefer responsive
+ * stacking over reducing text to unreadably small sizes") is exactly
+ * this case — each metric now gets the full row width at mobile, one
+ * extra breakpoint pushes back to 2 columns at `sm:`, and 3 only at
+ * `lg:` and up (this component renders inline inside forms up to a
+ * fairly narrow content column even on desktop, not just at the
+ * viewport's own edge).
  */
 export function ApplyToPortfolioReview({
   portfolio,
@@ -76,7 +88,7 @@ export function ApplyToPortfolioReview({
         Aave.
       </p>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
         <ApplyMetricRow
           label="Collateral"
           before={`${portfolio.collateral.quantity} ${portfolio.collateral.asset}`}

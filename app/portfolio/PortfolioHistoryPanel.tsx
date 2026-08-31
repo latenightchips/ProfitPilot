@@ -35,6 +35,21 @@ import {
  * delta (vs. the next-older entry) is a plain "X → Y" fact, using
  * `comparePortfolioHistoryEntries`'s own deliberately non-causal output;
  * no wording here implies why a value moved.
+ *
+ * **Responsive card view below `sm:` (V1.1 Batch 7, Section 4)**: the
+ * task's own explicit guidance for this panel — "do not force a wide
+ * desktop table into 320px; use responsive cards... preserve timestamp +
+ * HF + collateral + debt + meaningful change visibility." The 7-column
+ * table already sat in an `overflow-x-auto` wrapper (a real, pre-existing
+ * mitigation, not new this batch), but each cell's own delta sub-line
+ * (e.g. "$123,456.78 → $130,000.00 (+$6,543.22)") is long enough that
+ * scrolling to see later columns is still a real cost at 320–375px — a
+ * one-card-per-entry list avoids that scroll entirely by giving every
+ * value its own full-width row. Both views render from the same
+ * `entries`/`comparePortfolioHistoryEntries` data and the same
+ * `format*`/`formatDelta*` helpers below — no separate data path, only a
+ * separate layout, one hidden via `sm:hidden` and the other via `hidden
+ * sm:block`.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -98,6 +113,71 @@ function formatOptionalDelta(
   }
   const sign = (delta.delta ?? 0) > 0 ? '+' : '';
   return `${format(delta.before)} → ${format(delta.after)} (${sign}${format(delta.delta ?? 0)})`;
+}
+
+function HistoryEntryCard({
+  entry,
+  delta,
+}: {
+  entry: PersistedPortfolioHistoryEntry;
+  delta: ReturnType<typeof comparePortfolioHistoryEntries> | null;
+}) {
+  return (
+    <li className="flex flex-col gap-2 rounded-md border border-border p-3 text-xs">
+      <p className="font-medium text-foreground">{formatTimestamp(entry.createdAt)}</p>
+      <dl className="flex flex-col gap-1.5">
+        {(
+          [
+            {
+              label: 'Health Factor',
+              value: formatHealthFactor(entry.healthFactor),
+              delta:
+                delta !== null ? formatNullableDelta(delta.healthFactor, formatHealthFactor) : null,
+            },
+            {
+              label: 'Collateral Value',
+              value: formatCurrency(entry.collateral.valueUsd),
+              delta: delta !== null ? formatDelta(delta.collateralValueUsd, formatCurrency) : null,
+            },
+            {
+              label: 'Debt Value',
+              value: formatCurrency(entry.debt.valueUsd),
+              delta: delta !== null ? formatDelta(delta.debtValueUsd, formatCurrency) : null,
+            },
+            {
+              label: 'LTV',
+              value: formatPercent(entry.loanToValue),
+              delta: delta !== null ? formatDelta(delta.loanToValue, formatPercent) : null,
+            },
+            {
+              label: 'Leverage',
+              value: `${formatHealthFactor(entry.leverage)}x`,
+              delta:
+                delta !== null
+                  ? formatDelta(delta.leverage, (v) => `${formatHealthFactor(v)}x`)
+                  : null,
+            },
+            {
+              label: 'Borrow APR',
+              value:
+                entry.borrowApr !== undefined ? formatPercent(entry.borrowApr) : 'Not available',
+              delta: delta !== null ? formatOptionalDelta(delta.borrowApr, formatPercent) : null,
+            },
+          ] as const
+        ).map((row) => (
+          <div key={row.label} className="flex flex-col gap-0.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-muted-foreground">{row.label}</dt>
+              <dd className="text-right text-foreground">{row.value}</dd>
+            </div>
+            {row.delta !== null && row.delta !== '—' && (
+              <p className="text-right text-muted-foreground">{row.delta}</p>
+            )}
+          </div>
+        ))}
+      </dl>
+    </li>
+  );
 }
 
 export function PortfolioHistoryPanel({
@@ -213,7 +293,18 @@ export function PortfolioHistoryPanel({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <ul className="flex flex-col gap-3 sm:hidden">
+        {entries.map((entry, index) => {
+          const olderEntry = entries[index + 1];
+          const delta =
+            olderEntry !== undefined ? comparePortfolioHistoryEntries(olderEntry, entry) : null;
+          return (
+            <HistoryEntryCard key={`${entry.createdAt}-${index}`} entry={entry} delta={delta} />
+          );
+        })}
+      </ul>
+
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-left text-xs">
           <thead>
             <tr className="border-b border-border text-muted-foreground">

@@ -28,6 +28,34 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  *   component reading `usePortfolioStore` re-renders when
  *   `activePortfolioId` changes, with no additional wiring needed here.
  *
+ * **Mobile navigation toggle (V1.1 Batch 7, Section 3)**: `AppSidebar`
+ * renders nothing below `md:` — this header is the only always-visible
+ * mobile surface, so its own leftmost control is the toggle for
+ * `MobilePrimaryNav.tsx` (rendered by `AppShell`, not here — the panel
+ * needs to sit below the full header row, not inside it, so it pushes
+ * page content down instead of covering it). `mobileNavOpen`/
+ * `onToggleMobileNav` are owned by `AppShell` and passed down rather than
+ * duplicated in local state here, since the button and the panel it
+ * controls are siblings, not parent/child.
+ *
+ * **Header now wraps (`flex-wrap`, `min-h-14`) below `md:` (V1.1 Batch
+ * 7)**: a real, empirically-confirmed overflow bug, not assumed — with
+ * no active portfolio (`entries.length === 0`) and signed out, the right
+ * side renders "No portfolios yet — create one" + "View portfolios" +
+ * "Sign in", all `shrink-0`; combined with the new mobile nav toggle
+ * button on the left, that is more content than a single fixed-height
+ * `h-14` row can fit at 375px, and every item's `shrink-0` meant none of
+ * it could compress — found via an actual Playwright viewport check
+ * (`document.documentElement.scrollWidth > clientWidth`, 448px vs.
+ * 375px), not just reading Tailwind classes, the same discipline
+ * `AppShell.tsx`'s own `min-w-0` comment documents for M5-023. This
+ * specific combination (no portfolio + signed out) was never checked at
+ * a mobile viewport by any existing test — every `responsiveLayout.spec.ts`
+ * Dashboard case creates a portfolio first. `md:h-14 md:flex-nowrap
+ * md:py-0` restores the exact previous single-row desktop layout
+ * unchanged; only the mobile case gains a second row instead of
+ * overflowing.
+ *
  * **Archived portfolios excluded from the switcher (M4-012, added this
  * batch)**: M4-012's own text requires archiving to "Hide from active
  * lists." This switcher is exactly such a list — the active portfolio
@@ -64,7 +92,13 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * choice" asks for without making the everyday header shortcut
  * destructive by default.
  */
-export function AppHeader() {
+export function AppHeader({
+  mobileNavOpen,
+  onToggleMobileNav,
+}: {
+  mobileNavOpen: boolean;
+  onToggleMobileNav: () => void;
+}) {
   const portfolios = usePortfolioStore((state) => state.portfolios);
   const activePortfolioId = usePortfolioStore((state) => state.activePortfolioId);
   const select = usePortfolioStore((state) => state.select);
@@ -79,11 +113,22 @@ export function AppHeader() {
     activePortfolioId !== null ? portfolios[activePortfolioId]?.portfolio.name : undefined;
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4 md:px-6">
-      <span className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
-        ProfitPilot
-      </span>
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-border px-4 py-2 md:h-14 md:flex-nowrap md:py-0 md:px-6">
+      <div className="flex min-w-0 shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleMobileNav}
+          aria-expanded={mobileNavOpen}
+          aria-controls="mobile-primary-nav"
+          className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-accent hover:text-accent-foreground md:hidden"
+        >
+          {mobileNavOpen ? 'Close' : 'Menu'}
+        </button>
+        <span className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
+          ProfitPilot
+        </span>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
         {entries.length === 0 ? (
           <Link
             href="/portfolios"

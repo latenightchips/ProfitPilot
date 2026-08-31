@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppHeader } from '@/components/layout/AppHeader';
 import { useAuthStore } from '@/stores/authStore';
@@ -45,12 +45,12 @@ function validInput(name: string) {
 
 describe('AppHeader — no portfolios (M4-010)', () => {
   it('shows a link to create a portfolio when none exist', () => {
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.getByText(/no portfolios yet/i)).toBeInTheDocument();
   });
 
   it('does not render the portfolio switcher when none exist', () => {
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.queryByLabelText('Active portfolio')).not.toBeInTheDocument();
   });
 });
@@ -59,7 +59,7 @@ describe('AppHeader — with portfolios (M4-010)', () => {
   it('lists every active (non-archived) portfolio in the switcher', () => {
     usePortfolioStore.getState().create(validInput('Alpha'));
     usePortfolioStore.getState().create(validInput('Beta'));
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     const select = screen.getByLabelText('Active portfolio');
     expect(select).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Alpha' })).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe('AppHeader — with portfolios (M4-010)', () => {
     usePortfolioStore.getState().create(validInput('Beta'));
     if (!alpha.ok) throw new Error('setup failed');
     usePortfolioStore.getState().archive(alpha.data.id);
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.queryByRole('option', { name: 'Alpha' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Beta' })).toBeInTheDocument();
   });
@@ -81,7 +81,7 @@ describe('AppHeader — with portfolios (M4-010)', () => {
     const second = usePortfolioStore.getState().create(validInput('Beta'));
     if (!first.ok || !second.ok) throw new Error('setup failed');
 
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     const user = userEvent.setup();
     const select = screen.getByLabelText('Active portfolio');
     await user.selectOptions(select, second.data.id);
@@ -94,20 +94,43 @@ describe('AppHeader — with portfolios (M4-010)', () => {
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
 
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.getByText('Manage portfolios')).toBeInTheDocument();
   });
 
   it('caps the switcher width below sm: so a long portfolio name cannot force horizontal page overflow (M5-023, Batch 12)', () => {
     usePortfolioStore.getState().create(validInput('Responsive Layout Verification Portfolio'));
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.getByLabelText('Active portfolio')).toHaveClass('max-w-[45vw]');
+  });
+});
+
+describe('AppHeader — mobile navigation toggle (V1.1 Batch 7, Section 3)', () => {
+  it('exposes aria-expanded/aria-controls reflecting the open state', () => {
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
+    const toggle = screen.getByRole('button', { name: 'Menu' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'mobile-primary-nav');
+  });
+
+  it('reflects an open state via label and aria-expanded', () => {
+    render(<AppHeader mobileNavOpen={true} onToggleMobileNav={() => {}} />);
+    const toggle = screen.getByRole('button', { name: 'Close' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('calls onToggleMobileNav when clicked', async () => {
+    const onToggleMobileNav = vi.fn();
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={onToggleMobileNav} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Menu' }));
+    expect(onToggleMobileNav).toHaveBeenCalledOnce();
   });
 });
 
 describe('AppHeader — account indicator (Milestone 8 Batch 5, M8-020/M8-021)', () => {
   it('shows a Sign In link when signed out', () => {
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
   });
 
@@ -118,7 +141,7 @@ describe('AppHeader — account indicator (Milestone 8 Batch 5, M8-020/M8-021)',
       errors: [],
       cloudSyncEligible: true,
     });
-    render(<AppHeader />);
+    render(<AppHeader mobileNavOpen={false} onToggleMobileNav={() => {}} />);
     expect(screen.getByText('user@example.com')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();

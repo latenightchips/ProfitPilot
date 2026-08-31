@@ -124,6 +124,22 @@ describe('ApplyToPortfolioReview — content', () => {
     const liquidationRow = screen.getByText('Liquidation Price').closest('div');
     expect(liquidationRow?.textContent).toContain('No liquidation risk');
   });
+
+  it('stacks the before/after metrics to a single column below sm: (V1.1 Batch 7, Section 7)', () => {
+    const portfolio = createValidPortfolio();
+    const proposal = proposalFor(portfolio, 3, 30000);
+    render(
+      <ApplyToPortfolioReview
+        portfolio={portfolio}
+        proposal={proposal}
+        onApplied={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    const grid = screen.getByText('Collateral').closest('dl');
+    expect(grid).toHaveClass('grid-cols-1');
+    expect(grid).not.toHaveClass('grid-cols-2');
+  });
 });
 
 describe('ApplyToPortfolioReview — Confirm', () => {

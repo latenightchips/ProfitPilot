@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { PortfolioHistoryPanel } from '@/app/portfolio/PortfolioHistoryPanel';
@@ -14,6 +14,19 @@ import type { PersistedPortfolioHistoryEntry } from '@/services/persistence/type
  * table is the primary accessible source (DoD: "enhance understanding
  * without replacing numerical data"), so these tests assert on its
  * rendered text content directly.
+ *
+ * **Value assertions scoped to the table via `within` (V1.1 Batch 7)**:
+ * the component now also renders a `sm:hidden` mobile card list with the
+ * same values (Section 4 — "do not force a wide desktop table into
+ * 320px"). jsdom applies no real CSS layout, so both views are present
+ * in the DOM simultaneously in every test here regardless of the
+ * `hidden`/`sm:hidden` classes that only take effect in a real browser —
+ * an unscoped `getByText` on a value that appears in both would now
+ * throw "multiple elements found." `tests/e2e/mobileWorkflows.spec.ts`
+ * and this batch's own new mobile-viewport coverage are what actually
+ * proves the card list renders correctly in a real browser; these
+ * component tests only need to keep proving the table's own content,
+ * which `within(getByRole('table'))` still does precisely.
  */
 function entry(
   overrides: Partial<PersistedPortfolioHistoryEntry> = {},
@@ -99,12 +112,13 @@ describe('PortfolioHistoryPanel — with entries', () => {
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
-    expect(screen.getByText('4')).toBeInTheDocument(); // Health Factor
-    expect(screen.getByText('$100,000.00')).toBeInTheDocument(); // Collateral value
-    expect(screen.getByText('$20,000.00')).toBeInTheDocument(); // Debt value
-    expect(screen.getByText('20%')).toBeInTheDocument(); // LTV
-    expect(screen.getByText('1.25x')).toBeInTheDocument(); // Leverage
-    expect(screen.getByText('5%')).toBeInTheDocument(); // Borrow APR
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('4')).toBeInTheDocument(); // Health Factor
+    expect(table.getByText('$100,000.00')).toBeInTheDocument(); // Collateral value
+    expect(table.getByText('$20,000.00')).toBeInTheDocument(); // Debt value
+    expect(table.getByText('20%')).toBeInTheDocument(); // LTV
+    expect(table.getByText('1.25x')).toBeInTheDocument(); // Leverage
+    expect(table.getByText('5%')).toBeInTheDocument(); // Borrow APR
   });
 
   it('does not render the chart with only one entry, but always renders the table', async () => {
@@ -161,7 +175,7 @@ describe('PortfolioHistoryPanel — with entries', () => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
     // The newer (top) row's delta vs. the older one: 4 -> 3 (-1).
-    expect(screen.getByText('4 → 3 (-1)')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('4 → 3 (-1)')).toBeInTheDocument();
   });
 
   it('renders "∞" for a zero-debt (null) Health Factor, matching the app-wide convention', async () => {
@@ -182,7 +196,7 @@ describe('PortfolioHistoryPanel — with entries', () => {
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
-    expect(screen.getByText('∞')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('∞')).toBeInTheDocument();
   });
 
   it('V1.1 Batch 4: renders a full-exit entry (zero collateral/debt) with leverage "0x" and HF "∞", never "NaN"', async () => {
@@ -207,8 +221,9 @@ describe('PortfolioHistoryPanel — with entries', () => {
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
-    expect(screen.getByText('∞')).toBeInTheDocument();
-    expect(screen.getByText('0x')).toBeInTheDocument();
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('∞')).toBeInTheDocument();
+    expect(table.getByText('0x')).toBeInTheDocument();
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
   });
 
@@ -224,7 +239,7 @@ describe('PortfolioHistoryPanel — with entries', () => {
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
-    expect(screen.getByText('Not available')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('Not available')).toBeInTheDocument();
   });
 
   it('keeps multiple portfolios isolated — only the requested portfolioId’s entries render', async () => {
@@ -240,7 +255,28 @@ describe('PortfolioHistoryPanel — with entries', () => {
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('4')).toBeInTheDocument();
     expect(screen.queryByText('9')).not.toBeInTheDocument();
+  });
+
+  it('V1.1 Batch 7: also renders a mobile card list with the same required values, one card per entry', async () => {
+    await recordPortfolioHistoryEntry(entry());
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('list')).toBeInTheDocument();
+    });
+    const list = within(screen.getByRole('list'));
+    expect(list.getAllByRole('listitem')).toHaveLength(1);
+    expect(list.getByText('4')).toBeInTheDocument(); // Health Factor
+    expect(list.getByText('$100,000.00')).toBeInTheDocument(); // Collateral value
+    expect(list.getByText('$20,000.00')).toBeInTheDocument(); // Debt value
+    expect(list.getByText('20%')).toBeInTheDocument(); // LTV
+    expect(list.getByText('1.25x')).toBeInTheDocument(); // Leverage
+    expect(list.getByText('5%')).toBeInTheDocument(); // Borrow APR
   });
 });
