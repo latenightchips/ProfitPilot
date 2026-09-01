@@ -12,6 +12,7 @@ import { createApplicationError } from '@/services/shared';
 import type { ApplicationError } from '@/services/shared/errors';
 import { env } from '@/utils/env';
 
+import { type JsonSafe, toJsonSafe } from '../_shared/toJsonSafe';
 import { withUnexpectedErrorBoundary } from '../_shared/unexpectedErrorBoundary';
 
 /**
@@ -47,7 +48,8 @@ import { withUnexpectedErrorBoundary } from '../_shared/unexpectedErrorBoundary'
  */
 export interface AaveV4PositionApiResponse {
   ok: boolean;
-  data?: AaveV4DebtSnapshot;
+  /** Bigint-safe over the wire — see `../_shared/toJsonSafe.ts`'s own header comment. */
+  data?: JsonSafe<AaveV4DebtSnapshot>;
   errors?: ApplicationError[];
 }
 
@@ -161,7 +163,7 @@ export async function GET(request: Request): Promise<NextResponse<AaveV4Position
         );
       }
 
-      return NextResponse.json({ ok: true, data: result.data });
+      return NextResponse.json({ ok: true, data: toJsonSafe(result.data) });
     },
     unexpectedErrorResponse,
   );

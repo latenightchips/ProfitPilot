@@ -82,6 +82,59 @@ describe('GET /api/aave/v4-collateral-risk', () => {
     );
   });
 
+  /**
+   * The test above only ever exercises `raw: {}` — no `raw` fixture in
+   * this suite has ever contained a real `bigint`, which is exactly why
+   * `NextResponse.json({ ok: true, data: result.data })` throwing
+   * `TypeError: Do not know how to serialize a BigInt` on a genuine
+   * `RawAaveV4CollateralRiskSnapshot` (every field populated, as the real
+   * adapter actually returns it) was never caught. This is that missing
+   * case — see `../_shared/toJsonSafe.test.ts` for the converter's own
+   * isolated coverage.
+   */
+  it('returns 200 with a fully JSON-serializable body for a realistic, fully-populated raw snapshot (bigint fields become strings, nested dynamicReserveConfig included)', async () => {
+    fetchAaveV4CollateralRiskSnapshot.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        raw: {
+          blockNumber: 21_000_000n,
+          blockTimestamp: 1_700_000_000n,
+          spoke: '0x1111111111111111111111111111111111111111',
+          collateralReserveId: 11n,
+          userDynamicConfigKey: 1,
+          dynamicReserveConfig: { collateralFactor: 8000n },
+          oracle: '0x9999999999999999999999999999999999999999',
+          oraclePriceRaw: 6_900_000_000_000n,
+          oracleDecimals: 8,
+        },
+        canonical: { collateralFactor: 0.8, dynamicConfigKey: 1, collateralPriceUsd: 69000 },
+        display: { blockNumber: '21000000' },
+      },
+    });
+    const { GET } = await import('@/app/api/aave/v4-collateral-risk/route');
+    const response = await GET(request(`?userAddress=${VALID_ADDRESS}`));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.raw).toEqual({
+      blockNumber: '21000000',
+      blockTimestamp: '1700000000',
+      spoke: '0x1111111111111111111111111111111111111111',
+      collateralReserveId: '11',
+      userDynamicConfigKey: 1,
+      dynamicReserveConfig: { collateralFactor: '8000' },
+      oracle: '0x9999999999999999999999999999999999999999',
+      oraclePriceRaw: '6900000000000',
+      oracleDecimals: 8,
+    });
+    expect(body.data.canonical).toEqual({
+      collateralFactor: 0.8,
+      dynamicConfigKey: 1,
+      collateralPriceUsd: 69000,
+    });
+  });
+
   it('returns 503 for a retryable adapter error (RPC timeout/network)', async () => {
     fetchAaveV4CollateralRiskSnapshot.mockResolvedValueOnce({
       ok: false,

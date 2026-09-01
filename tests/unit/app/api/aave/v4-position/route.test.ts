@@ -87,6 +87,75 @@ describe('GET /api/aave/v4-position', () => {
     expect(fetchAaveV4DebtSnapshot).toHaveBeenCalledWith(expect.anything(), 'USDC', VALID_ADDRESS);
   });
 
+  /**
+   * The test above only ever exercises `{ display: {...} }` — no `raw`
+   * fixture in this suite has ever contained a real `bigint`, which is
+   * exactly why `NextResponse.json({ ok: true, data: result.data })`
+   * throwing `TypeError: Do not know how to serialize a BigInt` on a
+   * genuine `RawAaveV4Snapshot` (every field populated, as the real
+   * adapter actually returns it) was never caught. This is that missing
+   * case — see `../_shared/toJsonSafe.test.ts` for the converter's own
+   * isolated coverage.
+   */
+  it('returns 200 with a fully JSON-serializable body for a realistic, fully-populated raw snapshot (bigint fields become strings)', async () => {
+    fetchAaveV4DebtSnapshot.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        raw: {
+          blockNumber: 21_000_000n,
+          blockTimestamp: 1_700_000_000n,
+          hub: '0x2222222222222222222222222222222222222222',
+          spoke: '0x1111111111111111111111111111111111111111',
+          assetId: 7n,
+          reserveId: 3n,
+          reserve: {
+            underlying: '0x3333333333333333333333333333333333333333',
+            hub: '0x2222222222222222222222222222222222222222',
+            assetId: 7,
+            decimals: 6,
+            collateralRisk: 0,
+            flags: 0,
+            dynamicConfigKey: 1,
+          },
+          userDebt: { drawnDebt: 1_000_000n, premiumDebt: 5_000n },
+          drawnRateRay: 50_000_000_000_000_000_000_000_000n,
+          userLastRiskPremiumBps: 250n,
+          userReserveStatus: { usingAsCollateral: false, borrowed: true },
+          liveDecimals: 6,
+          oracle: '0x9999999999999999999999999999999999999999',
+          debtAssetPriceRaw: 100_010_000n,
+          debtAssetPriceDecimals: 8,
+        },
+        engineInputs: {},
+        display: { blockNumber: '21000000' },
+        debtAssetPriceUsd: 1.0001,
+      },
+    });
+    const { GET } = await import('@/app/api/aave/v4-position/route');
+    const response = await GET(request(`?userAddress=${VALID_ADDRESS}&debtAsset=USDC`));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.raw.blockNumber).toBe('21000000');
+    expect(body.data.raw.assetId).toBe('7');
+    expect(body.data.raw.reserveId).toBe('3');
+    expect(body.data.raw.userDebt).toEqual({ drawnDebt: '1000000', premiumDebt: '5000' });
+    expect(body.data.raw.drawnRateRay).toBe('50000000000000000000000000');
+    expect(body.data.raw.userLastRiskPremiumBps).toBe('250');
+    expect(body.data.raw.debtAssetPriceRaw).toBe('100010000');
+    expect(body.data.raw.reserve).toEqual({
+      underlying: '0x3333333333333333333333333333333333333333',
+      hub: '0x2222222222222222222222222222222222222222',
+      assetId: 7,
+      decimals: 6,
+      collateralRisk: 0,
+      flags: 0,
+      dynamicConfigKey: 1,
+    });
+    expect(body.data.debtAssetPriceUsd).toBe(1.0001);
+  });
+
   it("returns 400 for an unsupported-debt-asset adapter failure, not 502/503 — mirroring the V3 route's own client-input distinction", async () => {
     fetchAaveV4DebtSnapshot.mockResolvedValueOnce({
       ok: false,
