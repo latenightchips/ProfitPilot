@@ -25,12 +25,15 @@ import {
   fetchUserReserveStatus,
 } from './client';
 import { mapAaveV4CollateralRiskSnapshot } from './mapAaveV4CollateralRiskSnapshot';
+import { mapAaveV4ReservePriceSnapshot } from './mapAaveV4ReservePriceSnapshot';
 import { mapAaveV4Snapshot } from './mapAaveV4Snapshot';
 import { oraclePriceToUsd } from './scale';
 import type {
   AaveV4CollateralRiskSnapshot,
   AaveV4DebtSnapshot,
+  AaveV4ReservePriceSnapshot,
   RawAaveV4CollateralRiskSnapshot,
+  RawAaveV4ReservePriceSnapshot,
   RawAaveV4Snapshot,
 } from './types';
 
@@ -464,6 +467,94 @@ export async function fetchAaveV4CollateralRiskSnapshot(
     network,
     collateralSymbol: collateralAsset.symbol,
     userAddress,
+  });
+
+  return { ok: true, data };
+}
+
+export type AaveV4ReservePriceSnapshotResult =
+  { ok: true; data: AaveV4ReservePriceSnapshot } | { ok: false; error: AaveV4AdapterError };
+
+/**
+ * Fetches the collateral asset's live V4 reserve price — the
+ * wallet-address-independent subset of `fetchAaveV4CollateralRiskSnapshot`
+ * above. Closes the "V4 new-portfolio creation requires an on-chain
+ * address before BTC price can become live" finding: `ISpoke.ORACLE()`
+ * → `IPriceOracle.getReservePrice(reserveId)`/`.decimals()` never
+ * depended on a user address to begin with — only `collateralFactor`
+ * (via `getUserPosition`/`getDynamicReserveConfig`, deliberately absent
+ * from this function) does. Reusing `resolveV4Reserve`'s own probe
+ * across the same `AAVE_V4_ETHEREUM_HUB_CANDIDATES`, this fetches
+ * exactly the reserve/oracle reads `fetchAaveV4CollateralRiskSnapshot`
+ * already performs for its own price field, minus the two user-position
+ * reads — never a second, independently-maintained reserve-resolution
+ * or oracle-read implementation.
+ *
+ * **V4's own oracle, never V3's — no fallback.** Same discipline as
+ * `fetchAaveV4CollateralRiskSnapshot`'s own doc comment: any failure at
+ * any step fails closed (`ok: false`), never substitutes V3's
+ * `AaveOracle` price or a fabricated value.
+ *
+ * **Deliberately does not read `getUserPosition`/`getDynamicReserveConfig`
+ * at all** — not just "ignores the result." Wallet-address-dependent
+ * V4 state (`collateralFactor`, debt) stays exclusively the job of
+ * `fetchAaveV4CollateralRiskSnapshot`/`fetchAaveV4DebtSnapshot`; this
+ * function has no `userAddress` parameter to accidentally wire one up
+ * to, by construction.
+ */
+export async function fetchAaveV4ReservePrice(
+  client: AaveV4RpcClient,
+  pinnedBlockNumber?: bigint,
+): Promise<AaveV4ReservePriceSnapshotResult> {
+  const { collateralAsset, network } = AAVE_V4_ETHEREUM_MARKET;
+  const spoke = AAVE_V4_ETHEREUM_SPOKE as `0x${string}`;
+  const underlying = collateralAsset.address as `0x${string}`;
+
+  const blockResult = await fetchPinnedBlock(client, pinnedBlockNumber);
+  if (!blockResult.ok) return { ok: false, error: blockResult.error };
+  const { number: blockNumber, timestamp: blockTimestamp } = blockResult.data;
+
+  const resolution = await resolveV4Reserve(client, spoke, underlying, blockNumber);
+  if (!resolution.ok) {
+    if (resolution.error !== null) return { ok: false, error: resolution.error };
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_V4_RESERVE_NOT_FOUND',
+        message: `No Aave V4 reserve for ${collateralAsset.symbol} (${underlying}) was found on Spoke ${spoke} across any of the ${AAVE_V4_ETHEREUM_HUB_CANDIDATES.length} known Hubs.`,
+        userMessage: `Live Aave V4 price data is not yet available for ${collateralAsset.symbol}.`,
+        retryable: false,
+      },
+    };
+  }
+  const { reserveId } = resolution.data;
+
+  const oracleAddressResult = await fetchOracleAddress(client, spoke, blockNumber);
+  if (!oracleAddressResult.ok) return { ok: false, error: oracleAddressResult.error };
+  const oracle = oracleAddressResult.data;
+
+  const [oracleDecimalsResult, reservePriceResult] = await Promise.all([
+    fetchOracleDecimals(client, oracle, blockNumber),
+    // Reuses `reserveId` exactly as resolved above — no separate reserve
+    // resolution for the price read.
+    fetchReservePrice(client, oracle, reserveId, blockNumber),
+  ]);
+  if (!oracleDecimalsResult.ok) return { ok: false, error: oracleDecimalsResult.error };
+  if (!reservePriceResult.ok) return { ok: false, error: reservePriceResult.error };
+
+  const snapshot: RawAaveV4ReservePriceSnapshot = {
+    blockNumber,
+    blockTimestamp,
+    spoke,
+    collateralReserveId: reserveId,
+    oracle,
+    oraclePriceRaw: reservePriceResult.data,
+    oracleDecimals: oracleDecimalsResult.data,
+  };
+
+  const data = mapAaveV4ReservePriceSnapshot(snapshot, {
+    network,
+    collateralSymbol: collateralAsset.symbol,
   });
 
   return { ok: true, data };

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewPortfolioPageClient } from '@/app/portfolios/new/NewPortfolioPageClient';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
+import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -79,9 +81,35 @@ function readyAaveState(overrides: { borrowAsset?: string; freshness?: 'fresh' |
   };
 }
 
+const IDLE_V4_DEBT_STATE = {
+  status: 'idle' as const,
+  engineInputs: null,
+  userAddress: null,
+  debtAsset: null,
+  errorMessage: null,
+  errorCode: null,
+  attemptedUserAddress: null,
+  attemptedDebtAsset: null,
+  lastFetchedAt: null,
+  fetchAaveV4LiveData: vi.fn().mockResolvedValue(undefined),
+};
+
+const IDLE_V4_COLLATERAL_RISK_STATE = {
+  status: 'idle' as const,
+  canonical: null,
+  userAddress: null,
+  errorMessage: null,
+  errorCode: null,
+  attemptedUserAddress: null,
+  lastFetchedAt: null,
+  fetchAaveV4CollateralRiskLiveData: vi.fn().mockResolvedValue(undefined),
+};
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_PORTFOLIO_STATE);
   useAaveLiveDataStore.setState(IDLE_AAVE_STATE);
+  useAaveV4LiveDataStore.setState(IDLE_V4_DEBT_STATE);
+  useAaveV4CollateralRiskLiveDataStore.setState(IDLE_V4_COLLATERAL_RISK_STATE);
   push.mockClear();
 });
 
@@ -277,8 +305,8 @@ describe('NewPortfolioPageClient — live bootstrap: graceful fallback (7, 10)',
   });
 });
 
-describe('NewPortfolioPageClient — V4 untouched (11)', () => {
-  it('11. a portfolio created through the live bootstrap is still plain V3-shaped — no protocolVersion, no V4 fields', async () => {
+describe('NewPortfolioPageClient — V3 default, V4 opt-in (11)', () => {
+  it('11. a portfolio created through the V3 live bootstrap (default selection, untouched) is still plain V3-shaped — no protocolVersion, no V4 fields', async () => {
     useAaveLiveDataStore.setState(readyAaveState());
     const user = userEvent.setup();
     render(<NewPortfolioPageClient />);
@@ -292,8 +320,13 @@ describe('NewPortfolioPageClient — V4 untouched (11)', () => {
     expect(portfolios[0].portfolio.v4DebtState).toBeUndefined();
   });
 
-  it('this form has no protocol-version selector at all', () => {
+  it('renders an Aave protocol version selector defaulted to V3 (Protocol Selection at Portfolio Creation)', () => {
     render(<NewPortfolioPageClient />);
-    expect(screen.queryByLabelText(/protocol version/i)).not.toBeInTheDocument();
+    const radiogroup = screen.getByRole('radiogroup', { name: 'Aave protocol version' });
+    expect(radiogroup).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Aave V3' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Aave V4' })).not.toBeChecked();
+    // V3 remains selected by default: the V4-only fieldset is not rendered.
+    expect(screen.queryByLabelText('On-chain address (optional)')).not.toBeInTheDocument();
   });
 });

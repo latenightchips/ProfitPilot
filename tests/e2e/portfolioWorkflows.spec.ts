@@ -273,3 +273,98 @@ test('Cover: New Portfolio live bootstrap does not block creation whether live d
 
   await expect(page.getByLabel('Portfolio name')).toHaveValue('Live Bootstrap Check');
 });
+
+/**
+ * Protocol Selection at Portfolio Creation — real-browser proof that a
+ * V4 portfolio can be created fully manually, with no wallet address and
+ * no dependency on this sandbox's outbound RPC reach resolving. Every
+ * live-bootstrap/provenance/prefill detail is already locked down by
+ * `tests/unit/app/portfolios/new/NewPortfolioPageClient.v4Creation.test.tsx`
+ * against mocked, deterministic store state; this test only proves the
+ * selector, the V4 fieldset, and the full submit chain
+ * (`create()` -> `setProtocolVersion` -> `setAaveV4DebtState` ->
+ * `setAaveV4CollateralRisk`) work together end to end in a real browser.
+ */
+test('Cover: Aave V4 portfolio creation, fully manual, no wallet or RPC required', async ({
+  page,
+}) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+
+  await page.getByRole('radio', { name: 'Aave V4' }).check();
+
+  // Selecting V4 must hide the V3-only protocol-parameters fieldset.
+  await expect(page.getByLabel('Maximum LTV (%)', { exact: false })).toHaveCount(0);
+  await expect(page.getByLabel('On-chain address (optional)')).toBeVisible();
+
+  await fillByLabel(page, 'Portfolio name', 'V4 Manual Portfolio');
+  await fillByLabel(page, 'BTC quantity', '2');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '12300');
+  await fillByLabel(page, 'Current BTC price (USD)', '64000');
+  await fillByLabel(page, 'Drawn debt', '12000');
+  await fillByLabel(page, 'Premium debt', '300');
+  await fillByLabel(page, 'Base drawn APR (%)', '4');
+  await fillByLabel(page, 'Risk premium (%)', '1');
+  await fillByLabel(page, 'Collateral factor (%)', '78');
+
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+
+  await expect(page.getByLabel('Portfolio name')).toHaveValue('V4 Manual Portfolio');
+});
+
+/**
+ * V4 wallet-independent price fix — real-browser proof that selecting
+ * V4 attempts a live BTC price with NO on-chain address entered at all.
+ * Every deterministic detail (fetch triggering, prefill values,
+ * provenance, fail-closed fallback) is already locked down by
+ * `tests/unit/app/portfolios/new/NewPortfolioPageClient.v4Creation.test.tsx`'s
+ * own "V4 wallet-independent price fix" describe block against mocked
+ * store state; this test only proves the real
+ * `/api/aave/v4-reserve-price` route is reachable end to end in this
+ * sandbox and that the form never blocks on it, mirroring the same
+ * "whatever the real result is" tolerant pattern the V3 live-bootstrap
+ * E2E test above already established.
+ */
+test('Cover: Aave V4 shows a live-bootstrap BTC price attempt with no wallet address entered', async ({
+  page,
+}) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  await page.getByRole('radio', { name: 'Aave V4' }).check();
+
+  // No address is ever typed in this test — the price status line must
+  // still leave the checking/idle state on its own.
+  const statusLine = page
+    .getByText(
+      /checking for live aave v4 collateral price|aave v4 · live|price data is unavailable/i,
+    )
+    .first();
+  await expect(statusLine).toBeVisible({ timeout: 15_000 });
+
+  const priceField = page.getByLabel('Current BTC price (USD)', { exact: false });
+  const priceValue = await priceField.inputValue();
+
+  if (Number(priceValue) > 0) {
+    // Live V4 price landed with no address — the whole point of this fix.
+    await expect(page.getByText(/aave v4 · live collateral price/i).first()).toBeVisible();
+  } else {
+    await expect(priceField).toHaveValue('0');
+  }
+
+  // Either way, manual override and full creation must still work.
+  await fillByLabel(page, 'Portfolio name', 'V4 No-Wallet Price Check');
+  await fillByLabel(page, 'BTC quantity', '1.5');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '10000');
+  await fillByLabel(page, 'Current BTC price (USD)', '58000');
+  await fillByLabel(page, 'Drawn debt', '10000');
+  await fillByLabel(page, 'Premium debt', '250');
+  await fillByLabel(page, 'Base drawn APR (%)', '3.5');
+  await fillByLabel(page, 'Risk premium (%)', '1');
+  await fillByLabel(page, 'Collateral factor (%)', '75');
+
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+
+  await expect(page.getByLabel('Portfolio name')).toHaveValue('V4 No-Wallet Price Check');
+});

@@ -214,3 +214,58 @@ export interface AaveV4CollateralRiskSnapshot {
   canonical: AaveV4CollateralRiskCanonical;
   display: AaveV4CollateralRiskDisplay;
 }
+
+/**
+ * V4 wallet-independent reserve-price snapshot — closes the "V4 creation
+ * requires a wallet address before BTC price can become live" finding.
+ * A strict subset of `fetchAaveV4CollateralRiskSnapshot`'s own reads
+ * (`./index.ts`'s `fetchAaveV4ReservePrice`): the collateral reserve's
+ * `ISpoke.ORACLE()` → `IPriceOracle.getReservePrice(reserveId)` +
+ * `.decimals()` reads never depended on a user address to begin with —
+ * only `ISpoke.getUserPosition(...)`/`getDynamicReserveConfig(...)`
+ * (`collateralFactor`, carried by `RawAaveV4CollateralRiskSnapshot`
+ * above, not by this type) do. This type carries exactly the
+ * address-independent subset, nothing else — `collateralFactor`/
+ * `dynamicConfigKey` have no place here, by construction, not by
+ * omission.
+ *
+ * **V4's own oracle, never V3's.** Reads the SAME Spoke-bound oracle
+ * `RawAaveV4CollateralRiskSnapshot.oracle` already reads
+ * (`ISpoke.ORACLE()`) — a genuinely different contract from V3's
+ * `AaveOracle` (`infrastructure/protocols/aave/v3/client.ts`'s own
+ * `fetchAssetPrice`). There is no fallback to V3's oracle here, matching
+ * `fetchAaveV4CollateralRiskSnapshot`'s own existing "no fallback to
+ * V3's oracle" discipline.
+ */
+export interface RawAaveV4ReservePriceSnapshot {
+  blockNumber: bigint;
+  blockTimestamp: bigint;
+  spoke: `0x${string}`;
+  collateralReserveId: bigint;
+  /** `ISpoke.ORACLE()` — this Spoke's own bound oracle, discovered fresh on every fetch, never hardcoded or assumed shared with V3. */
+  oracle: `0x${string}`;
+  /** `IPriceOracle.getReservePrice(collateralReserveId)`. Raw, `oracleDecimals`-precision integer, not yet normalized. */
+  oraclePriceRaw: bigint;
+  /** `IPriceOracle.decimals()` — read live from `oracle`, never hardcoded. */
+  oracleDecimals: number;
+}
+
+export interface AaveV4ReservePriceCanonical {
+  /** Normalized from `RawAaveV4ReservePriceSnapshot.oraclePriceRaw` via `./scale.ts`'s `oraclePriceToUsd`, using that same snapshot's own `oracleDecimals`. */
+  collateralPriceUsd: number;
+}
+
+export interface AaveV4ReservePriceDisplay {
+  network: string;
+  collateralSymbol: string;
+  spoke: `0x${string}`;
+  reserveId: string;
+  blockNumber: string;
+  blockTimestamp: string;
+}
+
+export interface AaveV4ReservePriceSnapshot {
+  raw: RawAaveV4ReservePriceSnapshot;
+  canonical: AaveV4ReservePriceCanonical;
+  display: AaveV4ReservePriceDisplay;
+}

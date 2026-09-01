@@ -2,14 +2,18 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import type { AaveProtocolVersion } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
+import { useAaveV4ReservePriceStore } from '@/stores/aaveV4ReservePriceStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import { type PortfolioInput, portfolioInputSchema } from '@/types/portfolio.schema';
 import { deriveAaveDataStatus, formatAaveDataStatus } from '@/utils/aaveDataStatus';
+
+import { NewPortfolioV4Fields, type NewPortfolioV4FieldsHandle } from './NewPortfolioV4Fields';
 
 /**
  * `baseCurrency`'s `.default('USD')` in the schema gives `PortfolioInput`
@@ -169,12 +173,53 @@ const DEFAULT_VALUES: PortfolioFormValues = {
  * about submission is gated on live data succeeding — today's manual-only
  * validation (BTC price must be positive, etc.) is completely unchanged.
  *
- * **V4 is untouched.** This form has never had a `protocolVersion`
- * field — every portfolio it creates is V3-shaped, exactly as before;
- * V4 is opted into afterward, on the Portfolio page, via a real on-chain
- * address. None of `hooks/useAaveV4LiveSync.ts`,
- * `hooks/useAaveV4CollateralRiskLiveSync.ts`, or their own conflict UI
- * are reachable from, or modified by, this file.
+ * **V4 selection (Protocol Selection at Portfolio Creation batch).**
+ * This form now has a `protocolVersion` selector, mirroring
+ * `app/portfolio/AaveProtocolVersionForm.tsx`'s own existing edit-time
+ * radiogroup exactly — same two options, same "select V3, nothing about
+ * V4 state changes" discipline. When V4 is selected, this file hides the
+ * V3-only `protocol.*` fieldset (never meaningful for V4 —
+ * `services/portfolio/mapping.ts`'s `resolveRiskCapacityFraction` never
+ * reads it once `v4CollateralRisk` is present) and renders
+ * `NewPortfolioV4Fields` — a separate, self-contained fieldset that
+ * reuses the same portfolio-independent `aaveV4LiveDataStore`/
+ * `aaveV4CollateralRiskLiveDataStore` this form's own V3 half already
+ * demonstrated the pattern for. `market.btcPriceUsd` remains the one
+ * field genuinely shared between both versions.
+ *
+ * **V4 BTC price is wallet-address-independent (V4 wallet-independent
+ * price fix).** Originally this form sourced V4's `market.btcPriceUsd`
+ * from the address-GATED `aaveV4CollateralRiskLiveDataStore`'s own
+ * `collateralPriceUsd` — meaning V4 creation showed no live price at all
+ * until an on-chain address was typed, even though
+ * `infrastructure/protocols/aave/v4`'s `ISpoke.ORACLE()` →
+ * `IPriceOracle.getReservePrice(reserveId)` reads never actually
+ * depended on a user address; only `collateralFactor` (via
+ * `getUserPosition`/`getDynamicReserveConfig`) does. This form now
+ * fetches that address-independent price directly via the new
+ * `aaveV4ReservePriceStore`/`fetchAaveV4ReservePrice()`
+ * (`/api/aave/v4-reserve-price`, no query params), unconditionally the
+ * moment V4 is selected — never V3's `AaveOracle` price, which reads a
+ * different contract entirely and is never used as a V4 fallback. The
+ * address-gated `aaveV4CollateralRiskLiveDataStore` is unchanged and
+ * still supplies `collateralFactor`/`dynamicConfigKey` (inside
+ * `NewPortfolioV4Fields`) once an address is entered — wallet identity
+ * stays required for V4 position/debt/collateral-risk data only.
+ *
+ * **Submission still calls `usePortfolioStore().create()` exactly
+ * once**, in both modes — no parallel V4-shaped creation path. For V4,
+ * `protocol.*` is submitted as a fixed, inert placeholder
+ * (`{ maxLoanToValue: 0, liquidationThreshold: 0, borrowApr: 0,
+ * supplyApr: 0 }`, `protocolSource: 'manual'`) never shown to the user,
+ * and the returned portfolio id is fed into the exact same
+ * `setProtocolVersion`/`setAaveV4Position`/`setAaveV4DebtState`/
+ * `setAaveV4CollateralRisk` actions `AaveProtocolVersionForm`/
+ * `ManualAaveV4StateForm` already call at edit time — reused verbatim,
+ * not reimplemented, so V4 semantics can never drift between
+ * creation-time and edit-time. `NewPortfolioV4Fields`'s own
+ * `prepareSubmission()` pre-validates every touched V4 section before
+ * this function ever calls `create()`, so an invalid V4 entry never
+ * leaves a partially configured portfolio behind.
  */
 function liveBootstrapStatusText(
   status: ReturnType<typeof useAaveLiveDataStore.getState>['status'],
@@ -190,18 +235,50 @@ function liveBootstrapStatusText(
   return formatAaveDataStatus(deriveAaveDataStatus(marketQuote));
 }
 
+/**
+ * V4 wallet-independent price fix — mirrors `liveBootstrapStatusText`
+ * above but for `aaveV4ReservePriceStore`, which has no per-asset
+ * `marketQuote`-style freshness shape of its own (a single-value V4
+ * on-chain snapshot, same as `aaveV4CollateralRiskLiveDataStore`'s own
+ * status text convention).
+ */
+function v4ReservePriceStatusText(
+  status: ReturnType<typeof useAaveV4ReservePriceStore.getState>['status'],
+): string {
+  if (status === 'idle' || status === 'loading') {
+    return 'Checking for live Aave V4 collateral price…';
+  }
+  if (status === 'error') {
+    return 'Live Aave V4 price data is unavailable right now — enter a value manually below.';
+  }
+  // status === 'ready'
+  return 'Aave V4 · Live collateral price found — value below is pre-filled and still editable.';
+}
+
 export function NewPortfolioPageClient() {
   const router = useRouter();
   const create = usePortfolioStore((state) => state.create);
   const select = usePortfolioStore((state) => state.select);
+  const setProtocolVersion = usePortfolioStore((state) => state.setProtocolVersion);
+  const setAaveV4Position = usePortfolioStore((state) => state.setAaveV4Position);
+  const setAaveV4DebtState = usePortfolioStore((state) => state.setAaveV4DebtState);
+  const setAaveV4CollateralRisk = usePortfolioStore((state) => state.setAaveV4CollateralRisk);
 
   const liveStatus = useAaveLiveDataStore((state) => state.status);
   const marketQuote = useAaveLiveDataStore((state) => state.marketQuote);
   const protocolQuote = useAaveLiveDataStore((state) => state.protocolQuote);
   const fetchLiveAaveData = useAaveLiveDataStore((state) => state.fetchLiveAaveData);
 
+  const v4ReservePriceStatus = useAaveV4ReservePriceStore((state) => state.status);
+  const v4ReservePriceCanonical = useAaveV4ReservePriceStore((state) => state.canonical);
+  const fetchAaveV4ReservePrice = useAaveV4ReservePriceStore(
+    (state) => state.fetchAaveV4ReservePrice,
+  );
+
+  const [protocolVersion, setProtocolVersionField] = useState<AaveProtocolVersion>('v3');
   const [marketPrefilled, setMarketPrefilled] = useState(false);
   const [protocolPrefilled, setProtocolPrefilled] = useState(false);
+  const v4FieldsRef = useRef<NewPortfolioV4FieldsHandle>(null);
 
   const {
     register,
@@ -217,16 +294,68 @@ export function NewPortfolioPageClient() {
 
   const debtAsset = watch('debt.asset');
 
-  // Fetch on initial load and whenever the selected debt asset changes —
-  // `fetchLiveAaveData`'s own request-id guard (`aaveLiveDataStore.ts`)
-  // makes a rapid asset switch safe without any coordination here.
+  // Reset-on-toggle — declared FIRST and deliberately runs before either
+  // version's prefill effect below in the same commit (React runs
+  // `useEffect` callbacks in declaration order): `market.btcPriceUsd` is
+  // the one field genuinely shared between V3 and V4, but its *source*
+  // differs (V3's reserve fetch vs. V4's collateral-risk fetch). An
+  // untouched prefilled value from the version just left behind would
+  // otherwise silently survive and could be misattributed to the newly
+  // selected version's source at submit time — "switching protocol
+  // versions cannot leak stale values." A genuinely manually-typed value
+  // (dirty) is left alone: its meaning (BTC's dollar price) does not
+  // depend on protocol version, so it is not "stale," and it is never
+  // labeled `live` for either version without a fresh, matching fetch
+  // confirming it. Running before the version-specific prefill effects
+  // (not after) matters: both react to the same `protocolVersion`
+  // change in the same commit, so a reset that ran *after* a same-commit
+  // prefill would immediately clobber it back to zero.
+  //
+  // Entering V4 also force-resets `protocol.*` (always, dirty or not —
+  // the fieldset is hidden and un-editable for the entire time V4 stays
+  // selected, so there is no in-progress edit to protect) to the same
+  // fixed placeholder `onSubmit` itself would substitute anyway. Without
+  // this, a value the user typed in V3 mode that happens to violate
+  // `protocolParametersSchema`'s own invariant (e.g. Max LTV set above
+  // Liquidation Threshold) would silently fail the V4 submission's own
+  // `zodResolver` validation against an error the V4 user can never see
+  // or fix, since the fieldset producing it is hidden. Re-entering V3
+  // needs no symmetric reset: the V3 prefill effect below already
+  // re-populates `protocol.*` the moment `protocolVersion` reads `'v3'`
+  // again, from whatever `aaveLiveDataStore` already has cached.
+  const isFirstRender = useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (!dirtyFields.market?.btcPriceUsd) {
+      setValue('market.btcPriceUsd', 0, { shouldDirty: false });
+    }
+    setMarketPrefilled(false);
+    setProtocolPrefilled(false);
+    if (protocolVersion === 'v4') {
+      setValue('protocol.maxLoanToValue', 0, { shouldDirty: false });
+      setValue('protocol.liquidationThreshold', 0, { shouldDirty: false });
+      setValue('protocol.borrowApr', 0, { shouldDirty: false });
+      setValue('protocol.supplyApr', 0, { shouldDirty: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [protocolVersion]);
+
+  // V3 fetch — on initial load and whenever the selected debt asset
+  // changes, only while V3 is selected. `fetchLiveAaveData`'s own
+  // request-id guard (`aaveLiveDataStore.ts`) makes a rapid asset switch
+  // safe without any coordination here.
+  useEffect(() => {
+    if (protocolVersion !== 'v3') return;
     void fetchLiveAaveData(debtAsset);
-  }, [fetchLiveAaveData, debtAsset]);
+  }, [protocolVersion, fetchLiveAaveData, debtAsset]);
 
   // Prefill only fields the user has not yet touched. Runs whenever a
   // fresh quote lands (including a re-fetch after a debt-asset change).
   useEffect(() => {
+    if (protocolVersion !== 'v3') return;
     if (liveStatus !== 'ready') return;
 
     if (marketQuote !== null && marketQuote.freshness !== 'unavailable') {
@@ -259,9 +388,82 @@ export function NewPortfolioPageClient() {
       }
       setProtocolPrefilled(true);
     }
-  }, [liveStatus, marketQuote, protocolQuote, debtAsset, dirtyFields, setValue]);
+  }, [protocolVersion, liveStatus, marketQuote, protocolQuote, debtAsset, dirtyFields, setValue]);
+
+  // V4 reserve-price fetch — unconditional the moment V4 is selected,
+  // independent of any wallet address (V4 wallet-independent price fix).
+  // No identity dimension to key on (unlike the V3 fetch's own
+  // `debtAsset` dependency) — the collateral reserve's oracle price is a
+  // property of the Spoke/reserve alone, so this fires exactly once per
+  // V4 selection, never re-fires on its own for any other reason.
+  useEffect(() => {
+    if (protocolVersion !== 'v4') return;
+    void fetchAaveV4ReservePrice();
+  }, [protocolVersion, fetchAaveV4ReservePrice]);
+
+  // V4's shared `market.btcPriceUsd` prefill — sourced from the
+  // wallet-address-independent `aaveV4ReservePriceStore` above, never
+  // the address-gated `aaveV4CollateralRiskLiveDataStore` (that store's
+  // own `collateralPriceUsd` field stays unused here by design — see
+  // this file's own header comment).
+  useEffect(() => {
+    if (protocolVersion !== 'v4') return;
+    if (v4ReservePriceStatus !== 'ready' || v4ReservePriceCanonical === null) return;
+    if (!dirtyFields.market?.btcPriceUsd) {
+      setValue('market.btcPriceUsd', v4ReservePriceCanonical.collateralPriceUsd, {
+        shouldDirty: false,
+      });
+    }
+    setMarketPrefilled(true);
+  }, [
+    protocolVersion,
+    v4ReservePriceStatus,
+    v4ReservePriceCanonical,
+    dirtyFields.market?.btcPriceUsd,
+    setValue,
+  ]);
 
   const onSubmit = handleSubmit((data) => {
+    if (protocolVersion === 'v4') {
+      const v4Submission = v4FieldsRef.current?.prepareSubmission();
+      if (v4Submission === undefined || !v4Submission.ok) {
+        return;
+      }
+
+      const marketSource = marketPrefilled && !dirtyFields.market?.btcPriceUsd ? 'live' : 'manual';
+      const v4Data: PortfolioInput = {
+        ...data,
+        // V4-only creation: `protocol.*` has no V4 meaning
+        // (`resolveRiskCapacityFraction` never reads it once
+        // `v4CollateralRisk` is present) — a fixed, inert placeholder,
+        // never derived from whatever might be left in the hidden V3
+        // fieldset, and never shown to the user.
+        protocol: { maxLoanToValue: 0, liquidationThreshold: 0, borrowApr: 0, supplyApr: 0 },
+      };
+
+      const result = create(v4Data, { marketSource, protocolSource: 'manual' });
+      if (!result.ok) {
+        setError('root', { message: result.errors.map((error) => error.message).join(' ') });
+        return;
+      }
+
+      const id = result.data.id;
+      setProtocolVersion(id, 'v4');
+      if (v4Submission.position !== undefined) {
+        setAaveV4Position(id, v4Submission.position);
+      }
+      if (v4Submission.debtState !== undefined) {
+        setAaveV4DebtState(id, v4Submission.debtState, v4Submission.debtStateSource);
+      }
+      if (v4Submission.collateralRisk !== undefined) {
+        setAaveV4CollateralRisk(id, v4Submission.collateralRisk, v4Submission.collateralRiskSource);
+      }
+
+      select(id);
+      router.push('/portfolio');
+      return;
+    }
+
     const marketSource = marketPrefilled && !dirtyFields.market?.btcPriceUsd ? 'live' : 'manual';
     const protocolFieldsDirty =
       dirtyFields.protocol?.maxLoanToValue ||
@@ -284,9 +486,10 @@ export function NewPortfolioPageClient() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Create Portfolio</h1>
         <p className="text-sm text-muted-foreground">
-          Enter your collateral and debt manually. BTC price and Aave V3 protocol parameters are
-          prefilled from live data when available — every value stays editable, and you can enter
-          everything by hand if live data is unavailable.
+          Enter your collateral and debt manually, then choose which Aave protocol version this
+          portfolio uses. Market and protocol values are prefilled from live data when available —
+          every value stays editable, and you can enter everything by hand if live data is
+          unavailable.
         </p>
       </div>
 
@@ -398,9 +601,41 @@ export function NewPortfolioPageClient() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
+          <legend className="text-sm font-semibold text-foreground">Aave protocol version</legend>
+          <div
+            role="radiogroup"
+            aria-label="Aave protocol version"
+            className="flex flex-col gap-2 text-sm"
+          >
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="protocolVersion"
+                value="v3"
+                checked={protocolVersion === 'v3'}
+                onChange={() => setProtocolVersionField('v3')}
+              />
+              Aave V3
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="protocolVersion"
+                value="v4"
+                checked={protocolVersion === 'v4'}
+                onChange={() => setProtocolVersionField('v4')}
+              />
+              Aave V4
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-3">
           <legend className="text-sm font-semibold text-foreground">BTC price</legend>
           <p role="status" className="text-xs text-muted-foreground">
-            {liveBootstrapStatusText(liveStatus, marketQuote)}
+            {protocolVersion === 'v3'
+              ? liveBootstrapStatusText(liveStatus, marketQuote)
+              : v4ReservePriceStatusText(v4ReservePriceStatus)}
           </p>
           <label className="flex flex-col gap-1 text-sm">
             <span>
@@ -424,118 +659,133 @@ export function NewPortfolioPageClient() {
           )}
         </fieldset>
 
-        <fieldset className="flex flex-col gap-3">
-          <legend className="text-sm font-semibold text-foreground">Protocol parameters</legend>
-          <p className="text-xs text-muted-foreground">
-            {liveBootstrapStatusText(liveStatus, marketQuote)}
-          </p>
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Maximum LTV (%) <RequiredMark />
-            </span>
-            <input
-              id="protocol.maxLoanToValue"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('protocol.maxLoanToValue', {
-                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-              })}
-              aria-invalid={errors.protocol?.maxLoanToValue ? 'true' : undefined}
-              aria-describedby={
-                errors.protocol?.maxLoanToValue ? 'protocol.maxLoanToValue-error' : undefined
-              }
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-            <span className="text-xs text-muted-foreground">
-              The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
-            </span>
-          </label>
-          {errors.protocol?.maxLoanToValue && (
-            <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
-              {errors.protocol.maxLoanToValue.message}
-            </span>
-          )}
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Liquidation threshold (%) <RequiredMark />
-            </span>
-            <input
-              id="protocol.liquidationThreshold"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('protocol.liquidationThreshold', {
-                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-              })}
-              aria-invalid={errors.protocol?.liquidationThreshold ? 'true' : undefined}
-              aria-describedby={
-                errors.protocol?.liquidationThreshold
-                  ? 'protocol.liquidationThreshold-error'
-                  : undefined
-              }
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-            <span className="text-xs text-muted-foreground">
-              The LTV at which your position becomes eligible for liquidation, as a percentage.
-            </span>
-          </label>
-          {errors.protocol?.liquidationThreshold && (
-            <span id="protocol.liquidationThreshold-error" className="text-xs text-destructive">
-              {errors.protocol.liquidationThreshold.message}
-            </span>
-          )}
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Borrow APR (%) <RequiredMark />
-            </span>
-            <input
-              id="protocol.borrowApr"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('protocol.borrowApr', {
-                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-              })}
-              aria-invalid={errors.protocol?.borrowApr ? 'true' : undefined}
-              aria-describedby={errors.protocol?.borrowApr ? 'protocol.borrowApr-error' : undefined}
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-            <span className="text-xs text-muted-foreground">
-              Your annual borrow interest rate, as a percentage (e.g. 5 for 5%).
-            </span>
-          </label>
-          {errors.protocol?.borrowApr && (
-            <span id="protocol.borrowApr-error" className="text-xs text-destructive">
-              {errors.protocol.borrowApr.message}
-            </span>
-          )}
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Supply APR (%) <RequiredMark />
-            </span>
-            <input
-              id="protocol.supplyApr"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('protocol.supplyApr', {
-                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-              })}
-              aria-invalid={errors.protocol?.supplyApr ? 'true' : undefined}
-              aria-describedby={errors.protocol?.supplyApr ? 'protocol.supplyApr-error' : undefined}
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-            <span className="text-xs text-muted-foreground">
-              Your annual supply interest rate, as a percentage.
-            </span>
-          </label>
-          {errors.protocol?.supplyApr && (
-            <span id="protocol.supplyApr-error" className="text-xs text-destructive">
-              {errors.protocol.supplyApr.message}
-            </span>
-          )}
-        </fieldset>
+        {protocolVersion === 'v4' && (
+          <fieldset className="flex flex-col gap-3">
+            <legend className="text-sm font-semibold text-foreground">
+              Aave V4 debt &amp; collateral risk
+            </legend>
+            <NewPortfolioV4Fields ref={v4FieldsRef} debtAsset={debtAsset} />
+          </fieldset>
+        )}
+
+        {protocolVersion === 'v3' && (
+          <fieldset className="flex flex-col gap-3">
+            <legend className="text-sm font-semibold text-foreground">Protocol parameters</legend>
+            <p className="text-xs text-muted-foreground">
+              {liveBootstrapStatusText(liveStatus, marketQuote)}
+            </p>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Maximum LTV (%) <RequiredMark />
+              </span>
+              <input
+                id="protocol.maxLoanToValue"
+                aria-required="true"
+                type="number"
+                step="any"
+                {...register('protocol.maxLoanToValue', {
+                  setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+                })}
+                aria-invalid={errors.protocol?.maxLoanToValue ? 'true' : undefined}
+                aria-describedby={
+                  errors.protocol?.maxLoanToValue ? 'protocol.maxLoanToValue-error' : undefined
+                }
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+              <span className="text-xs text-muted-foreground">
+                The most you can borrow against your collateral, as a percentage (e.g. 75 for 75%).
+              </span>
+            </label>
+            {errors.protocol?.maxLoanToValue && (
+              <span id="protocol.maxLoanToValue-error" className="text-xs text-destructive">
+                {errors.protocol.maxLoanToValue.message}
+              </span>
+            )}
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Liquidation threshold (%) <RequiredMark />
+              </span>
+              <input
+                id="protocol.liquidationThreshold"
+                aria-required="true"
+                type="number"
+                step="any"
+                {...register('protocol.liquidationThreshold', {
+                  setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+                })}
+                aria-invalid={errors.protocol?.liquidationThreshold ? 'true' : undefined}
+                aria-describedby={
+                  errors.protocol?.liquidationThreshold
+                    ? 'protocol.liquidationThreshold-error'
+                    : undefined
+                }
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+              <span className="text-xs text-muted-foreground">
+                The LTV at which your position becomes eligible for liquidation, as a percentage.
+              </span>
+            </label>
+            {errors.protocol?.liquidationThreshold && (
+              <span id="protocol.liquidationThreshold-error" className="text-xs text-destructive">
+                {errors.protocol.liquidationThreshold.message}
+              </span>
+            )}
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Borrow APR (%) <RequiredMark />
+              </span>
+              <input
+                id="protocol.borrowApr"
+                aria-required="true"
+                type="number"
+                step="any"
+                {...register('protocol.borrowApr', {
+                  setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+                })}
+                aria-invalid={errors.protocol?.borrowApr ? 'true' : undefined}
+                aria-describedby={
+                  errors.protocol?.borrowApr ? 'protocol.borrowApr-error' : undefined
+                }
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+              <span className="text-xs text-muted-foreground">
+                Your annual borrow interest rate, as a percentage (e.g. 5 for 5%).
+              </span>
+            </label>
+            {errors.protocol?.borrowApr && (
+              <span id="protocol.borrowApr-error" className="text-xs text-destructive">
+                {errors.protocol.borrowApr.message}
+              </span>
+            )}
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Supply APR (%) <RequiredMark />
+              </span>
+              <input
+                id="protocol.supplyApr"
+                aria-required="true"
+                type="number"
+                step="any"
+                {...register('protocol.supplyApr', {
+                  setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+                })}
+                aria-invalid={errors.protocol?.supplyApr ? 'true' : undefined}
+                aria-describedby={
+                  errors.protocol?.supplyApr ? 'protocol.supplyApr-error' : undefined
+                }
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+              <span className="text-xs text-muted-foreground">
+                Your annual supply interest rate, as a percentage.
+              </span>
+            </label>
+            {errors.protocol?.supplyApr && (
+              <span id="protocol.supplyApr-error" className="text-xs text-destructive">
+                {errors.protocol.supplyApr.message}
+              </span>
+            )}
+          </fieldset>
+        )}
 
         <fieldset className="flex flex-col gap-3">
           <legend className="text-sm font-semibold text-foreground">Optional safety targets</legend>
