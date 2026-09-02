@@ -4,6 +4,7 @@ import { buildFinalLoopPortfolio } from '@/services/loop/finalPortfolio';
 import { planLoopStrategy } from '@/services/loop/strategy';
 import type { ApplicationPortfolio } from '@/services/portfolio/models';
 import {
+  buildPortfolioActionAfterPortfolio,
   simulatePortfolioAction,
   simulatePortfolioTransition,
 } from '@/services/simulation/portfolioAction';
@@ -605,5 +606,99 @@ describe('simulatePortfolioTransition — V4 Loop → Simulation, end to end (St
     if (!result.ok) return;
     // A plain V3 calculation: interestCost = debtValue × protocol.borrowApr.
     expect(result.data.after.interestCost).toBeCloseTo(25000 * 0.05, 6);
+  });
+});
+
+/**
+ * `buildPortfolioActionAfterPortfolio` — V4 Edit-Time Debt Model Audit,
+ * Gap B fix. This is the exact shared builder behind
+ * `services/portfolioApply/buildPortfolioActionApplyProposal.ts`, i.e.
+ * the function actually feeding Simulation's, Exit Planner's, and
+ * Recommendations' "Apply to Portfolio" flows. Unlike
+ * `simulatePortfolioAction`/`previewPortfolioAction` (which only ever
+ * expose a derived `PortfolioSummary`), this function returns the full
+ * "after" `ApplicationPortfolio` — the actual object whose `debt.balance`
+ * field gets persisted to the Store on Apply — so these tests inspect
+ * that raw field directly, not a re-derived summary value that would
+ * mask the bug regardless of whether it were fixed.
+ */
+describe('buildPortfolioActionAfterPortfolio — canonical debt.balance persisted on the "after" portfolio (V4 Edit-Time Debt Model Audit)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+      ...overrides,
+    });
+  }
+
+  it('self-heals a deliberately stale raw debt.balance — the persisted "after" debt.balance is the canonical projection, not stale + delta', () => {
+    // debt.balance (999999) deliberately disagrees with v4DebtState's own
+    // canonical total (20000). Before the Gap B fix, this builder wrote
+    // `debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta }`
+    // for V4 too, which would have persisted 994999 here.
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 999999 } });
+    const result = buildPortfolioActionAfterPortfolio(
+      portfolio,
+      { collateralDelta: 0, debtDelta: -5000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Premium-first: $5,000 clears the $5,000 premiumDebt exactly.
+    expect(result.data.debt.balance).toBe(15000);
+    expect(result.data.debt.balance).not.toBe(999999 - 5000);
+    expect(result.data.v4DebtState).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('the persisted debt.balance always equals resolveCanonicalDebtBalance of the resulting portfolio, at a non-$1 debt-asset price', () => {
+    const portfolio = v4Portfolio({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 5000,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    const result = buildPortfolioActionAfterPortfolio(
+      portfolio,
+      { collateralDelta: 0, debtDelta: -5000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 20,000 tokens - (5000/0.9973 tokens repaid) x 0.9973 = $14,946.00.
+    expect(result.data.debt.balance).toBeCloseTo(14946, 1);
+  });
+
+  it('a full V4 repayment persists debt.balance === 0, regardless of the stale raw field', () => {
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 12345 } });
+    const result = buildPortfolioActionAfterPortfolio(
+      portfolio,
+      { collateralDelta: 0, debtDelta: -20000 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debt.balance).toBe(0);
+  });
+
+  it('V3 regression — debt.balance is still computed as the raw field plus the delta, completely unchanged', () => {
+    const portfolio = basePortfolio({ debt: { asset: 'USDC', balance: 20000 } });
+    const result = buildPortfolioActionAfterPortfolio(
+      portfolio,
+      { collateralDelta: 0, debtDelta: -7500 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.debt.balance).toBe(12500);
   });
 });

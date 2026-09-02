@@ -87,8 +87,7 @@
 import { calculatePortfolioGain } from '@/engine';
 import type { ApplicationPortfolio, PortfolioActionPreview, PortfolioSummary } from '@/services';
 import { calculatePortfolioSummary } from '@/services';
-import { deriveV4DebtStateAfterDelta } from '@/services/portfolio/mapping';
-import type { AaveV4DebtState } from '@/services/portfolio/models';
+import { deriveV4DebtBalanceAfterDelta } from '@/services/portfolio/mapping';
 import {
   formulaStep,
   optionsFromTracked,
@@ -136,32 +135,53 @@ function buildAfterPortfolioStep(
 ):
   | { ok: true; data: ApplicationPortfolio; warnings: ServiceWarning[] }
   | { ok: false; failure: ServiceFailure } {
-  const warnings: ServiceWarning[] = [];
-  let afterV4DebtState: AaveV4DebtState | undefined;
+  const collateral = {
+    ...portfolio.collateral,
+    quantity: portfolio.collateral.quantity + input.collateralDelta,
+  };
+
+  // V4 Edit-Time Debt Model Audit — `debt.balance` for a V4 portfolio is
+  // NEVER computed as `portfolio.debt.balance + input.debtDelta` (the raw
+  // stored field); it is always re-derived from the resulting
+  // `v4DebtState` via the shared canonical chokepoint
+  // (`deriveV4DebtBalanceAfterDelta`), so a portfolio whose raw
+  // `debt.balance` had drifted from canonical self-heals here rather
+  // than propagating the drift. See that function's own header comment.
+  // This is the shared builder behind Simulation's, Exit Planner's, and
+  // Recommendations' own "Apply to Portfolio" flows
+  // (`services/portfolioApply/buildPortfolioActionApplyProposal.ts`).
   if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
-    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
+    const step = deriveV4DebtBalanceAfterDelta(
+      portfolio,
       portfolio.v4DebtState,
       input.debtDelta,
       tracked,
       sourceStatus,
     );
-    if (!v4DebtStateStep.ok) return { ok: false, failure: v4DebtStateStep.failure };
-    warnings.push(...v4DebtStateStep.warnings);
-    afterV4DebtState = v4DebtStateStep.value;
+    if (!step.ok) return { ok: false, failure: step.failure };
+
+    return {
+      ok: true,
+      data: {
+        ...portfolio,
+        collateral,
+        debt: { ...portfolio.debt, balance: step.value.debtBalance },
+        v4DebtState: step.value.v4DebtState,
+      },
+      warnings: step.warnings,
+    };
   }
 
-  const afterPortfolio: ApplicationPortfolio = {
-    ...portfolio,
-    collateral: {
-      ...portfolio.collateral,
-      quantity: portfolio.collateral.quantity + input.collateralDelta,
+  // V3/unset — completely unchanged.
+  return {
+    ok: true,
+    data: {
+      ...portfolio,
+      collateral,
+      debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
     },
-    debt: { ...portfolio.debt, balance: portfolio.debt.balance + input.debtDelta },
-    ...(portfolio.protocolVersion === 'v4' &&
-      portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
+    warnings: [],
   };
-
-  return { ok: true, data: afterPortfolio, warnings };
 }
 
 export function buildPortfolioActionAfterPortfolio(

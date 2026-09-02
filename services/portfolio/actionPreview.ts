@@ -54,10 +54,10 @@
 import type { ProtocolParameters } from '@/engine';
 
 import type { FormulaStep, TrackedFormulaVersion } from '../shared/formulaStep';
-import type { ServiceResult, ServiceWarning } from '../shared/result';
+import type { ServiceResult } from '../shared/result';
 import { createServiceSuccess } from '../shared/result';
-import { deriveV4DebtStateAfterDelta } from './mapping';
-import type { AaveV4DebtState, ApplicationPortfolio } from './models';
+import { deriveV4DebtBalanceAfterDelta } from './mapping';
+import type { ApplicationPortfolio } from './models';
 import { calculatePortfolioSummary, type PortfolioSummary } from './summary';
 
 export type PortfolioAction =
@@ -84,33 +84,44 @@ function applyDebtDelta(
   tracked: TrackedFormulaVersion,
   sourceStatus: string,
 ): FormulaStep<ApplicationPortfolio> {
-  let afterV4DebtState: AaveV4DebtState | undefined;
-  let nextTracked = tracked;
-  const warnings: ServiceWarning[] = [];
-
+  // V4 Edit-Time Debt Model Audit — `debt.balance` for a V4 portfolio is
+  // NEVER computed as `portfolio.debt.balance + debtDelta` (the raw
+  // stored field); it is always re-derived from the resulting
+  // `v4DebtState` via the shared canonical chokepoint
+  // (`deriveV4DebtBalanceAfterDelta`), so a portfolio whose raw
+  // `debt.balance` had drifted from canonical self-heals here rather
+  // than propagating the drift. See that function's own header comment.
   if (portfolio.protocolVersion === 'v4' && portfolio.v4DebtState !== undefined) {
-    const v4DebtStateStep = deriveV4DebtStateAfterDelta(
+    const step = deriveV4DebtBalanceAfterDelta(
+      portfolio,
       portfolio.v4DebtState,
       debtDelta,
       tracked,
       sourceStatus,
     );
-    if (!v4DebtStateStep.ok) return v4DebtStateStep;
-    nextTracked = v4DebtStateStep.tracked;
-    warnings.push(...v4DebtStateStep.warnings);
-    afterV4DebtState = v4DebtStateStep.value;
+    if (!step.ok) return step;
+
+    return {
+      ok: true,
+      value: {
+        ...portfolio,
+        debt: { ...portfolio.debt, balance: step.value.debtBalance },
+        v4DebtState: step.value.v4DebtState,
+      },
+      tracked: step.tracked,
+      warnings: step.warnings,
+    };
   }
 
+  // V3/unset — completely unchanged.
   return {
     ok: true,
     value: {
       ...portfolio,
       debt: { ...portfolio.debt, balance: portfolio.debt.balance + debtDelta },
-      ...(portfolio.protocolVersion === 'v4' &&
-        portfolio.v4DebtState !== undefined && { v4DebtState: afterV4DebtState }),
     },
-    tracked: nextTracked,
-    warnings,
+    tracked,
+    warnings: [],
   };
 }
 

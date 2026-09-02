@@ -12,7 +12,7 @@ import {
   type AaveV4DebtState,
   calculatePortfolioSummary,
   deriveAaveV4EffectiveBorrowRate,
-  deriveV4DebtStateAfterDelta,
+  deriveV4DebtBalanceAfterDelta,
   type PortfolioSummary,
   resolveCanonicalDebtBalance,
   resolveRiskCapacityDisplay,
@@ -1223,9 +1223,29 @@ function DebtPositionForm({
   const [preview, setPreview] = useState<ServiceResult<PortfolioSummary> | null>(null);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
   const [v4BorrowBlocked, setV4BorrowBlocked] = useState(false);
+  // V4 Edit-Time Debt Model Audit — Gap A ("DebtPositionForm
+  // failed-derivation Apply gate"). `canApply` treats ANY non-null
+  // preview as applicable, including a FAILED one (`!preview.ok` ->
+  // `true`) — correct for V3 (there is nothing else that needs to stay
+  // in sync with a failed preview there), but wrong for V4: a failed
+  // `deriveV4DebtBalanceAfterDelta` step leaves `v4DerivedDebtState`/
+  // `v4DerivedDebtBalance` unset, and without this dedicated flag,
+  // `onApply` would still be clickable and would write the raw typed
+  // `debt.balance` while leaving `v4DebtState` untouched — exactly the
+  // divergence this batch closes. Mirrors `v4BorrowBlocked`'s own
+  // dedicated-flag pattern, not a reinterpretation of `canApply` itself
+  // (which stays exactly as V3 needs it).
+  const [v4DerivationFailed, setV4DerivationFailed] = useState(false);
   const [v4DerivedDebtState, setV4DerivedDebtState] = useState<AaveV4DebtState | undefined>(
     undefined,
   );
+  // The canonical `debt.balance` paired with `v4DerivedDebtState` above —
+  // `onApply` writes THIS, never the raw typed `data.debt.balance`, for a
+  // V4 portfolio. See `deriveV4DebtBalanceAfterDelta`'s own header
+  // comment (`services/portfolio/mapping.ts`) for why: the generic scalar
+  // must always be a projection of the resulting `v4DebtState`, never
+  // independently retyped-and-stored.
+  const [v4DerivedDebtBalance, setV4DerivedDebtBalance] = useState<number | undefined>(undefined);
 
   const {
     register,
@@ -1254,7 +1274,9 @@ function DebtPositionForm({
       setPreview(null);
       setRiskAcknowledged(false);
       setV4BorrowBlocked(false);
+      setV4DerivationFailed(false);
       setV4DerivedDebtState(undefined);
+      setV4DerivedDebtBalance(undefined);
     });
     return () => subscription.unsubscribe();
   }, [watch]);
@@ -1302,7 +1324,9 @@ function DebtPositionForm({
     setPreview(null);
     setRiskAcknowledged(false);
     setV4BorrowBlocked(false);
+    setV4DerivationFailed(false);
     setV4DerivedDebtState(undefined);
+    setV4DerivedDebtBalance(undefined);
   }, [portfolio.updatedAt]);
 
   const onPreview = handleSubmit((data) => {
@@ -1315,6 +1339,7 @@ function DebtPositionForm({
 
       if (debtDelta > 0) {
         setV4BorrowBlocked(true);
+        setV4DerivationFailed(false);
         setPreview(null);
         return;
       }
@@ -1324,11 +1349,17 @@ function DebtPositionForm({
         // No real V4 state to derive from — the page-level
         // CalculationErrorBanner already surfaces AAVE_V4_DEBT_STATE_MISSING
         // for this portfolio; nothing meaningful to preview here.
+        setV4DerivationFailed(false);
         setPreview(null);
         return;
       }
 
-      const step = deriveV4DebtStateAfterDelta(
+      // V4 Edit-Time Debt Model Audit — the ONE canonical derivation:
+      // `v4DebtState` and the paired `debt.balance` come from the same
+      // call, never independently. See `deriveV4DebtBalanceAfterDelta`'s
+      // own header comment (`services/portfolio/mapping.ts`).
+      const step = deriveV4DebtBalanceAfterDelta(
+        portfolio,
         portfolio.v4DebtState,
         debtDelta,
         {
@@ -1338,27 +1369,54 @@ function DebtPositionForm({
         'manual',
       );
       if (!step.ok) {
+        // Gap A fix — a failed derivation must not leave Apply clickable.
+        // The failure itself is still shown (via `preview`/`PreviewDiff`
+        // below), not hidden — only Apply is blocked.
+        setV4DerivationFailed(true);
+        setV4DerivedDebtState(undefined);
+        setV4DerivedDebtBalance(undefined);
         setPreview(step.failure);
         return;
       }
 
-      setV4DerivedDebtState(step.value);
+      setV4DerivationFailed(false);
+      setV4DerivedDebtState(step.value.v4DebtState);
+      setV4DerivedDebtBalance(step.value.debtBalance);
       setPreview(
         calculatePortfolioSummary(
-          { ...portfolio, debt: data.debt, v4DebtState: step.value },
+          {
+            ...portfolio,
+            debt: { ...portfolio.debt, balance: step.value.debtBalance },
+            v4DebtState: step.value.v4DebtState,
+          },
           'manual',
         ),
       );
       return;
     }
 
+    setV4DerivationFailed(false);
     setPreview(calculatePortfolioSummary({ ...portfolio, ...data }, 'manual'));
   });
 
   const onApply = handleSubmit((data) => {
-    if (v4BorrowBlocked) return;
+    if (v4BorrowBlocked || v4DerivationFailed) return;
     if (!canApply(preview, beforeSummary, riskAcknowledged)) return;
-    const result = update(portfolioId, data);
+
+    // V4 Edit-Time Debt Model Audit — for V4, the generic `debt.balance`
+    // written here is ALWAYS the canonical value paired with
+    // `v4DerivedDebtState` above, never the raw typed `data.debt.balance`
+    // — the two are written from the SAME derivation, atomically, never
+    // independently. `v4DerivedDebtBalance` is guaranteed defined here:
+    // `canApply` already required a non-null, successful preview, and the
+    // V4 branch of `onPreview` only ever calls `setPreview` with a
+    // success result after also setting both derived values together.
+    const applyData: DebtManagementInput =
+      portfolio.protocolVersion === 'v4' && v4DerivedDebtBalance !== undefined
+        ? { debt: { asset: data.debt.asset, balance: v4DerivedDebtBalance } }
+        : data;
+
+    const result = update(portfolioId, applyData);
     if (result.ok) {
       if (portfolio.protocolVersion === 'v4' && v4DerivedDebtState !== undefined) {
         // V4 Readiness Audit §12 Stage 25 — a repayment derives a new
@@ -1378,13 +1436,15 @@ function DebtPositionForm({
       setPreview(null);
       setRiskAcknowledged(false);
       setV4BorrowBlocked(false);
+      setV4DerivationFailed(false);
       setV4DerivedDebtState(undefined);
-      reset({ debt: data.debt });
+      setV4DerivedDebtBalance(undefined);
+      reset({ debt: applyData.debt });
       // Keeps the Stage 25A sync effect's own baseline in lockstep with
       // what this reset just displayed, so it doesn't immediately fire
       // a redundant (harmless, but pointless) second reset on the next
       // render once the Store write above lands.
-      lastSyncedCanonicalDebtBalance.current = data.debt.balance;
+      lastSyncedCanonicalDebtBalance.current = applyData.debt.balance;
     }
   });
 
@@ -1494,13 +1554,19 @@ function DebtPositionForm({
         <button
           type="button"
           onClick={onApply}
-          disabled={v4BorrowBlocked || !canApply(preview, beforeSummary, riskAcknowledged)}
+          disabled={
+            v4BorrowBlocked ||
+            v4DerivationFailed ||
+            !canApply(preview, beforeSummary, riskAcknowledged)
+          }
           aria-describedby={
             v4BorrowBlocked
               ? 'debt-v4-borrow-blocked-hint'
-              : blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
-                ? 'debt-apply-blocked-hint'
-                : undefined
+              : v4DerivationFailed
+                ? 'debt-v4-derivation-failed-hint'
+                : blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged)
+                  ? 'debt-apply-blocked-hint'
+                  : undefined
           }
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
@@ -1514,7 +1580,15 @@ function DebtPositionForm({
         </p>
       )}
 
+      {!v4BorrowBlocked && v4DerivationFailed && (
+        <p id="debt-v4-derivation-failed-hint" className="text-xs text-destructive">
+          Apply Changes is disabled because the Aave V4 debt state could not be derived for this
+          change — see the error above. Fix the input and preview again before applying.
+        </p>
+      )}
+
       {!v4BorrowBlocked &&
+        !v4DerivationFailed &&
         blockedByRiskAcknowledgment(preview, beforeSummary, riskAcknowledged) && (
           <p id="debt-apply-blocked-hint" className="text-xs text-destructive">
             Apply Changes is disabled until you check the risk acknowledgment box below.

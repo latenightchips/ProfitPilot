@@ -5,6 +5,7 @@ import {
   checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
+  deriveV4DebtBalanceAfterDelta,
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
@@ -1569,5 +1570,156 @@ describe('deriveV4DebtStateAfterDelta — USD repayment amount converted to toke
     const expectedQuantityRepaid = 10000 / 1.0041;
     expect(result.value?.drawnDebt).toBeCloseTo(20000 - expectedQuantityRepaid, 6);
     expect(result.value?.drawnDebt).not.toBeCloseTo(10000, 1);
+  });
+});
+
+/**
+ * `deriveV4DebtBalanceAfterDelta` — V4 Edit-Time Debt Model Audit, Gap B
+ * fix. The single shared chokepoint every V4 debt-delta write site
+ * (`services/portfolio/actionPreview.ts`, `services/simulation/portfolioAction.ts`,
+ * `PortfolioPageClient.tsx`'s `DebtPositionForm`) now routes through: it
+ * derives the new `v4DebtState` exactly as `deriveV4DebtStateAfterDelta`
+ * always did, then projects the paired `debtBalance` from THAT resulting
+ * state via `resolveCanonicalDebtBalance` — never from the caller's own
+ * raw `portfolio.debt.balance + debtDelta`. These tests prove the
+ * resulting `debtBalance` is a genuine projection of the new
+ * `v4DebtState`, not a function of whatever `portfolio.debt.balance`
+ * happened to hold going in — the exact "self-healing" invariant the
+ * audit's approved implementation scope requires.
+ */
+describe('deriveV4DebtBalanceAfterDelta — canonical debt.balance projection (V4 Edit-Time Debt Model Audit)', () => {
+  const tracked = { engineVersion: '1.0.0', formulaVersion: '1.0' };
+
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 2 },
+      debt: { asset: 'USDC', balance: 20000 },
+      market: { btcPriceUsd: 50000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 5000, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      ...overrides,
+    };
+  }
+
+  it('self-heals: a stale/wrong raw debt.balance is completely ignored — debtBalance comes from the resulting v4DebtState alone', () => {
+    // The stored debt.balance (999999) deliberately disagrees with
+    // v4DebtState's own canonical total (20000). A pre-fix implementation
+    // computing `portfolio.debt.balance + debtDelta` would have produced
+    // 994999; the fix must produce the real post-repayment canonical
+    // total instead.
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 999999 } });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      -5000,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // $5,000 clears the $5,000 premiumDebt exactly, leaving drawnDebt at
+    // $15,000 untouched — the real premium-first result.
+    expect(result.value.debtBalance).toBe(15000);
+    expect(result.value.debtBalance).not.toBe(999999 - 5000);
+    expect(result.value.v4DebtState).toEqual({
+      drawnDebt: 15000,
+      premiumDebt: 0,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+    });
+  });
+
+  it('debtBalance matches resolveCanonicalDebtBalance applied to the resulting v4DebtState, at a non-$1 debt-asset price', () => {
+    const portfolio = v4Portfolio({
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 5000,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 0.9973,
+      },
+    });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      -5000,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const expected = resolveCanonicalDebtBalance({
+      ...portfolio,
+      v4DebtState: result.value.v4DebtState,
+    });
+    expect(result.value.debtBalance).toBe(expected);
+  });
+
+  it('a zero delta is a genuine no-op — debtBalance still reflects the canonical total, even when the raw field disagreed', () => {
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 1 } });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      0,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.debtBalance).toBe(20000);
+  });
+
+  it('a full repayment to zero total debt produces debtBalance === 0, regardless of the raw stored field', () => {
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 12345 } });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      -20000,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.debtBalance).toBe(0);
+  });
+
+  it('propagates a genuine Engine failure (negative drawnDebt reaching the repayment formula) rather than returning a fabricated debtBalance', () => {
+    const portfolio = v4Portfolio({
+      v4DebtState: { drawnDebt: -1, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+    });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      -100,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('an ambiguous borrow (positive delta) yields an undefined v4DebtState and falls back to the legacy debt.balance for debtBalance, never a fabricated projection', () => {
+    const portfolio = v4Portfolio({ debt: { asset: 'USDC', balance: 20000 } });
+    const result = deriveV4DebtBalanceAfterDelta(
+      portfolio,
+      portfolio.v4DebtState as AaveV4DebtState,
+      10000,
+      tracked,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.v4DebtState).toBeUndefined();
+    // resolveCanonicalDebtBalance falls back to the raw debt.balance only
+    // when v4DebtState is genuinely undefined — this is that documented,
+    // correct fallback, not the bug this batch fixes.
+    expect(result.value.debtBalance).toBe(20000);
   });
 });

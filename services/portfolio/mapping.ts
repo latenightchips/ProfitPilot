@@ -890,3 +890,62 @@ export function deriveV4DebtStateAfterDelta(
     warnings: repaymentStep.warnings,
   };
 }
+
+/**
+ * Pairs a V4 debt delta's resulting `v4DebtState` with the generic
+ * `debt.balance` scalar it implies — V4 Edit-Time Debt Model Audit's own
+ * central finding: `services/portfolio/actionPreview.ts` and
+ * `services/simulation/portfolioAction.ts` each independently computed
+ * their own "after" `debt.balance` as `portfolio.debt.balance + debtDelta`
+ * — the RAW stored field, never `resolveCanonicalDebtBalance` — while
+ * `v4DebtState` was correctly derived via `deriveV4DebtStateAfterDelta`
+ * above. The two numbers agree only by algebraic coincidence, and only
+ * when the raw field was already exactly in sync with the real quantity
+ * total to begin with; the instant it drifts for any reason (a stale
+ * persisted record, a partial write elsewhere), that raw-arithmetic path
+ * propagates and compounds the drift forever, since nothing about it
+ * ever re-derives from the real canonical total.
+ *
+ * **The fix is structural, not a patch to the arithmetic**: `debtBalance`
+ * here is never computed as `oldBalance + delta`. It is
+ * `resolveCanonicalDebtBalance` applied to the portfolio WITH the
+ * already-derived `v4DebtState` — the exact same canonical chokepoint
+ * every other correct V4 consumer in this codebase already uses
+ * (`mapApplicationPortfolioToEngineInput`, `services/export/CsvExporter.ts`,
+ * `services/loop/finalPortfolio.ts`). A portfolio whose raw `debt.balance`
+ * had drifted from canonical therefore self-heals the moment any V4
+ * debt-changing operation runs through this function — the drift simply
+ * cannot propagate, because the new value never reads the old one.
+ *
+ * Every caller must already have confirmed `portfolio.protocolVersion === 'v4'`
+ * and `portfolio.v4DebtState !== undefined` before calling this (mirrors
+ * `deriveV4DebtStateAfterDelta`'s own non-optional `v4DebtState`
+ * parameter) — `portfolio` itself is still needed here only to read
+ * `protocolVersion`/`debt.balance` (the latter only as
+ * `resolveCanonicalDebtBalance`'s own defined-but-unreachable V3/no-op
+ * fallback), never as an input to any arithmetic.
+ */
+export interface AaveV4DebtDeltaResult {
+  v4DebtState: AaveV4DebtState | undefined;
+  debtBalance: number;
+}
+
+export function deriveV4DebtBalanceAfterDelta(
+  portfolio: ApplicationPortfolio,
+  v4DebtState: AaveV4DebtState,
+  debtDelta: number,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+): FormulaStep<AaveV4DebtDeltaResult> {
+  const step = deriveV4DebtStateAfterDelta(v4DebtState, debtDelta, tracked, sourceStatus);
+  if (!step.ok) return step;
+
+  const debtBalance = resolveCanonicalDebtBalance({ ...portfolio, v4DebtState: step.value });
+
+  return {
+    ok: true,
+    value: { v4DebtState: step.value, debtBalance },
+    tracked: step.tracked,
+    warnings: step.warnings,
+  };
+}

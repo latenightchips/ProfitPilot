@@ -1581,6 +1581,123 @@ describe('PortfolioPage — V4 borrow/repay action UI (Stage 13)', () => {
 });
 
 /**
+ * DebtPositionForm failed-derivation Apply gate — V4 Edit-Time Debt Model
+ * Audit, Gap A. `canApply` treats any non-null preview as applicable,
+ * including a FAILED one — correct for V3, but wrong for V4: a failed
+ * `deriveV4DebtBalanceAfterDelta` step must not leave "Apply Changes"
+ * clickable, since Apply would then write the generic `debt.balance`
+ * independently of a `v4DebtState` that was never actually derived
+ * (breaking the very atomicity this batch's Gap B fix establishes). A
+ * genuinely invalid `v4DebtState` cannot arise through the Store's own
+ * validated actions (`setAaveV4DebtState` rejects negative
+ * `drawnDebt`/`premiumDebt` via `aaveV4DebtStateSchema`), so this test
+ * writes directly to the Store's state to model the one real-world case
+ * that CAN produce one: a corrupted or pre-validation-tightening
+ * persisted record loaded from storage.
+ */
+describe('PortfolioPage — DebtPositionForm failed-derivation Apply gate (V4 Edit-Time Debt Model Audit, Gap A)', () => {
+  function v4DebtStateFixture() {
+    return {
+      drawnDebt: 15000,
+      premiumDebt: 5000,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.01,
+      debtAssetPriceUsd: 1.0,
+    };
+  }
+
+  function corruptPremiumDebtToNegative(portfolioId: string) {
+    usePortfolioStore.setState((state) => {
+      const entry = state.portfolios[portfolioId];
+      const v4DebtState = entry.portfolio.v4DebtState;
+      if (v4DebtState === undefined) throw new Error('setup failed — no v4DebtState to corrupt');
+      return {
+        portfolios: {
+          ...state.portfolios,
+          [portfolioId]: {
+            ...entry,
+            portfolio: {
+              ...entry.portfolio,
+              v4DebtState: { ...v4DebtState, premiumDebt: -5000 },
+            },
+          },
+        },
+      };
+    });
+  }
+
+  it('disables Apply Changes and does not write debt.balance when the V4 debt-state derivation genuinely fails', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 20000 } },
+      v4DebtStateFixture(),
+    );
+    corruptPremiumDebtToNegative(created.id);
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    // Repay $5,000 (canonical seed is 15,000 + (-5,000) = 10,000, so
+    // typing 5,000 requests a $5,000 repayment) — the repayment formula
+    // itself now rejects the corrupted negative premiumDebt.
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '5000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    // The failure is surfaced, not hidden.
+    expect(screen.getByText(/premiumDebt must not be negative/)).toBeInTheDocument();
+
+    const applyButton = section.getByRole('button', { name: 'Apply Changes' });
+    expect(applyButton).toBeDisabled();
+    expect(
+      screen.getByText(
+        /Apply Changes is disabled because the Aave V4 debt state could not be derived/,
+      ),
+    ).toBeInTheDocument();
+
+    // Force-clicking a disabled button is a no-op in the DOM, but assert
+    // directly on the Store to prove onApply's own early-return guard
+    // holds even if the disabled attribute were ever bypassed.
+    await user.click(applyButton);
+    const after = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(after.debt.balance).toBe(20000);
+    expect(after.v4DebtState).toEqual({ ...v4DebtStateFixture(), premiumDebt: -5000 });
+  });
+
+  it('recovers once the input changes back to a delta the derivation can succeed on (zero delta)', async () => {
+    const created = createAndSelectV4(
+      { debt: { asset: 'USDC', balance: 20000 } },
+      v4DebtStateFixture(),
+    );
+    corruptPremiumDebtToNegative(created.id);
+    useAaveV4LiveDataStore.setState(matchingAaveV4LiveState({ status: 'ready' }));
+    const user = userEvent.setup();
+    render(<PortfolioPage />);
+    const section = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
+
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '5000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+    expect(section.getByRole('button', { name: 'Apply Changes' })).toBeDisabled();
+
+    // A zero-delta preview (debtDelta === 0) is a no-op passthrough in
+    // `deriveV4DebtStateAfterDelta`, so it succeeds even against the
+    // corrupted state — proving the gate tracks the LATEST preview's own
+    // result, not a permanently-stuck failure flag.
+    await user.clear(section.getByLabelText('Debt amount', { exact: false }));
+    await user.type(section.getByLabelText('Debt amount', { exact: false }), '10000');
+    await user.click(section.getByRole('button', { name: 'Preview Changes' }));
+
+    expect(
+      screen.queryByText(
+        /Apply Changes is disabled because the Aave V4 debt state could not be derived/,
+      ),
+    ).not.toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Apply Changes' })).not.toBeDisabled();
+  });
+});
+
+/**
  * Debt form canonical seed/delta — V4 Readiness Audit §12 Stage 16.
  * `debt.balance` deliberately disagrees with the real synced
  * `v4DebtState` below, proving the "Debt amount" field seeds from the

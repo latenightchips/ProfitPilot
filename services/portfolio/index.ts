@@ -96,10 +96,12 @@ export { calculateMaxAdditionalBorrow } from './borrowCapacity';
 export { calculatePortfolioExposure } from './exposure';
 export { calculateDebtInterestBreakdown, type DebtInterestBreakdown } from './interestBreakdown';
 export {
+  type AaveV4DebtDeltaResult,
   checkAaveV4CollateralRiskAvailable,
   checkAaveV4DebtAssetPriceAvailable,
   checkAaveV4DebtStateAvailable,
   deriveAaveV4EffectiveBorrowRate,
+  deriveV4DebtBalanceAfterDelta,
   deriveV4DebtStateAfterDelta,
   mapApplicationPortfolioToEngineInput,
   mapPersistencePortfolioToApplicationPortfolio,
