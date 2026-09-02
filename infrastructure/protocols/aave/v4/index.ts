@@ -24,14 +24,17 @@ import {
   fetchUserPosition,
   fetchUserReserveStatus,
 } from './client';
+import { mapAaveV4BaseDrawnRateSnapshot } from './mapAaveV4BaseDrawnRateSnapshot';
 import { mapAaveV4CollateralRiskSnapshot } from './mapAaveV4CollateralRiskSnapshot';
 import { mapAaveV4ReservePriceSnapshot } from './mapAaveV4ReservePriceSnapshot';
 import { mapAaveV4Snapshot } from './mapAaveV4Snapshot';
 import { oraclePriceToUsd } from './scale';
 import type {
+  AaveV4BaseDrawnRateSnapshot,
   AaveV4CollateralRiskSnapshot,
   AaveV4DebtSnapshot,
   AaveV4ReservePriceSnapshot,
+  RawAaveV4BaseDrawnRateSnapshot,
   RawAaveV4CollateralRiskSnapshot,
   RawAaveV4ReservePriceSnapshot,
   RawAaveV4Snapshot,
@@ -555,6 +558,93 @@ export async function fetchAaveV4ReservePrice(
   const data = mapAaveV4ReservePriceSnapshot(snapshot, {
     network,
     collateralSymbol: collateralAsset.symbol,
+  });
+
+  return { ok: true, data };
+}
+
+export type AaveV4BaseDrawnRateSnapshotResult =
+  { ok: true; data: AaveV4BaseDrawnRateSnapshot } | { ok: false; error: AaveV4AdapterError };
+
+/**
+ * Fetches the debt asset's live V4 base drawn rate — the
+ * wallet-address-independent subset of `fetchAaveV4DebtSnapshot` above
+ * (V4 Manual-Data / Provenance Audit). `IHub.getAssetDrawnRate(assetId)`
+ * never depended on a user address to begin with — only `getUserDebt`
+ * (drawn/premium debt) and `getUserLastRiskPremium` (risk premium),
+ * deliberately absent from this function, do. Reuses `resolveV4Reserve`
+ * and `client.ts`'s own `fetchAssetDrawnRate` exactly as
+ * `fetchAaveV4DebtSnapshot` already does — never a second,
+ * independently-maintained reserve-resolution or rate-read
+ * implementation, mirroring `fetchAaveV4ReservePrice`'s own "reuse, not
+ * re-derive" discipline for the collateral price.
+ *
+ * **No fallback to V3.** Same discipline as every other V4 fetch in this
+ * module: any failure at any step fails closed (`ok: false`), never
+ * substitutes a V3 rate or a fabricated value.
+ *
+ * **Deliberately does not read `getUserDebt`/`getUserLastRiskPremium` at
+ * all** — not just "ignores the result." Wallet-address-dependent V4
+ * debt state stays exclusively the job of `fetchAaveV4DebtSnapshot`; this
+ * function has no `userAddress` parameter to accidentally wire one up
+ * to, by construction.
+ */
+export async function fetchAaveV4BaseDrawnRate(
+  client: AaveV4RpcClient,
+  debtAssetSymbol: string,
+  pinnedBlockNumber?: bigint,
+): Promise<AaveV4BaseDrawnRateSnapshotResult> {
+  if (!isSupportedV4DebtAsset(debtAssetSymbol)) {
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_V4_UNSUPPORTED_DEBT_ASSET',
+        message: `No live Aave V4 debt reserve is configured for "${debtAssetSymbol}".`,
+        userMessage: `Live Aave V4 data is not yet available for ${debtAssetSymbol}.`,
+        retryable: false,
+      },
+    };
+  }
+
+  const debtAsset = AAVE_V4_ETHEREUM_DEBT_ASSETS[debtAssetSymbol];
+  const { network } = AAVE_V4_ETHEREUM_MARKET;
+  const spoke = AAVE_V4_ETHEREUM_SPOKE as `0x${string}`;
+  const underlying = debtAsset.address as `0x${string}`;
+
+  const blockResult = await fetchPinnedBlock(client, pinnedBlockNumber);
+  if (!blockResult.ok) return { ok: false, error: blockResult.error };
+  const { number: blockNumber, timestamp: blockTimestamp } = blockResult.data;
+
+  const resolution = await resolveV4Reserve(client, spoke, underlying, blockNumber);
+  if (!resolution.ok) {
+    if (resolution.error !== null) return { ok: false, error: resolution.error };
+    return {
+      ok: false,
+      error: {
+        code: 'AAVE_V4_RESERVE_NOT_FOUND',
+        message: `No Aave V4 reserve for ${debtAsset.symbol} (${underlying}) was found on Spoke ${spoke} across any of the ${AAVE_V4_ETHEREUM_HUB_CANDIDATES.length} known Hubs.`,
+        userMessage: `Live Aave V4 data is not yet available for ${debtAssetSymbol}.`,
+        retryable: false,
+      },
+    };
+  }
+  const { hub, assetId, reserveId } = resolution.data;
+
+  const drawnRateResult = await fetchAssetDrawnRate(client, hub, assetId, blockNumber);
+  if (!drawnRateResult.ok) return { ok: false, error: drawnRateResult.error };
+
+  const snapshot: RawAaveV4BaseDrawnRateSnapshot = {
+    blockNumber,
+    blockTimestamp,
+    hub,
+    spoke,
+    reserveId,
+    drawnRateRay: drawnRateResult.data,
+  };
+
+  const data = mapAaveV4BaseDrawnRateSnapshot(snapshot, {
+    network,
+    debtSymbol: debtAsset.symbol,
   });
 
   return { ok: true, data };

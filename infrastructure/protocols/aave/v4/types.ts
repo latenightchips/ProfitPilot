@@ -269,3 +269,56 @@ export interface AaveV4ReservePriceSnapshot {
   canonical: AaveV4ReservePriceCanonical;
   display: AaveV4ReservePriceDisplay;
 }
+
+/**
+ * V4 wallet-independent base-drawn-rate snapshot — closes the "V4
+ * portfolio creation always requires an on-chain address before the
+ * market's own base drawn rate can become live" finding (V4 Manual-Data
+ * / Provenance Audit). A strict subset of `fetchAaveV4DebtSnapshot`'s own
+ * reads (`./index.ts`'s `fetchAaveV4BaseDrawnRate`): `IHub.getAssetDrawnRate`
+ * takes a Hub address and asset ID, never a user address — it is the
+ * market's own current base rate for the asset, not anything user- or
+ * position-specific. `ISpoke.getUserDebt`/`getUserLastRiskPremium`
+ * (drawn/premium debt, risk premium) remain genuinely wallet-dependent
+ * and are NOT part of this type, by construction, not omission — the
+ * same "strict address-independent subset, nothing else" discipline
+ * `RawAaveV4ReservePriceSnapshot` above already establishes for the
+ * collateral price.
+ *
+ * **Same underlying contract read as `fetchAaveV4DebtSnapshot`'s own
+ * bundled `fetchAssetDrawnRate` call — never a second, independently
+ * maintained implementation.** Both call sites share `client.ts`'s one
+ * `fetchAssetDrawnRate` function; this type and its fetch function exist
+ * only to make the address-independent subset separately reachable
+ * without a wallet, not to reinterpret what a "base drawn rate" means.
+ */
+export interface RawAaveV4BaseDrawnRateSnapshot {
+  blockNumber: bigint;
+  blockTimestamp: bigint;
+  hub: `0x${string}`;
+  spoke: `0x${string}`;
+  reserveId: bigint;
+  /** `IHub.getAssetDrawnRate(assetId)` — RAY-scaled (1e27 = 100% APR), this Hub's own current base rate for the asset, never a user-specific value. */
+  drawnRateRay: bigint;
+}
+
+export interface AaveV4BaseDrawnRateCanonical {
+  /** Decimal fraction (e.g. `0.04` for 4% APR), scaled from `RawAaveV4BaseDrawnRateSnapshot.drawnRateRay` via `./scale.ts`'s `rayToDecimal` — the exact same conversion `mapAaveV4Snapshot.ts` already applies to this same field. */
+  baseDrawnApr: number;
+}
+
+export interface AaveV4BaseDrawnRateDisplay {
+  network: string;
+  debtSymbol: string;
+  hub: `0x${string}`;
+  spoke: `0x${string}`;
+  reserveId: string;
+  blockNumber: string;
+  blockTimestamp: string;
+}
+
+export interface AaveV4BaseDrawnRateSnapshot {
+  raw: RawAaveV4BaseDrawnRateSnapshot;
+  canonical: AaveV4BaseDrawnRateCanonical;
+  display: AaveV4BaseDrawnRateDisplay;
+}

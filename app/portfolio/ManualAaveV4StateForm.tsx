@@ -1,10 +1,11 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import { useAaveV4BaseDrawnRateStore } from '@/stores/aaveV4BaseDrawnRateStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 import { aaveV4CollateralRiskConfigSchema, aaveV4DebtStateSchema } from '@/types/portfolio.schema';
@@ -100,6 +101,19 @@ import { aaveV4CollateralRiskConfigSchema, aaveV4DebtStateSchema } from '@/types
  * just-saved values so the sync effect's own baseline advances too,
  * keeping the form resyncable for the NEXT external change rather than
  * getting permanently stuck "dirty" after the first save.
+ *
+ * **`baseDrawnApr` pre-fills from the live market rate (V4 Manual-Data /
+ * Provenance Audit)** — `useAaveV4BaseDrawnRateStore` fetches
+ * `IHub.getAssetDrawnRate` for `portfolio.debt.asset` with no wallet
+ * involved, purely a convenience starting point for this otherwise fully
+ * manual form. This does NOT change what this form submits as: every
+ * save through `ManualDebtStateForm` still passes `source: 'manual'`
+ * unconditionally, exactly as before — that invariant is deliberate (see
+ * this file's own "Both calls pass `source: 'manual'` explicitly"
+ * section above) and is not altered by where the starting number came
+ * from. The field-level hint text next to `baseDrawnApr` alone
+ * distinguishes "still the live market rate" from "you've edited it,"
+ * without claiming the group as a whole is anything other than manual.
  */
 function fromPercentInput(percent: number): number {
   return percent / 100;
@@ -111,6 +125,31 @@ function toPercentInput(fraction: number | undefined): number | undefined {
 
 function RequiredMark() {
   return <span aria-hidden="true">*</span>;
+}
+
+/**
+ * `baseDrawnApr`-specific hint — V4 Manual-Data / Provenance Audit's
+ * "manually overridden" scenario. Deliberately independent of this
+ * form's other three fields (`drawnDebt`/`premiumDebt`/`riskPremium`
+ * have no live source at all in this manual form) and never claims the
+ * overall save is anything but `'manual'` — see this file's own header
+ * comment.
+ */
+function baseDrawnAprHintText(
+  status: ReturnType<typeof useAaveV4BaseDrawnRateStore.getState>['status'],
+  prefilled: boolean,
+  dirty: boolean,
+): string {
+  if (prefilled && dirty) {
+    return 'Manually overridden — no longer the live market rate.';
+  }
+  if (prefilled) {
+    return 'Aave V4 · Live market base drawn rate — edit to override.';
+  }
+  if (status === 'error') {
+    return 'Live Aave V4 base drawn rate is unavailable right now — enter a value manually.';
+  }
+  return 'Checking for a live Aave V4 market base drawn rate…';
 }
 
 const manualDebtStateSchema = aaveV4DebtStateSchema;
@@ -134,6 +173,7 @@ function ManualDebtStateForm({
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitSuccessful, dirtyFields },
   } = useForm<ManualDebtStateFormValues, unknown, z.infer<typeof manualDebtStateSchema>>({
     resolver: zodResolver(manualDebtStateSchema),
@@ -166,6 +206,39 @@ function ManualDebtStateForm({
     });
     lastSyncedV4DebtState.current = portfolio.v4DebtState;
   }, [isDirty, portfolio.v4DebtState, reset]);
+
+  // `baseDrawnApr` live pre-fill (V4 Manual-Data / Provenance Audit) —
+  // see this file's own header comment for why this does not change what
+  // this form submits as (`source: 'manual'`, unconditionally, below).
+  const [baseDrawnAprPrefilled, setBaseDrawnAprPrefilled] = useState(false);
+  const fetchAaveV4BaseDrawnRate = useAaveV4BaseDrawnRateStore(
+    (state) => state.fetchAaveV4BaseDrawnRate,
+  );
+  const baseDrawnRateStatus = useAaveV4BaseDrawnRateStore((state) => state.status);
+  const baseDrawnRateCanonical = useAaveV4BaseDrawnRateStore((state) => state.canonical);
+  const baseDrawnRateFetchedAsset = useAaveV4BaseDrawnRateStore((state) => state.debtAsset);
+
+  useEffect(() => {
+    void fetchAaveV4BaseDrawnRate(portfolio.debt.asset);
+  }, [portfolio.debt.asset, fetchAaveV4BaseDrawnRate]);
+
+  useEffect(() => {
+    if (baseDrawnRateStatus !== 'ready' || baseDrawnRateCanonical === null) return;
+    if (baseDrawnRateFetchedAsset !== portfolio.debt.asset) return;
+    if (!dirtyFields.baseDrawnApr) {
+      setValue('baseDrawnApr', toPercentInput(baseDrawnRateCanonical.baseDrawnApr) ?? 0, {
+        shouldDirty: false,
+      });
+    }
+    setBaseDrawnAprPrefilled(true);
+  }, [
+    baseDrawnRateStatus,
+    baseDrawnRateCanonical,
+    baseDrawnRateFetchedAsset,
+    portfolio.debt.asset,
+    dirtyFields.baseDrawnApr,
+    setValue,
+  ]);
 
   const onSubmit = handleSubmit((data) => {
     const result = setAaveV4DebtState(
@@ -240,6 +313,13 @@ function ManualDebtStateForm({
         </span>
       )}
 
+      <p role="status" className="text-xs text-muted-foreground">
+        {baseDrawnAprHintText(
+          baseDrawnRateStatus,
+          baseDrawnAprPrefilled,
+          Boolean(dirtyFields.baseDrawnApr),
+        )}
+      </p>
       <label className="flex flex-col gap-1 text-sm">
         <span>
           Base drawn APR (%) <RequiredMark />

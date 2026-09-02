@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import type { AaveV4DataSource } from '@/services';
+import { useAaveV4BaseDrawnRateStore } from '@/stores/aaveV4BaseDrawnRateStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import {
@@ -182,20 +183,49 @@ function RequiredMark() {
   return <span aria-hidden="true">*</span>;
 }
 
-function liveDebtStatusText(
+/**
+ * Status text for the wallet-POSITION half of debt assumptions —
+ * `drawnDebt`/`premiumDebt`/`riskPremium` only. Deliberately never
+ * claims "live position" for `baseDrawnApr`, which has its own
+ * independent, address-free live source and its own status text
+ * (`liveBaseDrawnAprStatusText` below) — V4 Manual-Data / Provenance
+ * Audit's own explicit requirement: "Do not claim a value is live
+ * position merely because another field in the same group was fetched
+ * live."
+ */
+function liveWalletDebtStatusText(
   status: ReturnType<typeof useAaveV4LiveDataStore.getState>['status'],
   hasValidAddress: boolean,
 ): string {
   if (!hasValidAddress) {
-    return 'Enter an on-chain address above to attempt live debt sync, or fill in the assumptions below by hand.';
+    return 'Enter an on-chain address above to attempt live wallet-position sync for drawn debt, premium debt, and risk premium, or fill them in below by hand.';
   }
   if (status === 'idle' || status === 'loading') {
-    return 'Checking for a live Aave V4 debt position…';
+    return 'Checking for a live Aave V4 wallet position…';
   }
   if (status === 'error') {
-    return 'Live Aave V4 debt data is unavailable right now — enter values manually below.';
+    return 'Live Aave V4 wallet-position data is unavailable right now — enter drawn debt, premium debt, and risk premium manually below.';
   }
-  return 'Aave V4 · Live debt position found — values below are pre-filled and still editable.';
+  return 'Aave V4 · Live wallet position found — drawn debt, premium debt, and risk premium below are pre-filled and still editable.';
+}
+
+/**
+ * Status text for `baseDrawnApr` alone — the market's own current base
+ * rate, address-independent (`useAaveV4BaseDrawnRateStore`, V4
+ * Manual-Data / Provenance Audit). Fires the instant a debt asset is
+ * chosen, no wallet required, mirroring `v4ReservePriceStatusText`
+ * (`NewPortfolioPageClient.tsx`) for the collateral price.
+ */
+function liveBaseDrawnAprStatusText(
+  status: ReturnType<typeof useAaveV4BaseDrawnRateStore.getState>['status'],
+): string {
+  if (status === 'idle' || status === 'loading') {
+    return 'Checking for a live Aave V4 market base drawn rate…';
+  }
+  if (status === 'error') {
+    return 'Live Aave V4 base drawn rate is unavailable right now — enter a value manually below.';
+  }
+  return 'Aave V4 · Live market base drawn rate — value below is pre-filled and still editable.';
 }
 
 function liveCollateralRiskStatusText(
@@ -226,17 +256,27 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
     } = useForm<V4FormValues>({ defaultValues: DEFAULT_V4_VALUES });
 
     const [debtStatePrefilled, setDebtStatePrefilled] = useState(false);
+    const [baseDrawnAprPrefilled, setBaseDrawnAprPrefilled] = useState(false);
     const [collateralRiskPrefilled, setCollateralRiskPrefilled] = useState(false);
 
     const userAddress = watch('userAddress');
     const trimmedAddress = userAddress.trim();
     const hasValidAddressShape = hasEvmAddressShape(trimmedAddress);
+    const watchedDrawnDebt = watch('drawnDebt');
+    const watchedPremiumDebt = watch('premiumDebt');
 
     const fetchAaveV4LiveData = useAaveV4LiveDataStore((state) => state.fetchAaveV4LiveData);
     const debtStateStatus = useAaveV4LiveDataStore((state) => state.status);
     const debtStateEngineInputs = useAaveV4LiveDataStore((state) => state.engineInputs);
     const debtStateFetchedAddress = useAaveV4LiveDataStore((state) => state.userAddress);
     const debtStateFetchedAsset = useAaveV4LiveDataStore((state) => state.debtAsset);
+
+    const fetchAaveV4BaseDrawnRate = useAaveV4BaseDrawnRateStore(
+      (state) => state.fetchAaveV4BaseDrawnRate,
+    );
+    const baseDrawnRateStatus = useAaveV4BaseDrawnRateStore((state) => state.status);
+    const baseDrawnRateCanonical = useAaveV4BaseDrawnRateStore((state) => state.canonical);
+    const baseDrawnRateFetchedAsset = useAaveV4BaseDrawnRateStore((state) => state.debtAsset);
 
     const fetchAaveV4CollateralRiskLiveData = useAaveV4CollateralRiskLiveDataStore(
       (state) => state.fetchAaveV4CollateralRiskLiveData,
@@ -256,12 +296,27 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
       void fetchAaveV4CollateralRiskLiveData(trimmedAddress as `0x${string}`);
     }, [hasValidAddressShape, trimmedAddress, fetchAaveV4CollateralRiskLiveData]);
 
-    // Debt-state fetch: keyed on address AND debt asset — a debt-asset
-    // change alone re-fires this, never the collateral-risk fetch above.
+    // Wallet-position debt fetch: keyed on address AND debt asset — a
+    // debt-asset change alone re-fires this, never the collateral-risk
+    // fetch above. Only ever prefills `drawnDebt`/`premiumDebt`/
+    // `riskPremium` now — `baseDrawnApr` has its own independent,
+    // address-free source below (V4 Manual-Data / Provenance Audit),
+    // never duplicated here, so the two provenances can never fight over
+    // the same field.
     useEffect(() => {
       if (!hasValidAddressShape) return;
       void fetchAaveV4LiveData(trimmedAddress as `0x${string}`, debtAsset);
     }, [hasValidAddressShape, trimmedAddress, debtAsset, fetchAaveV4LiveData]);
+
+    // Base-drawn-rate fetch: keyed on debt asset alone, no address
+    // required — `IHub.getAssetDrawnRate` is the market's own current
+    // rate for the asset, never wallet-specific (V4 Manual-Data /
+    // Provenance Audit). Fires the moment a debt asset is chosen,
+    // mirroring `NewPortfolioPageClient.tsx`'s own unconditional V4
+    // reserve-price fetch for the collateral side.
+    useEffect(() => {
+      void fetchAaveV4BaseDrawnRate(debtAsset);
+    }, [debtAsset, fetchAaveV4BaseDrawnRate]);
 
     // Prefill collateral factor once a matching live snapshot lands.
     useEffect(() => {
@@ -282,9 +337,13 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
       setValue,
     ]);
 
-    // Prefill the four debt-state fields once a matching live snapshot
-    // lands — matching address AND debt asset, mirroring V3's own
-    // `protocolQuote.borrowAsset === debtAsset` mismatch guard.
+    // Prefill drawn debt, premium debt, and risk premium once a matching
+    // live wallet-position snapshot lands — matching address AND debt
+    // asset, mirroring V3's own `protocolQuote.borrowAsset === debtAsset`
+    // mismatch guard. `baseDrawnApr` is deliberately NOT prefilled here
+    // any more — see the dedicated effect below, and this file's own
+    // "do not claim live position merely because another field in the
+    // same group was fetched live" requirement.
     useEffect(() => {
       if (debtStateStatus !== 'ready' || debtStateEngineInputs === null) return;
       if (debtStateFetchedAddress !== trimmedAddress || debtStateFetchedAsset !== debtAsset) return;
@@ -293,11 +352,6 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
       }
       if (!dirtyFields.premiumDebt) {
         setValue('premiumDebt', debtStateEngineInputs.premiumDebt, { shouldDirty: false });
-      }
-      if (!dirtyFields.baseDrawnApr) {
-        setValue('baseDrawnApr', toPercentInput(debtStateEngineInputs.baseDrawnApr), {
-          shouldDirty: false,
-        });
       }
       if (!dirtyFields.riskPremium) {
         setValue('riskPremium', toPercentInput(debtStateEngineInputs.riskPremium), {
@@ -314,8 +368,32 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
       debtAsset,
       dirtyFields.drawnDebt,
       dirtyFields.premiumDebt,
-      dirtyFields.baseDrawnApr,
       dirtyFields.riskPremium,
+      setValue,
+    ]);
+
+    // Prefill base drawn APR once a matching live market snapshot lands —
+    // matching debt asset only, no address/identity check needed (this
+    // source never depends on a wallet). Independent prefilled flag from
+    // `debtStatePrefilled` above so `prepareSubmission()` can correctly
+    // report `debtStateSource: 'manual'` for the whole group whenever
+    // EITHER independent source was never fetched live or was overridden
+    // — never claiming "live" for a field that wasn't.
+    useEffect(() => {
+      if (baseDrawnRateStatus !== 'ready' || baseDrawnRateCanonical === null) return;
+      if (baseDrawnRateFetchedAsset !== debtAsset) return;
+      if (!dirtyFields.baseDrawnApr) {
+        setValue('baseDrawnApr', toPercentInput(baseDrawnRateCanonical.baseDrawnApr), {
+          shouldDirty: false,
+        });
+      }
+      setBaseDrawnAprPrefilled(true);
+    }, [
+      baseDrawnRateStatus,
+      baseDrawnRateCanonical,
+      baseDrawnRateFetchedAsset,
+      debtAsset,
+      dirtyFields.baseDrawnApr,
       setValue,
     ]);
 
@@ -336,13 +414,24 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
           position = { userAddress: parsed.data.userAddress as `0x${string}` };
         }
 
-        const debtStateDirty = Boolean(
-          dirtyFields.drawnDebt ||
-          dirtyFields.premiumDebt ||
-          dirtyFields.baseDrawnApr ||
-          dirtyFields.riskPremium,
+        // Two independent sub-groups feed the one persisted `v4DebtState`
+        // object: `baseDrawnApr` (its own address-free market source) and
+        // `drawnDebt`/`premiumDebt`/`riskPremium` (the wallet-position
+        // source). Computed and gated separately so neither can borrow
+        // the other's provenance — V4 Manual-Data / Provenance Audit's
+        // own explicit requirement: "Do not claim a value is live
+        // position merely because another field in the same group was
+        // fetched live."
+        const baseDrawnAprTouched = baseDrawnAprPrefilled || Boolean(dirtyFields.baseDrawnApr);
+        const baseDrawnAprLive = baseDrawnAprPrefilled && !dirtyFields.baseDrawnApr;
+
+        const walletDebtDirty = Boolean(
+          dirtyFields.drawnDebt || dirtyFields.premiumDebt || dirtyFields.riskPremium,
         );
-        const debtStateTouched = debtStatePrefilled || debtStateDirty;
+        const walletDebtTouched = debtStatePrefilled || walletDebtDirty;
+        const walletDebtLive = debtStatePrefilled && !walletDebtDirty;
+
+        const debtStateTouched = baseDrawnAprTouched || walletDebtTouched;
         let debtState: NewPortfolioV4DebtStateSubmission | undefined;
         let debtStateSource: AaveV4DataSource = 'manual';
         if (debtStateTouched) {
@@ -358,7 +447,14 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
             });
             return { ok: false };
           }
-          debtStateSource = debtStatePrefilled && !debtStateDirty ? 'live' : 'manual';
+          // 'live' only when EVERY currently-populated sub-group is
+          // itself live-and-unedited — a group that was never touched at
+          // all trivially satisfies its own condition (nothing to
+          // overclaim), but a group that IS touched must genuinely be
+          // live, never merely because its sibling group is.
+          const baseDrawnAprOk = !baseDrawnAprTouched || baseDrawnAprLive;
+          const walletDebtOk = !walletDebtTouched || walletDebtLive;
+          debtStateSource = baseDrawnAprOk && walletDebtOk ? 'live' : 'manual';
           debtState = {
             drawnDebt: parsed.data.drawnDebt,
             premiumDebt: parsed.data.premiumDebt,
@@ -434,7 +530,7 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
         <div className="flex flex-col gap-2 border-t border-border pt-3">
           <p className="text-xs font-medium text-foreground">Debt assumptions</p>
           <p role="status" className="text-xs text-muted-foreground">
-            {liveDebtStatusText(debtStateStatus, hasValidAddressShape)}
+            {liveWalletDebtStatusText(debtStateStatus, hasValidAddressShape)}
           </p>
 
           <label className="flex flex-col gap-1 text-sm">
@@ -479,28 +575,52 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
             </span>
           )}
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Base drawn APR (%) <RequiredMark />
+          {/*
+            Read-only, derived total — V4 Manual-Data / Provenance Audit's
+            "hide-and-compute" design decision. Canonical V4 total debt is
+            ALWAYS `drawnDebt + premiumDebt`; this is the one place that
+            sum is shown to the user during creation, never a second,
+            independently-editable "Debt balance" field that could
+            disagree with it (see `NewPortfolioPageClient.tsx`'s own
+            gating of the legacy shared field to V3 only).
+          */}
+          <p className="text-sm text-muted-foreground">
+            Total debt (drawn + premium):{' '}
+            <span className="font-medium text-foreground">
+              {(
+                (Number.isFinite(watchedDrawnDebt) ? watchedDrawnDebt : 0) +
+                (Number.isFinite(watchedPremiumDebt) ? watchedPremiumDebt : 0)
+              ).toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
-            <input
-              id="v4.baseDrawnApr"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('baseDrawnApr', {
-                setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
-              })}
-              aria-invalid={errors.baseDrawnApr ? 'true' : undefined}
-              aria-describedby={errors.baseDrawnApr ? 'v4.baseDrawnApr-error' : undefined}
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-          </label>
-          {errors.baseDrawnApr && (
-            <span id="v4.baseDrawnApr-error" className="text-xs text-destructive">
-              {errors.baseDrawnApr.message}
-            </span>
-          )}
+          </p>
+
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
+            <p role="status" className="text-xs text-muted-foreground">
+              {liveBaseDrawnAprStatusText(baseDrawnRateStatus)}
+            </p>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Base drawn APR (%) <RequiredMark />
+              </span>
+              <input
+                id="v4.baseDrawnApr"
+                aria-required="true"
+                type="number"
+                step="any"
+                {...register('baseDrawnApr', {
+                  setValueAs: (value) => (value === '' ? NaN : fromPercentInput(Number(value))),
+                })}
+                aria-invalid={errors.baseDrawnApr ? 'true' : undefined}
+                aria-describedby={errors.baseDrawnApr ? 'v4.baseDrawnApr-error' : undefined}
+                className="rounded-md border border-border bg-transparent px-3 py-2"
+              />
+            </label>
+            {errors.baseDrawnApr && (
+              <span id="v4.baseDrawnApr-error" className="text-xs text-destructive">
+                {errors.baseDrawnApr.message}
+              </span>
+            )}
+          </div>
 
           <label className="flex flex-col gap-1 text-sm">
             <span>

@@ -1,8 +1,9 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ManualAaveV4StateForm } from '@/app/portfolio/ManualAaveV4StateForm';
+import { useAaveV4BaseDrawnRateStore } from '@/stores/aaveV4BaseDrawnRateStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
@@ -60,8 +61,21 @@ function currentPortfolio(id: string) {
   return usePortfolioStore.getState().portfolios[id].portfolio;
 }
 
+function idleBaseDrawnRateState() {
+  return {
+    status: 'idle' as const,
+    canonical: null,
+    debtAsset: null,
+    errorMessage: null,
+    errorCode: null,
+    lastFetchedAt: null,
+    fetchAaveV4BaseDrawnRate: async () => {},
+  };
+}
+
 beforeEach(() => {
   usePortfolioStore.setState(INITIAL_STATE);
+  useAaveV4BaseDrawnRateStore.setState(idleBaseDrawnRateState());
 });
 
 describe('ManualDebtStateForm — resyncs to a canonical v4DebtState change (BLOCKER #4 fix)', () => {
@@ -315,5 +329,63 @@ describe('ManualAaveV4StateForm — V3-shaped portfolio (gating lives in AavePro
 
     expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(0);
     expect(screen.getByLabelText('Collateral factor (%)', { exact: false })).toHaveValue(0);
+  });
+});
+
+/**
+ * V4 Manual-Data / Provenance Audit — `baseDrawnApr` pre-fills from the
+ * live market rate even in this otherwise fully manual form, without
+ * changing what a save submits as (`source: 'manual'`, unconditionally —
+ * see `ManualAaveV4StateForm.tsx`'s own header comment).
+ */
+describe('ManualDebtStateForm — baseDrawnApr live pre-fill (V4 Manual-Data / Provenance Audit)', () => {
+  it('pre-fills baseDrawnApr from the live market rate for the portfolio’s own debt asset', async () => {
+    const id = createManualV4Portfolio();
+    useAaveV4BaseDrawnRateStore.setState({
+      status: 'ready' as const,
+      canonical: { baseDrawnApr: 0.045 },
+      debtAsset: 'USDC',
+      errorMessage: null,
+      errorCode: null,
+      lastFetchedAt: new Date().toISOString(),
+      fetchAaveV4BaseDrawnRate: async () => {},
+    });
+
+    render(<ManualAaveV4StateForm portfolioId={id} portfolio={currentPortfolio(id)} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(4.5);
+    });
+    expect(screen.getAllByText(/aave v4 · live market base drawn rate/i).length).toBeGreaterThan(0);
+  });
+
+  it('manually overriding the pre-filled value updates the hint to "manually overridden" and still saves as source: manual', async () => {
+    const id = createManualV4Portfolio();
+    useAaveV4BaseDrawnRateStore.setState({
+      status: 'ready' as const,
+      canonical: { baseDrawnApr: 0.045 },
+      debtAsset: 'USDC',
+      errorMessage: null,
+      errorCode: null,
+      lastFetchedAt: new Date().toISOString(),
+      fetchAaveV4BaseDrawnRate: async () => {},
+    });
+    const user = userEvent.setup();
+
+    render(<ManualAaveV4StateForm portfolioId={id} portfolio={currentPortfolio(id)} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(4.5);
+    });
+
+    await user.clear(screen.getByLabelText('Base drawn APR (%)', { exact: false }));
+    await user.type(screen.getByLabelText('Base drawn APR (%)', { exact: false }), '7');
+    expect(screen.getAllByText(/manually overridden/i).length).toBeGreaterThan(0);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Save debt assumptions' }));
+    });
+
+    expect(currentPortfolio(id).v4DebtState?.baseDrawnApr).toBeCloseTo(0.07);
+    expect(currentPortfolio(id).v4DebtStateSource).toBe('manual');
   });
 });

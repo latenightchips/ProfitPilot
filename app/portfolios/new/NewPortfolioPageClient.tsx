@@ -431,8 +431,21 @@ export function NewPortfolioPageClient() {
       }
 
       const marketSource = marketPrefilled && !dirtyFields.market?.btcPriceUsd ? 'live' : 'manual';
+      // V4 Manual-Data / Provenance Audit — "hide-and-compute": canonical
+      // V4 total debt is always `drawnDebt + premiumDebt` from the V4
+      // fieldset's own validated submission, never the shared legacy
+      // `data.debt.balance` field (hidden for V4 above, so it never
+      // reflects independent user input here regardless of whatever
+      // stale/default value it happens to carry). `0` when the debt
+      // section was never touched, matching the existing fail-closed
+      // "untouched V4 debt state stays undefined" convention.
+      const canonicalDebtBalance =
+        v4Submission.debtState !== undefined
+          ? v4Submission.debtState.drawnDebt + v4Submission.debtState.premiumDebt
+          : 0;
       const v4Data: PortfolioInput = {
         ...data,
+        debt: { ...data.debt, balance: canonicalDebtBalance },
         // V4-only creation: `protocol.*` has no V4 meaning
         // (`resolveRiskCapacityFraction` never reads it once
         // `v4CollateralRisk` is present) — a fixed, inert placeholder,
@@ -578,25 +591,41 @@ export function NewPortfolioPageClient() {
               <option value="DAI">DAI</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span>
-              Debt balance <RequiredMark />
-            </span>
-            <input
-              id="debt.balance"
-              aria-required="true"
-              type="number"
-              step="any"
-              {...register('debt.balance', { valueAsNumber: true })}
-              aria-invalid={errors.debt?.balance ? 'true' : undefined}
-              aria-describedby={errors.debt?.balance ? 'debt.balance-error' : undefined}
-              className="rounded-md border border-border bg-transparent px-3 py-2"
-            />
-          </label>
-          {errors.debt?.balance && (
-            <span id="debt.balance-error" className="text-xs text-destructive">
-              {errors.debt.balance.message}
-            </span>
+          {protocolVersion === 'v3' && (
+            <>
+              <label className="flex flex-col gap-1 text-sm">
+                <span>
+                  Debt balance <RequiredMark />
+                </span>
+                <input
+                  id="debt.balance"
+                  aria-required="true"
+                  type="number"
+                  step="any"
+                  {...register('debt.balance', { valueAsNumber: true })}
+                  aria-invalid={errors.debt?.balance ? 'true' : undefined}
+                  aria-describedby={errors.debt?.balance ? 'debt.balance-error' : undefined}
+                  className="rounded-md border border-border bg-transparent px-3 py-2"
+                />
+              </label>
+              {errors.debt?.balance && (
+                <span id="debt.balance-error" className="text-xs text-destructive">
+                  {errors.debt.balance.message}
+                </span>
+              )}
+            </>
+          )}
+          {protocolVersion === 'v4' && (
+            // V4 Manual-Data / Provenance Audit — "hide-and-compute": V4
+            // has no independently-editable "Debt balance" field. Total
+            // debt is always `drawnDebt + premiumDebt`, computed at
+            // submit time from the Aave V4 fieldset below (which shows
+            // its own read-only running total) — never a second,
+            // separately-typed number that could disagree with it.
+            <p className="text-xs text-muted-foreground">
+              Aave V4 debt balance is calculated from drawn debt + premium debt, entered in the Aave
+              V4 fieldset below — not entered here.
+            </p>
           )}
         </fieldset>
 
