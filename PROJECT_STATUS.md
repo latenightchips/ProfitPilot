@@ -13164,6 +13164,174 @@ per-axis record).
 
 ---
 
+## Post-V1.1 Reconciliation — Aave V4 Capability Expansion & Semantic Correctness Remediation
+
+**Added by a documentation-only reconciliation batch (Portfolio Analytics
+milestone, Batch 0), the same "record added after the fact, not a
+rewritten history" convention the two sections above already
+establish.** None of the eleven commits below were tracked
+contemporaneously in this file as they happened; this section
+reconstructs them from `git log v1.1.0..<the commit each item cites>`
+and direct source inspection, not from any prior report's own claims.
+**`APP_VERSION`/`ENGINE_VERSION`/`package.json` `"version"` remain
+`1.1.0` as of this section** — whether and how to bump them for the
+work below is an explicit owner decision this batch does not make (see
+this batch's own final report for a version recommendation offered
+separately, not applied here).
+
+Eleven commits, `v1.1.0..4afdebb` (`v1.1.0` tag = `60d4bdf`), fall into
+two groups: five ship or fix real Aave V4 capability; six hold the same
+kind of V3/V4 terminology/semantic correctness this project has already
+applied elsewhere (Dashboard, Loop Builder, Apply-to-Portfolio,
+Simulation) to _new_ surfaces that capability work had just introduced
+or exposed.
+
+### Capability: Aave V4 portfolio creation and two new live-read fields
+
+- **V4 is now selectable at portfolio-creation time, not only
+  afterward** (`e901c97`, "walletindependentpricefix"). Before this
+  commit, every new portfolio was created V3-shaped
+  (`AaveProtocolVersionForm.tsx`'s own header comment records this as
+  the deliberate original design: "every new portfolio is still created
+  exactly as before... V4 is an opt-in choice made afterward, on an
+  existing portfolio"); V4 was reachable only by switching an existing
+  portfolio's protocol version post-creation. `NewPortfolioV4Fields.tsx`
+  (a new component; confirmed via `git log --diff-filter=A`) now offers
+  the same choice inline in `app/portfolios/new/NewPortfolioPageClient.tsx`,
+  address-independent — the on-chain address is not required to submit
+  the form, matching this commit's own "wallet-independent" framing:
+  a user can create a V4 portfolio with no address at all (fully
+  manual) or with one (opts into whichever fields that address's own
+  live data can supply).
+- **Live V4 reserve (BTC) price**, address-independent: a new
+  `/api/aave/v4-reserve-price` route, `stores/aaveV4ReservePriceStore.ts`,
+  and `infrastructure/protocols/aave/v4/` mapping (`e901c97`). Distinct
+  from V3's own live price feed — V4's reserve price is read from the
+  V4 pool's own oracle, not V3's.
+- **Live V4 base drawn APR**, opt-in via address: a new
+  `/api/aave/v4-base-drawn-rate` route and
+  `stores/aaveV4BaseDrawnRateStore.ts` (`5165887`,
+  "v4basedrawnaprhideandcompute"), wired into both the creation form
+  and `ManualAaveV4StateForm.tsx` (the existing portfolio's own V4 edit
+  form). Before this commit, base drawn APR was manual-only for V4 —
+  it now joins debt state and collateral risk factor as a third
+  live-readable V4 field (`docs/USER_GUIDE.md`'s own V4 paragraph
+  named only the first two; corrected in this same reconciliation
+  batch).
+- **V4 API BigInt→JSON serialization fixed** (`29b3e19`,
+  "v4bigintjsonserializationfix") — a new shared
+  `app/api/aave/_shared/toJsonSafe.ts` helper, applied to all three V4
+  on-chain-read routes (collateral-risk, position, reserve-price). A
+  correctness/robustness fix to the V4 API layer itself, not a new
+  capability.
+
+### Capability: mixed live/manual provenance UX and canonical debt handling
+
+- **Per-field live/manual/mixed provenance UX** (`c6ec383`,
+  "v4mixedprovenanceux") — the largest single commit in this range (38
+  files). A new `components/aave/V4ProvenanceDetail.tsx` badge and a
+  substantially extended `utils/protocolStatus.ts` (+158 lines) now
+  distinguish, per field, whether a V4 portfolio's debt state,
+  collateral risk, and base drawn rate are each live or manual, rather
+  than one coarse portfolio-level status — reflected across the
+  Dashboard, Exit Planner, Loop Builder, Portfolio, Recommendations,
+  and Simulation pages, plus `StrategyAssumptionsPanel.tsx`,
+  `CsvExporter.ts`'s export provenance columns, and
+  `buildPortfolioHistoryEntry.ts` (a V4 history entry's own recorded
+  `dataSource` now reflects the same per-field-unanimous rule
+  elsewhere in this application, not an independently-invented one —
+  see that file's own header comment).
+- **V4 debt canonicalization gaps closed** (`7707190`,
+  "v4debtcanonicalizationgapfixese") — `services/portfolio/actionPreview.ts`,
+  `services/portfolio/mapping.ts`, and `services/simulation/portfolioAction.ts`
+  fixed to consistently use the canonical `drawnDebt + premiumDebt`
+  total (and, where applicable, the real premium-first repayment
+  split) rather than a legacy or partial figure, closing a gap the
+  Portfolio page's own action-preview and Simulation's own
+  portfolio-action path had not yet received from earlier V4 debt-state
+  work.
+
+### Correctness: V3/V4 semantic isolation, verified across every reachable surface
+
+Six commits close terminology/semantic leaks the capability work above
+either introduced or exposed — the same "correctly-resolved value, wrongly
+labeled or wrongly compared" defect class throughout, each with its own
+delivered patch, focused regression tests, and a full `pnpm validate` +
+production build re-run:
+
+- **Dashboard V3/V4 semantic isolation** (`fd1e463`) — Dashboard's
+  Portfolio Composition, data-freshness indicators, and Liquidation
+  Risk Panel assumptions text no longer present a V3-shaped field
+  (Supply APR, Max LTV) as though it were a genuine V4 concept.
+- **Supply APR semantic-boundary fix** (`be8b92c`) —
+  `resolveSupplyAprDisplay` (`services/portfolio/mapping.ts`) now
+  reports `'not-applicable'` for every V4 portfolio unconditionally;
+  every consumer (Dashboard, Simulation, the shared
+  `StrategyAssumptionsPanel`, four CSV/JSON exporters) reads this one
+  shared resolver rather than each re-deriving its own answer.
+- **A2 — Apply-to-Portfolio unchanged-assumptions fix** (`03dbee1`) —
+  the V4 branch of `unchangedAssumptionsFor`
+  (`services/portfolioApply/unchangedAssumptions.ts`) no longer names
+  "supply APR" as a V4 assumption that stays unchanged; it names the
+  real V4 quantities that do (`v4DebtState.baseDrawnApr`/`.riskPremium`).
+  V3's own wording is unchanged, byte-for-byte.
+- **A1 — Loop Builder Collateral Factor fix** (`cb078c7`) — every Loop
+  Builder surface (strategy controls, safety analysis, validation
+  messages, CSV export, the Store's own safety-finding suggested
+  responses) now presents a V4 portfolio's real risk-capacity value as
+  "Collateral Factor," never "Maximum LTV" — the value itself was
+  already correctly resolved before this fix; only the label was wrong.
+  V3's own "Maximum LTV" wording is unchanged.
+- **A3 — Simulation Collateral Factor validation fix** (`4afdebb`) —
+  the Scenario Builder's pre-submission "additional borrow would exceed
+  the protocol's..." check now compares against the real V4 Collateral
+  Factor (via the same `resolveRiskCapacityDisplay` every other correct
+  surface already uses) instead of the V3-only `maxLoanToValue` scalar,
+  and skips the check entirely (never substitutes a V3 value) when a
+  V4 portfolio has no synced collateral risk yet. Confirmed, by direct
+  trace, to be a validation/display-only defect — the actual Simulation
+  Engine call was already dispatching correctly.
+- **Final V4 semantic closure audit** (read-only, same date as
+  `4afdebb`) — independently re-verified A1/A2/A3 plus every other
+  reachable V4 surface (Portfolio creation/editing, Dashboard,
+  Simulation, Loop Builder, Exit Planner, Recommendations,
+  Apply-to-Portfolio, History, CSV/JSON exports, live-data stores, and
+  the shared `services/portfolio/mapping.ts` resolvers) against a fresh
+  `origin/main` checkout at `4afdebb`, not merely re-asserted from each
+  fix's own prior report. Full suite re-run: **4092/4092 tests passing.**
+  Verdict: **V4 semantic-audit cycle CLOSED — no further semantic patch
+  required.**
+
+### Deployment disposition and scope: unchanged
+
+None of the eleven commits above introduces a new external service
+dependency, changes `FORMULA_VERSION` or `STORAGE_SCHEMA_VERSION`, or
+alters the Path B (self-hostable, no operated production deployment)
+posture — see `docs/DEPLOYMENT_DISPOSITION.md`, itself unchanged.
+Collateral quantity and debt balance remain always-manual for both
+protocol versions; nothing above changes that boundary.
+
+### What VERSION_2_BACKLOG.md said that this work has partially overtaken
+
+`docs/VERSION_2_BACKLOG.md`'s "Wallet integrations" (item 4) and "Live
+portfolio imports" (item 5) both describe on-chain read access as
+something that "does not exist today." As of the V4 work reconciled
+above (most of it predating even this range — the V4 read adapter,
+application service, and live debt-state/collateral-risk sync are
+`v1.1.0`-and-earlier work), address-based, wallet-free on-chain read
+access for V4 debt state, collateral risk, and base drawn rate **already
+exists and is live by default once opted into**. What remains genuinely
+undelivered, and is not contradicted by anything above: a _connected
+wallet_ (MetaMask-style identity/signing) specifically, and reading
+real collateral/debt **size** automatically rather than requiring manual
+entry — `docs/USER_GUIDE.md`'s "What stays manual, always: your
+collateral quantity and debt balance" is still accurate today. See
+`docs/VERSION_2_BACKLOG.md`'s own items 4/5 for the corrected framing,
+added in this same batch; their priority tier is unchanged — that
+remains an owner decision this batch does not make.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

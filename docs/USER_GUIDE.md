@@ -40,9 +40,11 @@ Aave V3 protocol parameters (max LTV, liquidation threshold, borrow/supply
 APR) are fetched live and read-only by default, with no setup required —
 ProfitPilot reads these directly from Aave V3's own on-chain contracts.
 If you opt in to Aave V4 for a portfolio by entering an on-chain
-address, ProfitPilot also reads that position's real, live debt state
-and collateral risk factor the same way — read-only, no wallet
-connection, no signing. What stays manual, always: your collateral
+address, ProfitPilot also reads that position's real, live debt state,
+collateral risk factor, and base drawn interest rate the same way —
+read-only, no wallet connection, no signing. Aave V4 can be chosen
+either when you create a portfolio or afterward on an existing one.
+What stays manual, always: your collateral
 quantity and debt balance — only you enter and update your own position
 size; ProfitPilot never infers or fetches it. If a live V4 value you
 opted into differs from a manual entry you made, you choose whether to

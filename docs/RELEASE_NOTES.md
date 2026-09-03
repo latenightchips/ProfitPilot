@@ -63,6 +63,49 @@ synchronization, and still no publicly operated production deployment —
 see "Known limitations" and "Deployment" below, both unchanged from
 Version 1.0.0.
 
+## Version [Unreleased] — post-1.1.0
+
+**Not yet a numbered release.** `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` are still `1.1.0`; the work below has been built, tested,
+and verified but has not yet been given its own version number — see
+`PROJECT_STATUS.md`'s "Post-V1.1 Reconciliation" section for the full
+record and `docs/CHANGELOG.md`'s matching `[Unreleased]` entry.
+
+### What's new since 1.1.0
+
+- **Aave V4 portfolios can now be created directly.** Previously, every
+  new portfolio started as V3; Aave V4 was only reachable by switching
+  an existing portfolio afterward. The New Portfolio form now offers
+  the same choice up front — with or without an on-chain address.
+- **A third V4 field can now be read live: base drawn interest rate**,
+  joining debt state and collateral risk factor, on the same opt-in,
+  read-only, never-silently-overwritten terms as those two.
+- **Live V4 reserve (BTC) price**, read from Aave V4's own oracle,
+  independent of V3's separate live price feed.
+- **Per-field live/manual status for V4.** Debt state, collateral risk,
+  and base drawn rate each now show their own status individually
+  instead of one combined figure for the whole portfolio.
+- **Consistent V4 debt totals in every preview.** The Portfolio page's
+  own change preview and Simulation's portfolio-action path now agree
+  with every other V4 surface on what a position's real total debt is.
+- **V3/V4 terminology correctness verified end to end.** A focused
+  review found and fixed every remaining place a V4 portfolio's real
+  Collateral Factor was still shown or validated using V3's "Maximum
+  LTV" language, or where an unchanged-assumptions disclosure still
+  named "Supply APR" for V4 (a concept V4 doesn't have) — across Loop
+  Builder, Simulation, Apply-to-Portfolio, and the Dashboard. The
+  underlying numbers were already correct in every case; only the
+  wording was wrong. A follow-up, independent review re-checked every
+  V4-reachable surface and found nothing further to fix.
+
+### Explicitly unchanged
+
+Same as 1.1.0 below: no financial formula changed, no persisted-data
+schema changed, still no live wallet connection or transaction
+execution, still no cloud backup or synchronization, still no publicly
+operated production deployment. Collateral quantity and debt balance
+remain always-manual for both protocol versions.
+
 ## Version 1.0.0 (previous release)
 
 Quality Sign-Off completed Milestone 9 Batch 11 (`06_TASKS.md` M9-064),
@@ -107,8 +150,15 @@ below).
 See `docs/DEFECT_CLASSIFICATION.md` §6 and `docs/CHANGELOG.md`'s "Known
 limitations" section for the complete, classified list. Summarized:
 
-- Manual Mode only — no live BTC price feed, no live Aave connection.
-  This is Version 1.0.0's permanent, intentional scope, not a gap.
+- **Corrected for the current release** (this bullet, as originally
+  written for Version 1.0.0, is no longer accurate — see
+  `docs/USER_GUIDE.md` for the full current picture): BTC price and
+  Aave V3 protocol parameters are live and read-only by default; Aave
+  V4 debt state, collateral risk, and base drawn rate are live and
+  read-only if you opt in with an on-chain address. What remains
+  permanently manual, for both protocol versions: collateral quantity
+  and debt balance (your own position size), and there is still no
+  wallet connection or transaction execution of any kind.
 - No cloud backup or cloud sync — Cloud Database and Cloud Synchronization
   were **cancelled by product decision** in Milestone 8
   (`docs/MILESTONE_8_SCOPE_CHANGE.md`) and remain cancelled.

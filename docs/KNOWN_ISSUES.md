@@ -38,8 +38,10 @@ documentation-only inconsistency.
   fetches these from Aave V3's own on-chain oracle/pool contracts with
   no configuration required. Aave V4 support is separate and opt-in:
   entering an on-chain address enables a live read of that position's
-  debt state and collateral risk factor (V3 and V4 support are not
-  identical — V4 has no manual-price toggle of its own once opted in).
+  debt state, collateral risk factor, and base drawn interest rate (V3
+  and V4 support are not identical — V4 has no manual-price toggle of
+  its own once opted in). V4 can be chosen at portfolio-creation time
+  or opted into afterward on an existing portfolio.
   All of this is read-only in every case — nothing here ever
   constructs, signs, or submits a transaction. What remains genuinely
   manual: collateral quantity and debt balance (position size), which

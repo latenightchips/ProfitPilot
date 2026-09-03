@@ -84,13 +84,26 @@ owner must still decide — every single item has at least one).
 
 - **Priority tier**: Medium — a prerequisite for "Live portfolio
   imports" below, not an end in itself.
+- **Correction (post-V1.1 reconciliation, evidence-based, priority tier
+  unchanged)**: this item's own rationale, below, originally described
+  on-chain read access as something that "does not exist today." That
+  premise is now stale — Aave V4 already has real, address-based,
+  wallet-free on-chain read access (debt state, collateral risk factor,
+  base drawn rate), shipped and verified across every V4 surface (see
+  `PROJECT_STATUS.md`'s "Post-V1.1 Reconciliation" section). What this
+  item actually still names, precisely: a *connected wallet*
+  (MetaMask-style browser identity/signing), which is a different and
+  larger capability than reading a plain address's public on-chain
+  data — V4's existing read access needs no wallet, no connection, and
+  no signing at all.
 - **Rationale / dependencies**: a genuine architectural and security-
-  surface expansion — real on-chain read access where none exists
-  today. `docs/SECURITY_THREAT_MODEL.md`'s own 9 named threats were
-  scoped against a no-wallet, manual-entry application; a wallet
-  integration needs its own threat-model extension, not an assumption
-  the existing model already covers it. Sequenced before item 5, which
-  depends on it.
+  surface expansion — wallet-based (connected, signing-capable) access,
+  as distinct from the address-based read access V4 already has.
+  `docs/SECURITY_THREAT_MODEL.md`'s own 9 named threats were scoped
+  against a no-wallet, manual-entry application; a wallet integration
+  needs its own threat-model extension, not an assumption the existing
+  model already covers it. Sequenced before item 5, which depends on
+  it.
 - **Owner decision required**: whether wallet-based read access is
   wanted at all, and if so which wallet standard(s)/chains to support —
   a real product-scope decision, not an engineering default. **This
@@ -107,11 +120,21 @@ owner must still decide — every single item has at least one).
 ### 5. Live portfolio imports
 
 - **Priority tier**: Medium, sequenced after item 4.
-- **Rationale / dependencies**: reading a real Aave position directly,
-  rather than manual entry — the single largest change to this
-  application's own stated identity (`docs/USER_GUIDE.md`'s "What
-  ProfitPilot is not": "does not read your real Aave position").
-  Depends on item 4 (wallet integrations).
+- **Correction (post-V1.1 reconciliation, evidence-based, priority tier
+  unchanged)**: this item's own rationale, below, cited a
+  `docs/USER_GUIDE.md` line ("does not read your real Aave position")
+  that no longer exists there — superseded by that document's own
+  current, more precise wording, since V3/V4 rate and risk parameters
+  are already read live. What this item still names, precisely and
+  still undelivered: reading real collateral/debt **size**
+  automatically (full position import), rather than requiring it to be
+  entered manually — `docs/USER_GUIDE.md`'s current "What stays manual,
+  always: your collateral quantity and debt balance" is accurate today
+  and is exactly what this item would change.
+- **Rationale / dependencies**: reading a real Aave position's size
+  directly, rather than manual entry — a real change to this
+  application's own stated identity as a manual-entry, decision-support
+  tool. Depends on item 4 (wallet integrations).
 - **Owner decision required**: whether this application's own core
   identity as a manual-entry, decision-support tool (not a live wallet
   reader) should change at all — this is a product-identity decision,

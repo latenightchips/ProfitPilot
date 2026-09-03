@@ -173,9 +173,65 @@ production deployment) deployment disposition — see
 See `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review"
 section for the full review.
 
-## [Unreleased] — Post-M10 hardening (R1/R2)
+## [Unreleased]
 
-**No version-axis bump accompanies this section** — none of this work
+Two unreleased bodies of work, kept as separate subsections below since
+they happened at different times against different baselines and
+neither has its own version bump yet.
+
+### Aave V4 capability and correctness (post-1.1.0)
+
+**No version-axis bump accompanies this subsection yet** — `package.json`'s
+`"version"`, `APP_VERSION`, and `ENGINE_VERSION` are still `1.1.0`;
+whether and how to bump them for the work below is an open decision,
+not resolved by this entry existing. No `FORMULA_VERSION` or
+`STORAGE_SCHEMA_VERSION` change either way — nothing below touched a
+financial formula or the persisted-data schema. See `PROJECT_STATUS.md`'s
+"Post-V1.1 Reconciliation" section for the full per-commit record this
+subsection summarizes.
+
+- **Aave V4 portfolios can now be created directly**, not only opted
+  into after the fact. The New Portfolio form now offers the same Aave
+  V4 choice `AaveProtocolVersionForm` already offered on an existing
+  portfolio's own edit page — address-independent: you can create a V4
+  portfolio with no on-chain address at all (fully manual), or with one
+  (opting into whichever fields that address's live data can supply).
+- **A third V4 field can now be read live: base drawn APR**, alongside
+  the debt state and collateral risk factor that already could be. Like
+  those two, it's opt-in (an on-chain address), read-only, and never
+  silently overwrites a manual entry that disagrees with it.
+- **Live V4 reserve (BTC) price**, read from the V4 pool's own oracle —
+  distinct from, and independent of, V3's own live price feed.
+- **Clearer live/manual status, per field.** A V4 portfolio's debt
+  state, collateral risk, and base drawn rate each now show their own
+  live/manual status individually, rather than one combined status for
+  the whole portfolio — visible on the Portfolio page and reflected
+  consistently in CSV/JSON exports and Portfolio History entries.
+- **V4 debt figures are now consistently canonical wherever a proposed
+  change is previewed** — the Portfolio page's own preview and
+  Simulation's portfolio-action path now use the same real
+  drawn-debt-plus-premium-debt total (and, on a repayment, the same
+  real premium-first split) every other V4 surface already used.
+- **V3/V4 terminology correctness, verified across the entire
+  application.** A focused audit-and-fix cycle confirmed and closed
+  every remaining place a V4 portfolio's real Collateral Factor was
+  still labeled or validated as though it were V3's "Maximum LTV," or
+  a V4 portfolio's unchanged assumptions still named "Supply APR" (a
+  concept V4 doesn't have) — across Loop Builder, Simulation's Scenario
+  Builder, Apply-to-Portfolio, and the Dashboard. In every case the
+  underlying number was already correct; only the label or comparison
+  was wrong. A final, independent closure audit re-verified every
+  reachable V4 surface against a fresh checkout and found nothing
+  further to fix. Full test suite: 4092/4092 passing.
+- **Two internal-only fixes**, mentioned for completeness rather than
+  because they're user-visible: a V4 API response-serialization bug
+  (large on-chain numbers could break JSON encoding in specific cases)
+  and the addition of a shared, consistent error-handling helper across
+  the three V4 on-chain-read routes.
+
+### Post-M10 hardening (R1/R2)
+
+**No version-axis bump accompanies this subsection** — none of this work
 changes `package.json`'s `"version"`, `APP_VERSION`, `ENGINE_VERSION`,
 `FORMULA_VERSION`, or `STORAGE_SCHEMA_VERSION`; Version 1.0.0's own
 Quality Sign-Off (below) is unchanged and not reopened. This entry
