@@ -120,6 +120,57 @@ describe('runLoopStrategy', () => {
     expect(finding?.suggestedResponse.length).toBeGreaterThan(0);
   });
 
+  /**
+   * V4 semantic audit, Batch 2 (A1) — `VALID_PROTOCOL_PARAMETERS`'s own
+   * suggested response previously always named "Maximum LTV," even for a
+   * V4 portfolio, where the dispatched risk-capacity value is really the
+   * Collateral Factor. V3's wording must stay byte-for-byte identical;
+   * only V4 changes.
+   */
+  it('names "Maximum LTV" in the VALID_PROTOCOL_PARAMETERS suggested response for a V3 portfolio (unchanged)', () => {
+    // maxLoanToValue (0.9) > liquidationThreshold (0.8) — a real Engine
+    // invariant violation (INVALID_PROTOCOL_PARAMETERS), not hand-crafted.
+    const invalidV3Portfolio = validPortfolio({
+      protocol: {
+        maxLoanToValue: 0.9,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(invalidV3Portfolio);
+
+    const finding = useLoopBuilderStore
+      .getState()
+      .warnings.find((warning) => warning.cause.includes('VALID_PROTOCOL_PARAMETERS'));
+    expect(finding?.suggestedResponse).toBe(
+      'Correct the Maximum LTV/Borrow-Rate Assumption so they describe a valid protocol configuration.',
+    );
+  });
+
+  it('names "Collateral Factor" (never "Maximum LTV") in the VALID_PROTOCOL_PARAMETERS suggested response for a V4 portfolio', () => {
+    // collateralFactor: 1.5 (150%) fails Engine's own validatePercentage
+    // (must be between 0 and 1) — a real INVALID_PERCENTAGE failure
+    // routed through the same VALID_PROTOCOL_PARAMETERS check.
+    const invalidV4Portfolio = validPortfolio({
+      protocolVersion: 'v4',
+      v4Position: { userAddress: '0x1234567890123456789012345678901234567890' },
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 1.5, dynamicConfigKey: 1 },
+    });
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(invalidV4Portfolio);
+
+    const finding = useLoopBuilderStore
+      .getState()
+      .warnings.find((warning) => warning.cause.includes('VALID_PROTOCOL_PARAMETERS'));
+    expect(finding?.suggestedResponse).toBe(
+      'Correct the Collateral Factor/Borrow-Rate Assumption so they describe a valid protocol configuration.',
+    );
+    expect(finding?.suggestedResponse).not.toMatch(/Maximum LTV/);
+  });
+
   it('maps a real BORROWING_CAPACITY finding into a warning with category borrowingCapacity (M7-041)', () => {
     // Debt already at the starting position's own borrow ceiling
     // (1 BTC @ $50,000 * 0.5 max LTV = $25,000) — a real

@@ -73,6 +73,13 @@ describe('LoopStrategyControls — pre-filled defaults', () => {
       50,
     );
   });
+
+  it('V4 semantic audit, Batch 2 (A1) — never labels the field "Collateral Factor" for a V3 (or unset) portfolio', () => {
+    render(<LoopStrategyControls portfolio={validPortfolio()} portfolioId="portfolio-1" />);
+    expect(
+      screen.queryByLabelText('Collateral Factor (%)', { exact: false }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('LoopStrategyControls — live, debounced, validated updates (M7-010 Requirement)', () => {
@@ -558,9 +565,10 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     };
   }
 
-  it('defaults the Maximum LTV field to the canonical V4 collateralFactor (65%), not the legacy protocol.maxLoanToValue (50%)', () => {
+  it('labels the field "Collateral Factor (%)" for a V4 portfolio, never "Maximum LTV", and defaults it to the canonical V4 collateralFactor (65%), not the legacy protocol.maxLoanToValue (50%)', () => {
     render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
-    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(65);
+    expect(screen.queryByLabelText('Maximum LTV (%)', { exact: false })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Collateral Factor (%)', { exact: false })).toHaveValue(65);
   });
 
   it('editing an unrelated field (Maximum Number of Loops) does not inject a legacy V3 maxLoanToValueOverride into settings', async () => {
@@ -577,11 +585,11 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     expect(state.settings?.maxLoanToValueOverride).toBeUndefined();
   });
 
-  it('an explicit user edit to the Maximum LTV field still produces a real maxLoanToValueOverride', async () => {
+  it('an explicit user edit to the Collateral Factor field still produces a real maxLoanToValueOverride (field name/semantics unchanged — label only)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
 
-    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    const ltvInput = screen.getByLabelText('Collateral Factor (%)', { exact: false });
     await user.clear(ltvInput);
     await user.type(ltvInput, '70');
     await vi.advanceTimersByTimeAsync(500);
@@ -589,11 +597,11 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBe(0.7);
   });
 
-  it('once established, a later unrelated-field edit preserves the explicit LTV override rather than dropping it', async () => {
+  it('once established, a later unrelated-field edit preserves the explicit Collateral Factor override rather than dropping it', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
 
-    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    const ltvInput = screen.getByLabelText('Collateral Factor (%)', { exact: false });
     await user.clear(ltvInput);
     await user.type(ltvInput, '70');
     await vi.advanceTimersByTimeAsync(500);
@@ -609,7 +617,7 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     expect(state.settings?.maxLoanToValueOverride).toBe(0.7);
   });
 
-  it('a preset-style push (setSettings with a concrete maxLoanToValueOverride) establishes the LTV, so a later unrelated edit preserves it too', async () => {
+  it('a preset-style push (setSettings with a concrete maxLoanToValueOverride) establishes the Collateral Factor, so a later unrelated edit preserves it too', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
 
@@ -622,7 +630,7 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
         borrowAprOverride: 0.09,
       });
     });
-    expect(screen.getByLabelText('Maximum LTV (%)', { exact: false })).toHaveValue(65);
+    expect(screen.getByLabelText('Collateral Factor (%)', { exact: false })).toHaveValue(65);
 
     const maxLoopsInput = screen.getByLabelText('Maximum Number of Loops');
     await user.clear(maxLoopsInput);
@@ -636,7 +644,7 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
 
-    const ltvInput = screen.getByLabelText('Maximum LTV (%)', { exact: false });
+    const ltvInput = screen.getByLabelText('Collateral Factor (%)', { exact: false });
     await user.clear(ltvInput);
     await user.type(ltvInput, '70');
     await vi.advanceTimersByTimeAsync(500);
@@ -651,6 +659,19 @@ describe('LoopStrategyControls — V4 canonical risk-capacity (collateralFactor)
     await vi.advanceTimersByTimeAsync(500);
 
     expect(useLoopBuilderStore.getState().settings?.maxLoanToValueOverride).toBeUndefined();
+  });
+
+  it('shows a Collateral Factor validation error (never "Maximum LTV") for an out-of-range value on a V4 portfolio', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<LoopStrategyControls portfolio={v4Portfolio()} portfolioId="portfolio-1" />);
+
+    const ltvInput = screen.getByLabelText('Collateral Factor (%)', { exact: false });
+    await user.clear(ltvInput);
+    await user.type(ltvInput, '150');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(screen.getByText('Collateral Factor must be between 0% and 100%.')).toBeInTheDocument();
+    expect(screen.queryByText(/Maximum LTV/)).not.toBeInTheDocument();
   });
 });
 

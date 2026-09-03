@@ -478,6 +478,43 @@ describe('buildLoopStrategyExportPayload — V4 risk-capacity export (Stage 23E)
     const csv = buildLoopStrategyExportCsv(payload);
     expect(csv).toContain('Collateral Factor,Not available');
   });
+
+  /**
+   * V4 semantic audit, Batch 2 (A1) — the override row (`inputs.maxLoanToValueOverride`,
+   * still the same version-dispatched field name/semantics as before this
+   * batch) must be labeled "Collateral Factor Override" for a V4
+   * portfolio, not the V3-only "Max LTV Override" — mirroring the fix
+   * already applied to the always-present risk-capacity row above.
+   */
+  it('CSV labels a supplied override "Collateral Factor Override", never "Max LTV Override", for a V4 portfolio', () => {
+    const { result, warnings, metadata } = runV4Strategy(V4_PORTFOLIO);
+    const overriddenSettings: LoopStrategySettings = { ...SETTINGS, maxLoanToValueOverride: 0.4 };
+    const payload = buildLoopStrategyExportPayload(
+      overriddenSettings,
+      result,
+      warnings,
+      metadata,
+      V4_PORTFOLIO,
+    );
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).toContain('Collateral Factor Override,0.4');
+    expect(csv).not.toContain('Max LTV Override');
+  });
+
+  it('CSV still labels a supplied override "Max LTV Override" for a V3 portfolio (unchanged)', () => {
+    const { result, warnings, metadata } = runViableStrategy();
+    const overriddenSettings: LoopStrategySettings = { ...SETTINGS, maxLoanToValueOverride: 0.4 };
+    const payload = buildLoopStrategyExportPayload(
+      overriddenSettings,
+      result,
+      warnings,
+      metadata,
+      PORTFOLIO,
+    );
+    const csv = buildLoopStrategyExportCsv(payload);
+    expect(csv).toContain('Max LTV Override,0.4');
+    expect(csv).not.toContain('Collateral Factor Override');
+  });
 });
 
 /**

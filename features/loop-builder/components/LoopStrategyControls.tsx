@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 
 import type { ApplicationPortfolio } from '@/services';
@@ -10,11 +10,12 @@ import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 import type { ExecutionCostAssumptionsSettings } from '@/types/portfolio';
 
 import {
+  buildLoopStrategyControlsSchema,
   type LoopStrategyControlsFormValues,
-  loopStrategyControlsSchema,
 } from '../types/loopStrategyControls';
 import { resolveBorrowRateAssumption } from '../utils/resolveBorrowRateAssumption';
 import { resolveMaxLoanToValueAssumption } from '../utils/resolveMaxLoanToValueAssumption';
+import { riskCapacityLabel } from '../utils/riskCapacityLabel';
 
 /**
  * Loop Strategy Controls — 06_TASKS.md M7-008 ("Implement Loop Strategy
@@ -228,13 +229,23 @@ export function LoopStrategyControls({
   // `v4CollateralRisk.collateralFactor`), never a real user override.
   const maxLoanToValueEstablishedRef = useRef(false);
 
+  // V4 semantic audit, Batch 2 (A1) — the schema's own validation
+  // messages for the risk-capacity field name whichever term ("Maximum
+  // LTV"/"Collateral Factor") this portfolio's protocol version actually
+  // uses; see `riskCapacityLabel`'s own header comment.
+  const maxLoanToValueLabel = riskCapacityLabel(portfolio.protocolVersion);
+  const schema = useMemo(
+    () => buildLoopStrategyControlsSchema(portfolio.protocolVersion),
+    [portfolio.protocolVersion],
+  );
+
   const {
     register,
     getValues,
     reset,
     formState: { errors },
   } = useForm<LoopStrategyControlsFormValues>({
-    resolver: zodResolver(loopStrategyControlsSchema),
+    resolver: zodResolver(schema),
     mode: 'onChange',
     defaultValues: defaultFormValues(portfolio),
   });
@@ -278,7 +289,7 @@ export function LoopStrategyControls({
   function handleFieldChange() {
     cancelPendingPush();
     debounceRef.current = setTimeout(() => {
-      const parsed = loopStrategyControlsSchema.safeParse(getValues());
+      const parsed = schema.safeParse(getValues());
       if (!parsed.success) return;
 
       const nextSettings: LoopStrategySettings = {
@@ -398,7 +409,7 @@ export function LoopStrategyControls({
       )}
 
       <label className="flex flex-col gap-1 text-sm">
-        <span>Maximum LTV (%)</span>
+        <span>{maxLoanToValueLabel} (%)</span>
         <input
           id="maxLoanToValue"
           type="number"

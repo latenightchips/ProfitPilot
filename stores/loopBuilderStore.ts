@@ -99,15 +99,43 @@ const CHECK_SUGGESTED_RESPONSE: Record<LoopSafetyCheck, string> = {
   MAXIMUM_LOOP_COUNT: 'Reduce the requested Maximum Number of Loops.',
 };
 
-function toStrategyWarning(finding: {
-  check: LoopSafetyCheck;
-  severity: 'error' | 'warning';
-}): StrategyWarning {
+/**
+ * V4 semantic audit, Batch 2 (A1) — `CHECK_SUGGESTED_RESPONSE['VALID_PROTOCOL_PARAMETERS']`
+ * names "Maximum LTV" unconditionally, even though that field is V3-only
+ * (V4's real counterpart is Collateral Factor — see
+ * `features/loop-builder/utils/riskCapacityLabel.ts`'s own header
+ * comment for the full reasoning; not imported here to avoid a new
+ * store→feature dependency for one string). V3's own wording is
+ * preserved byte-for-byte via the fallthrough to
+ * `CHECK_SUGGESTED_RESPONSE` below. Every other check's suggested
+ * response is already protocol-neutral (e.g. `MAXIMUM_LTV`'s own
+ * response names the resulting position's *current* LTV, a
+ * protocol-independent ratio computed identically for V3 and V4 — not
+ * this V3-only configured-ceiling field name — so it needs no
+ * version-aware branch).
+ */
+function suggestedResponseFor(
+  check: LoopSafetyCheck,
+  protocolVersion: 'v3' | 'v4' | undefined,
+): string {
+  if (check === 'VALID_PROTOCOL_PARAMETERS' && protocolVersion === 'v4') {
+    return 'Correct the Collateral Factor/Borrow-Rate Assumption so they describe a valid protocol configuration.';
+  }
+  return CHECK_SUGGESTED_RESPONSE[check];
+}
+
+function toStrategyWarning(
+  finding: {
+    check: LoopSafetyCheck;
+    severity: 'error' | 'warning';
+  },
+  protocolVersion: 'v3' | 'v4' | undefined,
+): StrategyWarning {
   return {
     category: CHECK_CATEGORY[finding.check],
     severity: finding.severity,
     cause: `Safety check "${finding.check}" ${finding.severity === 'error' ? 'failed' : 'raised a warning'}.`,
-    suggestedResponse: CHECK_SUGGESTED_RESPONSE[finding.check],
+    suggestedResponse: suggestedResponseFor(finding.check, protocolVersion),
   };
 }
 
@@ -275,7 +303,9 @@ export const useLoopBuilderStore = create<LoopBuilderStoreState & LoopBuilderSto
         errors: [],
         currentResult: result.data,
         lastMetadata: result.metadata,
-        warnings: result.data.findings.map(toStrategyWarning),
+        warnings: result.data.findings.map((finding) =>
+          toStrategyWarning(finding, portfolio.protocolVersion),
+        ),
       });
     },
 

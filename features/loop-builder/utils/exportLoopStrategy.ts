@@ -282,7 +282,20 @@ export function buildLoopStrategyExportCsv(payload: LoopStrategyExportPayload): 
   rows.push(csvRow('Maximum Number of Loops', payload.inputs.maxLoops));
   rows.push(csvRow('Minimum Health Factor', payload.inputs.minHealthFactor));
   if (payload.inputs.maxLoanToValueOverride !== undefined) {
-    rows.push(csvRow('Max LTV Override', payload.inputs.maxLoanToValueOverride));
+    // V4 semantic audit, Batch 2 (A1) — this override's own field name
+    // (`maxLoanToValueOverride`) is a version-dispatched input for both
+    // V3's Maximum LTV and V4's Collateral Factor (see
+    // `resolveMaxLoanToValueAssumption`'s own doc comment); the exported
+    // row label must say which one this portfolio's protocol version
+    // actually means, not always "Max LTV." Deliberately not
+    // `riskCapacityLabel` here — this CSV already has its own
+    // abbreviation convention for V3 ("Max LTV", not "Maximum LTV",
+    // matching the always-present "Max LTV" row a few lines below), so
+    // this row matches that existing convention exactly rather than the
+    // on-screen UI's longer form.
+    const overrideLabel =
+      payload.provenance.protocolVersion === 'v4' ? 'Collateral Factor' : 'Max LTV';
+    rows.push(csvRow(`${overrideLabel} Override`, payload.inputs.maxLoanToValueOverride));
   }
   if (payload.inputs.borrowAprOverride !== undefined) {
     rows.push(csvRow('Borrow APR Override', payload.inputs.borrowAprOverride));

@@ -11,6 +11,7 @@ import {
 import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 import { resolveMaxLoanToValueAssumption } from '../utils/resolveMaxLoanToValueAssumption';
+import { riskCapacityLabel } from '../utils/riskCapacityLabel';
 import { stopReasonLabel } from '../utils/stopReasonLabel';
 
 /**
@@ -113,6 +114,11 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
 
   const minHealthFactorReached = findingActive(currentResult.findings, 'MINIMUM_HEALTH_FACTOR');
   const maximumLtvReached = findingActive(currentResult.findings, 'MAXIMUM_LTV');
+  // V4 semantic audit, Batch 2 (A1) — `finding.check === 'MAXIMUM_LTV'` is
+  // an internal Engine check name (unchanged; not a display string), but
+  // the label shown for it must match whichever risk-capacity term this
+  // portfolio's protocol version actually uses.
+  const maxLoanToValueLabel = riskCapacityLabel(portfolio.protocolVersion);
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -125,7 +131,7 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
         </span>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-muted-foreground">Maximum LTV Reached</span>
+        <span className="text-muted-foreground">{maxLoanToValueLabel} Reached</span>
         <span
           className={`font-medium ${maximumLtvReached ? 'text-destructive' : 'text-foreground'}`}
         >
@@ -168,7 +174,7 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
             <dd className="text-foreground">{formatHealthFactor(settings.minHealthFactor)}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-muted-foreground">Maximum LTV</dt>
+            <dt className="text-muted-foreground">{maxLoanToValueLabel}</dt>
             <dd className="text-foreground">
               {formatPercent(
                 settings.maxLoanToValueOverride ?? resolveMaxLoanToValueAssumption(portfolio) ?? 0,

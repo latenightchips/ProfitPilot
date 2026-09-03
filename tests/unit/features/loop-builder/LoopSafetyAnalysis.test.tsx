@@ -167,22 +167,25 @@ describe('LoopSafetyAnalysis — V4 canonical risk-capacity display (BLOCKER #2 
     });
   }
 
-  it('reports Maximum LTV as the real V4 collateralFactor (65%) when no override is set — never the legacy protocol.maxLoanToValue (50%)', () => {
+  it('reports Collateral Factor (never "Maximum LTV") as the real V4 collateralFactor (65%) when no override is set — never the legacy protocol.maxLoanToValue (50%)', () => {
     const portfolio = v4Portfolio();
     useLoopBuilderStore
       .getState()
       .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
     useLoopBuilderStore.getState().runLoopStrategy(portfolio);
     // Guard against a silent Service-level failure making this a
-    // false-positive pass (the "Maximum LTV" row still renders from
+    // false-positive pass (the "Collateral Factor" row still renders from
     // `settings` even when `currentResult` reflects an error).
     expect(useLoopBuilderStore.getState().currentResult?.strategy).not.toBeNull();
 
     render(<LoopSafetyAnalysis portfolio={portfolio} />);
-    expect(screen.getByText('Maximum LTV').nextElementSibling?.textContent).toBe('65.00%');
+    // V4 semantic audit, Batch 2 (A1) — the label itself must say
+    // "Collateral Factor" for a V4 portfolio, not the V3-only "Maximum LTV".
+    expect(screen.queryByText('Maximum LTV')).not.toBeInTheDocument();
+    expect(screen.getByText('Collateral Factor').nextElementSibling?.textContent).toBe('65.00%');
   });
 
-  it('reports the same Maximum LTV the strategy actually used when an explicit maxLoanToValueOverride is set', () => {
+  it('reports the same Collateral Factor the strategy actually used when an explicit maxLoanToValueOverride is set', () => {
     const portfolio = v4Portfolio();
     useLoopBuilderStore.getState().setSettings({
       targetBorrowPercentage: 0.5,
@@ -194,7 +197,20 @@ describe('LoopSafetyAnalysis — V4 canonical risk-capacity display (BLOCKER #2 
     expect(useLoopBuilderStore.getState().currentResult?.strategy).not.toBeNull();
 
     render(<LoopSafetyAnalysis portfolio={portfolio} />);
-    expect(screen.getByText('Maximum LTV').nextElementSibling?.textContent).toBe('40.00%');
+    expect(screen.queryByText('Maximum LTV')).not.toBeInTheDocument();
+    expect(screen.getByText('Collateral Factor').nextElementSibling?.textContent).toBe('40.00%');
+  });
+
+  it('labels "Maximum LTV Reached" as "Collateral Factor Reached" for a V4 portfolio', () => {
+    const portfolio = v4Portfolio();
+    useLoopBuilderStore
+      .getState()
+      .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+    expect(screen.queryByText('Maximum LTV Reached')).not.toBeInTheDocument();
+    expect(screen.getByText('Collateral Factor Reached')).toBeInTheDocument();
   });
 });
 
