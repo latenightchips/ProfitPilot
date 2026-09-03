@@ -24,9 +24,32 @@ import type { PersistedPortfolioHistoryEntry } from '@/services/persistence';
 import type { ApplicationPortfolio, PortfolioSummary } from '@/services/portfolio';
 import { deriveAaveV4EffectiveBorrowRate, resolveSupplyAprDisplay } from '@/services/portfolio';
 
+/**
+ * V4 Mixed-Provenance UX batch — the V4 branch previously reported `'live'`
+ * whenever ANY dimension (`v4DebtStateSource`, `v4CollateralRiskSource`)
+ * was live, the opposite polarity from `utils/protocolStatus.ts`'s own
+ * `deriveProtocolStatus` (which requires EVERY dimension to be live
+ * before ever reporting the composite `'live'`). A partially-live V4
+ * portfolio could therefore be recorded as `'live'` here while every
+ * other surface in the app called it `'manual'`. Fixed to the same
+ * AND-based rule — `'live'` only when `v4DebtStateSource`,
+ * `v4CollateralRiskSource`, AND `v4BaseDrawnAprSource` are all `'live'` —
+ * so a mixed/manual V4 portfolio can never be misclassified as wholly
+ * live in a newly-written history entry. This coarse binary `dataSource`
+ * field cannot represent the field-level breakdown `deriveV4ProvenanceBreakdown`
+ * now exposes elsewhere; rather than inventing new precision this field
+ * was never designed to hold, it reports the same conservative
+ * "'live' requires unanimous live provenance" answer every other V4
+ * surface already gives. Only affects entries written from this point
+ * forward — no existing persisted history record is rewritten. The V3
+ * branch (an independently-invented OR rule, never flagged by this
+ * batch's own audit) is untouched.
+ */
 function resolveDataSource(portfolio: ApplicationPortfolio): 'manual' | 'live' {
   if (portfolio.protocolVersion === 'v4') {
-    return portfolio.v4DebtStateSource === 'live' || portfolio.v4CollateralRiskSource === 'live'
+    return portfolio.v4DebtStateSource === 'live' &&
+      portfolio.v4CollateralRiskSource === 'live' &&
+      (portfolio.v4BaseDrawnAprSource ?? 'manual') === 'live'
       ? 'live'
       : 'manual';
   }

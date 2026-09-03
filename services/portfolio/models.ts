@@ -242,6 +242,37 @@ export interface ApplicationPortfolio {
   v4DebtStateUpdatedAt?: string;
   /** Same invariant and reasoning as `v4DebtStateUpdatedAt`, independently, for `v4CollateralRisk`/`setAaveV4CollateralRisk`. */
   v4CollateralRiskUpdatedAt?: string;
+  /**
+   * V4 Mixed-Provenance UX batch — `baseDrawnApr` (inside `v4DebtState`)
+   * is genuinely address-independent market data (`IHub.getAssetDrawnRate`,
+   * `stores/aaveV4BaseDrawnRateStore.ts`), not wallet-position data like
+   * its three siblings (`drawnDebt`/`premiumDebt`/`riskPremium`) — but it
+   * has always shared `v4DebtStateSource`'s one flag with them, so a
+   * live-fetched base rate saved alongside a manually-entered wallet
+   * position was recorded (and displayed) as `'manual'` for the whole
+   * group, silently losing its own real provenance. This field tracks it
+   * independently. Same "defined iff `v4DebtState` is defined" invariant
+   * as `v4DebtStateSource` (never an orphaned source, never a value with
+   * no known source), same conservative `'manual'` default for any
+   * portfolio persisted before this batch (`stores/portfolioStore.ts`'s
+   * `normalizePortfolioProvenance`) — a value's ABSENCE of provenance is
+   * never silently read as `'live'`. Written by
+   * `stores/portfolioStore.ts`'s `setAaveV4DebtState`, which now accepts
+   * this as an independent 4th argument (defaulting to whatever the
+   * whole-group `source` argument is, preserving every pre-existing
+   * caller's behavior unchanged — the wallet-position live-sync hook
+   * genuinely reads `baseDrawnApr` off the same on-chain call as
+   * `drawnDebt`/`premiumDebt`/`riskPremium`, so defaulting it to match
+   * `source` there is not an approximation, it is correct). The two
+   * edit-time forms that can genuinely diverge from the group source —
+   * `app/portfolios/new/NewPortfolioV4Fields.tsx` (creation) and
+   * `app/portfolio/ManualAaveV4StateForm.tsx` (manual edit) — now pass it
+   * explicitly, computed from their own already-existing
+   * `baseDrawnAprPrefilled`/`dirtyFields.baseDrawnApr` local tracking
+   * (previously computed and then discarded at the persistence boundary,
+   * see this batch's own audit finding).
+   */
+  v4BaseDrawnAprSource?: AaveV4DataSource;
 }
 
 /**

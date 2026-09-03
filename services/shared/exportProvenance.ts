@@ -43,25 +43,56 @@ export interface ExportProvenance {
   protocolVersion: 'v3' | 'v4';
   v4DebtStateSource: 'manual' | 'live' | null;
   v4CollateralRiskSource: 'manual' | 'live' | null;
+  /**
+   * V4 Mixed-Provenance UX batch — `v4DebtState.baseDrawnApr`'s own
+   * provenance, independent of `v4DebtStateSource` above (which now
+   * covers only `drawnDebt`/`premiumDebt`/`riskPremium`). `null` for a
+   * V3 portfolio or a V4 one with no `v4DebtState` at all — same
+   * "defined iff the value it describes is defined" convention every
+   * other field here already follows.
+   */
+  v4BaseDrawnAprSource: 'manual' | 'live' | null;
   v4DebtStateUpdatedAt: string | null;
   v4CollateralRiskUpdatedAt: string | null;
   v4DataStaleAtExport: boolean | null;
+  /**
+   * V4 Mixed-Provenance UX batch — the portfolio's own `marketSource`
+   * (BTC/collateral price provenance), previously omitted from every
+   * export entirely even though the field is persisted for both V3 and
+   * V4 portfolios alike. `null` only when genuinely unknown (never
+   * fabricated).
+   */
+  marketSource: 'manual' | 'live' | null;
+  /**
+   * V4 Mixed-Provenance UX batch — `Portfolio.marketUpdatedAt`'s own
+   * timestamp. `null` whenever the caller only has an `ApplicationPortfolio`
+   * without it (`features/loop-builder|exit-planner|simulation`'s own
+   * exporters, which structurally never see the full `Portfolio` —
+   * see this function's own parameter type) — never a fabricated
+   * timestamp for a caller that genuinely doesn't have one.
+   */
+  marketUpdatedAt: string | null;
 }
 
 export function resolveExportProvenance(
-  portfolio: ApplicationPortfolio,
+  portfolio: ApplicationPortfolio & { marketUpdatedAt?: string },
   now: string = new Date().toISOString(),
 ): ExportProvenance {
   const protocolVersion = portfolio.protocolVersion === 'v4' ? 'v4' : 'v3';
+  const marketSource = portfolio.marketSource ?? null;
+  const marketUpdatedAt = portfolio.marketUpdatedAt ?? null;
 
   if (protocolVersion === 'v3') {
     return {
       protocolVersion,
       v4DebtStateSource: null,
       v4CollateralRiskSource: null,
+      v4BaseDrawnAprSource: null,
       v4DebtStateUpdatedAt: null,
       v4CollateralRiskUpdatedAt: null,
       v4DataStaleAtExport: null,
+      marketSource,
+      marketUpdatedAt,
     };
   }
 
@@ -69,6 +100,7 @@ export function resolveExportProvenance(
   const v4CollateralRiskUpdatedAt = portfolio.v4CollateralRiskUpdatedAt ?? null;
   const v4DebtStateSource = portfolio.v4DebtStateSource ?? null;
   const v4CollateralRiskSource = portfolio.v4CollateralRiskSource ?? null;
+  const v4BaseDrawnAprSource = portfolio.v4BaseDrawnAprSource ?? null;
 
   // Only `'live'`-sourced dimensions carry a freshness expectation to
   // check — a manual dimension's timestamp (when present) records when it
@@ -82,11 +114,14 @@ export function resolveExportProvenance(
     protocolVersion,
     v4DebtStateSource,
     v4CollateralRiskSource,
+    v4BaseDrawnAprSource,
     v4DebtStateUpdatedAt,
     v4CollateralRiskUpdatedAt,
     v4DataStaleAtExport:
       liveTimestamps.length === 0
         ? null
         : liveTimestamps.some((updatedAt) => isTimestampStale(updatedAt, now)),
+    marketSource,
+    marketUpdatedAt,
   };
 }

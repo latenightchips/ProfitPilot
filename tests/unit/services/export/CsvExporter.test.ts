@@ -294,11 +294,17 @@ describe('buildPortfolioPositionsCsv — export provenance (P2-1)', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
     const fields = csv.split('\n')[1]!.split(',');
     expect(fields[15]).toBe('v3');
-    expect(fields[16]).toBe('Not available');
-    expect(fields[17]).toBe('Not available');
-    expect(fields[18]).toBe('Not available');
-    expect(fields[19]).toBe('Not available');
-    expect(fields[20]).toBe('Not available');
+    expect(fields[16]).toBe('Not available'); // V4 Debt State Source
+    expect(fields[17]).toBe('Not available'); // V4 Debt State Updated At
+    expect(fields[18]).toBe('Not available'); // V4 Collateral Risk Source
+    expect(fields[19]).toBe('Not available'); // V4 Collateral Risk Updated At
+    expect(fields[20]).toBe('Not available'); // V4 Base Drawn APR Source
+    // Market Data Source/Updated At — V4 Mixed-Provenance UX batch.
+    // `marketSource` is unset on `samplePortfolio()`, but `marketUpdatedAt`
+    // is always present (never optional on `Portfolio`).
+    expect(fields[21]).toBe('Not available'); // Market Data Source
+    expect(fields[22]).toBe('2026-01-01T00:00:00.000Z'); // Market Data Updated At
+    expect(fields[23]).toBe('Not available'); // V4 Data Stale At Export
   });
 
   it('identifies manual V4 provenance', () => {
@@ -331,7 +337,15 @@ describe('buildPortfolioPositionsCsv — export provenance (P2-1)', () => {
     ]);
     const fields = csv.split('\n')[1]!.split(',');
     expect(fields[16]).toBe('live');
-    expect(fields[20]).toBe('false');
+    expect(fields[23]).toBe('false'); // V4 Data Stale At Export
+  });
+
+  it('names the new truthful source columns verbatim in the CSV header row (V4 Mixed-Provenance UX batch, requirement G)', () => {
+    const csv = buildPortfolioPositionsCsv([samplePortfolio()]);
+    const headerFields = csv.split('\n')[0]!.split(',');
+    expect(headerFields).toContain('V4 Base Drawn APR Source');
+    expect(headerFields).toContain('Market Data Source');
+    expect(headerFields).toContain('Market Data Updated At');
   });
 });
 
@@ -410,7 +424,7 @@ describe('buildScenarioComparisonsCsv — export provenance (P2-2)', () => {
       [],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+    expect(fields.slice(-9)).toEqual(Array(9).fill('Not available'));
   });
 
   it('resolves real provenance for a V4 portfolio found in the referenced list', () => {
@@ -427,13 +441,16 @@ describe('buildScenarioComparisonsCsv — export provenance (P2-2)', () => {
       [v4Portfolio],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual([
+    expect(fields.slice(-9)).toEqual([
       'v4',
       'manual',
       '2026-08-25T11:00:00.000Z',
-      'Not available',
-      'Not available',
-      'Not available',
+      'Not available', // V4 Collateral Risk Source
+      'Not available', // V4 Collateral Risk Updated At
+      'Not available', // V4 Base Drawn APR Source
+      'Not available', // Market Data Source (unset on the fixture)
+      '2026-01-01T00:00:00.000Z', // Market Data Updated At (always present on Portfolio)
+      'Not available', // V4 Data Stale At Export
     ]);
   });
 
@@ -443,13 +460,16 @@ describe('buildScenarioComparisonsCsv — export provenance (P2-2)', () => {
       [samplePortfolio()],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual([
+    expect(fields.slice(-9)).toEqual([
       'v3',
       'Not available',
       'Not available',
       'Not available',
       'Not available',
-      'Not available',
+      'Not available', // V4 Base Drawn APR Source
+      'Not available', // Market Data Source (unset on the fixture)
+      '2026-01-01T00:00:00.000Z', // Market Data Updated At (always present on Portfolio)
+      'Not available', // V4 Data Stale At Export
     ]);
   });
 });
@@ -573,7 +593,7 @@ describe('buildLoopStepsCsv — export provenance (P2-2)', () => {
       [],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+    expect(fields.slice(-9)).toEqual(Array(9).fill('Not available'));
   });
 
   it('resolves real provenance for a live V4 portfolio, applied to every step row', () => {
@@ -606,10 +626,10 @@ describe('buildLoopStepsCsv — export provenance (P2-2)', () => {
     expect(lines).toHaveLength(3);
     const step1Fields = lines[1]!.split(',');
     const step2Fields = lines[2]!.split(',');
-    expect(step1Fields.slice(-6)[0]).toBe('v4');
-    expect(step1Fields.slice(-6)[1]).toBe('live');
-    expect(step1Fields.slice(-6)[5]).toBe('false');
-    expect(step2Fields.slice(-6)[0]).toBe('v4');
+    expect(step1Fields.slice(-9)[0]).toBe('v4');
+    expect(step1Fields.slice(-9)[1]).toBe('live');
+    expect(step1Fields.slice(-9)[8]).toBe('false'); // V4 Data Stale At Export
+    expect(step2Fields.slice(-9)[0]).toBe('v4');
   });
 });
 
@@ -657,7 +677,7 @@ describe('buildExitPlanBreakdownsCsv — export provenance (P2-2)', () => {
       [],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual(Array(6).fill('Not available'));
+    expect(fields.slice(-9)).toEqual(Array(9).fill('Not available'));
   });
 
   it('resolves real provenance for a manual V4 portfolio found in the referenced list', () => {
@@ -674,13 +694,16 @@ describe('buildExitPlanBreakdownsCsv — export provenance (P2-2)', () => {
       [v4Portfolio],
     );
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields.slice(-6)).toEqual([
+    expect(fields.slice(-9)).toEqual([
       'v4',
-      'Not available',
-      'Not available',
+      'Not available', // V4 Debt State Source
+      'Not available', // V4 Debt State Updated At
       'manual',
       '2026-08-25T11:00:00.000Z',
-      'Not available',
+      'Not available', // V4 Base Drawn APR Source (no v4DebtState on this fixture)
+      'Not available', // Market Data Source (unset on the fixture)
+      '2026-01-01T00:00:00.000Z', // Market Data Updated At (always present on Portfolio)
+      'Not available', // V4 Data Stale At Export
     ]);
   });
 });

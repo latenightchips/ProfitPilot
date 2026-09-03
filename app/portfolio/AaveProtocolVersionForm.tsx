@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
+import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
@@ -124,6 +125,8 @@ export function AaveProtocolVersionForm({
     aaveV4CollateralRiskLastFetchedAt,
     v4DebtStateSource: portfolio.v4DebtStateSource,
     v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
+    v4BaseDrawnAprSource: portfolio.v4BaseDrawnAprSource,
+    marketSource: portfolio.marketSource,
     now: new Date().toISOString(),
   });
 
@@ -198,9 +201,16 @@ export function AaveProtocolVersionForm({
           </form>
 
           <p className="text-xs text-muted-foreground" role="status">
-            <span className="rounded-full bg-muted px-2 py-0.5">
-              {formatProtocolStatus(status)}
-            </span>
+            {/* V4 Mixed-Provenance UX batch — see `PortfolioPageClient.tsx`'s
+                own identical comment for why only `'live'`/`'manual'` are
+                replaced with the breakdown. */}
+            {status.version === 'v4' && (status.status === 'live' || status.status === 'manual') ? (
+              <V4ProvenanceDetail breakdown={status.breakdown} />
+            ) : (
+              <span className="rounded-full bg-muted px-2 py-0.5">
+                {formatProtocolStatus(status)}
+              </span>
+            )}
           </p>
 
           <AaveV4LiveErrorNotice portfolioId={portfolioId} />

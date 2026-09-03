@@ -1,3 +1,4 @@
+import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import {
   resolveRiskCapacityDisplay,
   resolveSupplyAprDisplay,
@@ -217,13 +218,26 @@ export function StrategyAssumptionsPanel({
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Manual-Data Status</span>
-        <span className="text-muted-foreground">
-          {resolveManualDataStatusText(
-            portfolio.marketSource,
-            formatDateTime(portfolio.marketUpdatedAt),
-            protocolStatus,
-          )}
-        </span>
+        {protocolStatus !== undefined &&
+        protocolStatus.version === 'v4' &&
+        (protocolStatus.status === 'live' || protocolStatus.status === 'manual') ? (
+          // V4 Mixed-Provenance UX batch — a single "Aave V4 · Live"/
+          // "Aave V4 · Manual entry" string can never truthfully describe
+          // a V4 portfolio whose market/position/collateral-risk
+          // dimensions disagree; see `V4ProvenanceDetail`'s own header
+          // comment. Every other V4 status keeps the original
+          // `resolveManualDataStatusText` string unchanged (see
+          // `PortfolioPageClient.tsx`'s identical comment for why).
+          <V4ProvenanceDetail breakdown={protocolStatus.breakdown} />
+        ) : (
+          <span className="text-muted-foreground">
+            {resolveManualDataStatusText(
+              portfolio.marketSource,
+              formatDateTime(portfolio.marketUpdatedAt),
+              protocolStatus,
+            )}
+          </span>
+        )}
       </div>
 
       {metadata !== null && (

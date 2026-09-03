@@ -828,10 +828,13 @@ describe('NewPortfolioPageClient — V4 wallet-independent base drawn APR (V4 Ma
 
     const portfolios = Object.values(usePortfolioStore.getState().portfolios);
     const portfolio = portfolios[0].portfolio;
-    // Overriding baseDrawnApr alone is enough to flip the whole group to
-    // 'manual' — the persisted schema has no field-level provenance, but
-    // the value itself is exactly what the user typed, not the live one.
-    expect(portfolio.v4DebtStateSource).toBe('manual');
+    // V4 Mixed-Provenance UX batch — `baseDrawnApr` now has its own
+    // independent `v4BaseDrawnAprSource`, so overriding it by hand flips
+    // ONLY that field's source to 'manual'; it no longer drags the whole
+    // `v4DebtStateSource` group down with it, since the wallet-position
+    // fields were never touched.
+    expect(portfolio.v4BaseDrawnAprSource).toBe('manual');
+    expect(portfolio.v4DebtStateSource).toBe('live');
     expect(portfolio.v4DebtState?.baseDrawnApr).toBeCloseTo(0.06);
     // The wallet-position fields the user never touched still carry
     // their own genuinely-live values, unaffected by the override.
@@ -862,11 +865,13 @@ describe('NewPortfolioPageClient — V4 wallet-independent base drawn APR (V4 Ma
 
     const portfolios = Object.values(usePortfolioStore.getState().portfolios);
     const portfolio = portfolios[0].portfolio;
-    // The group as a whole is 'manual' (one populated sub-part — the
-    // wallet-position fields — was edited), but the UNTOUCHED
+    // The wallet-position group is 'manual' (drawn debt was edited), but
+    // `v4BaseDrawnAprSource` independently stays 'live' — the UNTOUCHED
     // baseDrawnApr value is still exactly the live market rate, proving
-    // the two sources never fought over or clobbered each other.
+    // the two sources never fought over or clobbered each other (V4
+    // Mixed-Provenance UX batch).
     expect(portfolio.v4DebtStateSource).toBe('manual');
+    expect(portfolio.v4BaseDrawnAprSource).toBe('live');
     expect(portfolio.v4DebtState?.baseDrawnApr).toBeCloseTo(0.04);
     expect(portfolio.v4DebtState?.drawnDebt).toBe(13000);
   });

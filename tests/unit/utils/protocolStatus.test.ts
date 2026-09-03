@@ -10,7 +10,23 @@ import {
   type ProtocolStatusInput,
   type ProtocolStatusKind,
   resolveManualDataStatusText,
+  type V4ProvenanceBreakdown,
 } from '@/utils/protocolStatus';
+
+/**
+ * V4 Mixed-Provenance UX batch — a fixture `breakdown`, used only where a
+ * test constructs a bare `ProtocolStatusKind` V4 literal directly (as a
+ * function argument or explicitly-typed constant) rather than asserting
+ * against a real `deriveProtocolStatus(...)` output. Its own content is
+ * never asserted on by these tests — only `.status` is — so any valid
+ * `V4ProvenanceBreakdown` shape is correct here; `deriveV4ProvenanceBreakdown`
+ * itself has its own dedicated `describe` block below.
+ */
+const DUMMY_V4_BREAKDOWN: V4ProvenanceBreakdown = {
+  market: { btcPrice: 'live', baseDrawnApr: 'live' },
+  position: 'live',
+  collateralRisk: 'live',
+};
 
 /**
  * `deriveProtocolStatus`/`formatProtocolStatus` — V4 Readiness Audit §12
@@ -32,7 +48,10 @@ function freshQuote(): MarketQuoteAvailable {
 const NOW = new Date().toISOString();
 
 function baseInput(overrides: Partial<ProtocolStatusInput> = {}): ProtocolStatusInput {
-  const merged: Omit<ProtocolStatusInput, 'v4DebtStateSource' | 'v4CollateralRiskSource'> = {
+  const merged: Omit<
+    ProtocolStatusInput,
+    'v4DebtStateSource' | 'v4CollateralRiskSource' | 'v4BaseDrawnAprSource' | 'marketSource'
+  > = {
     protocolVersion: undefined,
     v4PositionSet: false,
     v4DebtStateSet: false,
@@ -67,6 +86,13 @@ function baseInput(overrides: Partial<ProtocolStatusInput> = {}): ProtocolStatus
     v4DebtStateSource: overrides.v4DebtStateSource ?? (merged.v4DebtStateSet ? 'live' : undefined),
     v4CollateralRiskSource:
       overrides.v4CollateralRiskSource ?? (merged.v4CollateralRiskSet ? 'live' : undefined),
+    // V4 Mixed-Provenance UX batch — same "defaults to live whenever the
+    // corresponding value is set" precedent as `v4DebtStateSource` above,
+    // so every pre-existing case below continues exercising exactly the
+    // branch it was written for.
+    v4BaseDrawnAprSource:
+      overrides.v4BaseDrawnAprSource ?? (merged.v4DebtStateSet ? 'live' : undefined),
+    marketSource: overrides.marketSource ?? 'live',
   };
 }
 
@@ -116,7 +142,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
           v4CollateralRiskSet: false,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'waiting-for-address' });
+    ).toMatchObject({ version: 'v4', status: 'waiting-for-address' });
   });
 
   it('reports "waiting-for-address" regardless of aaveV4Status when nothing has been provided yet', () => {
@@ -130,7 +156,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
           aaveV4Status: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'waiting-for-address' });
+    ).toMatchObject({ version: 'v4', status: 'waiting-for-address' });
   });
 
   it.each<AaveV4LiveDataStatus>(['idle', 'loading'])(
@@ -140,7 +166,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
         deriveProtocolStatus(
           baseInput({ protocolVersion: 'v4', v4PositionSet: true, aaveV4Status }),
         ),
-      ).toEqual({ version: 'v4', status: 'loading' });
+      ).toMatchObject({ version: 'v4', status: 'loading' });
     },
   );
 
@@ -149,7 +175,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
       deriveProtocolStatus(
         baseInput({ protocolVersion: 'v4', v4PositionSet: true, aaveV4Status: 'error' }),
       ),
-    ).toEqual({ version: 'v4', status: 'provider-error' });
+    ).toMatchObject({ version: 'v4', status: 'provider-error' });
   });
 
   it('reports "missing-debt-state" when the fetch is ready but v4DebtState is still unset', () => {
@@ -162,7 +188,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
           aaveV4Status: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+    ).toMatchObject({ version: 'v4', status: 'missing-debt-state' });
   });
 
   it('reports "live" only when address is set, the fetch is ready, AND v4DebtState is set', () => {
@@ -175,7 +201,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
           aaveV4Status: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'live' });
+    ).toMatchObject({ version: 'v4', status: 'live' });
   });
 
   it('provider-error takes priority over missing-debt-state (a failed refresh, not simply never-synced)', () => {
@@ -188,7 +214,7 @@ describe('deriveProtocolStatus — V4, all five distinct states', () => {
           aaveV4Status: 'error',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'provider-error' });
+    ).toMatchObject({ version: 'v4', status: 'provider-error' });
   });
 });
 
@@ -217,7 +243,7 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
           aaveV4LastFetchedAt: minutesAgo(1),
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'live' });
+    ).toMatchObject({ version: 'v4', status: 'live' });
   });
 
   it('reports "stale" once the last fetch is older than the 5-minute freshness window', () => {
@@ -231,7 +257,7 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
           aaveV4LastFetchedAt: minutesAgo(10),
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'stale' });
+    ).toMatchObject({ version: 'v4', status: 'stale' });
   });
 
   it('reports "stale" (never "live") when ready/synced but no fetch time was ever recorded — cannot verify freshness', () => {
@@ -245,7 +271,7 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
           aaveV4LastFetchedAt: null,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'stale' });
+    ).toMatchObject({ version: 'v4', status: 'stale' });
   });
 
   it('provider-error still takes priority over staleness (a failed refresh, not a merely-old one)', () => {
@@ -259,7 +285,7 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
           aaveV4LastFetchedAt: minutesAgo(60),
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'provider-error' });
+    ).toMatchObject({ version: 'v4', status: 'provider-error' });
   });
 
   it('missing-debt-state still takes priority over staleness', () => {
@@ -273,7 +299,7 @@ describe('deriveProtocolStatus — V4 freshness/staleness (Stage 17)', () => {
           aaveV4LastFetchedAt: minutesAgo(60),
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+    ).toMatchObject({ version: 'v4', status: 'missing-debt-state' });
   });
 
   it('a V3 (or unset) portfolio never reads aaveV4LastFetchedAt (no cross-inference)', () => {
@@ -304,7 +330,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
           v4CollateralRiskSet: false,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+    ).toMatchObject({ version: 'v4', status: 'missing-collateral-risk' });
   });
 
   it('reports "live" only when BOTH debt state and collateral risk are set, ready, and fresh', () => {
@@ -319,7 +345,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
           aaveV4CollateralRiskStatus: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'live' });
+    ).toMatchObject({ version: 'v4', status: 'live' });
   });
 
   it.each<AaveV4CollateralRiskLiveDataStatus>(['idle', 'loading'])(
@@ -335,7 +361,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
             aaveV4CollateralRiskStatus,
           }),
         ),
-      ).toEqual({ version: 'v4', status: 'loading' });
+      ).toMatchObject({ version: 'v4', status: 'loading' });
     },
   );
 
@@ -350,7 +376,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
           aaveV4CollateralRiskStatus: 'error',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'provider-error' });
+    ).toMatchObject({ version: 'v4', status: 'provider-error' });
   });
 
   it('reports "stale" when debt state is fresh but collateral-risk data is stale (worse-of-two)', () => {
@@ -367,7 +393,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
           aaveV4CollateralRiskLastFetchedAt: staleTime,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'stale' });
+    ).toMatchObject({ version: 'v4', status: 'stale' });
   });
 
   it('missing-debt-state still takes priority over missing-collateral-risk (stable ordering)', () => {
@@ -381,7 +407,7 @@ describe('deriveProtocolStatus — V4 collateral-risk composition (Stage 23F)', 
           v4CollateralRiskSet: false,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+    ).toMatchObject({ version: 'v4', status: 'missing-debt-state' });
   });
 
   it('a V3 (or unset) portfolio never reads collateral-risk fields (no cross-inference)', () => {
@@ -417,7 +443,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           v4CollateralRiskSource: 'manual',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'manual' });
+    ).toMatchObject({ version: 'v4', status: 'manual' });
   });
 
   it('never reports "waiting-for-address" for a portfolio with valid manual data, even with no address', () => {
@@ -448,7 +474,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'manual' });
+    ).toMatchObject({ version: 'v4', status: 'manual' });
   });
 
   it('a mixed manual+live state is never reported as "live" (conservative — never overstates freshness)', () => {
@@ -481,7 +507,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'loading',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'manual' });
+    ).toMatchObject({ version: 'v4', status: 'manual' });
   });
 
   it('"manual" wins over a concurrently-FAILED live fetch — never destroys or hides valid manual state behind a provider-error label', () => {
@@ -498,7 +524,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'error',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'manual' });
+    ).toMatchObject({ version: 'v4', status: 'manual' });
   });
 
   it('missing-collateral-risk still takes priority over "manual" when collateral risk is genuinely absent, even though debt is manually set', () => {
@@ -512,7 +538,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           v4CollateralRiskSet: false,
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+    ).toMatchObject({ version: 'v4', status: 'missing-collateral-risk' });
   });
 
   it('a plain address-entered, never-synced-or-entered portfolio still reports "loading"/"missing", not "manual" (no source implies no manual data)', () => {
@@ -527,7 +553,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'ready',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-debt-state' });
+    ).toMatchObject({ version: 'v4', status: 'missing-debt-state' });
   });
 
   it('an idle live-data store with no address never reads as "loading" — reports the specific missing dimension instead', () => {
@@ -542,7 +568,7 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'idle',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'missing-collateral-risk' });
+    ).toMatchObject({ version: 'v4', status: 'missing-collateral-risk' });
   });
 
   it('the ordinary "fetch just started, address set, nothing manual" case still reports "loading", not "missing-debt-state" (Stage 13 precedence preserved)', () => {
@@ -557,7 +583,103 @@ describe('deriveProtocolStatus — manual/hypothetical V4 mode (Stage 25)', () =
           aaveV4CollateralRiskStatus: 'idle',
         }),
       ),
-    ).toEqual({ version: 'v4', status: 'loading' });
+    ).toMatchObject({ version: 'v4', status: 'loading' });
+  });
+});
+
+describe('deriveProtocolStatus — V4 mixed-provenance breakdown (V4 Mixed-Provenance UX batch, requirement A)', () => {
+  it('reports "manual" for the composite status when BTC price and Base drawn APR are live but debt position and collateral risk are manual, while the breakdown still shows each field truthfully instead of collapsing to a single label', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: false,
+        v4DebtStateSet: true,
+        v4DebtStateSource: 'manual',
+        v4BaseDrawnAprSource: 'live',
+        v4CollateralRiskSet: true,
+        v4CollateralRiskSource: 'manual',
+        marketSource: 'live',
+      }),
+    );
+
+    // The composite status is conservatively "manual" (never overstates
+    // freshness), but that single string is NOT the whole truth — the
+    // attached breakdown must still show the live market fields as live,
+    // never falsely flattened to "Aave V4 · Manual entry" across the board.
+    expect(result).toMatchObject({ version: 'v4', status: 'manual' });
+    if (result.version !== 'v4') throw new Error('expected v4 result');
+    expect(result.breakdown).toEqual({
+      market: { btcPrice: 'live', baseDrawnApr: 'live' },
+      position: 'manual',
+      collateralRisk: 'manual',
+    });
+  });
+
+  it('reports the mirror case — debt position and collateral risk live, but BTC price and Base drawn APR manual — the composite status stays "live" (deriveProtocolStatus never reads market provenance), yet the breakdown still shows the market fields truthfully as manual rather than falsely implying they are live too', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: true,
+        v4DebtStateSet: true,
+        v4DebtStateSource: 'live',
+        v4BaseDrawnAprSource: 'manual',
+        aaveV4Status: 'ready',
+        v4CollateralRiskSet: true,
+        v4CollateralRiskSource: 'live',
+        aaveV4CollateralRiskStatus: 'ready',
+        marketSource: 'manual',
+      }),
+    );
+
+    expect(result).toMatchObject({ version: 'v4', status: 'live' });
+    if (result.version !== 'v4') throw new Error('expected v4 result');
+    expect(result.breakdown).toEqual({
+      market: { btcPrice: 'manual', baseDrawnApr: 'manual' },
+      position: 'live',
+      collateralRisk: 'live',
+    });
+  });
+
+  it('reports "unavailable" for the market Base drawn APR and position breakdown fields when the debt state was never set at all — never inferring live or manual for a genuinely absent value', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: false,
+        v4DebtStateSet: false,
+        v4CollateralRiskSet: false,
+      }),
+    );
+
+    expect(result.version).toBe('v4');
+    if (result.version !== 'v4') throw new Error('expected v4 result');
+    expect(result.breakdown.market.baseDrawnApr).toBe('unavailable');
+    expect(result.breakdown.position).toBe('unavailable');
+    expect(result.breakdown.collateralRisk).toBe('unavailable');
+  });
+
+  it('a fully live V4 portfolio reports every breakdown field as live, matching the "live" composite status', () => {
+    const result = deriveProtocolStatus(
+      baseInput({
+        protocolVersion: 'v4',
+        v4PositionSet: true,
+        v4DebtStateSet: true,
+        v4DebtStateSource: 'live',
+        v4BaseDrawnAprSource: 'live',
+        aaveV4Status: 'ready',
+        v4CollateralRiskSet: true,
+        v4CollateralRiskSource: 'live',
+        aaveV4CollateralRiskStatus: 'ready',
+        marketSource: 'live',
+      }),
+    );
+
+    expect(result).toMatchObject({ version: 'v4', status: 'live' });
+    if (result.version !== 'v4') throw new Error('expected v4 result');
+    expect(result.breakdown).toEqual({
+      market: { btcPrice: 'live', baseDrawnApr: 'live' },
+      position: 'live',
+      collateralRisk: 'live',
+    });
   });
 });
 
@@ -583,7 +705,9 @@ describe('formatProtocolStatus — labels', () => {
           'missing-collateral-risk',
           'manual',
         ] as const
-      ).map((status) => formatProtocolStatus({ version: 'v4', status })),
+      ).map((status) =>
+        formatProtocolStatus({ version: 'v4', status, breakdown: DUMMY_V4_BREAKDOWN }),
+      ),
     );
     expect(labels.size).toBe(8);
     for (const label of labels) {
@@ -592,19 +716,25 @@ describe('formatProtocolStatus — labels', () => {
   });
 
   it('labels "manual" plainly, never implying anything is missing or blocked', () => {
-    expect(formatProtocolStatus({ version: 'v4', status: 'manual' })).toBe(
-      'Aave V4 · Manual entry',
-    );
+    expect(
+      formatProtocolStatus({ version: 'v4', status: 'manual', breakdown: DUMMY_V4_BREAKDOWN }),
+    ).toBe('Aave V4 · Manual entry');
   });
 
   it('the provider-error label notes the value shown is last-known, matching the V3 unavailable convention', () => {
-    expect(formatProtocolStatus({ version: 'v4', status: 'provider-error' })).toContain(
-      'last known value',
-    );
+    expect(
+      formatProtocolStatus({
+        version: 'v4',
+        status: 'provider-error',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toContain('last known value');
   });
 
   it('labels "stale" plainly, matching the V3 "Stale" convention exactly (no parenthetical)', () => {
-    expect(formatProtocolStatus({ version: 'v4', status: 'stale' })).toBe('Aave V4 · Stale');
+    expect(
+      formatProtocolStatus({ version: 'v4', status: 'stale', breakdown: DUMMY_V4_BREAKDOWN }),
+    ).toBe('Aave V4 · Stale');
   });
 });
 
@@ -633,43 +763,73 @@ describe('confidenceForProtocolStatus', () => {
   });
 
   it('V4 live -> High confidence', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'live' })).toBe('High confidence');
+    expect(
+      confidenceForProtocolStatus({ version: 'v4', status: 'live', breakdown: DUMMY_V4_BREAKDOWN }),
+    ).toBe('High confidence');
   });
 
   it('V4 manual -> Medium confidence (a complete, deliberately user-entered value, not a data gap)', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'manual' })).toBe(
-      'Medium confidence',
-    );
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'manual',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Medium confidence');
   });
 
   it('V4 stale -> Medium confidence', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'stale' })).toBe(
-      'Medium confidence',
-    );
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'stale',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Medium confidence');
   });
 
   it('V4 loading -> Medium confidence (a previous successful value is still in use)', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'loading' })).toBe(
-      'Medium confidence',
-    );
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'loading',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Medium confidence');
   });
 
   it('V4 provider-error -> Limited data', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'provider-error' })).toBe(
-      'Limited data',
-    );
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'provider-error',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Limited data');
   });
 
   it('V4 waiting-for-address / missing-debt-state / missing-collateral-risk -> Limited data (defensive: unreachable alongside a successfully computed recommendation)', () => {
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'waiting-for-address' })).toBe(
-      'Limited data',
-    );
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'missing-debt-state' })).toBe(
-      'Limited data',
-    );
-    expect(confidenceForProtocolStatus({ version: 'v4', status: 'missing-collateral-risk' })).toBe(
-      'Limited data',
-    );
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'waiting-for-address',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Limited data');
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'missing-debt-state',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Limited data');
+    expect(
+      confidenceForProtocolStatus({
+        version: 'v4',
+        status: 'missing-collateral-risk',
+        breakdown: DUMMY_V4_BREAKDOWN,
+      }),
+    ).toBe('Limited data');
   });
 });
 
@@ -700,7 +860,11 @@ describe('resolveManualDataStatusText', () => {
   );
 
   it('a supplied protocolStatus always wins, for V4', () => {
-    const status: ProtocolStatusKind = { version: 'v4', status: 'stale' };
+    const status: ProtocolStatusKind = {
+      version: 'v4',
+      status: 'stale',
+      breakdown: DUMMY_V4_BREAKDOWN,
+    };
     expect(resolveManualDataStatusText(undefined, '2026-01-01', status)).toBe(
       formatProtocolStatus(status),
     );

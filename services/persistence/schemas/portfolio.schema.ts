@@ -110,6 +110,14 @@ export const persistedPortfolioPayloadSchema = z.object({
   v4CollateralRiskSource: aaveV4DataSourceSchema.optional(),
   v4DebtStateUpdatedAt: z.string().datetime().optional(),
   v4CollateralRiskUpdatedAt: z.string().datetime().optional(),
+  // V4 Mixed-Provenance UX batch — see `ApplicationPortfolio`'s own doc
+  // comment (`services/portfolio/models.ts`). Optional for the same
+  // backward-compatibility reason as every other V4 field here: a
+  // portfolio persisted before this batch has it `undefined`, even if it
+  // already carries a real `v4DebtState` — `stores/portfolioStore.ts`'s
+  // `load()` normalization backfills the conservative `'manual'` default,
+  // not this schema.
+  v4BaseDrawnAprSource: aaveV4DataSourceSchema.optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

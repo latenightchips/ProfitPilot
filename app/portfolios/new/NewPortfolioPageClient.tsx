@@ -466,7 +466,12 @@ export function NewPortfolioPageClient() {
         setAaveV4Position(id, v4Submission.position);
       }
       if (v4Submission.debtState !== undefined) {
-        setAaveV4DebtState(id, v4Submission.debtState, v4Submission.debtStateSource);
+        setAaveV4DebtState(
+          id,
+          v4Submission.debtState,
+          v4Submission.debtStateSource,
+          v4Submission.baseDrawnAprSource,
+        );
       }
       if (v4Submission.collateralRisk !== undefined) {
         setAaveV4CollateralRisk(id, v4Submission.collateralRisk, v4Submission.collateralRiskSource);

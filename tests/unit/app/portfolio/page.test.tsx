@@ -1205,7 +1205,7 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
     expect(section.getByText('Aave V4 · Missing debt state')).toBeInTheDocument();
   });
 
-  it('shows "Live" once an address is set, the fetch is ready, and v4DebtState is present', () => {
+  it('shows the live/manual breakdown once an address is set, the fetch is ready, and v4DebtState is present', () => {
     createAndSelectV4(
       {},
       { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
@@ -1219,7 +1219,18 @@ describe('PortfolioPage — V4 status badges (Stage 13)', () => {
     );
     render(<PortfolioPage />);
     const section = within(screen.getByRole('group', { name: 'Debt' }));
-    expect(section.getByText('Aave V4 · Live')).toBeInTheDocument();
+    // V4 Mixed-Provenance UX batch — the composite `'live'` state (both
+    // `setAaveV4DebtState`/`setAaveV4CollateralRisk` above are called with
+    // no explicit source, defaulting to `'live'`) no longer renders as one
+    // collapsed "Aave V4 · Live" string; the truthful per-dimension
+    // breakdown is asserted instead. `marketSource` itself is left at this
+    // fixture's own default (`'manual'`, never overridden here) — proving
+    // this composite `'live'` state does NOT silently claim BTC price is
+    // live too, exactly the audit finding this batch fixes.
+    expect(section.getByText('Debt position Live')).toBeInTheDocument();
+    expect(section.getByText('Collateral risk Live')).toBeInTheDocument();
+    expect(section.getByText('BTC price Manual')).toBeInTheDocument();
+    expect(section.queryByText('Aave V4 · Live')).not.toBeInTheDocument();
   });
 
   /**
@@ -1294,7 +1305,7 @@ describe('PortfolioPage — Collateral section status badge is protocol-aware (S
     return usePortfolioStore.getState().portfolios[created.id].portfolio;
   }
 
-  it('shows "Aave V4 · Manual entry" on the Collateral section for a manual V4 portfolio, matching the Debt section', () => {
+  it('shows the manual breakdown on the Collateral section for a manual V4 portfolio, matching the Debt section', () => {
     createManualV4Portfolio({
       drawnDebt: 30000,
       premiumDebt: 500,
@@ -1305,8 +1316,18 @@ describe('PortfolioPage — Collateral section status badge is protocol-aware (S
 
     const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }));
-    expect(collateralSection.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
-    expect(debtSection.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
+    // V4 Mixed-Provenance UX batch — the composite `'manual'` state no
+    // longer renders as one collapsed "Aave V4 · Manual entry" string;
+    // every dimension here is genuinely `'manual'`
+    // (`createManualV4Portfolio` passes `'manual'` explicitly for both
+    // `setAaveV4DebtState`/`setAaveV4CollateralRisk`), so the breakdown
+    // agrees on all four rows, in both sections.
+    for (const section of [collateralSection, debtSection]) {
+      expect(section.getByText('BTC price Manual')).toBeInTheDocument();
+      expect(section.getByText('Base drawn APR Manual')).toBeInTheDocument();
+      expect(section.getByText('Debt position Manual')).toBeInTheDocument();
+      expect(section.getByText('Collateral risk Manual')).toBeInTheDocument();
+    }
     expect(collateralSection.queryByText(/Aave V3/)).not.toBeInTheDocument();
   });
 
@@ -1320,7 +1341,7 @@ describe('PortfolioPage — Collateral section status badge is protocol-aware (S
     expect(collateralSection.queryByText(/Aave V3/)).not.toBeInTheDocument();
   });
 
-  it('shows "Aave V4 · Live" on the Collateral section for a live-synced V4 portfolio, matching the Debt section', () => {
+  it('shows the live/manual breakdown on the Collateral section for a live-synced V4 portfolio, matching the Debt section', () => {
     createAndSelectV4(
       {},
       { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
@@ -1333,8 +1354,14 @@ describe('PortfolioPage — Collateral section status badge is protocol-aware (S
 
     const collateralSection = within(screen.getByRole('group', { name: 'Collateral' }));
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }));
-    expect(collateralSection.getByText('Aave V4 · Live')).toBeInTheDocument();
-    expect(debtSection.getByText('Aave V4 · Live')).toBeInTheDocument();
+    // V4 Mixed-Provenance UX batch — see the Debt-section-only test above
+    // for the same reasoning; the two sections must agree on the same
+    // breakdown, computed from the same portfolio.
+    for (const section of [collateralSection, debtSection]) {
+      expect(section.getByText('Debt position Live')).toBeInTheDocument();
+      expect(section.getByText('Collateral risk Live')).toBeInTheDocument();
+      expect(section.getByText('BTC price Manual')).toBeInTheDocument();
+    }
   });
 
   it('shows "Aave V4 · Stale" (not "Live") on the Collateral section once the last successful fetch is old, matching the Debt section', () => {

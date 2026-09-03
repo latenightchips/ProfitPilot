@@ -188,7 +188,7 @@ function resolvePortfolioProvenanceColumns(
 ): (string | boolean | null)[] {
   const portfolio = portfolioId !== null ? portfoliosById.get(portfolioId) : undefined;
   if (portfolio === undefined) {
-    return [null, null, null, null, null, null];
+    return [null, null, null, null, null, null, null, null, null];
   }
   const provenance = resolveExportProvenance(portfolio);
   return [
@@ -197,6 +197,13 @@ function resolvePortfolioProvenanceColumns(
     provenance.v4DebtStateUpdatedAt,
     provenance.v4CollateralRiskSource,
     provenance.v4CollateralRiskUpdatedAt,
+    // V4 Mixed-Provenance UX batch — see `ExportProvenance`'s own doc
+    // comment (`services/shared/exportProvenance.ts`) for what each new
+    // field means and why `marketSource`/`v4BaseDrawnAprSource` were
+    // missing before this batch.
+    provenance.v4BaseDrawnAprSource,
+    provenance.marketSource,
+    provenance.marketUpdatedAt,
     provenance.v4DataStaleAtExport,
   ];
 }
@@ -207,6 +214,9 @@ const PROVENANCE_COLUMN_HEADERS = [
   'V4 Debt State Updated At',
   'V4 Collateral Risk Source',
   'V4 Collateral Risk Updated At',
+  'V4 Base Drawn APR Source',
+  'Market Data Source',
+  'Market Data Updated At',
   'V4 Data Stale At Export',
 ];
 
@@ -264,6 +274,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'V4 Debt State Updated At',
     'V4 Collateral Risk Source',
     'V4 Collateral Risk Updated At',
+    'V4 Base Drawn APR Source',
+    'Market Data Source',
+    'Market Data Updated At',
     'V4 Data Stale At Export',
     'Archived',
     'Created At',
@@ -293,6 +306,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       provenance.v4DebtStateUpdatedAt,
       provenance.v4CollateralRiskSource,
       provenance.v4CollateralRiskUpdatedAt,
+      provenance.v4BaseDrawnAprSource,
+      provenance.marketSource,
+      provenance.marketUpdatedAt,
       provenance.v4DataStaleAtExport,
       portfolio.archivedAt !== null,
       portfolio.createdAt,

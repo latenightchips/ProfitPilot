@@ -241,6 +241,18 @@ function ManualDebtStateForm({
   ]);
 
   const onSubmit = handleSubmit((data) => {
+    // V4 Mixed-Provenance UX batch — `baseDrawnApr`'s own provenance is
+    // tracked independently from the rest of this always-`'manual'`
+    // group: if the field currently on screen is still the unedited live
+    // market rate (`baseDrawnAprPrefilled && !dirtyFields.baseDrawnApr`,
+    // the exact same condition `baseDrawnAprHintText` above already
+    // renders as "Aave V4 · Live market base drawn rate"), saving must
+    // record that honestly as `'live'`, not silently fold it into this
+    // form's own unconditional `'manual'` for `drawnDebt`/`premiumDebt`/
+    // `riskPremium`. See `ApplicationPortfolio.v4BaseDrawnAprSource`'s
+    // own doc comment (`services/portfolio/models.ts`).
+    const baseDrawnAprSource: 'manual' | 'live' =
+      baseDrawnAprPrefilled && !dirtyFields.baseDrawnApr ? 'live' : 'manual';
     const result = setAaveV4DebtState(
       portfolioId,
       {
@@ -250,6 +262,7 @@ function ManualDebtStateForm({
         riskPremium: data.riskPremium,
       },
       'manual',
+      baseDrawnAprSource,
     );
     if (result.ok) {
       // Keeps the sync effect's own baseline in lockstep with what this

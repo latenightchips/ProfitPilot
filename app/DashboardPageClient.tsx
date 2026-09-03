@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
+import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import {
   buildDashboardViewModel,
   buildDataFreshnessIndicators,
@@ -254,6 +255,25 @@ export function DashboardPageClient() {
   const dataFreshnessIndicators =
     viewModel !== null ? buildDataFreshnessIndicators(viewModel.freshness) : null;
   const quickActions = viewModel !== null ? buildQuickActions(viewModel.ok) : null;
+  const protocolStatus =
+    record !== undefined
+      ? deriveProtocolStatus({
+          protocolVersion: record.portfolio.protocolVersion,
+          v4PositionSet: record.portfolio.v4Position !== undefined,
+          v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
+          aaveMarketQuote,
+          aaveV4Status,
+          aaveV4LastFetchedAt,
+          v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
+          aaveV4CollateralRiskStatus,
+          aaveV4CollateralRiskLastFetchedAt,
+          v4DebtStateSource: record.portfolio.v4DebtStateSource,
+          v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
+          v4BaseDrawnAprSource: record.portfolio.v4BaseDrawnAprSource,
+          marketSource: record.portfolio.marketSource,
+          now: new Date().toISOString(),
+        })
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -276,24 +296,18 @@ export function DashboardPageClient() {
         <div key={activePortfolioId} className="flex flex-col gap-6">
           <DashboardSummaryHeader viewModel={viewModel} />
           <p className="text-xs text-muted-foreground">
-            <span className="rounded-full bg-muted px-2 py-0.5">
-              {formatProtocolStatus(
-                deriveProtocolStatus({
-                  protocolVersion: record.portfolio.protocolVersion,
-                  v4PositionSet: record.portfolio.v4Position !== undefined,
-                  v4DebtStateSet: record.portfolio.v4DebtState !== undefined,
-                  aaveMarketQuote,
-                  aaveV4Status,
-                  aaveV4LastFetchedAt,
-                  v4CollateralRiskSet: record.portfolio.v4CollateralRisk !== undefined,
-                  aaveV4CollateralRiskStatus,
-                  aaveV4CollateralRiskLastFetchedAt,
-                  v4DebtStateSource: record.portfolio.v4DebtStateSource,
-                  v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
-                  now: new Date().toISOString(),
-                }),
-              )}
-            </span>
+            {/* V4 Mixed-Provenance UX batch — see `PortfolioPageClient.tsx`'s
+                own identical comment for why only `'live'`/`'manual'` are
+                replaced with the breakdown. */}
+            {protocolStatus !== null &&
+            protocolStatus.version === 'v4' &&
+            (protocolStatus.status === 'live' || protocolStatus.status === 'manual') ? (
+              <V4ProvenanceDetail breakdown={protocolStatus.breakdown} />
+            ) : (
+              <span className="rounded-full bg-muted px-2 py-0.5">
+                {protocolStatus !== null ? formatProtocolStatus(protocolStatus) : null}
+              </span>
+            )}
           </p>
           <AaveV4LiveErrorNotice portfolioId={activePortfolioId} />
           {dataFreshnessIndicators !== null && (

@@ -1431,6 +1431,42 @@ describe('usePortfolioStore.load — normalizeV4Provenance backfill (Stage 25)',
     expect(record.v4DebtStateSource).toBe('manual');
   });
 
+  /**
+   * V4 Mixed-Provenance UX batch — same backfill discipline, independently,
+   * for `v4BaseDrawnAprSource`. A portfolio persisted before this batch
+   * may already carry a real `v4DebtState` (and therefore a real
+   * `baseDrawnApr` value inside it) but has no independent source
+   * recorded for that one field — requirement C from the batch's own
+   * test plan ("existing V4 portfolio without v4BaseDrawnAprSource loads
+   * safely and is not falsely labeled live").
+   */
+  it('backfills a historical v4DebtState with no v4BaseDrawnAprSource field to "manual", never "live"', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'live');
+    await autoSaveCoordinator.flushAll();
+
+    const stored = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    const { v4BaseDrawnAprSource, ...withoutSource } = stored as unknown as Record<
+      string,
+      unknown
+    > & {
+      v4BaseDrawnAprSource?: unknown;
+    };
+    void v4BaseDrawnAprSource;
+    writeRawPortfolioRecord(created.id, withoutSource);
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    // The whole-group source (already persisted) round-trips as 'live',
+    // but the independent baseDrawnApr source — never persisted by this
+    // historical record — must never be silently inferred as 'live' too.
+    expect(record.v4DebtStateSource).toBe('live');
+    expect(record.v4BaseDrawnAprSource).toBe('manual');
+  });
+
   it('backfills a historical v4CollateralRisk with no source field to "manual", never "live"', async () => {
     const created = createValidPortfolio();
     usePortfolioStore
@@ -1478,8 +1514,32 @@ describe('usePortfolioStore.load — normalizeV4Provenance backfill (Stage 25)',
     const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
     expect(record.v4DebtState).toBeUndefined();
     expect(record.v4DebtStateSource).toBeUndefined();
+    expect(record.v4BaseDrawnAprSource).toBeUndefined();
     expect(record.v4CollateralRisk).toBeUndefined();
     expect(record.v4CollateralRiskSource).toBeUndefined();
+  });
+
+  /**
+   * V4 Mixed-Provenance UX batch — requirement H from the batch's own
+   * test plan ("Save/reload preserves v4BaseDrawnAprSource"). A genuine
+   * save/reload round trip (not a backfill of a missing field) must
+   * preserve whatever `v4BaseDrawnAprSource` was actually written,
+   * independently of `v4DebtStateSource`.
+   */
+  it('a genuine save/reload round trip preserves v4BaseDrawnAprSource independently of v4DebtStateSource', async () => {
+    const created = createValidPortfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual', 'live');
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(record.v4DebtState).toEqual(VALID_V4_DEBT_STATE);
+    expect(record.v4DebtStateSource).toBe('manual');
+    expect(record.v4BaseDrawnAprSource).toBe('live');
   });
 });
 

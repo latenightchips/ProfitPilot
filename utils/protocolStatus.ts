@@ -125,7 +125,72 @@ export type ProtocolStatusKind =
         | 'missing-debt-state'
         | 'missing-collateral-risk'
         | 'manual';
+      /**
+       * V4 Mixed-Provenance UX batch — the field/semantic-group-level
+       * breakdown behind this composite `status`. Computed alongside
+       * `status` from the exact same `ProtocolStatusInput`, so the two
+       * can never disagree; see `deriveV4ProvenanceBreakdown`'s own
+       * header comment for what each row means and why. Every existing
+       * caller that only reads `.status` (`formatProtocolStatus`, every
+       * pre-existing test) is completely unaffected — this is a pure
+       * addition to the V4 variant.
+       */
+      breakdown: V4ProvenanceBreakdown;
     };
+
+/**
+ * A single field/semantic-group's own provenance — V4 Mixed-Provenance UX
+ * batch. `'unavailable'` means the dimension has neither a live nor a
+ * manual value yet (mirrors `deriveProtocolStatus`'s own
+ * `'missing-debt-state'`/`'missing-collateral-risk'` precedent) — never
+ * conflated with `'manual'`, which means a real, usable value exists and
+ * was typed by the user.
+ */
+export type V4ProvenanceStatus = 'live' | 'manual' | 'unavailable';
+
+/**
+ * Truthful, field/semantic-group-level V4 provenance — V4 Mixed-Provenance
+ * UX batch, replacing the single "Aave V4 · Live"/"Aave V4 · Manual entry"
+ * classification wherever a V4 portfolio's inputs can genuinely disagree.
+ *
+ * **Four rows, matching exactly what the persisted model can independently
+ * track — no invented precision:**
+ * - `market.btcPrice` — `marketSource` (shared with V3; collateral price
+ *   is protocol-version-independent).
+ * - `market.baseDrawnApr` — `v4BaseDrawnAprSource`
+ *   (`services/portfolio/models.ts`), independent of the wallet-position
+ *   group below since Aave V4's base drawn rate is genuinely
+ *   address-free market data, not wallet-scoped.
+ * - `position` — `v4DebtStateSource`, covering `drawnDebt`/`premiumDebt`/
+ *   `riskPremium` together: the model has never tracked these three
+ *   independently (`AaveV4DebtState` shares one source flag for the whole
+ *   object), so grouping them here reports exactly what is known, not
+ *   more.
+ * - `collateralRisk` — `v4CollateralRiskSource` (`collateralFactor`).
+ *
+ * **`'unavailable'` for `baseDrawnApr`/`position` whenever `v4DebtStateSet`
+ * is `false`, for `collateralRisk` whenever `v4CollateralRiskSet` is
+ * `false`** — a dimension with no value yet has no provenance to report,
+ * mirroring `deriveProtocolStatus`'s own `'missing-*'` precedent rather
+ * than defaulting to a fabricated `'manual'`.
+ *
+ * **`market.btcPrice` is never `'unavailable'`** — `market.btcPriceUsd` is
+ * a required field on every portfolio (never optional, since Milestone 4),
+ * so `marketSource` (after `stores/portfolioStore.ts`'s own
+ * `normalizePortfolioProvenance`) is always defined.
+ *
+ * Returns `null` for a V3/unset portfolio — V3 has no multi-dimension
+ * provenance concept to break down; its existing `AaveDataStatus`/
+ * `formatAaveDataStatus` path is completely unchanged by this batch.
+ */
+export interface V4ProvenanceBreakdown {
+  market: {
+    btcPrice: V4ProvenanceStatus;
+    baseDrawnApr: V4ProvenanceStatus;
+  };
+  position: V4ProvenanceStatus;
+  collateralRisk: V4ProvenanceStatus;
+}
 
 export interface ProtocolStatusInput {
   /** `undefined` reads as V3 — `services/portfolio/models.ts`'s own backward-compatibility rule, applied here, not re-decided. */
@@ -151,8 +216,69 @@ export interface ProtocolStatusInput {
   v4DebtStateSource: AaveV4DataSource | undefined;
   /** Same shape as `v4DebtStateSource`, independently, for `v4CollateralRiskSet`. */
   v4CollateralRiskSource: AaveV4DataSource | undefined;
+  /**
+   * V4 Mixed-Provenance UX batch — the portfolio's own
+   * `v4BaseDrawnAprSource` (`services/portfolio/models.ts`), independent
+   * of `v4DebtStateSource` above. Same "defined iff `v4DebtStateSet` is
+   * true" shape; feeds `deriveV4ProvenanceBreakdown`'s `market.baseDrawnApr`
+   * row only — `deriveProtocolStatus`'s own composite `status` precedence
+   * chain below is unaffected (unchanged from before this field existed).
+   */
+  v4BaseDrawnAprSource: AaveV4DataSource | undefined;
+  /**
+   * V4 Mixed-Provenance UX batch — the portfolio's own `marketSource`
+   * (shared with V3). Feeds `deriveV4ProvenanceBreakdown`'s
+   * `market.btcPrice` row only.
+   */
+  marketSource: AaveV4DataSource | undefined;
   /** ISO 8601 instant to classify V4 freshness against — caller-supplied for determinism, mirroring `normalizeMarketQuote`'s own `now`. */
   now: string;
+}
+
+/**
+ * Field/semantic-group-level V4 provenance breakdown — see
+ * `V4ProvenanceBreakdown`'s own header comment for what each row means.
+ * `null` for a V3/unset portfolio. Pure function of the same
+ * `ProtocolStatusInput` `deriveProtocolStatus` already accepts — computed
+ * alongside it (via that function's own V4 branch, below), never
+ * independently, so the two can never disagree about what the underlying
+ * fields say.
+ */
+export function deriveV4ProvenanceBreakdown(
+  input: ProtocolStatusInput,
+): V4ProvenanceBreakdown | null {
+  if (input.protocolVersion !== 'v4') return null;
+
+  const btcPrice: V4ProvenanceStatus = input.marketSource === 'live' ? 'live' : 'manual';
+  const baseDrawnApr: V4ProvenanceStatus = !input.v4DebtStateSet
+    ? 'unavailable'
+    : input.v4BaseDrawnAprSource === 'live'
+      ? 'live'
+      : 'manual';
+  const position: V4ProvenanceStatus = !input.v4DebtStateSet
+    ? 'unavailable'
+    : input.v4DebtStateSource === 'live'
+      ? 'live'
+      : 'manual';
+  const collateralRisk: V4ProvenanceStatus = !input.v4CollateralRiskSet
+    ? 'unavailable'
+    : input.v4CollateralRiskSource === 'live'
+      ? 'live'
+      : 'manual';
+
+  return { market: { btcPrice, baseDrawnApr }, position, collateralRisk };
+}
+
+/** Display text for one `V4ProvenanceStatus` row — no second label vocabulary invented beyond what `formatProtocolStatus` already uses ("Live"/"Manual entry"). */
+export function formatV4ProvenanceStatus(status: V4ProvenanceStatus): string {
+  switch (status) {
+    case 'live':
+      return 'Live';
+    case 'manual':
+      return 'Manual';
+    case 'unavailable':
+      return 'Not yet available';
+  }
 }
 
 /**
@@ -183,6 +309,22 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
     return { version: 'v3', status: deriveAaveDataStatus(input.aaveMarketQuote) };
   }
 
+  // V4 Mixed-Provenance UX batch — computed once, from the same `input`,
+  // and reused by every branch below via `v4Result` so `status` and
+  // `breakdown` can never disagree.
+  const breakdownOrNull = deriveV4ProvenanceBreakdown(input);
+  if (breakdownOrNull === null) {
+    // Unreachable: `input.protocolVersion === 'v4'` was already confirmed
+    // above, the only condition `deriveV4ProvenanceBreakdown` checks.
+    throw new Error('unreachable: deriveV4ProvenanceBreakdown returned null for a v4 input');
+  }
+  const breakdown: V4ProvenanceBreakdown = breakdownOrNull;
+  function v4Result(
+    status: Extract<ProtocolStatusKind, { version: 'v4' }>['status'],
+  ): ProtocolStatusKind {
+    return { version: 'v4', status, breakdown };
+  }
+
   // 1. Full manual gate — V4 Readiness Audit §12 Stage 25. Checked FIRST,
   // before any live-fetch status is even read: both dimensions already
   // have a usable value, and at least one is `'manual'`. A concurrent
@@ -198,13 +340,13 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
     input.v4CollateralRiskSet &&
     (input.v4DebtStateSource === 'manual' || input.v4CollateralRiskSource === 'manual')
   ) {
-    return { version: 'v4', status: 'manual' };
+    return v4Result('manual');
   }
 
   // 2. Truly nothing provided at all — no address, no manual entry for
   // either dimension.
   if (!input.v4PositionSet && !input.v4DebtStateSet && !input.v4CollateralRiskSet) {
-    return { version: 'v4', status: 'waiting-for-address' };
+    return v4Result('waiting-for-address');
   }
 
   // 3. A live fetch is only ever genuinely "in flight" or "erroring"
@@ -217,7 +359,7 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
   // own original precedence.
   if (input.v4PositionSet) {
     if (input.aaveV4Status === 'error' || input.aaveV4CollateralRiskStatus === 'error') {
-      return { version: 'v4', status: 'provider-error' };
+      return v4Result('provider-error');
     }
     if (
       input.aaveV4Status === 'idle' ||
@@ -225,7 +367,7 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
       input.aaveV4CollateralRiskStatus === 'idle' ||
       input.aaveV4CollateralRiskStatus === 'loading'
     ) {
-      return { version: 'v4', status: 'loading' };
+      return v4Result('loading');
     }
   }
 
@@ -235,10 +377,10 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
   // dimension here is a genuine, reportable gap — never "loading",
   // never silently treated as manual.
   if (!input.v4DebtStateSet) {
-    return { version: 'v4', status: 'missing-debt-state' };
+    return v4Result('missing-debt-state');
   }
   if (!input.v4CollateralRiskSet) {
-    return { version: 'v4', status: 'missing-collateral-risk' };
+    return v4Result('missing-collateral-risk');
   }
 
   // 5. Both dimensions are set and neither is manual (step 1 already
@@ -248,9 +390,9 @@ export function deriveProtocolStatus(input: ProtocolStatusInput): ProtocolStatus
     isV4DataStale(input.aaveV4LastFetchedAt, input.now) ||
     isV4DataStale(input.aaveV4CollateralRiskLastFetchedAt, input.now)
   ) {
-    return { version: 'v4', status: 'stale' };
+    return v4Result('stale');
   }
-  return { version: 'v4', status: 'live' };
+  return v4Result('live');
 }
 
 export function formatProtocolStatus(kind: ProtocolStatusKind): string {

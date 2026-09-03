@@ -356,7 +356,12 @@ describe('P0-1 — remount/manual-override regression: an intentional manual ove
 
     const { unmount } = render(<PortfolioPage />);
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
-    await debtSection.findByText('Aave V4 · Live');
+    // V4 Mixed-Provenance UX batch — the flat "Aave V4 · Live" composite
+    // badge no longer renders for a V4 portfolio; assert the specific
+    // dimensions this test cares about (debt state and collateral risk,
+    // both seeded 'live' above) via the truthful per-field breakdown.
+    await debtSection.findByText('Debt position Live');
+    await debtSection.findByText('Collateral risk Live');
 
     // The user intentionally edits the live value back to a manual
     // assumption — a legitimate "what if" override.

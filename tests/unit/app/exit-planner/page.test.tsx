@@ -510,7 +510,13 @@ describe('ExitPlannerPage — V4 live-sync invocation (Stage 21)', () => {
 
     render(<ExitPlannerPage />);
 
-    expect(screen.getByText('Aave V4 · Live')).toBeInTheDocument();
+    // V4 Mixed-Provenance UX batch — the composite `'live'` state no
+    // longer renders as one collapsed "Aave V4 · Live" string; the
+    // truthful per-dimension breakdown is asserted instead (see
+    // `tests/unit/app/portfolio/page.test.tsx`'s identical fix for the
+    // full reasoning).
+    expect(screen.getByText('Debt position Live')).toBeInTheDocument();
+    expect(screen.getByText('Collateral risk Live')).toBeInTheDocument();
     expect(screen.queryByText('Aave V4 · Loading')).not.toBeInTheDocument();
   });
 

@@ -277,7 +277,14 @@ describe('Aave V4 live flow — successful sync through the real component/store
     await selectV4AndSaveAddress(user);
 
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
-    await debtSection.findByText('Aave V4 · Live');
+    // V4 Mixed-Provenance UX batch — the flat "Aave V4 · Live" composite
+    // badge no longer renders for a V4 portfolio; the debt/collateral-risk
+    // dimensions this test actually exercises are asserted individually via
+    // the truthful per-field breakdown instead (BTC price stays "Manual"
+    // here since no market-data sync ever ran in this flow).
+    await debtSection.findByText('Debt position Live');
+    await debtSection.findByText('Collateral risk Live');
+    await debtSection.findByText('Base drawn APR Live');
 
     expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
       V4_FIXTURE_DEBT_STATE,
@@ -333,7 +340,9 @@ describe('Aave V4 live flow — successful sync through the real component/store
 
     await selectV4AndSaveAddress(user);
     const debtSection = within(screen.getByRole('group', { name: 'Debt' }).closest('form')!);
-    await debtSection.findByText('Aave V4 · Live');
+    // V4 Mixed-Provenance UX batch — see the identical comment above.
+    await debtSection.findByText('Debt position Live');
+    await debtSection.findByText('Collateral risk Live');
     expect(usePortfolioStore.getState().portfolios[created.id].portfolio.v4DebtState).toEqual(
       V4_FIXTURE_DEBT_STATE,
     );

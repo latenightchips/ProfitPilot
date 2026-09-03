@@ -4,7 +4,18 @@ import { describe, expect, it } from 'vitest';
 import { StrategyAssumptionsPanel } from '@/components/strategy/StrategyAssumptionsPanel';
 import { deriveAaveV4EffectiveBorrowRate } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
-import { formatProtocolStatus, type ProtocolStatusKind } from '@/utils/protocolStatus';
+import {
+  formatProtocolStatus,
+  type ProtocolStatusKind,
+  type V4ProvenanceBreakdown,
+} from '@/utils/protocolStatus';
+
+/** V4 Mixed-Provenance UX batch — see `tests/unit/utils/protocolStatus.test.ts`'s own identical fixture comment: only `.status` is asserted on below, never `.breakdown`'s own content. */
+const DUMMY_V4_BREAKDOWN: V4ProvenanceBreakdown = {
+  market: { btcPrice: 'live', baseDrawnApr: 'live' },
+  position: 'live',
+  collateralRisk: 'live',
+};
 
 /** Shared Strategy Assumptions Panel — 06_TASKS.md M7-004. */
 function basePortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
@@ -375,13 +386,18 @@ describe('StrategyAssumptionsPanel — protocol-aware Manual-Data Status (Stage 
   });
 
   it.each([
-    { version: 'v4', status: 'waiting-for-address' },
-    { version: 'v4', status: 'loading' },
-    { version: 'v4', status: 'live' },
-    { version: 'v4', status: 'stale' },
-    { version: 'v4', status: 'provider-error' },
-    { version: 'v4', status: 'missing-debt-state' },
+    { version: 'v4', status: 'waiting-for-address', breakdown: DUMMY_V4_BREAKDOWN },
+    { version: 'v4', status: 'loading', breakdown: DUMMY_V4_BREAKDOWN },
+    { version: 'v4', status: 'stale', breakdown: DUMMY_V4_BREAKDOWN },
+    { version: 'v4', status: 'provider-error', breakdown: DUMMY_V4_BREAKDOWN },
+    { version: 'v4', status: 'missing-debt-state', breakdown: DUMMY_V4_BREAKDOWN },
   ] satisfies ProtocolStatusKind[])(
+    // V4 Mixed-Provenance UX batch — `'live'` (and `'manual'`) moved to
+    // their own dedicated test below: those two are the only composite
+    // statuses this component now replaces with the truthful per-dimension
+    // breakdown rather than `formatProtocolStatus`'s single string (see
+    // `PortfolioPageClient.tsx`'s own header comment for why). Every
+    // status here keeps the original text unchanged.
     'renders the real V4 status ($status) via formatProtocolStatus, never the static V3 "Manual Mode" copy',
     (protocolStatus) => {
       render(
@@ -395,6 +411,31 @@ describe('StrategyAssumptionsPanel — protocol-aware Manual-Data Status (Stage 
       expect(screen.getByText(formatProtocolStatus(protocolStatus))).toBeInTheDocument();
       expect(screen.queryByText(/Manual Mode/)).not.toBeInTheDocument();
       expect(screen.queryByText(/No live data provider is connected/)).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['live', 'manual'] as const)(
+    'renders the truthful per-dimension breakdown, never a collapsed "Aave V4 · %s" string, for the %s composite status',
+    (status) => {
+      const protocolStatus: ProtocolStatusKind = {
+        version: 'v4',
+        status,
+        breakdown: DUMMY_V4_BREAKDOWN,
+      };
+      render(
+        <StrategyAssumptionsPanel
+          portfolio={basePortfolio({ protocolVersion: 'v4' })}
+          metadata={null}
+          timeHorizonLabel={null}
+          protocolStatus={protocolStatus}
+        />,
+      );
+      expect(screen.getByText('BTC price Live')).toBeInTheDocument();
+      expect(screen.getByText('Base drawn APR Live')).toBeInTheDocument();
+      expect(screen.getByText('Debt position Live')).toBeInTheDocument();
+      expect(screen.getByText('Collateral risk Live')).toBeInTheDocument();
+      expect(screen.queryByText(formatProtocolStatus(protocolStatus))).not.toBeInTheDocument();
+      expect(screen.queryByText(/Manual Mode/)).not.toBeInTheDocument();
     },
   );
 });

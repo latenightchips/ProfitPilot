@@ -421,10 +421,25 @@ export interface PortfolioStoreActions {
    * Store applies to historical PERSISTED data with no recorded source —
    * a different problem in a different context, not a contradiction.
    */
+  /**
+   * V4 Mixed-Provenance UX batch — `baseDrawnAprSource` is a new,
+   * independent 4th argument tracking `v4DebtState.baseDrawnApr`'s own
+   * provenance separately from the rest of the group (`drawnDebt`/
+   * `premiumDebt`/`riskPremium`). Defaults to whatever `source` is when
+   * omitted — every pre-existing caller (the live-sync hook, candidate
+   * acceptance) genuinely reads `baseDrawnApr` off the same on-chain call
+   * as the rest of the group, so this default is correct, not an
+   * approximation, and every such caller's behavior is unchanged. Only
+   * the two edit-time forms that can genuinely diverge
+   * (`NewPortfolioV4Fields.tsx`, `ManualAaveV4StateForm.tsx`) pass a
+   * distinct value. See `ApplicationPortfolio.v4BaseDrawnAprSource`'s own
+   * doc comment (`services/portfolio/models.ts`) for the full reasoning.
+   */
   setAaveV4DebtState: (
     id: string,
     v4DebtState: AaveV4DebtState | undefined,
     source?: AaveV4DataSource,
+    baseDrawnAprSource?: AaveV4DataSource,
   ) => MappingResult<Portfolio>;
   /** Same optional-`source`-defaults-to-`'live'` discipline as `setAaveV4DebtState` above. */
   setAaveV4CollateralRisk: (
@@ -732,19 +747,35 @@ function normalizePortfolioProvenance(portfolio: Portfolio): Portfolio {
     portfolio.v4CollateralRisk !== undefined
       ? (portfolio.v4CollateralRiskSource ?? 'manual')
       : undefined;
+  // V4 Mixed-Provenance UX batch — same conservative "backfill to
+  // 'manual', never 'live'" discipline as `v4DebtStateSource` above, for
+  // a portfolio persisted before this batch: it may already carry a real
+  // `v4DebtState` (and therefore a real `baseDrawnApr` value inside it)
+  // but has no independent source recorded for that one field yet, since
+  // `persistedPortfolioPayloadSchema` only started accepting it now.
+  const v4BaseDrawnAprSource =
+    portfolio.v4DebtState !== undefined ? (portfolio.v4BaseDrawnAprSource ?? 'manual') : undefined;
   const marketSource = portfolio.marketSource ?? 'manual';
   const protocolSource = portfolio.protocolSource ?? 'manual';
 
   if (
     v4DebtStateSource === portfolio.v4DebtStateSource &&
     v4CollateralRiskSource === portfolio.v4CollateralRiskSource &&
+    v4BaseDrawnAprSource === portfolio.v4BaseDrawnAprSource &&
     marketSource === portfolio.marketSource &&
     protocolSource === portfolio.protocolSource
   ) {
     return portfolio;
   }
 
-  return { ...portfolio, v4DebtStateSource, v4CollateralRiskSource, marketSource, protocolSource };
+  return {
+    ...portfolio,
+    v4DebtStateSource,
+    v4CollateralRiskSource,
+    v4BaseDrawnAprSource,
+    marketSource,
+    protocolSource,
+  };
 }
 
 /**
@@ -1310,6 +1341,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     id: string,
     v4DebtState: AaveV4DebtState | undefined,
     source?: AaveV4DataSource,
+    baseDrawnAprSource?: AaveV4DataSource,
   ) => {
     set({ saveStatus: 'saving' });
 
@@ -1343,6 +1375,13 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       // interface doc comment for why that default, not `'manual'`, is
       // correct here.
       v4DebtStateSource: validated !== undefined ? (source ?? 'live') : undefined,
+      // V4 Mixed-Provenance UX batch — same "defined iff the value it
+      // describes is defined" invariant, tracked independently from
+      // `v4DebtStateSource`. Defaults to `source` when omitted (see this
+      // action's own interface doc comment for why that default is
+      // correct, not an approximation, for every pre-existing caller).
+      v4BaseDrawnAprSource:
+        validated !== undefined ? (baseDrawnAprSource ?? source ?? 'live') : undefined,
       // V4 Readiness Audit §12 P2-1 — same "defined iff the value it
       // describes is defined" invariant as `v4DebtStateSource`, stamped
       // with a single shared timestamp so this action's own successful

@@ -180,9 +180,15 @@ describe('Manual/hypothetical V4 mode — Portfolio page (Stage 25)', () => {
     createAndSelectManualV4Portfolio();
     render(<PortfolioPage />);
 
-    // Rendered twice on this page (the Collateral section badge and
-    // AaveProtocolVersionForm's own badge) — both must agree.
-    expect(screen.getAllByText('Aave V4 · Manual entry').length).toBeGreaterThan(0);
+    // V4 Mixed-Provenance UX batch — rendered at least three times on
+    // this page (the Collateral section badge, the Debt section badge,
+    // and `AaveProtocolVersionForm`'s own badge), each now the truthful
+    // per-dimension breakdown rather than one collapsed string — all
+    // must agree.
+    expect(screen.getAllByText('BTC price Manual').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Base drawn APR Manual').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Debt position Manual').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Collateral risk Manual').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Waiting for address/)).not.toBeInTheDocument();
     expectNoV4RpcCalls();
   });
@@ -221,7 +227,8 @@ describe('Manual/hypothetical V4 mode — Portfolio page (Stage 25)', () => {
   it('adding a wallet address to a manual portfolio does not clear its valid manual state while a live request is merely pending', () => {
     const created = createAndSelectManualV4Portfolio();
     render(<PortfolioPage />);
-    expect(screen.getAllByText('Aave V4 · Manual entry').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Debt position Manual').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Collateral risk Manual').length).toBeGreaterThan(0);
 
     act(() => {
       usePortfolioStore.getState().setAaveV4Position(created.id, {
@@ -246,7 +253,8 @@ describe('Manual/hypothetical V4 mode — Dashboard (Stage 25)', () => {
     expect(screen.getByText('My Portfolio')).toBeInTheDocument();
     expect(screen.getByText('Net Portfolio Value')).toBeInTheDocument();
     expect(screen.getByText('Health Factor')).toBeInTheDocument();
-    expect(screen.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
+    expect(screen.getByText('Debt position Manual')).toBeInTheDocument();
+    expect(screen.getByText('Collateral risk Manual')).toBeInTheDocument();
     expect(screen.queryByText(/Unable to calculate a summary/)).not.toBeInTheDocument();
     expectNoV4RpcCalls();
   });
@@ -367,7 +375,8 @@ describe('Manual/hypothetical V4 mode — persistence round trip (Stage 25)', ()
 
     stubDashboardLoad();
     render(<DashboardPage />);
-    expect(screen.getByText('Aave V4 · Manual entry')).toBeInTheDocument();
+    expect(screen.getByText('Debt position Manual')).toBeInTheDocument();
+    expect(screen.getByText('Collateral risk Manual')).toBeInTheDocument();
     expectNoV4RpcCalls();
   });
 });

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 
+import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
 import {
@@ -1051,6 +1052,8 @@ function CollateralPositionForm({
     aaveV4CollateralRiskLastFetchedAt,
     v4DebtStateSource: portfolio.v4DebtStateSource,
     v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
+    v4BaseDrawnAprSource: portfolio.v4BaseDrawnAprSource,
+    marketSource: portfolio.marketSource,
     now: new Date().toISOString(),
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);
@@ -1126,7 +1129,24 @@ function CollateralPositionForm({
           )}
         </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
+          {/* V4 Mixed-Provenance UX batch — only `'live'`/`'manual'` can
+              silently collapse genuinely mixed per-dimension provenance
+              into one composite label (both require BOTH `v4DebtStateSource`
+              and `v4CollateralRiskSource` to agree, but neither considers
+              `marketSource`/`v4BaseDrawnAprSource` at all — see
+              `deriveV4ProvenanceBreakdown`'s own header comment). Every
+              other V4 status (`waiting-for-address`/`loading`/`stale`/
+              `provider-error`/`missing-*`) already describes one genuine,
+              unambiguous condition and loses real information (freshness,
+              in-flight state, the specific missing dimension) if replaced
+              by the breakdown — those keep the original single-string
+              badge, completely unchanged from before this batch. */}
+          {protocolStatus.version === 'v4' &&
+          (protocolStatus.status === 'live' || protocolStatus.status === 'manual') ? (
+            <V4ProvenanceDetail breakdown={protocolStatus.breakdown} />
+          ) : (
+            <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
+          )}
         </div>
       </fieldset>
 
@@ -1427,10 +1447,17 @@ function DebtPositionForm({
         // defaults here (unlike the live-sync hooks' own calls): this is
         // the one call site that must actively carry the portfolio's
         // own existing source forward, not assert a fresh one.
+        //
+        // V4 Mixed-Provenance UX batch — same reasoning, independently,
+        // for `baseDrawnApr`: a repayment never touches it
+        // (`deriveV4DebtStateAfterDelta` carries `baseDrawnApr` forward
+        // unchanged), so its own existing source must be carried forward
+        // too, never re-derived from `v4DebtStateSource`.
         setAaveV4DebtState(
           portfolioId,
           v4DerivedDebtState,
           portfolio.v4DebtStateSource ?? 'manual',
+          portfolio.v4BaseDrawnAprSource ?? 'manual',
         );
       }
       setPreview(null);
@@ -1477,6 +1504,8 @@ function DebtPositionForm({
     aaveV4CollateralRiskLastFetchedAt,
     v4DebtStateSource: portfolio.v4DebtStateSource,
     v4CollateralRiskSource: portfolio.v4CollateralRiskSource,
+    v4BaseDrawnAprSource: portfolio.v4BaseDrawnAprSource,
+    marketSource: portfolio.marketSource,
     now: new Date().toISOString(),
   });
   const aaveStatusLabel = formatProtocolStatus(protocolStatus);
@@ -1532,7 +1561,24 @@ function DebtPositionForm({
           </div>
         </dl>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
+          {/* V4 Mixed-Provenance UX batch — only `'live'`/`'manual'` can
+              silently collapse genuinely mixed per-dimension provenance
+              into one composite label (both require BOTH `v4DebtStateSource`
+              and `v4CollateralRiskSource` to agree, but neither considers
+              `marketSource`/`v4BaseDrawnAprSource` at all — see
+              `deriveV4ProvenanceBreakdown`'s own header comment). Every
+              other V4 status (`waiting-for-address`/`loading`/`stale`/
+              `provider-error`/`missing-*`) already describes one genuine,
+              unambiguous condition and loses real information (freshness,
+              in-flight state, the specific missing dimension) if replaced
+              by the breakdown — those keep the original single-string
+              badge, completely unchanged from before this batch. */}
+          {protocolStatus.version === 'v4' &&
+          (protocolStatus.status === 'live' || protocolStatus.status === 'manual') ? (
+            <V4ProvenanceDetail breakdown={protocolStatus.breakdown} />
+          ) : (
+            <span className="rounded-full bg-muted px-2 py-0.5">{aaveStatusLabel}</span>
+          )}
         </div>
       </fieldset>
 

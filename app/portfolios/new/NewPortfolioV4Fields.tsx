@@ -140,6 +140,17 @@ export type NewPortfolioV4SubmissionResult =
       position?: { userAddress: `0x${string}` };
       debtState?: NewPortfolioV4DebtStateSubmission;
       debtStateSource: AaveV4DataSource;
+      /**
+       * V4 Mixed-Provenance UX batch — independent from `debtStateSource`
+       * above, which now reports ONLY the wallet-position sub-group
+       * (`drawnDebt`/`premiumDebt`/`riskPremium`). Previously the two were
+       * entangled (`debtStateSource` required BOTH to be live), silently
+       * reporting `baseDrawnApr` as `'manual'` whenever the wallet side
+       * was manual, even if the base rate itself was genuinely live. See
+       * `ApplicationPortfolio.v4BaseDrawnAprSource`'s own doc comment
+       * (`services/portfolio/models.ts`).
+       */
+      baseDrawnAprSource: AaveV4DataSource;
       collateralRisk?: NewPortfolioV4CollateralRiskSubmission;
       collateralRiskSource: AaveV4DataSource;
     }
@@ -433,7 +444,14 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
 
         const debtStateTouched = baseDrawnAprTouched || walletDebtTouched;
         let debtState: NewPortfolioV4DebtStateSubmission | undefined;
+        // V4 Mixed-Provenance UX batch — `debtStateSource` now reports
+        // ONLY the wallet-position sub-group's own provenance;
+        // `baseDrawnAprSource` is computed independently below. A group
+        // that was never touched at all trivially satisfies its own "ok"
+        // condition (nothing to overclaim), but a touched group must
+        // genuinely be live, never merely because its sibling is.
         let debtStateSource: AaveV4DataSource = 'manual';
+        let baseDrawnAprSource: AaveV4DataSource = 'manual';
         if (debtStateTouched) {
           const parsed = aaveV4DebtStateSchema.safeParse({
             drawnDebt: values.drawnDebt,
@@ -447,14 +465,10 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
             });
             return { ok: false };
           }
-          // 'live' only when EVERY currently-populated sub-group is
-          // itself live-and-unedited — a group that was never touched at
-          // all trivially satisfies its own condition (nothing to
-          // overclaim), but a group that IS touched must genuinely be
-          // live, never merely because its sibling group is.
           const baseDrawnAprOk = !baseDrawnAprTouched || baseDrawnAprLive;
           const walletDebtOk = !walletDebtTouched || walletDebtLive;
-          debtStateSource = baseDrawnAprOk && walletDebtOk ? 'live' : 'manual';
+          debtStateSource = walletDebtOk ? 'live' : 'manual';
+          baseDrawnAprSource = baseDrawnAprOk ? 'live' : 'manual';
           debtState = {
             drawnDebt: parsed.data.drawnDebt,
             premiumDebt: parsed.data.premiumDebt,
@@ -497,6 +511,7 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
           position,
           debtState,
           debtStateSource,
+          baseDrawnAprSource,
           collateralRisk,
           collateralRiskSource,
         };

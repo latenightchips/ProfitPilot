@@ -29,9 +29,12 @@ describe('resolveExportProvenance (P2-1)', () => {
       protocolVersion: 'v3',
       v4DebtStateSource: null,
       v4CollateralRiskSource: null,
+      v4BaseDrawnAprSource: null,
       v4DebtStateUpdatedAt: null,
       v4CollateralRiskUpdatedAt: null,
       v4DataStaleAtExport: null,
+      marketSource: null,
+      marketUpdatedAt: null,
     });
   });
 

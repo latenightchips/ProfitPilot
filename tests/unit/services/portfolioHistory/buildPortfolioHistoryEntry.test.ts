@@ -176,3 +176,65 @@ describe('buildPortfolioHistoryEntry — V4 isolation', () => {
     expect(entry.borrowApr).toBe(0.05);
   });
 });
+
+describe('buildPortfolioHistoryEntry — V4 dataSource provenance polarity (V4 Mixed-Provenance UX batch, requirement F)', () => {
+  // `debtAssetPriceUsd` is required whenever `v4DebtStateSource` is 'live'
+  // — `checkAaveV4DebtAssetPriceAvailable` (services/portfolio/mapping.ts)
+  // fails the summary calculation closed otherwise. Included here so every
+  // "live debt state" scenario below produces a real summary, not a setup
+  // failure, matching how a genuine live-synced record is actually shaped.
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: {
+        drawnDebt: 15000,
+        premiumDebt: 500,
+        baseDrawnApr: 0.05,
+        riskPremium: 0.01,
+        debtAssetPriceUsd: 1,
+      },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+      ...overrides,
+    });
+  }
+
+  it('reports "manual" — never "live" — when debt state and base drawn APR are live-sourced but collateral risk is manual (all three must agree for "live")', () => {
+    const portfolio = v4Portfolio({
+      v4DebtStateSource: 'live',
+      v4BaseDrawnAprSource: 'live',
+      v4CollateralRiskSource: 'manual',
+    });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.dataSource).toBe('manual');
+  });
+
+  it('reports "manual" — never "live" — when debt state and collateral risk are live-sourced but base drawn APR is manual', () => {
+    const portfolio = v4Portfolio({
+      v4DebtStateSource: 'live',
+      v4BaseDrawnAprSource: 'manual',
+      v4CollateralRiskSource: 'live',
+    });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.dataSource).toBe('manual');
+  });
+
+  it('reports "manual" for a historical V4 record with no v4BaseDrawnAprSource at all — backward-compatible default, never inferred live', () => {
+    const portfolio = v4Portfolio({
+      v4DebtStateSource: 'live',
+      v4CollateralRiskSource: 'live',
+    });
+    expect(portfolio.v4BaseDrawnAprSource).toBeUndefined();
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.dataSource).toBe('manual');
+  });
+
+  it('reports "live" only when debt state, base drawn APR, and collateral risk are all live-sourced', () => {
+    const portfolio = v4Portfolio({
+      v4DebtStateSource: 'live',
+      v4BaseDrawnAprSource: 'live',
+      v4CollateralRiskSource: 'live',
+    });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.dataSource).toBe('live');
+  });
+});

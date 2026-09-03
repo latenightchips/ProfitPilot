@@ -123,6 +123,8 @@ export function RecommendationsPageClient() {
           aaveV4CollateralRiskLastFetchedAt,
           v4DebtStateSource: record.portfolio.v4DebtStateSource,
           v4CollateralRiskSource: record.portfolio.v4CollateralRiskSource,
+          v4BaseDrawnAprSource: record.portfolio.v4BaseDrawnAprSource,
+          marketSource: record.portfolio.marketSource,
           now: new Date().toISOString(),
         });
   const confidence = protocolStatus === null ? null : confidenceForProtocolStatus(protocolStatus);

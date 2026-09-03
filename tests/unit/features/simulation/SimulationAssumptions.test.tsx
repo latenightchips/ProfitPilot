@@ -363,7 +363,16 @@ describe('SimulationAssumptions — V1.1 Batch 6: Manual-Data Status', () => {
   });
 
   it('shows a real V4 status (e.g. stale) when both props are supplied', () => {
-    const status: ProtocolStatusKind = { version: 'v4', status: 'stale' };
+    const status: ProtocolStatusKind = {
+      version: 'v4',
+      status: 'stale',
+      // V4 Mixed-Provenance UX batch — only `.status` is asserted below.
+      breakdown: {
+        market: { btcPrice: 'live', baseDrawnApr: 'live' },
+        position: 'live',
+        collateralRisk: 'live',
+      },
+    };
     runAndRender(status, '2026-01-01T00:00:00.000Z');
     expect(screen.getByText('Manual-Data Status')).toBeInTheDocument();
     expect(screen.getByText('Aave V4 · Stale')).toBeInTheDocument();

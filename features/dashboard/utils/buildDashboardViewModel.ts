@@ -227,7 +227,22 @@ export function buildDashboardViewModel(
     portfolioDescription: portfolio.description ?? null,
     freshness: {
       market: buildMarketFreshness(portfolio, liveAave),
-      protocol: buildProtocolFreshness(portfolio, liveAave),
+      // V4 Mixed-Provenance UX batch — `protocol.borrowApr`/`supplyApr`/
+      // `protocolSource` describe Aave V3 parameters, never consumed by
+      // any V4 calculation (`resolveSupplyAprDisplay`,
+      // `deriveAaveV4EffectiveBorrowRate`); presenting this row for a V4
+      // portfolio showed a leftover/default V3 value as if it described
+      // the active V4 position. `null` hides the row entirely
+      // (`toIndicator`/`DataFreshnessSection` already treat `null` as "no
+      // row" — the same convention the practically-unreachable
+      // `MappingFailure` case already relies on) — the truthful V4
+      // provenance now lives in `deriveV4ProvenanceBreakdown`'s own
+      // composite badge (`DashboardPageClient.tsx`), rendered right above
+      // this section. V3 is completely unaffected: `buildProtocolFreshness`
+      // itself, and every one of its own existing call sites/tests, are
+      // unchanged.
+      protocol:
+        portfolio.protocolVersion === 'v4' ? null : buildProtocolFreshness(portfolio, liveAave),
     },
   };
 

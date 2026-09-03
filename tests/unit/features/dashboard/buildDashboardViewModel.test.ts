@@ -349,3 +349,35 @@ describe('buildDashboardViewModel — portfolio description (M5-004)', () => {
     expect(viewModel.portfolioDescription).toBeNull();
   });
 });
+
+describe('buildDashboardViewModel — V4 protocol freshness (V4 Mixed-Provenance UX batch, requirement D)', () => {
+  it('never reports the stale V3 "Protocol Parameters" freshness row for a V4 portfolio — protocol provenance now lives entirely in the V4 provenance breakdown, not this legacy field', () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(updated.portfolio, updated.summary);
+
+    expect(viewModel.freshness.protocol).toBeNull();
+  });
+
+  it('still reports market freshness for a V4 portfolio (only the legacy V3 protocol-parameters row is suppressed)', () => {
+    const portfolio = createPortfolio();
+    usePortfolioStore.getState().setProtocolVersion(portfolio.id, 'v4');
+    const updated = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(updated.portfolio, updated.summary);
+
+    expect(viewModel.freshness.market).not.toBeNull();
+  });
+
+  it('leaves V3 portfolios reporting protocol freshness exactly as before (unchanged behavior)', () => {
+    const portfolio = createPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+
+    expect(viewModel.freshness.protocol).not.toBeNull();
+    expect(viewModel.freshness.protocol?.origin).toBe('manual');
+  });
+});
