@@ -10,12 +10,35 @@
  * string values plus the portfolio being simulated against (needed for
  * the two contextual checks: a delta can't withdraw/repay more than
  * currently exists, and additional borrow can't exceed the protocol's
- * own `maxLoanToValue`). Returns one message per invalid field, or
+ * own risk-capacity ceiling). Returns one message per invalid field, or
  * `null` for a valid one — the same "no calculation, just a validation
  * verdict" boundary `types/portfolio.schema.ts` already establishes for
  * Portfolio's own forms.
+ *
+ * **"Additional borrow would exceed..." now dispatches by protocol
+ * version via `resolveRiskCapacityDisplay` (V4 semantic audit, Batch 3 /
+ * A3).** Before this fix, the check always compared against the raw
+ * `portfolio.protocol.maxLoanToValue` scalar and always named "maximum
+ * LTV," regardless of `protocolVersion` — for a V4 portfolio this is a
+ * V3-shaped ceiling with no defined relationship to V4's real
+ * `v4CollateralRisk.collateralFactor` (see `resolveRiskCapacityDisplay`'s
+ * own doc comment, `services/portfolio/mapping.ts`, for why: V4 has no
+ * separate max-LTV/liquidation-threshold pair at all). V3's own branch
+ * below reproduces the exact prior check and message, byte-for-byte.
+ * When a V4 portfolio has no synced `v4CollateralRisk` yet
+ * (`resolveRiskCapacityDisplay`'s own `'v4Unavailable'` case), the check
+ * is skipped rather than silently substituting the V3 scalar — this
+ * pre-submission check is already advisory, not authoritative: this same
+ * function's own `debtDelta` block above (`resolveCanonicalDebtBalance`)
+ * already establishes that "the actual simulation
+ * (`runPortfolioActionSimulation`) still independently fails closed on
+ * missing V4 state regardless of what this validation concludes."
  */
-import { type ApplicationPortfolio, resolveCanonicalDebtBalance } from '@/services';
+import {
+  type ApplicationPortfolio,
+  resolveCanonicalDebtBalance,
+  resolveRiskCapacityDisplay,
+} from '@/services';
 
 import type {
   ScenarioBuilderFieldErrors,
@@ -88,11 +111,16 @@ export function validateScenarioBuilderInput(
   } else if (debtDelta > 0) {
     const projectedDebt = currentDebt + debtDelta;
     const currentCollateralValue = portfolio.collateral.quantity * portfolio.market.btcPriceUsd;
-    if (
-      currentCollateralValue > 0 &&
-      projectedDebt / currentCollateralValue > portfolio.protocol.maxLoanToValue
-    ) {
-      errors.debtDelta = "Additional borrow would exceed the protocol's maximum LTV.";
+    const riskCapacityDisplay = resolveRiskCapacityDisplay(portfolio);
+    if (currentCollateralValue > 0 && riskCapacityDisplay.kind !== 'v4Unavailable') {
+      const projectedLtv = projectedDebt / currentCollateralValue;
+      if (riskCapacityDisplay.kind === 'v3') {
+        if (projectedLtv > riskCapacityDisplay.maxLoanToValue) {
+          errors.debtDelta = "Additional borrow would exceed the protocol's maximum LTV.";
+        }
+      } else if (projectedLtv > riskCapacityDisplay.collateralFactor) {
+        errors.debtDelta = "Additional borrow would exceed the protocol's Collateral Factor.";
+      }
     }
   }
 

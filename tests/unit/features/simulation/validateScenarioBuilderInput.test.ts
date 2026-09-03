@@ -147,6 +147,17 @@ describe('validateScenarioBuilderInput — V4 canonical current debt (Stage 16)'
       debt: { asset: 'USDC', balance: 999999 },
       protocolVersion: 'v4',
       v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      // V4 semantic audit, Batch 3 (A3) — the two LTV-ceiling sub-tests
+      // below need a real synced `v4CollateralRisk` now that the ceiling
+      // check dispatches through `resolveRiskCapacityDisplay` (a V4
+      // portfolio with no synced collateral risk skips the check
+      // entirely, per that fix — see the dedicated A3 describe block
+      // below). `collateralFactor: 0.75` deliberately matches this
+      // fixture's own `protocol.maxLoanToValue` so these two sub-tests'
+      // existing $75,000-cap arithmetic and expectations are unaffected
+      // — they still exist to prove canonical-debt-total usage, not
+      // ceiling-terminology correctness, which the new block covers.
+      v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 1 },
       ...overrides,
     });
   }
@@ -197,6 +208,65 @@ describe('validateScenarioBuilderInput — Borrow exceeds protocol limit', () =>
   it('accepts an additional borrow that stays within the protocol limit', () => {
     // $20,000 + $10,000 = $30,000, well within the $75,000 cap.
     const errors = validateScenarioBuilderInput(values({ debtDelta: '10000' }), portfolio());
+    expect(errors.debtDelta).toBeNull();
+  });
+});
+
+/**
+ * V4 semantic audit, Batch 3 (A3) — "Additional borrow would exceed the
+ * protocol's..." previously always compared against
+ * `portfolio.protocol.maxLoanToValue` and always said "maximum LTV,"
+ * regardless of `protocolVersion`. `maxLoanToValue: 0.75` (V3's own
+ * field, still present on every portfolio) is deliberately different
+ * from `collateralFactor: 0.5` below, so a leak toward the V3 field
+ * would be numerically obvious, not coincidentally matching.
+ */
+describe('validateScenarioBuilderInput — V4 Collateral Factor ceiling (A3)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return portfolio({
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.5, dynamicConfigKey: 1 },
+      ...overrides,
+    });
+  }
+
+  it('V3 behavior is unchanged: still rejects at maxLoanToValue (0.75) with the exact prior message', () => {
+    // 2 BTC * $50,000 = $100,000 collateral value; max LTV 0.75 → max debt $75,000.
+    // Current debt $20,000 + $60,000 additional = $80,000, exceeding the $75,000 cap.
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '60000' }), portfolio());
+    expect(errors.debtDelta).toBe("Additional borrow would exceed the protocol's maximum LTV.");
+  });
+
+  it("V4 rejects a borrow that stays under V3's maxLoanToValue (0.75) but exceeds V4's real Collateral Factor (0.5) — proves the correct boundary is used, not the V3 one", () => {
+    // 2 BTC * $50,000 = $100,000 collateral value; Collateral Factor 0.5 → max debt $50,000.
+    // Current debt $20,000 + $40,000 = $60,000 — under V3's $75,000 cap, over V4's $50,000 cap.
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '40000' }), v4Portfolio());
+    expect(errors.debtDelta).not.toBeNull();
+  });
+
+  it('V4 error wording says "Collateral Factor," never "Maximum LTV" or "maximum LTV"', () => {
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '40000' }), v4Portfolio());
+    expect(errors.debtDelta).toBe(
+      "Additional borrow would exceed the protocol's Collateral Factor.",
+    );
+    expect(errors.debtDelta).not.toMatch(/maximum LTV/i);
+  });
+
+  it('V4 accepts a borrow within the real Collateral Factor (0.5) cap', () => {
+    // $20,000 + $20,000 = $40,000, within the $50,000 Collateral Factor cap.
+    const errors = validateScenarioBuilderInput(values({ debtDelta: '20000' }), v4Portfolio());
+    expect(errors.debtDelta).toBeNull();
+  });
+
+  it('missing V4 risk-capacity data (no synced v4CollateralRisk) skips the check entirely — never falls back to the V3 maxLoanToValue', () => {
+    const portfolioMissingRisk = v4Portfolio({ v4CollateralRisk: undefined });
+    // $20,000 + $60,000 = $80,000 — would violate BOTH V3's $75,000 cap
+    // and V4's own real $50,000 cap were either applied; the absence of
+    // an error here proves neither fired, not that both happened to pass.
+    const errors = validateScenarioBuilderInput(
+      values({ debtDelta: '60000' }),
+      portfolioMissingRisk,
+    );
     expect(errors.debtDelta).toBeNull();
   });
 });
