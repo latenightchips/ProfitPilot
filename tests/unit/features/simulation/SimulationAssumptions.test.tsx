@@ -241,14 +241,19 @@ describe('SimulationAssumptions — V4 risk-capacity display (Stage 23E)', () =>
 });
 
 /**
- * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
- * codebase talks to exposes an authoritative supply rate, so a live V4
- * portfolio must never keep showing the inherited/leftover
- * `protocol.supplyApr` figure. Mirrors the Borrow APR/risk-capacity
- * describe blocks above's own "deliberately non-matching value" fixture
- * discipline.
+ * "Supply APR" — V4 Readiness Audit §12 P1-1, corrected by the Supply
+ * APR Semantic-Boundary Fix. No V4 boundary this codebase talks to
+ * exposes an authoritative supply rate, and no V4-facing form ever lets a
+ * user assert one manually either — so a V4 portfolio must never show
+ * `protocol.supplyApr` at all, regardless of `v4CollateralRiskSource`
+ * (P1-1's own now-corrected premise). The whole "Supply APR" segment is
+ * omitted from the Protocol Parameters line for V4, not shown as "Not
+ * available" — that wording is reserved for a value that could genuinely
+ * become available later, which V4 Supply APR never is. Mirrors the
+ * Borrow APR/risk-capacity describe blocks above's own "deliberately
+ * non-matching value" fixture discipline.
  */
-describe('SimulationAssumptions — Supply APR (P1-1)', () => {
+describe('SimulationAssumptions — Supply APR (P1-1, corrected by the Supply APR Semantic-Boundary Fix)', () => {
   const LIVE_V4_PORTFOLIO: ApplicationPortfolio = {
     collateral: { asset: 'BTC', quantity: 2 },
     debt: { asset: 'USDC', balance: 999999 },
@@ -276,18 +281,18 @@ describe('SimulationAssumptions — Supply APR (P1-1)', () => {
     expect(screen.getByText(/Supply APR 2\.00%/)).toBeInTheDocument();
   });
 
-  it('live V4: shows "Supply APR Not available", never the leftover protocol.supplyApr figure', () => {
+  it('live V4: omits "Supply APR" entirely, never the leftover protocol.supplyApr figure', () => {
     useSimulationStore
       .getState()
       .runPortfolioActionSimulation(LIVE_V4_PORTFOLIO, { collateralDelta: 0, debtDelta: 0 });
 
     render(<SimulationAssumptions portfolio={LIVE_V4_PORTFOLIO} />);
 
-    expect(screen.getByText(/Supply APR Not available/)).toBeInTheDocument();
+    expect(screen.queryByText(/Supply APR/)).not.toBeInTheDocument();
     expect(screen.queryByText(/4\.50%/)).not.toBeInTheDocument();
   });
 
-  it('V4 with no v4CollateralRisk synced yet: shows "Supply APR Not available", not the inherited figure', () => {
+  it('V4 with no v4CollateralRisk synced yet: omits "Supply APR" entirely, not the inherited figure', () => {
     const noRiskPortfolio: ApplicationPortfolio = {
       ...LIVE_V4_PORTFOLIO,
       v4CollateralRisk: undefined,
@@ -299,10 +304,10 @@ describe('SimulationAssumptions — Supply APR (P1-1)', () => {
 
     render(<SimulationAssumptions portfolio={noRiskPortfolio} />);
 
-    expect(screen.getByText(/Supply APR Not available/)).toBeInTheDocument();
+    expect(screen.queryByText(/Supply APR/)).not.toBeInTheDocument();
   });
 
-  it('manual V4: shows the real protocol.supplyApr, manual semantics preserved', () => {
+  it('manual V4: STILL omits "Supply APR" entirely — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (the exact P1-1 bug this fix closes)', () => {
     const manualV4Portfolio: ApplicationPortfolio = {
       ...LIVE_V4_PORTFOLIO,
       protocol: { ...LIVE_V4_PORTFOLIO.protocol, supplyApr: 0.02 },
@@ -314,7 +319,7 @@ describe('SimulationAssumptions — Supply APR (P1-1)', () => {
 
     render(<SimulationAssumptions portfolio={manualV4Portfolio} />);
 
-    expect(screen.getByText(/Supply APR 2\.00%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Supply APR/)).not.toBeInTheDocument();
   });
 });
 

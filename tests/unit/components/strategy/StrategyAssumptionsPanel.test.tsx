@@ -250,15 +250,21 @@ describe('StrategyAssumptionsPanel — V4 Borrow Rate correctness (Stage 21)', (
 });
 
 /**
- * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
- * codebase talks to exposes an authoritative supply rate, so a live V4
- * portfolio must never keep showing the inherited/leftover
- * `protocol.supplyApr` figure. Mirrors the Borrow Rate describe block
- * above's own "deliberately wrong value" fixture-design discipline —
- * `protocol.supplyApr` here is a plausible non-zero rate, never zero, so
- * a silently-retained leak is directly observable.
+ * "Supply APR" — V4 Readiness Audit §12 P1-1, corrected by the Supply
+ * APR Semantic-Boundary Fix. No V4 boundary this codebase talks to
+ * exposes an authoritative supply rate, and no V4-facing form ever lets a
+ * user assert one manually either — so a V4 portfolio must never show
+ * `protocol.supplyApr` at all, regardless of `v4CollateralRiskSource`
+ * (P1-1's own now-corrected premise that manual collateral risk implied a
+ * manual Supply APR assertion). The whole "Supply APR" segment is omitted
+ * from the Protocol Parameters line for V4, not shown as "Not available"
+ * — that wording is reserved for a value that could genuinely become
+ * available later (e.g. Collateral Factor pending sync), which Supply APR
+ * for V4 never is. `protocol.supplyApr` here is a plausible non-zero
+ * rate, never zero, so a silently-retained leak would be directly
+ * observable.
  */
-describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
+describe('StrategyAssumptionsPanel — Supply APR (P1-1, corrected by the Supply APR Semantic-Boundary Fix)', () => {
   it('V3: shows the real protocol.supplyApr, unchanged', () => {
     render(
       <StrategyAssumptionsPanel
@@ -271,7 +277,7 @@ describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
     expect(protocolParamsValue?.textContent).toContain('Supply APR 2.00%');
   });
 
-  it('live V4: shows "Not available", never the leftover protocol.supplyApr figure', () => {
+  it('live V4: omits "Supply APR" entirely, never the leftover protocol.supplyApr figure', () => {
     render(
       <StrategyAssumptionsPanel
         portfolio={basePortfolio({
@@ -290,11 +296,11 @@ describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
       />,
     );
     const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
-    expect(protocolParamsValue?.textContent).toContain('Supply APR Not available');
+    expect(protocolParamsValue?.textContent).not.toContain('Supply APR');
     expect(protocolParamsValue?.textContent).not.toContain('4.50%');
   });
 
-  it('V4 with no v4CollateralRisk synced yet: shows "Not available", not the inherited figure', () => {
+  it('V4 with no v4CollateralRisk synced yet: omits "Supply APR" entirely, not the inherited figure', () => {
     render(
       <StrategyAssumptionsPanel
         portfolio={basePortfolio({ protocolVersion: 'v4' })}
@@ -303,10 +309,10 @@ describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
       />,
     );
     const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
-    expect(protocolParamsValue?.textContent).toContain('Supply APR Not available');
+    expect(protocolParamsValue?.textContent).not.toContain('Supply APR');
   });
 
-  it('manual V4: shows the real protocol.supplyApr, manual semantics preserved', () => {
+  it('manual V4: STILL omits "Supply APR" entirely — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (the exact P1-1 bug this fix closes)', () => {
     render(
       <StrategyAssumptionsPanel
         portfolio={basePortfolio({
@@ -319,7 +325,8 @@ describe('StrategyAssumptionsPanel — Supply APR (P1-1)', () => {
       />,
     );
     const protocolParamsValue = screen.getByText('Protocol Parameters').nextElementSibling;
-    expect(protocolParamsValue?.textContent).toContain('Supply APR 2.00%');
+    expect(protocolParamsValue?.textContent).not.toContain('Supply APR');
+    expect(protocolParamsValue?.textContent).not.toContain('2.00%');
   });
 });
 

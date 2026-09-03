@@ -75,17 +75,24 @@
  * formatted string itself (this Service layer never formats for display),
  * just the resolved raw values and which shape applies.
  *
- * **`resolveSupplyAprDisplay` (V4 Readiness Audit §12 P1-1)** — every
- * consumer that shows "Supply APR" (Dashboard's Portfolio Composition,
- * the shared `StrategyAssumptionsPanel`, Simulation's
- * `SimulationAssumptions`, and 4 CSV/JSON exporters) previously read
+ * **`resolveSupplyAprDisplay` (V4 Readiness Audit §12 P1-1, corrected by
+ * the Supply APR Semantic-Boundary Fix)** — every consumer that shows
+ * "Supply APR" (Dashboard's Portfolio Composition, the shared
+ * `StrategyAssumptionsPanel`, Simulation's `SimulationAssumptions`,
+ * `buildPortfolioHistoryEntry`, and 4 CSV/JSON exporters) previously read
  * `portfolio.protocol.supplyApr` directly, unconditionally — for a live
  * V4 portfolio this could be a stale leftover from before the portfolio
  * became V4 (or a default), never a real V4 value, since no V4 boundary
- * this codebase talks to exposes an authoritative supply rate at all. Now
- * calls this instead, branching on `.kind` to render the real value only
- * when the portfolio's own V4 collateral-side provenance is `'manual'`
- * (or the portfolio isn't V4 at all), never a stale/fabricated number.
+ * this codebase talks to exposes an authoritative supply rate at all.
+ * P1-1's own fix only closed this for an "untrusted" V4 portfolio
+ * (`v4CollateralRiskSource !== 'manual'`), on the mistaken premise that
+ * manually-entered collateral risk implied a manually-asserted Supply
+ * APR too — a false economy, since no V4-facing form has ever exposed a
+ * `supplyApr` input at all (see `resolveSupplyAprDisplay`'s own doc
+ * comment, `./mapping.ts`, for the full account). Now branches on `.kind`
+ * to render the real value only for a non-V4 portfolio; `'not-applicable'`
+ * for every V4 portfolio, unconditionally — never a stale/fabricated
+ * number, and never inferred from collateral-risk provenance.
  */
 export {
   type PortfolioAction,

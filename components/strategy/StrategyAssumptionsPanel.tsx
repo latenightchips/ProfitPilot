@@ -151,16 +151,19 @@ export function StrategyAssumptionsPanel({
       : riskCapacityDisplay.kind === 'v4Available'
         ? `Collateral Factor ${formatPercent(riskCapacityDisplay.collateralFactor)}`
         : 'Collateral Factor Not available';
-  // "Supply APR" — V4 Readiness Audit §12 P1-1. See
-  // `resolveSupplyAprDisplay`'s own doc comment (`services/portfolio/mapping.ts`):
-  // no V4 boundary this codebase talks to exposes an authoritative supply
-  // rate, so a live V4 portfolio never shows a stale/fabricated number
-  // here.
+  // "Supply APR" — Supply APR Semantic-Boundary Fix, superseding V4
+  // Readiness Audit §12 P1-1. `resolveSupplyAprDisplay` now reports
+  // `'not-applicable'` for every V4 portfolio unconditionally (see its own
+  // doc comment, `services/portfolio/mapping.ts`) — V4 Supply APR is not
+  // a value that could become available later (unlike Collateral Factor
+  // pending sync, shown as "Not available" just above), so this segment
+  // is omitted from the line entirely for V4 rather than reusing that
+  // same "Not available" wording for a fundamentally different state.
   const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
-  const supplyAprText =
+  const supplyAprSegment =
     supplyAprDisplay.kind === 'available'
-      ? formatPercent(supplyAprDisplay.supplyApr)
-      : 'Not available';
+      ? ` · Supply APR ${formatPercent(supplyAprDisplay.supplyApr)}`
+      : '';
   // "Fees, Slippage & Gas Estimate" — V4 Readiness Audit §12 P1-6. Each
   // of the three is independently configured (or not) on the portfolio's
   // own settings — see `types/portfolio.ts`'s `ExecutionCostAssumptionsSettings`.
@@ -190,7 +193,8 @@ export function StrategyAssumptionsPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Protocol Parameters</span>
         <span className="text-muted-foreground">
-          {riskCapacityText} · Borrow APR {borrowAprDisplay} · Supply APR {supplyAprText}
+          {riskCapacityText} · Borrow APR {borrowAprDisplay}
+          {supplyAprSegment}
         </span>
       </div>
 

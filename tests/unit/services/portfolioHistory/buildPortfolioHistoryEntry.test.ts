@@ -177,6 +177,50 @@ describe('buildPortfolioHistoryEntry — V4 isolation', () => {
   });
 });
 
+/**
+ * "Supply APR" — Supply APR Semantic-Boundary Fix. History entries must
+ * never persist a fabricated `protocol.supplyApr` for a V4 portfolio as
+ * if it were genuine data, regardless of `v4CollateralRiskSource` — see
+ * `resolveSupplyAprDisplay`'s own doc comment (`services/portfolio/mapping.ts`)
+ * for the full account of the P1-1 bug this closes.
+ */
+describe('buildPortfolioHistoryEntry — Supply APR (Supply APR Semantic-Boundary Fix)', () => {
+  function v4Portfolio(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
+    return basePortfolio({
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 15000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.01 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+      ...overrides,
+    });
+  }
+
+  it('V3: persists the real protocol.supplyApr, unchanged', () => {
+    const portfolio = basePortfolio();
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.supplyApr).toBe(0.02);
+  });
+
+  it('live V4: never persists the leftover protocol.supplyApr figure', () => {
+    const portfolio = v4Portfolio({ v4CollateralRiskSource: 'live' });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.supplyApr).toBeUndefined();
+  });
+
+  it('manual V4: STILL never persists protocol.supplyApr — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (the exact P1-1 bug this fix closes)', () => {
+    const portfolio = v4Portfolio({ v4CollateralRiskSource: 'manual' });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.supplyApr).toBeUndefined();
+  });
+
+  it('a genuine V3 zero Supply APR remains persisted as zero, not conflated with "unavailable"', () => {
+    const portfolio = basePortfolio({
+      protocol: { maxLoanToValue: 0.75, liquidationThreshold: 0.8, borrowApr: 0.05, supplyApr: 0 },
+    });
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summaryFor(portfolio));
+    expect(entry.supplyApr).toBe(0);
+  });
+});
+
 describe('buildPortfolioHistoryEntry — V4 dataSource provenance polarity (V4 Mixed-Provenance UX batch, requirement F)', () => {
   // `debtAssetPriceUsd` is required whenever `v4DebtStateSource` is 'live'
   // — `checkAaveV4DebtAssetPriceAvailable` (services/portfolio/mapping.ts)

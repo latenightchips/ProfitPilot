@@ -1001,14 +1001,17 @@ describe('resolveRiskCapacityDisplay (Stage 23E)', () => {
 });
 
 /**
- * `resolveSupplyAprDisplay` — V4 Readiness Audit §12 P1-1. No V4 boundary
- * this codebase talks to exposes an authoritative supply rate (verified
- * against the pinned `aave/aave-v4` primary source — see the function's
- * own doc comment), so this is Path B: a live V4 portfolio's
- * `protocol.supplyApr` is always presentation-unavailable, never a stale
- * V3/default leftover.
+ * `resolveSupplyAprDisplay` — V4 Readiness Audit §12 P1-1, corrected by
+ * the Supply APR Semantic-Boundary Fix. No V4 boundary this codebase
+ * talks to exposes an authoritative supply rate (verified against the
+ * pinned `aave/aave-v4` primary source — see the function's own doc
+ * comment), and no V4-facing form ever exposes a `supplyApr` input for a
+ * user to assert one manually either — so `protocol.supplyApr` is
+ * `'not-applicable'` for EVERY V4 portfolio, unconditionally, never
+ * inferred from `v4CollateralRiskSource` (P1-1's own now-corrected
+ * premise) and never a stale V3/default leftover.
  */
-describe('resolveSupplyAprDisplay (P1-1)', () => {
+describe('resolveSupplyAprDisplay (P1-1, corrected by the Supply APR Semantic-Boundary Fix)', () => {
   function v4Application(overrides: Partial<ApplicationPortfolio> = {}): ApplicationPortfolio {
     return {
       collateral: { asset: 'BTC', quantity: 2 },
@@ -1024,7 +1027,7 @@ describe('resolveSupplyAprDisplay (P1-1)', () => {
     };
   }
 
-  it('V3 (or unset protocolVersion): returns the real protocol.supplyApr unchanged', () => {
+  it('V3 (or unset protocolVersion): returns the real protocol.supplyApr unchanged, including a genuine zero', () => {
     expect(resolveSupplyAprDisplay(v4Application({ protocolVersion: 'v3' }))).toEqual({
       kind: 'available',
       supplyApr: 0.031,
@@ -1033,29 +1036,45 @@ describe('resolveSupplyAprDisplay (P1-1)', () => {
       kind: 'available',
       supplyApr: 0.031,
     });
+    // A genuine V3 zero (the user's real, entered/live rate happens to be
+    // 0%) must remain representable as `available` with `supplyApr: 0`,
+    // never collapsed into the V4 `'not-applicable'` case.
+    expect(
+      resolveSupplyAprDisplay(
+        v4Application({
+          protocolVersion: 'v3',
+          protocol: {
+            maxLoanToValue: 0.75,
+            liquidationThreshold: 0.8,
+            borrowApr: 0.05,
+            supplyApr: 0,
+          },
+        }),
+      ),
+    ).toEqual({ kind: 'available', supplyApr: 0 });
   });
 
-  it('manual V4 (v4CollateralRiskSource: "manual"): returns protocol.supplyApr unchanged — manual V4 semantics preserved', () => {
+  it('manual V4 (v4CollateralRiskSource: "manual"): "not-applicable" — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (P1-1\'s own premise corrected)', () => {
     const application = v4Application({
       protocolVersion: 'v4',
       v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
       v4CollateralRiskSource: 'manual',
     });
-    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'available', supplyApr: 0.031 });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'not-applicable' });
   });
 
-  it('live V4 (v4CollateralRiskSource: "live"): unavailable, regardless of the real numeric value stored in protocol.supplyApr — no authoritative V4 source exists', () => {
+  it('live V4 (v4CollateralRiskSource: "live"): "not-applicable", regardless of the real numeric value stored in protocol.supplyApr — no authoritative V4 source exists', () => {
     const application = v4Application({
       protocolVersion: 'v4',
       v4CollateralRisk: { collateralFactor: 0.7, dynamicConfigKey: 2 },
       v4CollateralRiskSource: 'live',
     });
-    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'unavailable' });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'not-applicable' });
   });
 
-  it('V4 with no v4CollateralRiskSource yet (freshly switched from V3, sync not yet completed): unavailable — never exposes the inherited pre-V4 number', () => {
+  it('V4 with no v4CollateralRiskSource yet (freshly switched from V3, sync not yet completed): "not-applicable" — never exposes the inherited pre-V4 number', () => {
     const application = v4Application({ protocolVersion: 'v4' });
-    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'unavailable' });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'not-applicable' });
   });
 
   it('regression: a portfolio with a plausible non-zero supplyApr that live-syncs to V4 must not keep presenting that old value as current V4 data', () => {
@@ -1076,9 +1095,29 @@ describe('resolveSupplyAprDisplay (P1-1)', () => {
       v4CollateralRiskSource: 'live',
     });
     const result = resolveSupplyAprDisplay(wasV3ThenLiveSyncedToV4);
-    expect(result.kind).toBe('unavailable');
+    expect(result.kind).toBe('not-applicable');
     // Explicitly not the old 0.045 figure, and not fabricated 0 either.
     expect(result).not.toHaveProperty('supplyApr');
+  });
+
+  it('regression: a V4 portfolio whose manual collateral risk was entered does NOT thereby present protocol.supplyApr as a genuine V4 assertion (the exact P1-1 bug this fix closes)', () => {
+    // The precise scenario the original P1-1 gate got wrong: a user
+    // manually entering the V4 collateral-risk fieldset never touches
+    // `protocol.supplyApr` at all (no V4-facing form exposes that field),
+    // yet P1-1 treated `v4CollateralRiskSource: 'manual'` as license to
+    // show whatever inert placeholder happened to be stored there.
+    const application = v4Application({
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0, // NewPortfolioPageClient.tsx's fixed V4 placeholder
+      },
+      protocolVersion: 'v4',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+      v4CollateralRiskSource: 'manual',
+    });
+    expect(resolveSupplyAprDisplay(application)).toEqual({ kind: 'not-applicable' });
   });
 
   it('does not mutate protocol.supplyApr itself — presentation-layer gate only, the underlying required field is untouched', () => {
@@ -1112,11 +1151,11 @@ describe('resolveSupplyAprDisplay (P1-1)', () => {
       },
       protocolVersion: 'v3',
     });
-    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'unavailable' });
+    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'not-applicable' });
     expect(resolveSupplyAprDisplay(v3)).toEqual({ kind: 'available', supplyApr: 0.06 });
     // Re-checking the first call's portfolio again, after resolving a
     // second, different portfolio in between — must still be independent.
-    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'unavailable' });
+    expect(resolveSupplyAprDisplay(liveV4)).toEqual({ kind: 'not-applicable' });
   });
 });
 

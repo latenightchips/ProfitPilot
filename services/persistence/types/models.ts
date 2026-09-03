@@ -227,7 +227,7 @@ export interface PersistedPortfolioHistoryEntry {
   leverage: number;
   /** `undefined` only when genuinely unavailable (a V4 portfolio with no synced debt state yet) — never a fabricated 0. */
   borrowApr?: number;
-  /** `undefined` for a V4 portfolio without a trusted (manual) collateral-risk source — mirrors `resolveSupplyAprDisplay`'s own unavailable case, never a stale/fabricated V3-shaped number. */
+  /** `undefined` for every V4 portfolio, unconditionally — mirrors `resolveSupplyAprDisplay`'s own `'not-applicable'` case, never a stale/fabricated V3-shaped number. */
   supplyApr?: number;
   annualizedInterestCost: number;
   dataSource: 'manual' | 'live';

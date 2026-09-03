@@ -342,14 +342,16 @@ describe('buildSimulationExportPayload — V4 canonical Borrow APR (Stage 22)', 
 });
 
 /**
- * "Supply APR" — V4 Readiness Audit §12 P1-1. No V4 boundary this
- * codebase talks to exposes an authoritative supply rate, so a live V4
- * portfolio must never export the inherited/leftover `protocol.supplyApr`
- * figure. `protocol.supplyApr: 0.045` deliberately non-zero and distinct
- * from `PORTFOLIO`'s own `0.02`, the same fixture discipline the Borrow
- * APR block above already established.
+ * "Supply APR" — V4 Readiness Audit §12 P1-1, corrected by the Supply
+ * APR Semantic-Boundary Fix. No V4 boundary this codebase talks to
+ * exposes an authoritative supply rate, and no V4-facing form ever lets
+ * a user assert one manually either — so a V4 portfolio must never
+ * export `protocol.supplyApr`, regardless of `v4CollateralRiskSource`
+ * (P1-1's own now-corrected premise). `protocol.supplyApr: 0.045`
+ * deliberately non-zero and distinct from `PORTFOLIO`'s own `0.02`, the
+ * same fixture discipline the Borrow APR block above already established.
  */
-describe('buildSimulationExportPayload — Supply APR (P1-1)', () => {
+describe('buildSimulationExportPayload — Supply APR (P1-1, corrected by the Supply APR Semantic-Boundary Fix)', () => {
   const LIVE_V4_PORTFOLIO: ApplicationPortfolio = {
     ...PORTFOLIO,
     protocol: { ...PORTFOLIO.protocol, supplyApr: 0.045 },
@@ -416,7 +418,7 @@ describe('buildSimulationExportPayload — Supply APR (P1-1)', () => {
     expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
   });
 
-  it('exports the real protocol.supplyApr for manual V4 — manual semantics preserved', () => {
+  it('STILL exports null/"Not available" for manual V4 — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (the exact P1-1 bug this fix closes)', () => {
     const manualV4: ApplicationPortfolio = {
       ...LIVE_V4_PORTFOLIO,
       v4CollateralRiskSource: 'manual',
@@ -428,7 +430,11 @@ describe('buildSimulationExportPayload — Supply APR (P1-1)', () => {
       metadata,
       manualV4,
     );
-    expect(payload.assumptions.protocolParameters.supplyApr).toBe(0.045);
+    expect(payload.assumptions.protocolParameters.supplyApr).toBeNull();
+
+    const csv = buildSimulationExportCsv(payload);
+    expect(csv).toContain('Supply APR,Not available');
+    expect(csv).not.toContain('Supply APR,0.045');
   });
 
   it('a V3 (or unset) portfolio is completely unaffected — still exports the real protocol.supplyApr', () => {

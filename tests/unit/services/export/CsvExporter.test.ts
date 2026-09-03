@@ -170,14 +170,18 @@ describe('buildPortfolioPositionsCsv — V4 risk-capacity columns (Stage 23E)', 
 });
 
 /**
- * "Supply APR" column — V4 Readiness Audit §12 P1-1. No V4 boundary this
- * codebase talks to exposes an authoritative supply rate, so a live V4
- * portfolio must never export the inherited/leftover `protocol.supplyApr`
- * figure. Column index 11 (Portfolio ID, Name, Collateral Asset,
- * Collateral Quantity, Debt Asset, Debt Balance, BTC Price, Max LTV,
- * Liquidation Threshold, Collateral Factor, Borrow APR, Supply APR).
+ * "Supply APR" column — V4 Readiness Audit §12 P1-1, corrected by the
+ * Supply APR Semantic-Boundary Fix. No V4 boundary this codebase talks
+ * to exposes an authoritative supply rate, and no V4-facing form ever
+ * lets a user assert one manually either — so a V4 portfolio must never
+ * export `protocol.supplyApr`, regardless of `v4CollateralRiskSource`
+ * (P1-1's own now-corrected premise that manual collateral risk implied
+ * a manual Supply APR assertion). Column index 11 (Portfolio ID, Name,
+ * Collateral Asset, Collateral Quantity, Debt Asset, Debt Balance, BTC
+ * Price, Max LTV, Liquidation Threshold, Collateral Factor, Borrow APR,
+ * Supply APR).
  */
-describe('buildPortfolioPositionsCsv — Supply APR (P1-1)', () => {
+describe('buildPortfolioPositionsCsv — Supply APR (P1-1, corrected by the Supply APR Semantic-Boundary Fix)', () => {
   function sampleV4PortfolioWithRiskSource(
     v4CollateralRiskSource: 'manual' | 'live' | undefined,
   ): Portfolio {
@@ -204,10 +208,10 @@ describe('buildPortfolioPositionsCsv — Supply APR (P1-1)', () => {
     expect(fields[11]).toBe('Not available');
   });
 
-  it('exports the real protocol.supplyApr for a manual V4 portfolio, manual semantics preserved', () => {
+  it('STILL exports "Not available" for a manual V4 portfolio, never the leftover protocol.supplyApr (0.02) — manually asserting collateralFactor is not the same as asserting protocol.supplyApr (the exact P1-1 bug this fix closes)', () => {
     const csv = buildPortfolioPositionsCsv([sampleV4PortfolioWithRiskSource('manual')]);
     const fields = csv.split('\n')[1]!.split(',');
-    expect(fields[11]).toBe('0.02');
+    expect(fields[11]).toBe('Not available');
   });
 
   it('a V3 portfolio is completely unaffected — still exports the raw protocol.supplyApr directly', () => {
@@ -218,6 +222,18 @@ describe('buildPortfolioPositionsCsv — Supply APR (P1-1)', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
     const fields = csv.split('\n')[1]!.split(',');
     expect(fields[11]).toBe('0.02');
+  });
+
+  it('a genuine V3 zero Supply APR remains representable as zero, not conflated with "unavailable"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Zero Portfolio',
+        protocol: { ...samplePortfolio().protocol, supplyApr: 0 },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[11]).toBe('0');
   });
 });
 
