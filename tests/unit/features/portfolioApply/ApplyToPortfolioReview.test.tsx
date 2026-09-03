@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApplyToPortfolioReview } from '@/features/portfolioApply';
 import { calculatePortfolioSummary, type PortfolioApplyProposal } from '@/services';
+import { unchangedAssumptionsFor } from '@/services/portfolioApply/unchangedAssumptions';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -100,6 +101,32 @@ describe('ApplyToPortfolioReview — content', () => {
     for (const assumption of proposal.unchangedAssumptions) {
       expect(screen.getByText(assumption)).toBeInTheDocument();
     }
+  });
+
+  /**
+   * Supply APR Semantic-Boundary Fix follow-up (batch A2) — end-to-end
+   * proof that the real `unchangedAssumptionsFor('v4')` output (not a
+   * hand-crafted fixture) never reaches the DOM with "supply APR" for a
+   * V4 proposal, and that its real replacement wording does render.
+   */
+  it('renders the real V4 unchanged-assumptions wording, never mentioning "supply APR"', () => {
+    const portfolio = createValidPortfolio();
+    const proposal = {
+      ...proposalFor(portfolio, 3, 30000),
+      unchangedAssumptions: unchangedAssumptionsFor('v4'),
+    };
+    render(
+      <ApplyToPortfolioReview
+        portfolio={portfolio}
+        proposal={proposal}
+        onApplied={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText('Aave V4 base drawn APR and risk premium')).toBeInTheDocument();
+    expect(screen.getByText('Aave V4 collateral-risk configuration')).toBeInTheDocument();
+    expect(screen.getByText('Aave V4 on-chain position identity')).toBeInTheDocument();
+    expect(screen.queryByText(/supply APR/i)).not.toBeInTheDocument();
   });
 
   it('renders "No liquidation risk" and "∞" for a full-repay (zero-debt) proposal, not a fabricated number', () => {

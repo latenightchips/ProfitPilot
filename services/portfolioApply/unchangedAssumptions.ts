@@ -18,15 +18,37 @@
  * neither of which ever reassigns `market`/`protocol`), and — for V4 —
  * `v4CollateralRisk`/`v4Position` are carried forward unchanged too (no
  * apply workflow proposes a collateral-risk or on-chain-identity change).
+ *
+ * **V4's interest-rate line no longer names "supply APR" (Supply APR
+ * Semantic-Boundary Fix follow-up, batch A2).** `protocol.supplyApr` is
+ * never a genuine V4 concept at all — see `resolveSupplyAprDisplay`'s own
+ * doc comment (`services/portfolio/mapping.ts`) — so telling a V4 user
+ * it is one of the assumptions "staying unchanged" implied a real V4
+ * value was being preserved, when none exists. The V4 line instead names
+ * `v4DebtState.baseDrawnApr`/`.riskPremium` — V4's real rate inputs,
+ * genuinely carried forward unchanged by `deriveV4DebtStateAfterDelta`'s
+ * own repayment branch (`services/portfolio/mapping.ts`: only
+ * `drawnDebt`/`premiumDebt` change on repayment; `baseDrawnApr`/
+ * `riskPremium` are copied through as-is), using the same "Base drawn
+ * APR"/"Risk premium" vocabulary the rest of the app already establishes
+ * (`NewPortfolioV4Fields.tsx`, `ManualAaveV4StateForm.tsx`,
+ * `V4ProvenanceDetail.tsx`). V3's line is untouched, byte-for-byte.
  */
 export const SOURCE_STATUS = 'manual';
 
 export function unchangedAssumptionsFor(protocolVersion: 'v3' | 'v4'): readonly string[] {
-  const base = ['Market price', 'Protocol interest rates (borrow/supply APR)'];
+  const base = ['Market price'];
   if (protocolVersion === 'v4') {
-    base.push('Aave V4 collateral-risk configuration', 'Aave V4 on-chain position identity');
+    base.push(
+      'Aave V4 base drawn APR and risk premium',
+      'Aave V4 collateral-risk configuration',
+      'Aave V4 on-chain position identity',
+    );
   } else {
-    base.push('Loan-to-value and liquidation-threshold parameters');
+    base.push(
+      'Protocol interest rates (borrow/supply APR)',
+      'Loan-to-value and liquidation-threshold parameters',
+    );
   }
   return base;
 }
