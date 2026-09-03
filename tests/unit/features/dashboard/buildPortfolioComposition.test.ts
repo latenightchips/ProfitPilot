@@ -322,24 +322,31 @@ describe('buildPortfolioComposition — V4 risk-capacity display (Stage 23E)', (
 });
 
 /**
- * "Supply APR" display — V4 Readiness Audit §12 P1-1. No V4 boundary
- * this codebase talks to exposes an authoritative supply rate, so a live
- * V4 portfolio must never keep showing the inherited/leftover
- * `protocol.supplyApr` number. Mirrors the `resolveSupplyAprDisplay`
- * (`services/portfolio/mapping.ts`) unit tests, at the Dashboard
- * formatting layer.
+ * "Supply APR" display — Dashboard V3/V4 Semantic Isolation audit,
+ * superseding V4 Readiness Audit §12 P1-1's own fix. No V4 boundary this
+ * codebase talks to exposes an authoritative supply rate, and — unlike
+ * P1-1's own premise — there is no V4 case, live or manual, where
+ * `protocol.supplyApr` is ever a genuine user assertion: it is a fixed,
+ * inert `0` placeholder `NewPortfolioPageClient.tsx` writes once at V4
+ * creation and no V4-facing form ever exposes for editing afterward.
+ * `formattedSupplyApr` is therefore absent from the `PortfolioCompositionProtocolParameters`
+ * type for both V4 branches (`v4Available`/`v4Unavailable`) — not merely
+ * formatted as "—" — so V3's own property access below only compiles
+ * because TypeScript already knows `composition.protocolParameters.kind`
+ * is `'v3'` at that point.
  */
-describe('buildPortfolioComposition — Supply APR (P1-1)', () => {
+describe('buildPortfolioComposition — Supply APR (Dashboard V3/V4 Semantic Isolation audit)', () => {
   it('V3: shows the real protocol.supplyApr percentage, unchanged', () => {
     const { portfolio, summary, marketFreshness, tracked } = buildOk();
     const composition = buildPortfolioComposition(portfolio, summary, marketFreshness, tracked);
+    expect(composition.protocolParameters.kind).toBe('v3');
+    if (composition.protocolParameters.kind !== 'v3') return;
     expect(composition.protocolParameters.formattedSupplyApr).toBe('2%');
   });
 
-  it('live V4 (setAaveV4CollateralRisk\'s own default source): shows "—", never the leftover protocol.supplyApr figure', () => {
+  it("live V4 (setAaveV4CollateralRisk's own default source): Supply APR is entirely absent, never the leftover protocol.supplyApr figure", () => {
     // `setAaveV4CollateralRisk` with no explicit `source` argument
-    // defaults to `'live'` (`stores/portfolioStore.ts`'s own default) —
-    // exactly the case this fix targets.
+    // defaults to `'live'` (`stores/portfolioStore.ts`'s own default).
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
@@ -367,10 +374,11 @@ describe('buildPortfolioComposition — Supply APR (P1-1)', () => {
         formulaVersion: record.summary.metadata.formulaVersion,
       },
     );
-    expect(composition.protocolParameters.formattedSupplyApr).toBe('—');
+    expect(composition.protocolParameters.kind).toBe('v4Available');
+    expect('formattedSupplyApr' in composition.protocolParameters).toBe(false);
   });
 
-  it('V4 with no v4CollateralRisk synced yet: shows "—", not the inherited V3/default figure', () => {
+  it('V4 with no v4CollateralRisk synced yet: Supply APR is entirely absent, not the inherited V3/default figure', () => {
     const { portfolio, summary, marketFreshness, tracked } = buildOk();
     const v4PortfolioMissingRisk = { ...portfolio, protocolVersion: 'v4' as const };
     const composition = buildPortfolioComposition(
@@ -379,10 +387,11 @@ describe('buildPortfolioComposition — Supply APR (P1-1)', () => {
       marketFreshness,
       tracked,
     );
-    expect(composition.protocolParameters.formattedSupplyApr).toBe('—');
+    expect(composition.protocolParameters.kind).toBe('v4Unavailable');
+    expect('formattedSupplyApr' in composition.protocolParameters).toBe(false);
   });
 
-  it('manual V4 (v4CollateralRiskSource explicitly "manual"): shows the real protocol.supplyApr percentage, manual semantics preserved', () => {
+  it('manual V4 (v4CollateralRiskSource explicitly "manual"): Supply APR is STILL entirely absent — manually asserting collateralFactor is not the same as asserting protocol.supplyApr', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
@@ -414,6 +423,7 @@ describe('buildPortfolioComposition — Supply APR (P1-1)', () => {
         formulaVersion: record.summary.metadata.formulaVersion,
       },
     );
-    expect(composition.protocolParameters.formattedSupplyApr).toBe('2%');
+    expect(composition.protocolParameters.kind).toBe('v4Available');
+    expect('formattedSupplyApr' in composition.protocolParameters).toBe(false);
   });
 });

@@ -134,7 +134,17 @@ export function PortfolioCompositionSection({
             <span>Collateral Factor: —</span>
           )}
           <span>Borrow APR: {composition.protocolParameters.formattedBorrowApr}</span>
-          <span>Supply APR: {composition.protocolParameters.formattedSupplyApr}</span>
+          {/* Dashboard V3/V4 Semantic Isolation audit — Supply APR is V3
+              only. No Aave V4 boundary this codebase talks to exposes an
+              authoritative supply rate, and `protocol.supplyApr` for a V4
+              portfolio is a fixed, inert placeholder no form ever lets a
+              user assert — see `PortfolioCompositionProtocolParameters`'s
+              own doc comment for the full reasoning. Omitted for V4
+              entirely rather than shown as "—", so this row never implies
+              a real V4 concept exists where none does. */}
+          {composition.protocolParameters.kind === 'v3' && (
+            <span>Supply APR: {composition.protocolParameters.formattedSupplyApr}</span>
+          )}
         </div>
       </div>
     </div>

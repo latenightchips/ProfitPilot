@@ -253,7 +253,9 @@ export function DashboardPageClient() {
       : null;
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
   const dataFreshnessIndicators =
-    viewModel !== null ? buildDataFreshnessIndicators(viewModel.freshness) : null;
+    viewModel !== null && record !== undefined
+      ? buildDataFreshnessIndicators(viewModel.freshness, record.portfolio.protocolVersion)
+      : null;
   const quickActions = viewModel !== null ? buildQuickActions(viewModel.ok) : null;
   const protocolStatus =
     record !== undefined

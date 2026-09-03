@@ -711,3 +711,93 @@ describe('DashboardPage — V3/V4 live-sync route isolation (Stage 13)', () => {
     ).toHaveBeenCalledWith(V4_ADDRESS);
   });
 });
+
+/**
+ * Dashboard V3/V4 Semantic Isolation audit — DOM-level regression coverage.
+ * "We must not expose V3-only terminology or assumptions as though they
+ * describe V4." Builds on the same fully-live V4 fixture the "Aave
+ * protocol version labeling" describe block above already established
+ * (address set, debt state + collateral risk both synced and ready), so
+ * every panel that depends on a successful summary (Portfolio
+ * Composition, Liquidation Risk) actually renders its real content
+ * instead of an "unavailable" placeholder.
+ */
+function selectFullyLiveV4Portfolio(): string {
+  const created = usePortfolioStore.getState().create(validInput());
+  if (!created.ok) throw new Error('setup failed');
+  usePortfolioStore.getState().select(created.data.id);
+  usePortfolioStore.getState().setProtocolVersion(created.data.id, 'v4');
+  usePortfolioStore.getState().setAaveV4Position(created.data.id, { userAddress: V4_ADDRESS });
+  usePortfolioStore.getState().setAaveV4DebtState(created.data.id, {
+    drawnDebt: 15000,
+    premiumDebt: 500,
+    baseDrawnApr: 0.05,
+    riskPremium: 0.01,
+    debtAssetPriceUsd: 1.0,
+  });
+  useAaveV4LiveDataStore.setState({ status: 'ready' });
+  usePortfolioStore
+    .getState()
+    .setAaveV4CollateralRisk(created.data.id, { collateralFactor: 0.8, dynamicConfigKey: 1 });
+  useAaveV4CollateralRiskLiveDataStore.setState({ status: 'ready' });
+  return created.data.id;
+}
+
+describe('DashboardPage — V3/V4 semantic isolation (Dashboard V3/V4 Semantic Isolation audit)', () => {
+  it('a V4 portfolio never renders "Supply APR" anywhere on the Dashboard', () => {
+    selectFullyLiveV4Portfolio();
+    render(<DashboardPage />);
+
+    expect(screen.queryByText(/Supply APR/)).not.toBeInTheDocument();
+  });
+
+  it('a V4 portfolio never renders "Maximum LTV" or "Liquidation Threshold" — shows "Collateral Factor" instead', () => {
+    selectFullyLiveV4Portfolio();
+    render(<DashboardPage />);
+
+    expect(screen.queryByText(/Maximum LTV/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Liquidation Threshold/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Collateral Factor: 80%/)).toBeInTheDocument();
+  });
+
+  it("a V4 portfolio's Liquidation Risk assumptions copy names collateral factor, never borrow/supply APR or max LTV/liquidation threshold", () => {
+    selectFullyLiveV4Portfolio();
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/Aave V4 collateral factor/)).toBeInTheDocument();
+    expect(screen.queryByText(/borrow APR, supply APR/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/maximum LTV, liquidation threshold/)).not.toBeInTheDocument();
+  });
+
+  it('a V4 portfolio\'s refresh note never names "Aave V3"', () => {
+    selectFullyLiveV4Portfolio();
+    render(<DashboardPage />);
+
+    expect(screen.queryByText(/Aave V3 live snapshot/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Aave V4 debt and collateral-risk data syncs automatically/),
+    ).toBeInTheDocument();
+  });
+
+  it('control: a V3 (unset protocolVersion) portfolio keeps every existing Dashboard string byte-identical', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/Maximum LTV: 75%/)).toBeInTheDocument();
+    expect(screen.getByText(/Liquidation Threshold: 80%/)).toBeInTheDocument();
+    expect(screen.getByText(/Supply APR: 2%/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Assumes the current BTC price and protocol parameters (borrow APR, supply APR, maximum LTV, liquidation threshold) remain unchanged. These estimates recalculate automatically whenever the underlying portfolio data changes.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '"Refresh" fetches the latest Aave V3 live snapshot and recalculates your portfolio summary — it cannot fail in a way that erases or replaces your collateral quantity, debt asset, or debt amount.',
+      ),
+    ).toBeInTheDocument();
+  });
+});

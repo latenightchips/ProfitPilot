@@ -74,24 +74,35 @@ function formatDebtQuantity(portfolio: Portfolio): string {
  * (`formatPercent`) is local to this Dashboard util, consistent with the
  * Service layer's own "never format for display" rule.
  *
- * **"Supply APR" — V4 Readiness Audit §12 P1-1.** Previously always
- * `formatPercent(portfolio.protocol.supplyApr)` unconditionally — for a
- * live V4 portfolio this could be a stale leftover from before the
- * portfolio became V4, never a real V4 value (no V4 boundary this
- * codebase talks to exposes an authoritative supply rate at all — see
- * `resolveSupplyAprDisplay`'s own doc comment). `'—'` (the same
- * fail-closed convention `formatBorrowRate`/`formatDebtQuantity` above
- * already established) rather than a stale/fabricated number.
+ * **"Supply APR" is V3-only (Dashboard V3/V4 Semantic Isolation audit,
+ * superseding V4 Readiness Audit §12 P1-1's own fix).** P1-1 made this
+ * `'—'` for an "untrusted" V4 portfolio (`v4CollateralRiskSource !==
+ * 'manual'`) while still showing `portfolio.protocol.supplyApr` as a real
+ * "available" value whenever collateral risk WAS manually entered — but
+ * that conflates two unrelated fields. `v4CollateralRiskSource` describes
+ * only the collateral-factor assertion; it says nothing about
+ * `protocol.supplyApr`, which for V4 is a fixed, inert `0` placeholder
+ * `NewPortfolioPageClient.tsx` writes once at creation and no V4-facing
+ * form (`NewPortfolioV4Fields.tsx`/`ManualAaveV4StateForm.tsx`) ever
+ * exposes for editing — there is no path, manual-collateral-risk or
+ * otherwise, by which a V4 portfolio's `protocol.supplyApr` can ever be a
+ * genuine user assertion. Confirmed via `resolveSupplyAprDisplay`'s own
+ * doc comment too: no V4 boundary this codebase talks to exposes an
+ * authoritative supply rate at all, live or manual. So this Dashboard
+ * panel never calls `resolveSupplyAprDisplay` for a V4 portfolio at all —
+ * V3 still calls it exactly as before (see `PortfolioCompositionProtocolParameters`'s
+ * own doc comment for why the field is dropped from the V4 branches'
+ * shape entirely, not just formatted as "—").
  */
 function formatProtocolParameters(
   portfolio: Portfolio,
   formattedBorrowApr: string,
 ): PortfolioCompositionProtocolParameters {
   const display = resolveRiskCapacityDisplay(portfolio);
-  const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
-  const formattedSupplyApr =
-    supplyAprDisplay.kind === 'available' ? formatPercent(supplyAprDisplay.supplyApr) : '—';
   if (display.kind === 'v3') {
+    const supplyAprDisplay = resolveSupplyAprDisplay(portfolio);
+    const formattedSupplyApr =
+      supplyAprDisplay.kind === 'available' ? formatPercent(supplyAprDisplay.supplyApr) : '—';
     return {
       kind: 'v3',
       formattedMaxLoanToValue: formatPercent(display.maxLoanToValue),
@@ -105,10 +116,9 @@ function formatProtocolParameters(
       kind: 'v4Available',
       formattedCollateralFactor: formatPercent(display.collateralFactor),
       formattedBorrowApr,
-      formattedSupplyApr,
     };
   }
-  return { kind: 'v4Unavailable', formattedBorrowApr, formattedSupplyApr };
+  return { kind: 'v4Unavailable', formattedBorrowApr };
 }
 
 export function buildPortfolioComposition(

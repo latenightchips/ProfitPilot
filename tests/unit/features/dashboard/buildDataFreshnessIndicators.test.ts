@@ -28,7 +28,7 @@ const PROTOCOL: DashboardFreshness['protocol'] = {
 
 describe('buildDataFreshnessIndicators — market and protocol both available', () => {
   it('maps fresh market data and reports no freshness classification for protocol data', () => {
-    const result = buildDataFreshnessIndicators({ market: FRESH_MARKET, protocol: PROTOCOL });
+    const result = buildDataFreshnessIndicators({ market: FRESH_MARKET, protocol: PROTOCOL }, 'v3');
 
     expect(result.market).toEqual({
       label: 'BTC Price',
@@ -48,15 +48,44 @@ describe('buildDataFreshnessIndicators — market and protocol both available', 
   });
 
   it('maps stale market data', () => {
-    const result = buildDataFreshnessIndicators({ market: STALE_MARKET, protocol: PROTOCOL });
+    const result = buildDataFreshnessIndicators({ market: STALE_MARKET, protocol: PROTOCOL }, 'v3');
     expect(result.market?.freshnessLabel).toBe('Stale');
   });
 });
 
 describe('buildDataFreshnessIndicators — practically-unreachable unavailable cases', () => {
   it('returns null for both when freshness is null', () => {
-    const result = buildDataFreshnessIndicators({ market: null, protocol: null });
+    const result = buildDataFreshnessIndicators({ market: null, protocol: null }, 'v3');
     expect(result.market).toBeNull();
     expect(result.protocol).toBeNull();
+  });
+});
+
+describe('buildDataFreshnessIndicators — V3/V4 refreshNote dispatch (Dashboard V3/V4 Semantic Isolation audit)', () => {
+  it('names "Aave V3" in the refresh note for a V3 (or unset) portfolio — byte-identical to before this audit', () => {
+    const resultUnset = buildDataFreshnessIndicators(
+      { market: FRESH_MARKET, protocol: PROTOCOL },
+      undefined,
+    );
+    const resultV3 = buildDataFreshnessIndicators(
+      { market: FRESH_MARKET, protocol: PROTOCOL },
+      'v3',
+    );
+    expect(resultUnset.refreshNote).toBe(
+      '"Refresh" fetches the latest Aave V3 live snapshot and recalculates your portfolio summary — it cannot fail in a way that erases or replaces your collateral quantity, debt asset, or debt amount.',
+    );
+    expect(resultV3.refreshNote).toBe(resultUnset.refreshNote);
+  });
+
+  it('never names "Aave V3" in the refresh note for a V4 portfolio', () => {
+    const result = buildDataFreshnessIndicators({ market: FRESH_MARKET, protocol: null }, 'v4');
+    expect(result.refreshNote).not.toContain('Aave V3');
+    expect(result.refreshNote.length).toBeGreaterThan(0);
+  });
+
+  it('describes the real V4 mechanism (background sync, not the Refresh button) rather than reusing V3 wording', () => {
+    const result = buildDataFreshnessIndicators({ market: FRESH_MARKET, protocol: null }, 'v4');
+    expect(result.refreshNote).toContain('Aave V4');
+    expect(result.refreshNote).toContain('automatically');
   });
 });

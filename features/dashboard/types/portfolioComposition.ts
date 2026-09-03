@@ -50,6 +50,21 @@ export interface PortfolioCompositionRow {
  * `buildPortfolioComposition.ts` resolves via that shared Service-layer
  * helper and only adds its own local formatting here, never re-deriving
  * the V3/V4 branch itself.
+ *
+ * **`formattedSupplyApr` exists only on `v3` (Dashboard V3/V4 Semantic
+ * Isolation audit).** No Aave V4 boundary this codebase talks to exposes
+ * an authoritative supply rate at all (`resolveSupplyAprDisplay`'s own
+ * doc comment, `services/portfolio/mapping.ts`), and — specific to this
+ * Dashboard — `protocol.supplyApr` is never even a genuine user assertion
+ * for a V4 portfolio: `NewPortfolioPageClient.tsx` force-sets it to a
+ * fixed, inert `0` placeholder the instant V4 is selected and never
+ * exposes a field to edit it afterward for V4 (`ManualAaveV4StateForm.tsx`/
+ * `NewPortfolioV4Fields.tsx` have no `supplyApr` input at all). Showing
+ * "Supply APR: 0%" for a V4 portfolio therefore isn't a stale-but-once-
+ * real V3 number — it is a fabricated value that was never entered by
+ * anyone, for any portfolio, ever. Removed from the type entirely (not
+ * formatted as "—") so a future caller cannot accidentally resurrect it
+ * for V4 by supplying a placeholder string.
  */
 export type PortfolioCompositionProtocolParameters =
   | {
@@ -63,12 +78,10 @@ export type PortfolioCompositionProtocolParameters =
       kind: 'v4Available';
       formattedCollateralFactor: string;
       formattedBorrowApr: string;
-      formattedSupplyApr: string;
     }
   | {
       kind: 'v4Unavailable';
       formattedBorrowApr: string;
-      formattedSupplyApr: string;
     };
 
 export interface PortfolioComposition {
