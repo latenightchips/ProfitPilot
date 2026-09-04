@@ -13,13 +13,64 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.7.0
+## Version 1.8.0
 
-**Current release.** Promotes the Dashboard Health Factor Trend
+**Current release.** Promotes the Dashboard Liquidation Buffer Trend
 Visibility batch below out of Unreleased status — built, tested, and
-independently re-verified (4155/4155 tests passing, both in the
+independently re-verified (4169/4169 tests passing, both in the
 implementation worktree and again after applying the delivered patch to
 a clean checkout) in the same batch that produced it, not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.8.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.8.0]` entry for
+the full record. Everything in "Version 1.7.0" and earlier below still
+applies; this section covers only what is new since 1.7.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.8.0
+
+- **The Dashboard now shows a Liquidation Buffer Trend chart**, directly
+  below the existing Liquidation Risk panel, completing the risk-trend
+  pairing started by v1.7.0's Health Factor Trend chart — reading the
+  same already-persisted Portfolio History `marketPriceUsd`/
+  `liquidationPriceUsd` values `PortfolioHistoryPanel.tsx` already
+  charts, through the identical service call. No new persistence path.
+- **Reuses the v1.6.0 `calculateLiquidationBufferPercent` helper
+  verbatim** — never the Engine's separate, live-computed F-025
+  `calculateLiquidationBuffer`, which continues unchanged as
+  `LiquidationRiskPanel`'s own current-value figure.
+- **Presentation/read-layer only** — every plotted value comes directly
+  from an already-persisted history entry, never recomputed from
+  today's portfolio state or a new formula.
+- **No Health Factor risk-band classification is introduced.**
+  Conflict #1 remains exactly as unresolved as before.
+- **Explicit non-chart states**: zero entries reads "No Liquidation
+  Buffer history yet"; a single entry shows its own value as plain text
+  rather than a fabricated one-point line; 2+ entries render an
+  accessible, chronologically ordered chart.
+- **`null` (zero-debt, or an unavailable denominator per the existing
+  helper's own contract) renders "No liquidation risk," never a
+  fabricated `0%`, `NaN`, or `Infinity`.** Positive, zero, and negative
+  buffers are all shown without clamping.
+
+### Explicitly unchanged in 1.8.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine file changed, no new protocol
+API call, no V3/V4 semantic change (the chart never branches on
+protocol version), still no live wallet connection or transaction
+execution, still no cloud backup or synchronization, still no publicly
+operated production deployment. Collateral quantity and debt balance
+remain always-manual for both protocol versions.
+
+## Version 1.7.0 (previous release)
+
+Promoted the Dashboard Health Factor Trend Visibility batch described
+below out of Unreleased status — built, tested, and independently
+re-verified (4155/4155 tests passing, both in the implementation
+worktree and again after applying the delivered patch to a clean
+checkout) in the same batch that produced it, not a fresh
 Milestone-9/V1.1-style Release Candidate process with its own new manual
 exploratory pass. See `PROJECT_STATUS.md`'s "v1.7.0 Release
 Reconciliation" section and `docs/CHANGELOG.md`'s `[1.7.0]` entry for
@@ -391,9 +442,14 @@ limitations" section for the complete, classified list. Summarized:
 - Automated cross-browser test coverage is Chromium-only; Firefox/Safari
   are covered by code-level review (`docs/CROSS_BROWSER_REVIEW.md`), not
   automated tests.
-- CI does not yet run the end-to-end (Playwright) test suite
-  automatically — it is run manually before every release (`docs/DEFECT_CLASSIFICATION.md`
-  §6, classified non-blocking).
+- CI runs a blocking production smoke gate on every PR/push
+  (`.github/workflows/ci.yml`); the full end-to-end (Playwright) test
+  suite runs as a separate, manual release gate
+  (`.github/workflows/e2e-full.yml`), not automatically on every push
+  (`docs/DEFECT_CLASSIFICATION.md` §6, classified non-blocking).
+  Corrected in v1.8.0's release reconciliation — this bullet previously
+  understated the smoke gate that already existed by that point
+  (Post-M10 hardening, R1-3/R2-4).
 - No public production deployment exists for Version 1.0.0 (see
   "Deployment" below).
 

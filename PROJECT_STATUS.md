@@ -14002,6 +14002,167 @@ infrastructure work was introduced by the stale-doc cleanup above.
 
 ---
 
+## v1.8.0 Release Reconciliation — Dashboard Liquidation Buffer Trend Visibility
+
+**Recorded at the time it happened**, the same convention the `v1.7.0`
+section above already used — this section documents one batch,
+`b471b57` ("liquidationbuffertrend"), applied directly on top of `v1.7.0`
+(`e6876ee`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.8.0`. Versions `1.0.0` through `1.7.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.7.0` to `1.8.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.8.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: the chart is presentation/
+read-layer only, reusing the v1.6.0 helper verbatim, computing nothing
+new and persisting nothing new. **No `v1.8.0` git tag exists yet** —
+tagging is a separate, explicit step for after this patch is applied and
+synced, not taken by this batch (see this batch's own final report for
+the exact recommended tag command).
+
+### Origin: Post-v1.7.0 Decision-Point Audit
+
+A read-only audit (same date) recommended completing the Dashboard's
+risk-trend pairing `v1.7.0` started: Health Factor already had a
+Dashboard trend chart; Liquidation Buffer — already computed by the
+v1.6.0 service-layer helper and already charted in Portfolio History —
+did not. It recommended closing `v1.8.0` with one batch adding a
+sibling Dashboard component mirroring `HealthFactorTrendSection.tsx`'s
+exact architecture, which this reconciliation batch documents.
+
+### Batch 1 — Dashboard Liquidation Buffer Trend Visibility (`b471b57`)
+
+- **`features/dashboard/components/LiquidationBufferTrendSection.tsx`
+  (new)**: reads `listPortfolioHistoryForPortfolio` directly — the
+  identical service call `HealthFactorTrendSection.tsx` already uses —
+  via local component state and an effect, not a new persistence path or
+  Zustand store. Every plotted value is
+  `calculateLiquidationBufferPercent(entry.marketPriceUsd,
+entry.liquidationPriceUsd)` — the v1.6.0 service-layer helper
+  (`services/portfolioHistory/`) reused verbatim, computed only from
+  that one history entry's own two fields. This is deliberately **not**
+  the Engine's separate, live-computed F-025 `calculateLiquidationBuffer`
+  (`engine/liquidation/`, which continues unchanged as
+  `LiquidationRiskPanel`'s own current-value figure) — the two remain
+  intentionally distinct implementations, never substituted or
+  conflated, and no Formula ID was added.
+- **Null/invalid-denominator semantics preserved exactly.** Per the
+  v1.6.0 helper's own contract, `null` is returned both when
+  `liquidationPriceUsd` is `null` (zero-debt) and when the
+  `marketPriceUsd` denominator is invalid (non-finite or `<= 0`) — this
+  component cannot and does not distinguish those two cases, and both
+  render "No liquidation risk," the same established text
+  `PortfolioHistoryPanel.tsx`'s own `formatLiquidationBufferPercent`
+  already uses. Positive, zero, and negative buffers are all rendered
+  unclamped.
+- **Explicit non-chart states**: 0 entries reads "No Liquidation Buffer
+  history yet."; 1 entry shows its own value as plain text rather than
+  a fabricated one-point line, mirroring `HealthFactorTrendSection.tsx`'s
+  own "no chart below two entries" rule; 2+ entries render an accessible
+  `role="img"` chart with a full `aria-label` summary,
+  `ResponsiveContainer`, and `isAnimationActive={false}` — the identical
+  accessible-chart pattern already established there.
+- **`app/DashboardPageClient.tsx`**: wires the new section directly
+  after `LiquidationRiskPanel`, passing the same `portfolioId`/
+  `portfolioUpdatedAt` props used throughout. Gated in the same
+  `viewModel.ok === true` branch as its neighboring sections.
+- **Tests**: 14 new tests in
+  `tests/unit/features/dashboard/LiquidationBufferTrendSection.test.tsx`
+  — empty state, error state (malformed local-storage record), single
+  usable point (normal value, null liquidation price, invalid
+  market-price denominator), multiple entries (chart renders, exact
+  displayed/accessible values, negative-buffer unclamped, chronological
+  ordering, null-among-multiple, invalid-denominator-among-multiple),
+  multi-portfolio isolation, an explicit V3 test, and a separate V4
+  protocol-agnostic parity test. Regression confirmed via the existing
+  `tests/unit/app/page.test.tsx` (50-test Dashboard route suite),
+  `tests/integration/dashboard`, and `HealthFactorTrendSection.test.tsx`
+  passing unchanged before and after.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4169/4169 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean (the same single pre-existing, unrelated lint warning
+  present in every prior batch this session).
+
+### What did not change
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat e6876ee..b471b57`:
+exactly 4 files, all within `features/dashboard/`, `app/`, and their
+test files — no `engine/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**` path appears).
+`calculateLiquidationBufferPercent` is read identically regardless of
+`entry.protocolVersion`; a dedicated V4 parity test (plus a separate
+explicit V3 test) confirms a V4 entry renders identically in substance
+to a V3 one. No Health Factor risk-band classification introduced —
+Conflict #1 remains exactly as unresolved as before. No deployment/cloud
+work — the Path B disposition is unaffected.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when v1.8.0 materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.7.0`/`1.6.0`/"current release" and found to need no update, since none
+reference a version-specific feature set or a current-version number
+this release would make stale: `docs/KNOWN_ISSUES.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md` — zero
+matches across all three. `docs/TECHNICAL_DEBT.md`'s own CI/Playwright
+item was already marked resolved by the `v1.7.0` reconciliation and
+required no further change this batch.
+
+### Stale-documentation cleanup (separate from the v1.8.0 feature itself)
+
+Two occurrences of the same objectively-stale CI/Playwright claim,
+confirmed by fresh repository evidence this batch and corrected — pure
+documentation-text fixes, no product semantics changed:
+
+1. **`docs/CHANGELOG.md`'s "Known limitations" list.** This was the
+   exact item the Post-v1.7.0 Decision-Point Audit flagged as noticed
+   but deliberately deferred during the `v1.7.0` reconciliation (that
+   batch's own scope was limited to `docs/TECHNICAL_DEBT.md`). Its "CI
+   does not yet run the end-to-end (Playwright) test suite
+   automatically... not wired into `.github/workflows/ci.yml` yet"
+   bullet directly contradicted the accurate bullet sitting three lines
+   below it. Fresh inspection this batch reconfirms `.github/workflows/ci.yml`
+   runs a blocking production smoke suite
+   (`tests/e2e/productionSmoke.spec.ts`) on every PR/push, and
+   `.github/workflows/e2e-full.yml` (`workflow_dispatch`-triggered) runs
+   the full 151-test suite as a manual release gate — matching
+   `docs/KNOWN_ISSUES.md` category C's own "substantially resolved"
+   framing since Post-M10 hardening (R1-3/R2-4), which predates this
+   session entirely. Merged the two contradicting bullets into one
+   accurate statement.
+2. **`docs/RELEASE_NOTES.md`'s "Known limitations" list — the identical
+   stale claim, found during this batch's own fresh documentation
+   inspection, not previously flagged.** Corrected with the same
+   accurate wording for consistency between the two release-facing
+   documents.
+
+Neither correction touches a version-specific claim about `v1.8.0`
+itself, changes what any feature does, or resolves an unresolved product
+decision — both are corrections of an already-decided, already-verified
+fact (the smoke gate's existence) that these two files had simply not
+caught up to, the same class of fix `v1.6.0`'s and `v1.7.0`'s own
+reconciliations made for other stale items.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification, Supply APR trend, collateral/debt quantity or
+debt-asset history, cumulative/realized interest, P&L, cost basis, total
+return, Dependabot/Renovate, production deployment, or Settings ABOUT
+work. No new infrastructure work was introduced by the stale-doc cleanup
+above.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.7.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.7.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.7** — no batch in any of the seven releases modified a financial formula. Dashboard Health Factor Trend Visibility (V1.7.0) reads an already-persisted `healthFactor` history value directly; it introduces no formula, no recomputation, and no Formula ID of its own. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.7** — every batch across all seven releases persists through the existing envelope/schema, adding no new schema version and no migration. Dashboard Health Factor Trend Visibility (V1.7.0) reads already-persisted history entries and persists nothing new. |
+| Application version           | `1.8.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.8.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.8** — no batch in any of the eight releases modified a financial formula. Dashboard Liquidation Buffer Trend Visibility (V1.8.0) reuses the v1.6.0 service-layer `calculateLiquidationBufferPercent` helper verbatim on an already-persisted history entry's own `marketPriceUsd`/`liquidationPriceUsd`; it introduces no Engine formula, no recomputation, and no Formula ID of its own, and never substitutes for the Engine's own separate F-025 `calculateLiquidationBuffer`. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.8** — every batch across all eight releases persists through the existing envelope/schema, adding no new schema version and no migration. Dashboard Liquidation Buffer Trend Visibility (V1.8.0) reads already-persisted history entries and persists nothing new. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -46,6 +46,27 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.5.0)     | 2026-09-04     | Portfolio Analytics — Price & Liquidation Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4119/4119 tests passing) — see `PROJECT_STATUS.md`'s "v1.5.0 Release Reconciliation" section and the `[1.5.0]` entry below. Same promotion pattern as `1.4.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.6.0)     | 2026-09-04     | Liquidation Buffer Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4145/4145 tests passing) — see `PROJECT_STATUS.md`'s "v1.6.0 Release Reconciliation" section and the `[1.6.0]` entry below. Same promotion pattern as `1.5.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.7.0)     | 2026-09-04     | Dashboard Health Factor Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4155/4155 tests passing) — see `PROJECT_STATUS.md`'s "v1.7.0 Release Reconciliation" section and the `[1.7.0]` entry below. Same promotion pattern as `1.6.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.8.0)     | 2026-09-04     | Dashboard Liquidation Buffer Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4169/4169 tests passing) — see `PROJECT_STATUS.md`'s "v1.8.0 Release Reconciliation" section and the `[1.8.0]` entry below. Same promotion pattern as `1.7.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.8.0`, not `1.7.x` or a new
+`2.0.0`**: not a PATCH — the Dashboard gains a compact Liquidation
+Buffer trend visualization, directly pairing the Health Factor trend
+`1.7.0` shipped — new user-facing capability, not a bug fix to existing
+capability, the same bar that already justified `1.1.0` through `1.7.0`
+being MINOR rather than PATCH bumps. Not a new MAJOR either, on the
+identical reasoning the `1.7.0`, `1.6.0`, `1.5.0`, `1.4.0`, `1.3.0`,
+`1.2.0`, and `1.1.0` paragraphs below already give: no change to the
+Engine's calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary `01_PRD.md` reserves Version 2
+for. Every plotted value is derived, on read, from one already-persisted
+history entry's own `marketPriceUsd`/`liquidationPriceUsd` via the
+v1.6.0 `calculateLiquidationBufferPercent` helper reused verbatim —
+never the Engine's separate, live-computed F-025 `calculateLiquidationBuffer`
+(which continues to feed `LiquidationRiskPanel`'s own current-value
+card unchanged), and never recomputed from today's portfolio or market
+state. No Health Factor risk-band classification is introduced either
+(Conflict #1 remains exactly as unresolved as before). A minor version
+bump, same class as `1.1.0`'s through `1.7.0`'s own.
 
 **Why the Application/Engine version is `1.7.0`, not `1.6.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard gains a compact Health Factor
@@ -207,19 +228,108 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **No persistence migration has ever shipped.** `REGISTERED_MIGRATIONS`
   is empty; the chain-walking mechanism is tested but has never run
   against real prior-version data, because no prior version has existed.
-- **CI does not yet run the end-to-end (Playwright) test suite
-  automatically.** The 151-test suite (including 43 accessibility tests)
-  exists, is current, and is run manually before every release; it is not
-  wired into `.github/workflows/ci.yml` yet. Tracked as a non-blocking,
-  documented item — see `docs/DEFECT_CLASSIFICATION.md` §6.
+- **CI runs a blocking production smoke gate on every PR/push, and the
+  full end-to-end (Playwright) test suite runs as a separate, manual
+  release gate — not automatically on every push.** `.github/workflows/ci.yml`
+  runs a small, blocking production smoke suite
+  (`tests/e2e/productionSmoke.spec.ts`) against a real `pnpm build && pnpm
+  start` server on every PR/push; the broader 151-test suite (including
+  all 43 accessibility tests) is wired into a separate, manual
+  `workflow_dispatch` workflow (`.github/workflows/e2e-full.yml`), run
+  before every release. Corrected in v1.8.0's release reconciliation — an
+  earlier version of this list stated CI ran no automated E2E coverage at
+  all, which understated the smoke gate that already existed by that
+  point (Post-M10 hardening, R1-3/R2-4). See "Post-M10 hardening
+  (R1/R2)" below and `docs/KNOWN_ISSUES.md` category C for the full
+  record.
 - **No live deployment exists.** Self-hostable, no owned production
   domain by design — see "What 'released' means here" above.
-- **CI runs a blocking production smoke gate on every PR/push and a
-  manual full-suite release gate on demand — not the full suite on
-  every push.** See "Post-M10 hardening (R1/R2)" below.
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.8.0] — 2026-09-04
+
+One batch on top of Version 1.7.0: Dashboard Liquidation Buffer Trend
+Visibility. The Post-v1.7 Decision-Point Audit recommended completing
+the Dashboard's risk-trend pairing v1.7.0 started — Health Factor now
+has a companion Liquidation Buffer trend, both reusing already-persisted
+Portfolio History data with zero new persistence. Full per-file detail
+lives in `PROJECT_STATUS.md`'s "v1.8.0 Release Reconciliation" section;
+this entry summarizes what changed for a user.
+
+### What's new in 1.8.0
+
+- **The Dashboard now shows a Liquidation Buffer Trend chart**, directly
+  below the existing Liquidation Risk panel — a compact, accessible line
+  chart reading the same already-persisted Portfolio History
+  `marketPriceUsd`/`liquidationPriceUsd` values `PortfolioHistoryPanel.tsx`
+  (`app/portfolio/`) already charts as its own "Liquidation Buffer"
+  metric, through the identical `listPortfolioHistoryForPortfolio`
+  service call. No new persistence path, no new Store.
+- **Reuses the v1.6.0 `calculateLiquidationBufferPercent` helper
+  verbatim** — the exact DISPLAY/SERVICE-LAYER DERIVED calculation
+  (`(marketPriceUsd − liquidationPriceUsd) / marketPriceUsd`) already
+  established, applied to one history entry's own two fields. This is
+  deliberately **not** the Engine's separate, live-computed F-025
+  `calculateLiquidationBuffer` (`engine/liquidation/`), which continues
+  unchanged as the value `LiquidationRiskPanel`'s own current-value card
+  shows — the two remain intentionally distinct implementations, never
+  substituted or conflated.
+- **Presentation/read-layer only.** Every plotted value comes directly
+  from an already-persisted history entry — never recomputed from
+  today's portfolio state, today's market data, or a new formula.
+- **No Health Factor risk-band classification, no color thresholds.**
+  Conflict #1 remains exactly as unresolved as before this release.
+- **Explicit non-chart states for empty and single-entry history**,
+  mirroring `HealthFactorTrendSection.tsx`'s own established rule: zero
+  entries reads "No Liquidation Buffer history yet." A single entry
+  shows its own value as plain text rather than a fabricated one-point
+  line. 2+ entries render an accessible, chronologically ordered chart.
+- **`null` (zero-debt, or an unavailable market-price denominator per
+  the existing helper's own contract) renders "No liquidation risk,"
+  never a fabricated `0%`, `NaN`, or `Infinity`.** Positive, zero, and
+  negative buffers are all shown without clamping.
+- **Accessible by design.** `role="img"` plus a full text `aria-label`
+  summarizing every plotted point, `ResponsiveContainer`, and
+  `isAnimationActive={false}` for deterministic rendering — the same
+  accessible-chart pattern `HealthFactorTrendSection.tsx` already
+  established.
+
+### What this is not
+
+This release adds no Health Factor risk-band classification, no Supply
+APR trend, no collateral/debt quantity or debt-asset history, no
+portfolio profit/loss, total return, gain since inception, cost basis,
+or cumulative/realized interest accounting. It introduces no new
+liquidation-buffer *calculation* of its own — the value plotted is
+exactly the same derived figure Portfolio History already computes and
+displays; the Dashboard simply gained its own historical view of it,
+alongside Health Factor.
+
+### Explicitly unchanged in 1.8.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no Formula ID, no
+persisted-data schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no
+migration, no Engine file, no new protocol API call, no V3/V4 semantic
+change (the chart never branches on protocol version), and no change to
+the Path B (self-hostable, no operated production deployment)
+deployment disposition — see `docs/DEPLOYMENT_DISPOSITION.md`. Supply
+APR trend, collateral/debt quantity history, debt-asset history, Health
+Factor risk bands, cumulative/realized interest, P&L, cost basis, total
+return, Dependabot/Renovate, production deployment, and Settings ABOUT
+work all remain deferred, unchanged from prior releases.
+
+### Release status
+
+This entry promotes one batch already independently verified by its own
+audit-implement-test-validate cycle (full suite: 4169/4169 tests
+passing, both in the implementation worktree and independently after
+applying the delivered patch to a clean checkout) — not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass, the same promotion pattern `1.7.0`'s own entry below
+already used. See `PROJECT_STATUS.md`'s "v1.8.0 Release Reconciliation"
+section for the full record.
 
 ## [1.7.0] — 2026-09-04
 
