@@ -13,20 +13,66 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.6.0
+## Version 1.7.0
 
-**Current release.** Promotes the Liquidation Buffer Visibility batch
-below out of Unreleased status — built, tested, and independently
-re-verified (4145/4145 tests passing, both in the implementation
-worktree and again after applying the delivered patch to a clean
-checkout) in the same batch that produced it, not a fresh
+**Current release.** Promotes the Dashboard Health Factor Trend
+Visibility batch below out of Unreleased status — built, tested, and
+independently re-verified (4155/4155 tests passing, both in the
+implementation worktree and again after applying the delivered patch to
+a clean checkout) in the same batch that produced it, not a fresh
 Milestone-9/V1.1-style Release Candidate process with its own new manual
-exploratory pass. See `PROJECT_STATUS.md`'s "v1.6.0 Release
-Reconciliation" section and `docs/CHANGELOG.md`'s `[1.6.0]` entry for
-the full record. Everything in "Version 1.5.0" and earlier below still
-applies; this section covers only what is new since 1.5.0. **Still a
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.7.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.7.0]` entry for
+the full record. Everything in "Version 1.6.0" and earlier below still
+applies; this section covers only what is new since 1.6.0. **Still a
 self-hostable software release, not a hosted product** — see
 "Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.7.0
+
+- **The Dashboard now shows a Health Factor Trend chart**, directly
+  below the existing Health Factor Status section — reading the same
+  already-persisted Portfolio History `healthFactor` values
+  `PortfolioHistoryPanel.tsx` already charts, through the identical
+  service call. No new persistence path.
+- **Presentation/read-layer only** — every plotted value comes directly
+  from an already-persisted history entry, never recomputed from
+  today's portfolio state or a new formula.
+- **No Health Factor risk-band classification is introduced.**
+  Conflict #1 (four disagreeing band-threshold schemes) remains exactly
+  as unresolved as before.
+- **Explicit non-chart states**: zero entries reads "No Health Factor
+  history yet"; a single entry shows its own value as plain text rather
+  than a fabricated one-point line; 2+ entries render an accessible,
+  chronologically ordered chart.
+- **Null (zero-debt) Health Factor renders "∞," never `NaN` or a
+  fabricated value** — the same established convention used everywhere
+  else in the application.
+
+### Explicitly unchanged in 1.7.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine file changed, no new protocol
+API call, no V3/V4 semantic change (the chart never branches on
+protocol version), still no live wallet connection or transaction
+execution, still no cloud backup or synchronization, still no publicly
+operated production deployment. Collateral quantity and debt balance
+remain always-manual for both protocol versions.
+
+## Version 1.6.0 (previous release)
+
+Promoted the Liquidation Buffer Visibility batch described below out of
+Unreleased status — built, tested, and independently re-verified
+(4145/4145 tests passing, both in the implementation worktree and again
+after applying the delivered patch to a clean checkout) in the same
+batch that produced it, not a fresh Milestone-9/V1.1-style Release
+Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.6.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.6.0]` entry for the full record. Everything in
+"Version 1.5.0" and earlier below still applies; this section covers
+only what is new since 1.5.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
 
 ### What's new in 1.6.0
 

@@ -70,12 +70,26 @@ unaffected).
   describe a cancelled-sync product's "Last Synchronization" field) —
   see "Unresolved owner decisions" in `PROJECT_STATUS.md`'s Batch 3
   record. Not actionable until those decisions are made.
-- **CI does not run the Playwright suite automatically** — known,
-  documented P2 (`docs/DEFECT_CLASSIFICATION.md` §6,
-  `docs/KNOWN_ISSUES.md` category C) since Milestone 9 Batch 11, run
-  manually before every release instead. Moderate effort (CI workflow
-  change plus whatever browser-binary provisioning CI needs), meaningful
-  regression-safety improvement.
+- ~~**CI does not run the Playwright suite automatically**~~ **Resolved
+  — substantially addressed by Post-M10 hardening (R1-3, R2-4),
+  confirmed by fresh inspection during v1.7.0's release reconciliation.**
+  `.github/workflows/ci.yml` runs a small, blocking production smoke
+  suite (`tests/e2e/productionSmoke.spec.ts`) against a real `pnpm build
+  && pnpm start` server on every PR/push; the broader 150-test suite
+  (including all 43 accessibility tests) is wired into a separate,
+  manual `workflow_dispatch` workflow (`.github/workflows/e2e-full.yml`)
+  as a deliberate release gate — see `docs/KNOWN_ISSUES.md` category C
+  for the full record. This item originally described a gap that no
+  longer exists: some automated coverage now runs on every push, not
+  none. Left as a stale, uncorrected debt-log entry across the `v1.2.0`
+  through `v1.6.0` release reconciliations (none of which folded
+  `docs/TECHNICAL_DEBT.md` into ordinary release work) — corrected here
+  as an explicitly-scoped documentation cleanup item, not a
+  re-litigation of the underlying hardening, which had already shipped.
+  Whether the full suite should ever become a required (not just
+  manual) check remains a genuinely open, separate question — this
+  correction only fixes the item's factual claim, it does not resolve
+  that question.
 - **Formula Engine has never been published as a standalone package**
   — `04_BUILD_GUIDE.md`'s own stated aspiration
   (`docs/VERSION_1_RETROSPECTIVE.md`'s "Architecture" section), not yet

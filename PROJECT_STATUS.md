@@ -13855,6 +13855,153 @@ also not touched.
 
 ---
 
+## v1.7.0 Release Reconciliation — Dashboard Health Factor Trend Visibility
+
+**Recorded at the time it happened**, the same convention the `v1.6.0`
+section above already used — this section documents one batch,
+`57edde4` ("dashboardhftrend"), applied directly on top of `v1.6.0`
+(`3a67ab2`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.7.0`. Versions `1.0.0` through `1.6.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.6.0` to `1.7.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.7.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: the chart is presentation/
+read-layer only, computing nothing new and persisting nothing new.
+**No `v1.7.0` git tag exists yet** — tagging is a separate, explicit
+step for after this patch is applied and synced, not taken by this
+batch (see this batch's own final report for the exact recommended tag
+command).
+
+### Origin: Post-v1.6.0 Decision-Point Audit
+
+A read-only audit (same date) confirmed the "already-computed,
+never-rendered field" pattern that drove `v1.3.0` through `v1.6.0` was
+genuinely exhausted for Portfolio History itself — fresh, independent
+research reconfirmed every field `comparePortfolioHistoryEntries.ts`
+compares a delta for was already rendered — but found that the
+Dashboard, a different surface entirely, had no historical trend
+visualization at all, despite Portfolio History's own already-persisted
+data being readily reusable. It recommended closing `v1.7.0` with one
+batch adding a compact Health Factor trend chart to the Dashboard,
+which this reconciliation batch does.
+
+### Batch 1 — Dashboard Health Factor Trend Visibility (`57edde4`)
+
+- **`features/dashboard/components/HealthFactorTrendSection.tsx`
+  (new)**: reads `listPortfolioHistoryForPortfolio` directly — the
+  identical service call `PortfolioHistoryPanel.tsx` (`app/portfolio/`)
+  already uses — via local component state and an effect, not a new
+  persistence path or Zustand store. Every value is `entry.healthFactor`
+  from an already-persisted history entry, never recomputed. `null`
+  (zero-debt) is mapped to `Infinity` before formatting so it reuses the
+  Dashboard's own existing `formatHealthFactor` (`Intl.NumberFormat`
+  renders `Infinity` as "∞" natively), introducing no new nullable-
+  formatting convention.
+- **Explicit non-chart states**: 0 entries reads "No Health Factor
+  history yet."; 1 entry shows its own value as plain text rather than
+  a fabricated one-point line, mirroring `PortfolioHistoryPanel.tsx`'s
+  own "no chart below two entries" rule; 2+ entries render an
+  accessible `role="img"` chart with a full `aria-label` summary,
+  `ResponsiveContainer`, and `isAnimationActive={false}` — the identical
+  accessible-chart pattern already established there.
+- **`app/DashboardPageClient.tsx`**: wires the new section directly
+  after the existing `HealthFactorStatusSection`, passing
+  `portfolioId`/`portfolioUpdatedAt` from the same `activePortfolioId`/
+  `record.portfolio.updatedAt` `PortfolioPageClient.tsx` already passes
+  to `PortfolioHistoryPanel`. Gated in the same `viewModel.ok === true`
+  branch as its neighboring section, for scope minimalism.
+- **Tests**: 10 new tests in
+  `tests/unit/features/dashboard/HealthFactorTrendSection.test.tsx` —
+  empty state, error state (malformed local-storage record), single
+  entry (numeric and null/zero-debt "∞"), multiple entries (chart
+  renders, aria-label states every value, chronological ordering
+  verified via reconstructed `Intl.DateTimeFormat` substrings, null-
+  among-multiple renders "∞" never `NaN`), multi-portfolio isolation,
+  and V4 protocol-agnostic parity. Regression confirmed via the existing
+  `tests/unit/app/page.test.tsx` (50-test Dashboard route suite) and
+  `tests/integration/dashboard` passing unchanged before and after.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4155/4155 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean (the same single pre-existing, unrelated lint warning
+  present in every prior batch this session).
+
+### What did not change
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat 3a67ab2..57edde4`:
+exactly 4 files, all within `features/dashboard/`, `app/`, and their
+test files — no `engine/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**` path appears). `entry.healthFactor`
+is read identically regardless of `entry.protocolVersion`; a dedicated
+test confirms a V4 entry renders identically in substance to a V3 one.
+No Health Factor risk-band classification introduced — Conflict #1
+remains exactly as unresolved as before. No deployment/cloud work — the
+Path B disposition is unaffected.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when v1.7.0 materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.6.0`/`1.5.0`/"current release" and found to need no update, since
+none reference a version-specific feature set or a current-version
+number this release would make stale: `docs/KNOWN_ISSUES.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md` — zero
+matches across all three. `docs/USER_GUIDE.md` was read in full and
+found to describe the Dashboard only at a general level ("your
+portfolio's own key numbers at a glance: Health Factor, Loan-to-Value,
+liquidation price, net worth") — consistent with its own established
+precedent of never itemizing individual Portfolio History
+columns/metrics/charts across `v1.3.0` through `v1.6.0` either (a fresh
+grep confirms zero mentions of "Portfolio History," "Liquidation
+Buffer," "Interest Cost," "Market Price," or "trend" anywhere in that
+document); this release's Dashboard chart does not contradict that
+existing description, so no edit was made there.
+
+### Stale-documentation cleanup (separate from the v1.7.0 feature itself)
+
+One item flagged in the Post-v1.6.0 Decision-Point Audit as objectively
+stale, confirmed by fresh repository evidence this batch and corrected
+— a pure documentation-text fix, no product semantics changed:
+
+`docs/TECHNICAL_DEBT.md`'s "CI does not run the Playwright suite
+automatically" Priority 2 item. Fresh inspection confirms
+`.github/workflows/ci.yml` runs a blocking production smoke suite on
+every PR/push and `.github/workflows/e2e-full.yml` runs the full
+150-test suite as a manual release gate — both already documented as
+"substantially resolved" in `docs/KNOWN_ISSUES.md` category C since the
+Post-M10 hardening (R1-3, R2-4) batches, which predate this session's
+work entirely. The `docs/TECHNICAL_DEBT.md` entry itself was simply
+never updated across the `v1.2.0` through `v1.6.0` reconciliations that
+followed that hardening (none of which touched `docs/TECHNICAL_DEBT.md`
+at all). Marked resolved in place, with an explicit note that whether
+the full suite should become a required check remains a separate, still-
+open question this correction does not resolve. This correction touches
+no version-specific claim about `v1.7.0` itself and changes no feature
+behavior — it corrects an already-decided, already-documented-elsewhere
+fact that one file had simply not caught up to, the same class of fix
+`v1.6.0`'s own reconciliation made for `docs/TECHNICAL_DEBT.md`'s Cloud
+Sync item and `docs/CHANGELOG.md`'s "Manual Mode only" wording.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification, Supply APR trend, Liquidation Buffer trend on
+the Dashboard, collateral/debt quantity or debt-asset history,
+cumulative/realized interest, P&L, cost basis, total return, Dependabot/
+Renovate, production deployment, or Settings ABOUT work. No new
+infrastructure work was introduced by the stale-doc cleanup above.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
