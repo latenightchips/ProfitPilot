@@ -89,6 +89,21 @@ function formatTimestamp(iso: string): string {
 }
 
 /**
+ * `null` means "zero-debt, no liquidation risk" — matching the exact
+ * established app-wide convention this same nullable field already uses
+ * elsewhere (`features/portfolioApply/components/ApplyToPortfolioReview.tsx`,
+ * `features/recommendations/components/RecommendationDetailPanel.tsx`: "No
+ * liquidation risk"), **not** the Health-Factor-specific "∞" glyph — a null
+ * liquidation price is not "an infinite price," it is the absence of
+ * liquidation risk, a distinct concept this formatter states directly
+ * rather than borrowing an unrelated convention.
+ */
+function formatLiquidationPrice(value: number | null): string {
+  if (value === null) return 'No liquidation risk';
+  return formatCurrency(value);
+}
+
+/**
  * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") plus V1.4.0
  * Batch 1 ("Annualized Interest Cost Visibility"). Lets the trend chart
  * below plot one of five metrics without permanently stacking five
@@ -116,9 +131,26 @@ function formatTimestamp(iso: string): string {
  * chart's own aria-label summary is the same non-causal, non-cumulative
  * framing this file's own top comment already establishes for every
  * other delta.
+ *
+ * **V1.5.0 Batch 1 ("Portfolio Analytics — Price & Liquidation Trend
+ * Visibility")** adds Market Price and Liquidation Price, bringing the
+ * selector to seven metrics. Both read already-persisted fields
+ * (`marketPriceUsd`, `liquidationPriceUsd`) directly — no new formula.
+ * Liquidation Price reuses `formatLiquidationPrice`'s own "No liquidation
+ * risk" convention for a `null` snapshot (zero-debt) rather than the
+ * Health-Factor-specific "∞" glyph, or any fabricated numeric price —
+ * Recharts skips a `null` data point in the line (the same gap-not-zero
+ * behavior Health Factor's own `null` entries already produce), so no
+ * interpolation or substitution occurs here either.
  */
 type PortfolioHistoryMetricKey =
-  'healthFactor' | 'netWorth' | 'loanToValue' | 'leverage' | 'annualizedInterestCost';
+  | 'healthFactor'
+  | 'netWorth'
+  | 'loanToValue'
+  | 'leverage'
+  | 'annualizedInterestCost'
+  | 'marketPrice'
+  | 'liquidationPrice';
 
 interface PortfolioHistoryMetricConfig {
   label: string;
@@ -152,6 +184,16 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     getValue: (entry) => entry.annualizedInterestCost,
     formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
   },
+  marketPrice: {
+    label: 'Market Price',
+    getValue: (entry) => entry.marketPriceUsd,
+    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
+  },
+  liquidationPrice: {
+    label: 'Liquidation Price',
+    getValue: (entry) => entry.liquidationPriceUsd,
+    formatValue: (value) => formatLiquidationPrice(value),
+  },
 };
 
 /** Selector order, matching the order the task's own required list names them. */
@@ -161,6 +203,8 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'loanToValue',
   'leverage',
   'annualizedInterestCost',
+  'marketPrice',
+  'liquidationPrice',
 ];
 
 /**
@@ -182,13 +226,21 @@ function formatDelta(
   return `${format(delta.before)} → ${format(delta.after)} (${sign}${format(delta.delta)})`;
 }
 
+/**
+ * `nullLabel` defaults to '∞' — Health Factor's own existing, unchanged
+ * convention — so every pre-V1.5.0 call site keeps its exact prior
+ * behavior. Liquidation Price passes `'No liquidation risk'` instead
+ * (see `formatLiquidationPrice`'s own comment for why "∞" would be
+ * wrong there).
+ */
 function formatNullableDelta(
   delta: PortfolioHistoryNullableMetricDelta,
   format: (value: number) => string,
+  nullLabel: string = '∞',
 ): string {
   if (!delta.changed) return '—';
-  const beforeText = delta.before === null ? '∞' : format(delta.before);
-  const afterText = delta.after === null ? '∞' : format(delta.after);
+  const beforeText = delta.before === null ? nullLabel : format(delta.before);
+  const afterText = delta.after === null ? nullLabel : format(delta.after);
   if (delta.before === null || delta.after === null) {
     return `${beforeText} → ${afterText}`;
   }
@@ -265,6 +317,23 @@ function HistoryEntryCard({
               value: formatCurrency(entry.annualizedInterestCost),
               delta:
                 delta !== null ? formatDelta(delta.annualizedInterestCost, formatCurrency) : null,
+            },
+            {
+              label: 'Market Price',
+              value: formatCurrency(entry.marketPriceUsd),
+              delta: delta !== null ? formatDelta(delta.marketPriceUsd, formatCurrency) : null,
+            },
+            {
+              label: 'Liquidation Price',
+              value: formatLiquidationPrice(entry.liquidationPriceUsd),
+              delta:
+                delta !== null
+                  ? formatNullableDelta(
+                      delta.liquidationPriceUsd,
+                      formatCurrency,
+                      'No liquidation risk',
+                    )
+                  : null,
             },
           ] as const
         ).map((row) => (
@@ -418,7 +487,10 @@ export function PortfolioHistoryPanel({
                 <XAxis dataKey="timestamp" hide />
                 <YAxis
                   width={
-                    selectedMetric === 'netWorth' || selectedMetric === 'annualizedInterestCost'
+                    selectedMetric === 'netWorth' ||
+                    selectedMetric === 'annualizedInterestCost' ||
+                    selectedMetric === 'marketPrice' ||
+                    selectedMetric === 'liquidationPrice'
                       ? 56
                       : 32
                   }
@@ -477,10 +549,16 @@ export function PortfolioHistoryPanel({
               </th>
               <th
                 scope="col"
-                className="py-1.5 font-medium"
+                className="py-1.5 pr-3 font-medium"
                 title={ANNUALIZED_INTEREST_COST_TOOLTIP}
               >
                 Interest Cost (annualized)
+              </th>
+              <th scope="col" className="py-1.5 pr-3 font-medium">
+                Market Price
+              </th>
+              <th scope="col" className="py-1.5 font-medium">
+                Liquidation Price
               </th>
             </tr>
           </thead>
@@ -548,13 +626,35 @@ export function PortfolioHistoryPanel({
                       </div>
                     )}
                   </td>
-                  <td className="py-1.5">
+                  <td className="py-1.5 pr-3">
                     <div className="text-foreground">
                       {formatCurrency(entry.annualizedInterestCost)}
                     </div>
                     {delta !== null && (
                       <div className="text-muted-foreground">
                         {formatDelta(delta.annualizedInterestCost, formatCurrency)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <div className="text-foreground">{formatCurrency(entry.marketPriceUsd)}</div>
+                    {delta !== null && (
+                      <div className="text-muted-foreground">
+                        {formatDelta(delta.marketPriceUsd, formatCurrency)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-1.5">
+                    <div className="text-foreground">
+                      {formatLiquidationPrice(entry.liquidationPriceUsd)}
+                    </div>
+                    {delta !== null && (
+                      <div className="text-muted-foreground">
+                        {formatNullableDelta(
+                          delta.liquidationPriceUsd,
+                          formatCurrency,
+                          'No liquidation risk',
+                        )}
                       </div>
                     )}
                   </td>

@@ -122,6 +122,10 @@ describe('PortfolioHistoryPanel — with entries', () => {
     expect(table.getByText('5%')).toBeInTheDocument(); // Borrow APR
     expect(table.getByText('$1,000.00')).toBeInTheDocument(); // Interest Cost (annualized)
     expect(table.getByText('Interest Cost (annualized)')).toBeInTheDocument(); // column header
+    expect(table.getByText('$50,000.00')).toBeInTheDocument(); // Market Price
+    expect(table.getByText('Market Price')).toBeInTheDocument(); // column header
+    expect(table.getByText('$12,500.00')).toBeInTheDocument(); // Liquidation Price
+    expect(table.getByText('Liquidation Price')).toBeInTheDocument(); // column header
   });
 
   it('does not render the chart with only one entry, but always renders the table', async () => {
@@ -283,6 +287,10 @@ describe('PortfolioHistoryPanel — with entries', () => {
     expect(list.getByText('5%')).toBeInTheDocument(); // Borrow APR
     expect(list.getByText('$1,000.00')).toBeInTheDocument(); // Interest Cost (annualized)
     expect(list.getByText('Interest Cost (annualized)')).toBeInTheDocument(); // row label
+    expect(list.getByText('$50,000.00')).toBeInTheDocument(); // Market Price
+    expect(list.getByText('Market Price')).toBeInTheDocument(); // row label
+    expect(list.getByText('$12,500.00')).toBeInTheDocument(); // Liquidation Price
+    expect(list.getByText('Liquidation Price')).toBeInTheDocument(); // row label
   });
 });
 
@@ -526,7 +534,7 @@ describe('PortfolioHistoryPanel — multi-metric trend chart', () => {
  * component.
  */
 describe('PortfolioHistoryPanel — annualized interest cost', () => {
-  it('adds a fifth "Interest Cost (annualized)" option to the metric selector, after Leverage', async () => {
+  it('adds "Interest Cost (annualized)" as the fifth metric-selector option, after Leverage', async () => {
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', annualizedInterestCost: 1000 }),
     );
@@ -544,7 +552,11 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(optionLabels).toEqual([
+    // Scoped to the first five positions only — V1.5.0's own Market
+    // Price/Liquidation Price options (added after this one) are
+    // verified by their own describe block below, including the full
+    // seven-item list.
+    expect(optionLabels.slice(0, 5)).toEqual([
       'Health Factor',
       'Net Worth',
       'Loan-to-Value',
@@ -731,5 +743,302 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
     expect(label).toContain('$900.00');
     expect(label).toContain('$1,100.00');
+  });
+});
+
+/**
+ * V1.5.0 Batch 1 ("Portfolio Analytics — Price & Liquidation Trend
+ * Visibility") — extends the table, mobile card list, delta display, and
+ * chart metric selector with `entry.marketPriceUsd` and
+ * `entry.liquidationPriceUsd`, bringing the selector to seven metrics.
+ * Both fields are read directly, reusing `comparePortfolioHistoryEntries`'s
+ * own existing (previously unrendered) deltas — no new formula, no
+ * recomputation. Liquidation Price is nullable (zero-debt); its `null`
+ * case must render "No liquidation risk" — the exact established
+ * app-wide convention (`ApplyToPortfolioReview.tsx`,
+ * `RecommendationDetailPanel.tsx`) — never "∞" (that convention belongs
+ * to Health Factor alone) and never a fabricated numeric price.
+ */
+describe('PortfolioHistoryPanel — market price and liquidation price', () => {
+  it('adds Market Price and Liquidation Price as the sixth and seventh metric-selector options, after the existing five', async () => {
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Health Factor',
+      'Net Worth',
+      'Loan-to-Value',
+      'Leverage',
+      'Interest Cost (annualized)',
+      'Market Price',
+      'Liquidation Price',
+    ]);
+  });
+
+  it('plots the already-persisted marketPriceUsd field, currency-formatted, without recomputing it', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', marketPriceUsd: 48000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', marketPriceUsd: 52500 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'marketPrice');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Market Price trend');
+    expect(label).toContain('$48,000.00');
+    expect(label).toContain('$52,500.00');
+  });
+
+  it('plots the already-persisted liquidationPriceUsd field, currency-formatted, without recomputing it', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', liquidationPriceUsd: 11000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', liquidationPriceUsd: 13750 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationPrice');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Liquidation Price trend');
+    expect(label).toContain('$11,000.00');
+    expect(label).toContain('$13,750.00');
+  });
+
+  it('renders "No liquidation risk" — never "∞" or a fabricated price — in the chart aria-label for a null (zero-debt) snapshot', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', liquidationPriceUsd: 13750 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationPrice');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('No liquidation risk');
+    expect(label).toContain('$13,750.00');
+    expect(label).not.toContain('∞');
+    expect(label).not.toContain('$0.00');
+  });
+
+  it('renders the Market Price delta in the table, reusing the existing before/after delta convention', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', marketPriceUsd: 48000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', marketPriceUsd: 52500 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(
+      within(screen.getByRole('table')).getByText('$48,000.00 → $52,500.00 (+$4,500.00)'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the Liquidation Price delta with "No liquidation risk" (never "∞") on a null-to-value transition', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', liquidationPriceUsd: 13750 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    // The newer (top) row's delta vs. the older, zero-debt one:
+    // "No liquidation risk" -> "$13,750.00", no parenthetical numeric
+    // delta (matching the same before/after-only shape a Health Factor
+    // null transition already produces).
+    expect(
+      within(screen.getByRole('table')).getByText('No liquidation risk → $13,750.00'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders "No liquidation risk" for a single zero-debt entry\'s value, never a fabricated numeric price', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getAllByText('No liquidation risk')).toHaveLength(1);
+  });
+
+  it('does not render the Market Price/Liquidation Price options or chart with fewer than 2 entries, but the table still shows both values', async () => {
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 48000, liquidationPriceUsd: 11000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('$48,000.00')).toBeInTheDocument();
+    expect(table.getByText('$11,000.00')).toBeInTheDocument();
+  });
+
+  it('surfaces the same Market Price and Liquidation Price values and labels in the mobile card list as the table', async () => {
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 48000, liquidationPriceUsd: 11000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('list')).toBeInTheDocument();
+    });
+    const list = within(screen.getByRole('list'));
+    expect(list.getByText('Market Price')).toBeInTheDocument();
+    expect(list.getByText('$48,000.00')).toBeInTheDocument();
+    expect(list.getByText('Liquidation Price')).toBeInTheDocument();
+    expect(list.getByText('$11,000.00')).toBeInTheDocument();
+  });
+
+  it('works identically for a V4 portfolio entry — Market Price and Liquidation Price are protocol-agnostic', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        marketPriceUsd: 48000,
+        liquidationPriceUsd: 11000,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        marketPriceUsd: 52500,
+        liquidationPriceUsd: 13750,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'marketPrice');
+    let label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('$48,000.00');
+    expect(label).toContain('$52,500.00');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationPrice');
+    label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('$11,000.00');
+    expect(label).toContain('$13,750.00');
+  });
+
+  it('leaves the four existing V1.3.0/V1.4.0 metrics fully available and unregressed', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', healthFactor: 3 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    // Default remains Health Factor, byte-identical to before.
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
+
+    for (const metric of ['netWorth', 'loanToValue', 'leverage', 'annualizedInterestCost']) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
   });
 });
