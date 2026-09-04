@@ -41,6 +41,7 @@ export * from './components/DataFreshnessSection';
 export * from './components/DebtAndInterestPanel';
 export * from './components/DeveloperModeToggle';
 export * from './components/HealthFactorStatusSection';
+export * from './components/HealthFactorTrendSection';
 export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
 export * from './components/LiquidationRiskPanel';

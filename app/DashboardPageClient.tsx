@@ -24,6 +24,7 @@ import {
   DebtAndInterestPanel,
   DeveloperModeToggle,
   HealthFactorStatusSection,
+  HealthFactorTrendSection,
   LeverageSummarySection,
   LiquidationRiskPanel,
   NoDebtNotice,
@@ -164,6 +165,19 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * Health & Risk mockups) are not rendered** — blocked on Conflict #1
  * (Health Factor risk-band thresholds disagree across four documents);
  * see `features/dashboard/types/viewModel.ts` for the full reasoning.
+ *
+ * **`HealthFactorTrendSection` (v1.7.0 Batch 1, "Dashboard Health Factor
+ * Trend Visibility")** renders directly after `HealthFactorStatusSection`
+ * — a compact historical trend chart reading the same already-persisted
+ * Portfolio History entries `PortfolioHistoryPanel.tsx`
+ * (`app/portfolio/`) already charts, through the identical
+ * `listPortfolioHistoryForPortfolio` service call. Presentation/read-layer
+ * only: no new Engine formula, no new persisted field, no risk-band
+ * classification (see that component's own header comment for the full
+ * reasoning). Gated the same way `HealthFactorStatusSection` already is
+ * (only in the `viewModel.ok === true` branch), not because it requires a
+ * successfully-computed summary itself, but to keep this batch's scope
+ * minimal and consistent with its neighboring section.
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -352,6 +366,11 @@ export function DashboardPageClient() {
               {healthFactorStatus !== null && (
                 <HealthFactorStatusSection status={healthFactorStatus} />
               )}
+
+              <HealthFactorTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
 
               <LiquidationRiskPanel
                 panel={buildLiquidationRiskPanel(
