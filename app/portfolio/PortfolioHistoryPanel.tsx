@@ -50,6 +50,18 @@ import {
  * `format*`/`formatDelta*` helpers below — no separate data path, only a
  * separate layout, one hidden via `sm:hidden` and the other via `hidden
  * sm:block`.
+ *
+ * **Multi-metric trend chart (V1.3.0 Batch 1, "Portfolio Analytics —
+ * Trend Visibility")**: the chart above can now plot Health Factor
+ * (unchanged default), Net Worth, Loan-to-Value, or Leverage, switched
+ * via a compact `<select>` rather than stacking four permanent charts —
+ * see `PORTFOLIO_HISTORY_METRICS` below. The table/card views, their
+ * values, and every existing accessibility/motion behavior are
+ * unchanged; only the supplementary chart gained a selector. Net Worth
+ * is `docs/02_Formulas.md`'s own already-specified "Portfolio Value −
+ * Debt" equation applied to a stored snapshot's own `collateral.valueUsd`/
+ * `debt.valueUsd` — no new formula. LTV/Leverage read the already-
+ * persisted `loanToValue`/`leverage` fields directly, never recomputed.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -75,6 +87,59 @@ function formatTimestamp(iso: string): string {
     timeStyle: 'short',
   });
 }
+
+/**
+ * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility"). Lets the
+ * trend chart below plot one of four metrics without permanently
+ * stacking four charts — a compact selector switches which of these
+ * `getValue`/`formatValue` pairs feeds the same single `LineChart`.
+ *
+ * **Net Worth is exactly `docs/02_Formulas.md`'s own "Net Worth =
+ * Portfolio Value − Debt" equation** (Assets minus Debt), applied to one
+ * already-persisted snapshot's own `collateral.valueUsd`/`debt.valueUsd`
+ * — no new formula, no Engine involvement, not an alternative
+ * definition. Loan-to-Value and Leverage read the already-persisted
+ * `loanToValue`/`leverage` fields directly, the same values the table
+ * above already renders — never recomputed here.
+ */
+type PortfolioHistoryMetricKey = 'healthFactor' | 'netWorth' | 'loanToValue' | 'leverage';
+
+interface PortfolioHistoryMetricConfig {
+  label: string;
+  getValue: (entry: PersistedPortfolioHistoryEntry) => number | null;
+  formatValue: (value: number | null) => string;
+}
+
+const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHistoryMetricConfig> = {
+  healthFactor: {
+    label: 'Health Factor',
+    getValue: (entry) => entry.healthFactor,
+    formatValue: (value) => formatHealthFactor(value),
+  },
+  netWorth: {
+    label: 'Net Worth',
+    getValue: (entry) => entry.collateral.valueUsd - entry.debt.valueUsd,
+    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
+  },
+  loanToValue: {
+    label: 'Loan-to-Value',
+    getValue: (entry) => entry.loanToValue,
+    formatValue: (value) => (value === null ? '—' : formatPercent(value)),
+  },
+  leverage: {
+    label: 'Leverage',
+    getValue: (entry) => entry.leverage,
+    formatValue: (value) => (value === null ? '—' : `${formatHealthFactor(value)}x`),
+  },
+};
+
+/** Selector order, matching the order the task's own required list names them. */
+const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
+  'healthFactor',
+  'netWorth',
+  'loanToValue',
+  'leverage',
+];
 
 function formatDelta(
   delta: PortfolioHistoryMetricDelta,
@@ -189,6 +254,7 @@ export function PortfolioHistoryPanel({
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [entries, setEntries] = useState<PersistedPortfolioHistoryEntry[]>([]);
+  const [selectedMetric, setSelectedMetric] = useState<PortfolioHistoryMetricKey>('healthFactor');
 
   useEffect(() => {
     let cancelled = false;
@@ -255,12 +321,13 @@ export function PortfolioHistoryPanel({
     );
   }
 
+  const selectedMetricConfig = PORTFOLIO_HISTORY_METRICS[selectedMetric];
   const chartData = [...entries].reverse().map((entry) => ({
     timestamp: formatTimestamp(entry.createdAt),
-    healthFactor: entry.healthFactor,
+    value: selectedMetricConfig.getValue(entry),
   }));
-  const chartSummary = `Health Factor trend: ${chartData
-    .map((point) => `${point.timestamp} ${formatHealthFactor(point.healthFactor)}`)
+  const chartSummary = `${selectedMetricConfig.label} trend: ${chartData
+    .map((point) => `${point.timestamp} ${selectedMetricConfig.formatValue(point.value)}`)
     .join(', ')}`;
 
   return (
@@ -270,26 +337,54 @@ export function PortfolioHistoryPanel({
       </h2>
 
       {entries.length >= 2 && (
-        <div
-          role="img"
-          aria-label={chartSummary}
-          className="h-40 w-full rounded-md border border-border p-2"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="timestamp" hide />
-              <YAxis width={32} tick={{ fontSize: 10 }} />
-              <Line
-                type="monotone"
-                dataKey="healthFactor"
-                stroke="var(--color-foreground, currentColor)"
-                strokeWidth={2}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-end gap-2">
+            <label
+              htmlFor="portfolio-history-metric-select"
+              className="text-xs text-muted-foreground"
+            >
+              Chart metric
+            </label>
+            <select
+              id="portfolio-history-metric-select"
+              value={selectedMetric}
+              onChange={(event) =>
+                setSelectedMetric(event.target.value as PortfolioHistoryMetricKey)
+              }
+              className="rounded-md border border-border bg-transparent px-2 py-1 text-xs text-foreground"
+            >
+              {PORTFOLIO_HISTORY_METRIC_ORDER.map((key) => (
+                <option key={key} value={key}>
+                  {PORTFOLIO_HISTORY_METRICS[key].label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            role="img"
+            aria-label={chartSummary}
+            className="h-40 w-full rounded-md border border-border p-2"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="timestamp" hide />
+                <YAxis
+                  width={selectedMetric === 'netWorth' ? 56 : 32}
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(value: number) => selectedMetricConfig.formatValue(value)}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="var(--color-foreground, currentColor)"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 
