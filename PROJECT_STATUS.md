@@ -13479,6 +13479,110 @@ batch) remain accurate and unchanged.
 
 ---
 
+## v1.4.0 Release Reconciliation — Annualized Interest Cost Visibility
+
+**Recorded at the time it happened**, the same convention the `v1.3.0`
+section above already used — this section documents one batch,
+`a99d09c` ("annualizedinterestcost"), applied directly on top of
+`v1.3.0` (`4d5cef5`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.4.0`. Versions `1.0.0`, `1.1.0`,
+`1.2.0`, and `1.3.0` remain the immutable previous releases** — no
+existing tag is touched by this promotion. `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.3.0` to `1.4.0`
+— a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own "Why the
+Application/Engine version is `1.4.0`" paragraph gives. `FORMULA_VERSION`/
+`STORAGE_SCHEMA_VERSION` are unchanged, `1.0`/`1.0.0` respectively, same
+as every release before this one. **No `v1.4.0` git tag exists yet** —
+tagging is a separate, explicit step for after this patch is applied and
+synced, not taken by this batch (see this batch's own final report for
+the exact recommended tag command).
+
+### Origin: Post-v1.3.0 Decision-Point Audit
+
+A read-only audit (same date) evaluated whether v1.4.0 already had
+enough coherent value to close after Batch 1, re-examined the two stale
+`docs/TECHNICAL_DEBT.md` items the Post-v1.3 Roadmap Audit had already
+flagged, evaluated the Dependabot/Renovate candidate, and searched for
+any other small, locally testable, user-visible improvement that
+naturally belonged with this release. It found none — Portfolio History
+CSV/JSON export coverage was checked directly (`EXPORTABLE_RECORD_TYPES`
+already includes `'portfolioHistory'` generically, so the Full Backup
+export already carries `annualizedInterestCost` with no export-code
+change needed) — and recommended closing v1.4.0 with Batch 1 alone,
+which this reconciliation batch does.
+
+### Batch 1 — Annualized Interest Cost Visibility (`a99d09c`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: `entry.annualizedInterestCost`
+  — computed and persisted since V1.1 Batch 2, never previously rendered
+  anywhere — now appears as a new table column ("Interest Cost
+  (annualized)", last column, currency-formatted), a new mobile card
+  row, a new before/after delta (reusing `comparePortfolioHistoryEntries`'s
+  already-existing, previously-unused `annualizedInterestCost` delta),
+  and a fifth chart-selector metric, using the exact
+  `PORTFOLIO_HISTORY_METRICS` pattern the four V1.3.0 metrics already
+  established. Both the table header and card label carry a `title`
+  tooltip stating plainly this is a point-in-time projection — never
+  interest already paid, cumulative interest, realized borrowing cost,
+  or interest paid since inception.
+- **Tests**: 8 new tests plus 2 extended baseline tests in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`, covering
+  table/card rendering, currency formatting, delta rendering, the
+  selector's fifth option, chart plotting (with an explicit assertion
+  that no summed/cumulative figure ever appears), switching to and from
+  the metric, zero-value/full-exit formatting, and V4-portfolio
+  compatibility.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4108/4108 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean (the same single pre-existing, unrelated lint warning present
+  in every prior batch this session).
+
+### What did not change
+
+**No Engine file, no persistence schema, no protocol API call, and no
+V3/V4 semantic change** — confirmed by direct diff inspection
+(`git diff --stat 4d5cef5..a99d09c`: exactly two files,
+`app/portfolio/PortfolioHistoryPanel.tsx` and its test file).
+`annualizedInterestCost` is computed identically regardless of protocol
+version, matching how every other Portfolio History column already is.
+No deployment/cloud work — the Path B disposition is unaffected.
+
+### `docs/TECHNICAL_DEBT.md`'s two stale items — deliberately not corrected in this batch
+
+The Post-v1.3 Roadmap Audit and the subsequent decision-point audit both
+confirmed `docs/TECHNICAL_DEBT.md`'s "Priority 1" Cloud Sync copy item
+and its "CI does not run the Playwright suite automatically" item are
+objectively stale — both describe work as outstanding that was already
+completed by later batches (`app/settings/SettingsPageClient.tsx`'s own
+header comment records the Cloud Sync copy fix as Milestone 10 Batch 7;
+R1-3/R2-4's CI hardening already superseded the automation item, and
+`docs/KNOWN_ISSUES.md` already reflects this correctly).
+
+**Not corrected as part of this release reconciliation.** Established
+precedent: `docs/TECHNICAL_DEBT.md` was not touched by the `V1.1.0`,
+`V1.2.0`, or `v1.3.0` release-reconciliation batches even when other
+similarly stale documents were — `docs/VERSION_2_BACKLOG.md` was
+reconciled in the doc-reconciliation batch (post-V1.1) and again in the
+`v1.3.0` reconciliation above specifically because those batches
+explicitly scoped backlog-wording reconciliation as their own line item;
+no batch has ever included `docs/TECHNICAL_DEBT.md` in that scope. Per
+this batch's own explicit instruction not to bundle unrelated work, and
+consistent with that precedent, both items remain listed as post-v1.4.0
+documentation cleanup rather than corrected here.
+
+### Dependabot/Renovate — deliberately deferred, not implemented
+
+Confirmed still absent (`.github/dependabot.yml` does not exist) and
+genuinely open technical debt, but non-user-facing, maintenance-only
+tooling — explicitly out of scope for this release per instruction, and
+does not belong bundled into a Portfolio History visibility release.
+Remains a candidate for its own independent maintenance batch.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

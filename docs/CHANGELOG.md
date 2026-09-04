@@ -32,16 +32,34 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.3.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.3.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1, V1.2, or V1.3** — no batch in any of the three releases modified a financial formula. Portfolio Analytics's Net Worth trend (V1.3.0) reuses `docs/02_Formulas.md`'s own already-specified "Net Worth = Portfolio Value − Debt" equation rather than introducing a new one. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1, V1.2, or V1.3** — every batch across all three releases persists through the existing envelope/schema, adding no new schema version. |
+| Application version           | `1.4.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.4.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1, V1.2, V1.3, or V1.4** — no batch in any of the four releases modified a financial formula. `annualizedInterestCost` visibility (V1.4.0) reads an already-persisted, already-computed field directly; it introduces no formula of its own. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1, V1.2, V1.3, or V1.4** — every batch across all four releases persists through the existing envelope/schema, adding no new schema version. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
 | Sign-off completed (1.1.0)     | 2026-08-31     | V1.1 Release Candidate audit (Batches 1–7) — see `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review" section and the `[1.1.0]` entry below. Also not a deployment date. |
 | Sign-off completed (1.2.0)     | 2026-09-04     | Aave V4 capability work plus its own semantic-correctness remediation cycle (A1/A2/A3) and independent closure audit, all re-verified against a fresh `origin/main` checkout (4092/4092 tests passing) — see `PROJECT_STATUS.md`'s "V1.2.0 Release Reconciliation" section and the `[1.2.0]` entry below. Not a fresh full Release Candidate process in the Milestone-9/V1.1 sense (no new manual exploratory pass) — a promotion of already-audited, already-closed work into a version boundary. Also not a deployment date. |
 | Sign-off completed (1.3.0)     | 2026-09-04     | Portfolio Analytics / Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4100/4100 tests passing) — see `PROJECT_STATUS.md`'s "v1.3.0 Release Reconciliation" section and the `[1.3.0]` entry below. Same promotion pattern as `1.2.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.4.0)     | 2026-09-04     | Annualized Interest Cost Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4108/4108 tests passing) — see `PROJECT_STATUS.md`'s "v1.4.0 Release Reconciliation" section and the `[1.4.0]` entry below. Same promotion pattern as `1.3.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.4.0`, not `1.3.x` or a new
+`2.0.0`**: not a PATCH — Portfolio History's `annualizedInterestCost`
+field, previously computed and persisted but never surfaced anywhere in
+the UI, is now visible in the table, mobile card list, delta display,
+and as a fifth chart metric — new user-facing capability, not a bug fix
+to existing capability, the same bar that already justified `1.1.0`,
+`1.2.0`, and `1.3.0` being MINOR rather than PATCH bumps. Not a new
+MAJOR either, on the identical reasoning the `1.3.0`, `1.2.0`, and
+`1.1.0` paragraphs below already give: no change to the Engine's
+calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary `01_PRD.md` reserves Version 2
+for — the field is read directly from an already-persisted snapshot,
+never recomputed, and no comparison logic is new (the delta already
+existed in `comparePortfolioHistoryEntries`, simply unrendered until
+now). A minor version bump, same class as `1.1.0`'s, `1.2.0`'s, and
+`1.3.0`'s own.
 
 **Why the Application/Engine version is `1.3.0`, not `1.2.x` or a new
 `2.0.0`**: not a PATCH — the Portfolio History chart's multi-metric
@@ -131,6 +149,74 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.4.0] — 2026-09-04
+
+One batch on top of Version 1.3.0: Annualized Interest Cost Visibility,
+a direct follow-up to the Post-v1.3 Roadmap Audit's own finding that
+`annualizedInterestCost` was already persisted and computed but never
+rendered anywhere in the application. Full per-file detail lives in
+`PROJECT_STATUS.md`'s "v1.4.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.4.0
+
+- **Portfolio History now shows Annualized Interest Cost.** A new
+  "Interest Cost (annualized)" column appears in the desktop history
+  table (last column) and the mobile history card list, currency-
+  formatted, reading `entry.annualizedInterestCost` directly — the same
+  field the Engine has computed and persisted since V1.1 Batch 2, simply
+  never surfaced until now.
+- **Before/after comparison now shows this field's own delta**, reusing
+  `comparePortfolioHistoryEntries`'s already-existing
+  `annualizedInterestCost` comparison (previously computed but unused by
+  the UI) and the same "before → after (delta)" convention every other
+  column already uses.
+- **The Portfolio History chart gains a fifth metric.** The existing
+  selector (Health Factor, Net Worth, Loan-to-Value, Leverage) now also
+  offers Interest Cost (annualized), currency-formatted, using the exact
+  `PORTFOLIO_HISTORY_METRICS` pattern the four V1.3.0 metrics already
+  established.
+- **Explicit semantic disambiguation.** Both the table header and card
+  label carry a concise `title` tooltip stating this figure is a
+  point-in-time projection — the annualized borrowing cost implied by
+  that one snapshot's own debt balance and rate — never interest already
+  paid, cumulative interest, realized borrowing cost, or interest paid
+  since inception.
+
+### What this is not
+
+Identical boundary to `[1.3.0]`'s own "What this is not" above, restated
+because this release touches the same field's own visibility directly:
+`annualizedInterestCost` is not, and must never be read as, interest
+already paid, cumulative interest, realized borrowing cost, or interest
+paid since inception — it is one snapshot's own projected annual figure,
+nothing more. This release adds no portfolio profit/loss, total return,
+gain since inception, cost basis, or historical investment-performance
+percentage; ProfitPilot still has no mechanism to capture an acquisition
+price, so none of the above is computable without new specification work
+this release does not do.
+
+### Explicitly unchanged in 1.4.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no persisted-data
+schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no Engine file, no new
+protocol API call, no V3/V4 semantic change (the field is computed
+identically for both protocol versions, exactly as every other Portfolio
+History column already is), and no change to the Path B (self-hostable,
+no operated production deployment) deployment disposition — see
+`docs/DEPLOYMENT_DISPOSITION.md`.
+
+### Release status
+
+This entry promotes one batch already independently verified by its own
+audit-implement-test-validate cycle (full suite: 4108/4108 tests
+passing, both in the implementation worktree and independently after
+applying the delivered patch to a clean checkout) — not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass, the same promotion pattern `1.3.0`'s own entry below
+already used. See `PROJECT_STATUS.md`'s "v1.4.0 Release Reconciliation"
+section for the full record.
 
 ## [1.3.0] — 2026-09-04
 
