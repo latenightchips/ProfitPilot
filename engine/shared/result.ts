@@ -10,7 +10,7 @@
  * constant rather than an import of the host application's package.json.
  * Bump it alongside package.json's "version" field.
  */
-const ENGINE_VERSION = '1.4.0';
+const ENGINE_VERSION = '1.5.0';
 export interface FormulaWarning {
   code: string;
   message: string;

@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.4.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.4.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1, V1.2, V1.3, or V1.4** — no batch in any of the four releases modified a financial formula. `annualizedInterestCost` visibility (V1.4.0) reads an already-persisted, already-computed field directly; it introduces no formula of its own. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1, V1.2, V1.3, or V1.4** — every batch across all four releases persists through the existing envelope/schema, adding no new schema version. |
+| Application version           | `1.5.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.5.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.5** — no batch in any of the five releases modified a financial formula. Market Price/Liquidation Price visibility (V1.5.0) reads two already-persisted, already-computed fields directly; it introduces no formula, no liquidation calculation, and no new comparison logic of its own. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.5** — every batch across all five releases persists through the existing envelope/schema, adding no new schema version and no migration. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -43,6 +43,25 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.2.0)     | 2026-09-04     | Aave V4 capability work plus its own semantic-correctness remediation cycle (A1/A2/A3) and independent closure audit, all re-verified against a fresh `origin/main` checkout (4092/4092 tests passing) — see `PROJECT_STATUS.md`'s "V1.2.0 Release Reconciliation" section and the `[1.2.0]` entry below. Not a fresh full Release Candidate process in the Milestone-9/V1.1 sense (no new manual exploratory pass) — a promotion of already-audited, already-closed work into a version boundary. Also not a deployment date. |
 | Sign-off completed (1.3.0)     | 2026-09-04     | Portfolio Analytics / Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4100/4100 tests passing) — see `PROJECT_STATUS.md`'s "v1.3.0 Release Reconciliation" section and the `[1.3.0]` entry below. Same promotion pattern as `1.2.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.4.0)     | 2026-09-04     | Annualized Interest Cost Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4108/4108 tests passing) — see `PROJECT_STATUS.md`'s "v1.4.0 Release Reconciliation" section and the `[1.4.0]` entry below. Same promotion pattern as `1.3.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.5.0)     | 2026-09-04     | Portfolio Analytics — Price & Liquidation Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4119/4119 tests passing) — see `PROJECT_STATUS.md`'s "v1.5.0 Release Reconciliation" section and the `[1.5.0]` entry below. Same promotion pattern as `1.4.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.5.0`, not `1.4.x` or a new
+`2.0.0`**: not a PATCH — Portfolio History's `marketPriceUsd` and
+`liquidationPriceUsd` fields, previously computed and persisted but
+never surfaced anywhere in the UI, are now visible in the table, mobile
+card list, delta display, and as two new chart metrics (bringing the
+selector to seven) — new user-facing capability, not a bug fix to
+existing capability, the same bar that already justified `1.1.0`
+through `1.4.0` being MINOR rather than PATCH bumps. Not a new MAJOR
+either, on the identical reasoning the `1.4.0`, `1.3.0`, `1.2.0`, and
+`1.1.0` paragraphs below already give: no change to the Engine's
+calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary `01_PRD.md` reserves Version 2
+for — both fields are read directly from an already-persisted snapshot,
+never recomputed, and the Liquidation Price delta reuses
+`comparePortfolioHistoryEntries`'s own already-existing comparison
+output, simply unrendered until now. A minor version bump, same class
+as `1.1.0`'s, `1.2.0`'s, `1.3.0`'s, and `1.4.0`'s own.
 
 **Why the Application/Engine version is `1.4.0`, not `1.3.x` or a new
 `2.0.0`**: not a PATCH — Portfolio History's `annualizedInterestCost`
@@ -149,6 +168,74 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.5.0] — 2026-09-04
+
+One batch on top of Version 1.4.0: Portfolio Analytics — Price &
+Liquidation Trend Visibility, following the same pattern the Post-v1.4
+Decision-Point Audit found for two more already-persisted, never-
+rendered fields (`marketPriceUsd`, `liquidationPriceUsd`) — the same
+class of gap `annualizedInterestCost` closed in `1.4.0`. Full per-file
+detail lives in `PROJECT_STATUS.md`'s "v1.5.0 Release Reconciliation"
+section; this entry summarizes what changed for a user.
+
+### What's new in 1.5.0
+
+- **Portfolio History now shows Market Price and Liquidation Price.**
+  Two new columns appear in the desktop history table (after Interest
+  Cost (annualized)) and the mobile history card list, currency-
+  formatted, reading `entry.marketPriceUsd`/`entry.liquidationPriceUsd`
+  directly — both computed and persisted since V1.1 Batch 2, simply
+  never surfaced until now.
+- **Before/after comparison now shows both fields' own deltas**,
+  reusing `comparePortfolioHistoryEntries`'s already-existing
+  (previously unrendered) `marketPriceUsd`/`liquidationPriceUsd`
+  deltas — the same "before → after (delta)" convention every other
+  column already uses.
+- **The trend chart gains two more metrics**, bringing the selector to
+  seven: Market Price and Liquidation Price, alongside the five metrics
+  V1.3.0/V1.4.0 already shipped.
+- **Liquidation Price's zero-debt case reads "No liquidation risk,"
+  never "∞" or a fabricated price.** A `null` persisted liquidation
+  price means the position currently has no liquidation risk — this
+  release states that directly, reusing the exact wording this same
+  field already uses elsewhere in the application (Apply-to-Portfolio
+  review, Recommendation detail), rather than the Health-Factor-specific
+  "∞" convention or any invented numeric substitute.
+
+### What this is not
+
+Same discrete-observation boundary `[1.4.0]`'s and `[1.3.0]`'s own
+entries already state, restated because this release touches two more
+of the same historical fields directly: this release adds no portfolio
+profit/loss, total return, gain since inception, cost basis, or
+cumulative/realized interest accounting. It introduces no new
+liquidation-price *calculation* — Liquidation Price here is exactly the
+figure the Engine already computes and this application already
+persists and displays elsewhere (Dashboard, Apply-to-Portfolio,
+Recommendations); Portfolio History simply gained its own historical
+view of that same number.
+
+### Explicitly unchanged in 1.5.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no persisted-data
+schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no migration, no
+Engine file, no new protocol API call, no V3/V4 semantic change (both
+fields are computed identically for both protocol versions, exactly as
+every other Portfolio History column already is), and no change to the
+Path B (self-hostable, no operated production deployment) deployment
+disposition — see `docs/DEPLOYMENT_DISPOSITION.md`.
+
+### Release status
+
+This entry promotes one batch already independently verified by its own
+audit-implement-test-validate cycle (full suite: 4119/4119 tests
+passing, both in the implementation worktree and independently after
+applying the delivered patch to a clean checkout) — not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass, the same promotion pattern `1.4.0`'s own entry below
+already used. See `PROJECT_STATUS.md`'s "v1.5.0 Release Reconciliation"
+section for the full record.
 
 ## [1.4.0] — 2026-09-04
 

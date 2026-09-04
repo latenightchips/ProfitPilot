@@ -13583,6 +13583,117 @@ Remains a candidate for its own independent maintenance batch.
 
 ---
 
+## v1.5.0 Release Reconciliation — Portfolio Analytics: Price & Liquidation Trend Visibility
+
+**Recorded at the time it happened**, the same convention the `v1.4.0`
+section above already used — this section documents one batch,
+`36fc2f3` ("priceliquidationtrend"), applied directly on top of `v1.4.0`
+(`cc8890a`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.5.0`. Versions `1.0.0` through `1.4.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.4.0` to `1.5.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.5.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one. **No `v1.5.0` git tag exists yet** — tagging is a separate,
+explicit step for after this patch is applied and synced, not taken by
+this batch (see this batch's own final report for the exact recommended
+tag command).
+
+### Origin: Post-v1.4.0 Decision-Point Audit
+
+A read-only audit (same date) confirmed `v1.4.0` already had enough
+coherent standalone value, then re-examined the same two
+`docs/TECHNICAL_DEBT.md` items already flagged (still deliberately not
+corrected here — see below), re-evaluated the Dependabot candidate
+(still deferred), and searched the actual source for another already-
+computed, never-rendered field. It found the exact same situation that
+motivated `v1.4.0` applied to two more fields:
+`comparePortfolioHistoryEntries.ts` already computed delta comparisons
+for `marketPriceUsd` and `liquidationPriceUsd`, but neither field
+appeared anywhere in `PortfolioHistoryPanel.tsx`. It recommended closing
+`v1.5.0` with one batch covering both fields together, which this
+reconciliation batch does.
+
+### Batch 1 — Portfolio Analytics: Price & Liquidation Trend Visibility (`36fc2f3`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: `entry.marketPriceUsd`
+  and `entry.liquidationPriceUsd` — both computed and persisted since
+  V1.1 Batch 2, neither previously rendered anywhere — now appear as
+  two new table columns ("Market Price," "Liquidation Price," currency-
+  formatted), two new mobile card rows, two new before/after deltas
+  (reusing `comparePortfolioHistoryEntries`'s already-existing,
+  previously-unused deltas for both fields), and two new chart-selector
+  metrics, bringing the selector to seven — using the exact
+  `PORTFOLIO_HISTORY_METRICS` pattern the five metrics already shipped
+  in `v1.3.0`/`v1.4.0` established.
+- **Liquidation Price's `null` (zero-debt) case reads "No liquidation
+  risk," not "∞."** A new `formatLiquidationPrice` helper, and a new
+  optional `nullLabel` parameter on the existing `formatNullableDelta`
+  (defaulting to `'∞'` so Health Factor's own call site is byte-
+  identical to before), together reuse the exact wording this same
+  field already uses elsewhere in the application
+  (`ApplyToPortfolioReview.tsx`, `RecommendationDetailPanel.tsx`) rather
+  than borrowing Health-Factor-specific semantics or fabricating a
+  numeric price.
+- **Tests**: 11 new tests plus 2 extended baseline tests plus 1 updated
+  pre-existing test (an exact-option-count assertion made stale by the
+  new options, scoped to its own original 5-item concern instead) in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`, covering
+  table/card rendering, delta rendering, the selector's sixth/seventh
+  options, chart plotting for both new metrics, the null-liquidation-
+  price case (asserting "No liquidation risk" appears and neither "∞"
+  nor a fabricated "$0.00" does), empty/single-snapshot behavior, and
+  V4-portfolio compatibility.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4119/4119 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean (the same single pre-existing, unrelated lint warning
+  present in every prior batch this session).
+
+### What did not change
+
+**No Engine file, no persistence schema, no migration, no protocol API
+call, and no V3/V4 semantic change** — confirmed by direct diff
+inspection (`git diff --stat cc8890a..36fc2f3`: exactly two files,
+`app/portfolio/PortfolioHistoryPanel.tsx` and its test file). Market
+Price and Liquidation Price are computed identically regardless of
+protocol version, matching how every other Portfolio History column
+already is. No new liquidation-price _calculation_ — the figure is
+exactly what the Engine already computes and this application already
+persists and displays elsewhere (Dashboard, Apply-to-Portfolio,
+Recommendations); Portfolio History gained only its own historical view
+of that same number. No deployment/cloud work — the Path B disposition
+is unaffected.
+
+### Documentation inspected, found to require no change
+
+Per this batch's own "change a document only when v1.5.0 materially
+changes what it should say" instruction, the following were freshly
+re-checked and found to need no update, since none reference a
+version-specific feature set or a current-version number this release
+would make stale: `docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/OPERATIONAL_RUNBOOK.md`,
+`docs/MAINTENANCE_SCHEDULE.md` — confirmed via direct grep for `1.4.0`/
+`1.3.0`/"current release" across all five, zero matches. None describe
+Portfolio History's specific chart-metric count or column set, and this
+release changes no deployment, operational, or maintenance posture.
+
+### `docs/TECHNICAL_DEBT.md`'s two stale items and Dependabot — still deliberately not addressed
+
+Unchanged disposition from the `v1.4.0` section above: both stale
+`docs/TECHNICAL_DEBT.md` entries (Cloud Sync copy, CI/Playwright
+automation) remain confirmed-stale-but-uncorrected, and Dependabot
+remains confirmed-absent-but-deferred, per the same "no batch has ever
+folded `docs/TECHNICAL_DEBT.md` into ordinary release reconciliation,
+and dependency tooling is non-user-facing maintenance work" reasoning
+already recorded there. Neither was re-litigated or touched this batch.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
