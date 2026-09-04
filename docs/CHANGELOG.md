@@ -32,14 +32,26 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.1.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.1.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1** — none of the seven V1.1 batches modified a financial formula. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1** — Portfolio History and Apply-to-Portfolio both persist through the existing envelope/schema, adding no new schema version. |
+| Application version           | `1.2.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.2.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 or V1.2** — no batch in either release modified a financial formula. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 or V1.2** — every batch in both releases persists through the existing envelope/schema, adding no new schema version. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
 | Sign-off completed (1.1.0)     | 2026-08-31     | V1.1 Release Candidate audit (Batches 1–7) — see `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review" section and the `[1.1.0]` entry below. Also not a deployment date. |
+| Sign-off completed (1.2.0)     | 2026-09-04     | Aave V4 capability work plus its own semantic-correctness remediation cycle (A1/A2/A3) and independent closure audit, all re-verified against a fresh `origin/main` checkout (4092/4092 tests passing) — see `PROJECT_STATUS.md`'s "V1.2.0 Release Reconciliation" section and the `[1.2.0]` entry below. Not a fresh full Release Candidate process in the Milestone-9/V1.1 sense (no new manual exploratory pass) — a promotion of already-audited, already-closed work into a version boundary. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.2.0`, not `1.1.x` or a new
+`2.0.0`**: not a PATCH — V4 portfolio creation and two new live-read V4
+fields (base drawn APR, reserve price) are new user-facing capability,
+not bug fixes to existing capability, the same bar that already
+justified 1.1.0 being MINOR rather than PATCH over 1.0.0. Not a new
+MAJOR either, on the identical reasoning the `1.1.0` paragraph below
+already gives: no change to the Engine's calculation surface, the
+persisted-data shape, or the Manual-Mode-by-default product boundary
+`01_PRD.md` reserves Version 2 for. A minor version bump, same class as
+`1.1.0`'s own.
 
 **Why the Application/Engine version is `1.1.0`, not a new `2.0.0`**:
 V1.1 adds seven feature batches on top of Version 1.0.0's already-complete
@@ -105,6 +117,75 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.2.0] — 2026-09-04
+
+Eleven commits on top of Version 1.1.0, falling into two groups: five
+ship or fix real Aave V4 capability; six close V3/V4 terminology and
+semantic-correctness gaps that capability work introduced or exposed.
+Full per-commit detail lives in `PROJECT_STATUS.md`'s "V1.2.0 Release
+Reconciliation" section; this entry summarizes what changed for a user.
+
+### What's new in 1.2.0
+
+- **Aave V4 portfolios can now be created directly**, not only opted
+  into after the fact. The New Portfolio form now offers the same Aave
+  V4 choice `AaveProtocolVersionForm` already offered on an existing
+  portfolio's own edit page — address-independent: you can create a V4
+  portfolio with no on-chain address at all (fully manual), or with one
+  (opting into whichever fields that address's live data can supply).
+- **A third V4 field can now be read live: base drawn APR**, alongside
+  the debt state and collateral risk factor that already could be. Like
+  those two, it's opt-in (an on-chain address), read-only, and never
+  silently overwrites a manual entry that disagrees with it.
+- **Live V4 reserve (BTC) price**, read from the V4 pool's own oracle —
+  distinct from, and independent of, V3's own live price feed.
+- **Clearer live/manual status, per field.** A V4 portfolio's debt
+  state, collateral risk, and base drawn rate each now show their own
+  live/manual status individually, rather than one combined status for
+  the whole portfolio — visible on the Portfolio page and reflected
+  consistently in CSV/JSON exports and Portfolio History entries.
+- **V4 debt figures are now consistently canonical wherever a proposed
+  change is previewed** — the Portfolio page's own preview and
+  Simulation's portfolio-action path now use the same real
+  drawn-debt-plus-premium-debt total (and, on a repayment, the same
+  real premium-first split) every other V4 surface already used.
+- **V3/V4 terminology correctness, verified across the entire
+  application.** A focused audit-and-fix cycle confirmed and closed
+  every remaining place a V4 portfolio's real Collateral Factor was
+  still labeled or validated as though it were V3's "Maximum LTV," or
+  a V4 portfolio's unchanged assumptions still named "Supply APR" (a
+  concept V4 doesn't have) — across Loop Builder, Simulation's Scenario
+  Builder, Apply-to-Portfolio, and the Dashboard. In every case the
+  underlying number was already correct; only the label or comparison
+  was wrong. A final, independent closure audit re-verified every
+  reachable V4 surface against a fresh checkout and found nothing
+  further to fix. Full test suite: 4092/4092 passing.
+- **Two internal-only fixes**, mentioned for completeness rather than
+  because they're user-visible: a V4 API response-serialization bug
+  (large on-chain numbers could break JSON encoding in specific cases)
+  and the addition of a shared, consistent error-handling helper across
+  the three V4 on-chain-read routes.
+
+### Explicitly unchanged in 1.2.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no persisted-data
+schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no live wallet/
+transaction capability, no new external service dependency, and no
+change to the Path B (self-hostable, no operated production deployment)
+deployment disposition — see `docs/DEPLOYMENT_DISPOSITION.md`.
+Collateral quantity and debt balance remain always-manual for both
+protocol versions.
+
+### Release status
+
+This entry promotes work already independently verified by its own
+audit-implement-test-validate cycle per commit, plus a subsequent
+closure audit that re-checked every reachable V4 surface and found
+nothing further to fix (4092/4092 tests passing) — not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new
+manual exploratory testing pass. See `PROJECT_STATUS.md`'s "V1.2.0
+Release Reconciliation" section for the full record.
 
 ## [1.1.0] — 2026-08-31
 
@@ -174,60 +255,6 @@ See `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate Review"
 section for the full review.
 
 ## [Unreleased]
-
-Two unreleased bodies of work, kept as separate subsections below since
-they happened at different times against different baselines and
-neither has its own version bump yet.
-
-### Aave V4 capability and correctness (post-1.1.0)
-
-**No version-axis bump accompanies this subsection yet** — `package.json`'s
-`"version"`, `APP_VERSION`, and `ENGINE_VERSION` are still `1.1.0`;
-whether and how to bump them for the work below is an open decision,
-not resolved by this entry existing. No `FORMULA_VERSION` or
-`STORAGE_SCHEMA_VERSION` change either way — nothing below touched a
-financial formula or the persisted-data schema. See `PROJECT_STATUS.md`'s
-"Post-V1.1 Reconciliation" section for the full per-commit record this
-subsection summarizes.
-
-- **Aave V4 portfolios can now be created directly**, not only opted
-  into after the fact. The New Portfolio form now offers the same Aave
-  V4 choice `AaveProtocolVersionForm` already offered on an existing
-  portfolio's own edit page — address-independent: you can create a V4
-  portfolio with no on-chain address at all (fully manual), or with one
-  (opting into whichever fields that address's live data can supply).
-- **A third V4 field can now be read live: base drawn APR**, alongside
-  the debt state and collateral risk factor that already could be. Like
-  those two, it's opt-in (an on-chain address), read-only, and never
-  silently overwrites a manual entry that disagrees with it.
-- **Live V4 reserve (BTC) price**, read from the V4 pool's own oracle —
-  distinct from, and independent of, V3's own live price feed.
-- **Clearer live/manual status, per field.** A V4 portfolio's debt
-  state, collateral risk, and base drawn rate each now show their own
-  live/manual status individually, rather than one combined status for
-  the whole portfolio — visible on the Portfolio page and reflected
-  consistently in CSV/JSON exports and Portfolio History entries.
-- **V4 debt figures are now consistently canonical wherever a proposed
-  change is previewed** — the Portfolio page's own preview and
-  Simulation's portfolio-action path now use the same real
-  drawn-debt-plus-premium-debt total (and, on a repayment, the same
-  real premium-first split) every other V4 surface already used.
-- **V3/V4 terminology correctness, verified across the entire
-  application.** A focused audit-and-fix cycle confirmed and closed
-  every remaining place a V4 portfolio's real Collateral Factor was
-  still labeled or validated as though it were V3's "Maximum LTV," or
-  a V4 portfolio's unchanged assumptions still named "Supply APR" (a
-  concept V4 doesn't have) — across Loop Builder, Simulation's Scenario
-  Builder, Apply-to-Portfolio, and the Dashboard. In every case the
-  underlying number was already correct; only the label or comparison
-  was wrong. A final, independent closure audit re-verified every
-  reachable V4 surface against a fresh checkout and found nothing
-  further to fix. Full test suite: 4092/4092 passing.
-- **Two internal-only fixes**, mentioned for completeness rather than
-  because they're user-visible: a V4 API response-serialization bug
-  (large on-chain numbers could break JSON encoding in specific cases)
-  and the addition of a shared, consistent error-handling helper across
-  the three V4 on-chain-read routes.
 
 ### Post-M10 hardening (R1/R2)
 

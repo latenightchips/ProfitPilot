@@ -13,9 +13,57 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.1.0
+## Version 1.2.0
 
-**Current release.** Quality Sign-Off completed via the V1.1 Release
+**Current release.** Promotes the Aave V4 capability and correctness
+work below out of Unreleased status — built, tested, and independently
+re-verified (4092/4092 tests passing) in the same batches that produced
+it, not a fresh Milestone-9/V1.1-style Release Candidate process with
+its own new manual exploratory pass. See `PROJECT_STATUS.md`'s "V1.2.0
+Release Reconciliation" section and `docs/CHANGELOG.md`'s `[1.2.0]`
+entry for the full record. Everything in "Version 1.1.0" and "Version
+1.0.0" below still applies; this section covers only what is new since
+1.1.0. **Still a self-hostable software release, not a hosted
+product** — see "Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.2.0
+
+- **Aave V4 portfolios can now be created directly.** Previously, every
+  new portfolio started as V3; Aave V4 was only reachable by switching
+  an existing portfolio afterward. The New Portfolio form now offers
+  the same choice up front — with or without an on-chain address.
+- **A third V4 field can now be read live: base drawn interest rate**,
+  joining debt state and collateral risk factor, on the same opt-in,
+  read-only, never-silently-overwritten terms as those two.
+- **Live V4 reserve (BTC) price**, read from Aave V4's own oracle,
+  independent of V3's separate live price feed.
+- **Per-field live/manual status for V4.** Debt state, collateral risk,
+  and base drawn rate each now show their own status individually
+  instead of one combined figure for the whole portfolio.
+- **Consistent V4 debt totals in every preview.** The Portfolio page's
+  own change preview and Simulation's portfolio-action path now agree
+  with every other V4 surface on what a position's real total debt is.
+- **V3/V4 terminology correctness verified end to end.** A focused
+  review found and fixed every remaining place a V4 portfolio's real
+  Collateral Factor was still shown or validated using V3's "Maximum
+  LTV" language, or where an unchanged-assumptions disclosure still
+  named "Supply APR" for V4 (a concept V4 doesn't have) — across Loop
+  Builder, Simulation, Apply-to-Portfolio, and the Dashboard. The
+  underlying numbers were already correct in every case; only the
+  wording was wrong. A follow-up, independent review re-checked every
+  V4-reachable surface and found nothing further to fix.
+
+### Explicitly unchanged in 1.2.0
+
+No financial formula changed, no persisted-data schema changed, still
+no live wallet connection or transaction execution, still no cloud
+backup or synchronization, still no publicly operated production
+deployment. Collateral quantity and debt balance remain always-manual
+for both protocol versions.
+
+## Version 1.1.0 (previous release)
+
+Quality Sign-Off completed via the V1.1 Release
 Candidate audit (Batches 1–7), with zero release-blocking (P0/P1)
 defects — see `docs/DEFECT_CLASSIFICATION.md`'s "V1.1 Release Candidate
 Review" section for the full review. Everything in "Version 1.0.0" below
@@ -62,49 +110,6 @@ live wallet connection or transaction execution, still no cloud backup or
 synchronization, and still no publicly operated production deployment —
 see "Known limitations" and "Deployment" below, both unchanged from
 Version 1.0.0.
-
-## Version [Unreleased] — post-1.1.0
-
-**Not yet a numbered release.** `APP_VERSION`/`ENGINE_VERSION`/`package.json`
-`"version"` are still `1.1.0`; the work below has been built, tested,
-and verified but has not yet been given its own version number — see
-`PROJECT_STATUS.md`'s "Post-V1.1 Reconciliation" section for the full
-record and `docs/CHANGELOG.md`'s matching `[Unreleased]` entry.
-
-### What's new since 1.1.0
-
-- **Aave V4 portfolios can now be created directly.** Previously, every
-  new portfolio started as V3; Aave V4 was only reachable by switching
-  an existing portfolio afterward. The New Portfolio form now offers
-  the same choice up front — with or without an on-chain address.
-- **A third V4 field can now be read live: base drawn interest rate**,
-  joining debt state and collateral risk factor, on the same opt-in,
-  read-only, never-silently-overwritten terms as those two.
-- **Live V4 reserve (BTC) price**, read from Aave V4's own oracle,
-  independent of V3's separate live price feed.
-- **Per-field live/manual status for V4.** Debt state, collateral risk,
-  and base drawn rate each now show their own status individually
-  instead of one combined figure for the whole portfolio.
-- **Consistent V4 debt totals in every preview.** The Portfolio page's
-  own change preview and Simulation's portfolio-action path now agree
-  with every other V4 surface on what a position's real total debt is.
-- **V3/V4 terminology correctness verified end to end.** A focused
-  review found and fixed every remaining place a V4 portfolio's real
-  Collateral Factor was still shown or validated using V3's "Maximum
-  LTV" language, or where an unchanged-assumptions disclosure still
-  named "Supply APR" for V4 (a concept V4 doesn't have) — across Loop
-  Builder, Simulation, Apply-to-Portfolio, and the Dashboard. The
-  underlying numbers were already correct in every case; only the
-  wording was wrong. A follow-up, independent review re-checked every
-  V4-reachable surface and found nothing further to fix.
-
-### Explicitly unchanged
-
-Same as 1.1.0 below: no financial formula changed, no persisted-data
-schema changed, still no live wallet connection or transaction
-execution, still no cloud backup or synchronization, still no publicly
-operated production deployment. Collateral quantity and debt balance
-remain always-manual for both protocol versions.
 
 ## Version 1.0.0 (previous release)
 

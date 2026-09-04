@@ -13164,20 +13164,35 @@ per-axis record).
 
 ---
 
-## Post-V1.1 Reconciliation — Aave V4 Capability Expansion & Semantic Correctness Remediation
+## V1.2.0 Release Reconciliation — Aave V4 Capability Expansion & Semantic Correctness Remediation
 
-**Added by a documentation-only reconciliation batch (Portfolio Analytics
-milestone, Batch 0), the same "record added after the fact, not a
+**Originally added by a documentation-only reconciliation batch
+(Portfolio Analytics milestone, Batch 0) as a "post-V1.1 Unreleased"
+record; promoted to a real version entry by this same milestone's
+release-boundary batch**, the same "record added after the fact, not a
 rewritten history" convention the two sections above already
-establish.** None of the eleven commits below were tracked
+establish. None of the eleven commits below were tracked
 contemporaneously in this file as they happened; this section
 reconstructs them from `git log v1.1.0..<the commit each item cites>`
 and direct source inspection, not from any prior report's own claims.
-**`APP_VERSION`/`ENGINE_VERSION`/`package.json` `"version"` remain
-`1.1.0` as of this section** — whether and how to bump them for the
-work below is an explicit owner decision this batch does not make (see
-this batch's own final report for a version recommendation offered
-separately, not applied here).
+
+**Current release candidate: `1.2.0`. Versions `1.0.0` and `1.1.0`
+remain the immutable previous releases** — neither git tag is touched
+by this promotion; nothing here rewrites or reopens either. The
+release-boundary batch bumps `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` from `1.1.0` to `1.2.0` — a MINOR bump, on the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.1.0`, not a new `2.0.0`" paragraph already used for the previous
+bump: real new capability (V4 portfolio creation, two new live-read V4
+fields), but no change to the Engine's calculation surface, the
+persisted-data shape, or the Manual-Mode-by-default product boundary —
+see `docs/CHANGELOG.md`'s matching `[1.2.0]` entry for the full
+version-metadata record. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` are
+unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one. **No `v1.2.0` git tag exists yet** — tagging is a separate,
+explicit step for after this patch is applied and synced, not taken by
+this batch (see this batch's own final report for the exact recommended
+tag command).
 
 Eleven commits, `v1.1.0..4afdebb` (`v1.1.0` tag = `60d4bdf`), fall into
 two groups: five ship or fix real Aave V4 capability; six hold the same
