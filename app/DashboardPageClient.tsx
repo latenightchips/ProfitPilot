@@ -26,6 +26,7 @@ import {
   HealthFactorStatusSection,
   HealthFactorTrendSection,
   LeverageSummarySection,
+  LiquidationBufferTrendSection,
   LiquidationRiskPanel,
   NoDebtNotice,
   PortfolioCompositionSection,
@@ -178,6 +179,22 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * (only in the `viewModel.ok === true` branch), not because it requires a
  * successfully-computed summary itself, but to keep this batch's scope
  * minimal and consistent with its neighboring section.
+ *
+ * **`LiquidationBufferTrendSection` (v1.8.0 Batch 1, "Dashboard
+ * Liquidation Buffer Trend Visibility")** renders directly after
+ * `LiquidationRiskPanel` — the same historical-trend pairing pattern
+ * `HealthFactorTrendSection` established for `HealthFactorStatusSection`,
+ * now completing the Dashboard's risk-trend story with the second metric.
+ * Reads the same already-persisted Portfolio History entries through the
+ * identical `listPortfolioHistoryForPortfolio` service call, deriving
+ * each point via the v1.6.0 `calculateLiquidationBufferPercent` helper
+ * (`services/portfolioHistory/`) applied to that entry's own
+ * `marketPriceUsd`/`liquidationPriceUsd` — never the Engine's separate,
+ * live-computed F-025 value `LiquidationRiskPanel` itself renders. No new
+ * Engine formula, no new persisted field, no risk-band classification
+ * (see that component's own header comment for the full reasoning).
+ * Gated the same way its neighboring sections already are (only in the
+ * `viewModel.ok === true` branch).
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -381,6 +398,11 @@ export function DashboardPageClient() {
                 developerMode={developerMode}
                 engineVersion={viewModel.engineVersion}
                 formulaVersion={viewModel.formulaVersion}
+              />
+
+              <LiquidationBufferTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
               />
 
               {portfolioComposition !== null && (

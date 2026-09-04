@@ -44,6 +44,7 @@ export * from './components/HealthFactorStatusSection';
 export * from './components/HealthFactorTrendSection';
 export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
+export * from './components/LiquidationBufferTrendSection';
 export * from './components/LiquidationRiskPanel';
 export * from './components/NoDebtNotice';
 export * from './components/PortfolioCompositionSection';
