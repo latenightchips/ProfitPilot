@@ -38,13 +38,22 @@ owner must still decide — every single item has at least one).
 ### 1. Additional protocols
 
 - **Priority tier**: Highest.
-- **Rationale / dependencies**: Version 1.0.0 supports exactly one
+- **Rationale / dependencies**: Version 1.0.0 supported exactly one
   protocol (Aave V3, `01_PRD.md`'s own "Version 0.1 focuses exclusively
   on... the Aave V3 lending protocol"). The Engine's own protocol
   parameters are already isolated from its formulas
   (`docs/04_BUILD_GUIDE.md`'s architecture, `services/protocol/`) — the
   most architecturally-prepared item on this list. No dependency on
   another item below.
+- **Correction (post-v1.3.0 reconciliation, evidence-based, priority
+  tier unchanged)**: as of `v1.2.0`, the application supports two
+  *versions* of that same protocol — Aave V3 and Aave V4
+  (`PROJECT_STATUS.md`'s "V1.2.0 Release Reconciliation" section) —
+  still one protocol family, not an additional protocol in the sense
+  this item means. "Additional protocols" below still refers to a
+  genuinely different lending protocol (e.g., Compound, MakerDAO), not
+  another Aave version; nothing about the V3/V4 work changes this item's
+  scope or priority tier.
 - **Owner decision required**: which protocol(s) to add, and whether
   each one's own formulas justify the same Golden-Reference-Portfolio
   verification rigor `docs/QUALITY_PLAN.md` already requires for Aave
@@ -75,10 +84,28 @@ owner must still decide — every single item has at least one).
   visualizations. No live/external data source required — built
   entirely from data the application already persists. No dependency
   on another item below.
-- **Owner decision required**: what analytics are actually wanted (a
-  net-worth-over-time chart is a very different scope commitment from
-  a full historical-performance dashboard) — this document does not
-  presume either.
+- **Correction (post-v1.3.0 reconciliation, evidence-based, priority
+  tier unchanged)**: this item's own rationale, above, described
+  Portfolio Analytics entirely as undelivered Version 2 scope. That
+  premise is now partially stale — `v1.3.0` (a Version 1.x release, not
+  Version 2) already delivered a first coherent milestone: the
+  Portfolio History panel's trend chart now offers a metric selector
+  across Health Factor, Net Worth, Loan-to-Value, and Leverage, built
+  entirely from already-persisted history data with no new external
+  dependency, no new formula, and no cloud requirement — see
+  `PROJECT_STATUS.md`'s "v1.3.0 Release Reconciliation" section and
+  `docs/CHANGELOG.md`'s `[1.3.0]` entry. What remains genuinely
+  undelivered and still requires an owner decision: anything needing
+  data this application does not persist (a real historical cost basis;
+  profit/loss; total return since inception) — deliberately not built,
+  since there is no acquisition-price capture mechanism; and
+  `annualizedInterestCost` trend visibility, evaluated and deliberately
+  deferred as a possible future enhancement, not ruled out.
+- **Owner decision required**: what further analytics are actually
+  wanted beyond the four metrics already shipped (a full
+  historical-performance dashboard, or a cost-basis capture mechanism
+  to support profit/loss, is a very different scope commitment) — this
+  document does not presume either.
 
 ### 4. Wallet integrations
 

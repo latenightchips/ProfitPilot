@@ -13347,6 +13347,138 @@ remains an owner decision this batch does not make.
 
 ---
 
+## v1.3.0 Release Reconciliation — Portfolio Analytics / Trend Visibility
+
+**Recorded at the time it happened**, unlike the `V1.2.0 Release
+Reconciliation` section above (which reconstructed eleven commits after
+the fact) — this section documents one batch, `4958107`
+("v1.3.0batch1portfolioanalytics"), applied directly on top of `v1.2.0`
+(`6d9b5db`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.3.0`. Versions `1.0.0`, `1.1.0`, and
+`1.2.0` remain the immutable previous releases** — no existing tag is
+touched by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.2.0` to `1.3.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.3.0`" paragraph gives: real new capability, but no change to the
+Engine's calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary. `FORMULA_VERSION`/
+`STORAGE_SCHEMA_VERSION` are unchanged, `1.0`/`1.0.0` respectively, same
+as every release before this one. **No `v1.3.0` git tag exists yet** —
+tagging is a separate, explicit step for after this patch is applied and
+synced, not taken by this batch (see this batch's own final report for
+the exact recommended tag command).
+
+### Origin: Post-v1.2.0 Roadmap Audit
+
+A read-only audit (same date) reviewed `docs/VERSION_2_BACKLOG.md`,
+`docs/KNOWN_ISSUES.md`, `docs/USER_GUIDE.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md`,
+`docs/CHANGELOG.md`, `docs/RELEASE_NOTES.md`, and the actual
+`services/portfolioHistory/` implementation against a fresh `v1.2.0`
+checkout, and recommended Portfolio Analytics / Trend Visibility as the
+next milestone: the only roadmap category with a concrete,
+already-buildable scope, zero new external dependencies, zero
+financial-semantics risk if scoped correctly, and real, already-recorded
+user value (`docs/VERSION_2_BACKLOG.md` item 3 already named this
+"High" priority and `recharts`-ready). The audit explicitly identified
+`services/persistence/schemas/portfolioHistory.schema.ts`'s already-
+persisted fields (`collateral.valueUsd`, `debt.valueUsd`, `loanToValue`,
+`leverage`, `healthFactor`, among others) as sufficient for a first
+milestone with no schema change, and flagged that any real "Portfolio
+Gain"/"total return" feature would require a cost-basis capture
+mechanism this application does not have — explicitly out of scope,
+not built.
+
+### Batch 1 — Multi-metric portfolio history trend support (`4958107`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: the existing Health
+  Factor trend chart (V1.1 Batch 2) now offers a compact, keyboard-
+  accessible `<select>` that switches it between four metrics —
+  **Health Factor** (unchanged default, byte-identical aria-label
+  wording to before), **Net Worth**, **Loan-to-Value**, and
+  **Leverage**. Net Worth is derived as `collateral.valueUsd -
+debt.valueUsd`, exactly `docs/02_Formulas.md`'s own "Net Worth =
+  Portfolio Value − Debt" equation — not an alternative definition.
+  Loan-to-Value and Leverage read the already-persisted
+  `loanToValue`/`leverage` fields directly, the same values the table
+  above the chart already shows — never recomputed. The table, mobile
+  card list, and every existing accessibility/motion behavior
+  (`role="img"`, a text `aria-label` summarizing every plotted point,
+  `isAnimationActive={false}`) are unchanged; only the chart gained a
+  selector.
+- **Originally proposed as two batches** (a selector-less multi-metric
+  chart, then a separate metric-selector batch) — Batch 1 absorbed both,
+  confirmed by direct diff inspection during the subsequent read-only
+  scope assessment (same date): the selector was already fully built,
+  so no separate Batch 2 for it was implemented or is outstanding.
+- **`annualizedInterestCost` trend visibility** was evaluated as a
+  candidate fifth metric in the scope assessment and explicitly
+  deferred, not implemented — it has no existing table/card exposure
+  today (a genuine, pre-existing gap unrelated to this milestone), and
+  adding it as a chart-only metric without first establishing it as a
+  table column would break the precedent every other metric in this
+  batch follows (chart = supplementary visual over data already in the
+  table). Left as a possible future enhancement, not ruled out.
+- **Tests**: 19 tests added/extended in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`, covering
+  metric selection, chart data mapping, Net Worth derivation, per-metric
+  formatting, accessibility labeling, existing Health-Factor-default
+  regression, and explicit V3/V4 compatibility (a V4 entry with no
+  `supplyApr` produces identical Net Worth/Leverage output to an
+  equivalent V3 entry).
+- **Validation**: full suite run twice — once in the implementation
+  worktree, once independently after `git apply`-ing the delivered patch
+  to a separate clean worktree from `origin/main` — both times
+  **4100/4100 tests passing**, `pnpm typecheck`/`pnpm lint`/
+  `pnpm format:check`/`pnpm build` all clean (one pre-existing,
+  unrelated lint warning and one pre-existing, unrelated build-time
+  OpenTelemetry/`require-in-the-middle` notice, both present identically
+  in the unmodified baseline).
+
+### What did not change
+
+**No Engine file, no persistence schema, no protocol API call, and no
+V3/V4 semantic change** — confirmed by direct diff inspection
+(`git diff --stat 6d9b5db..4958107`: exactly two files,
+`app/portfolio/PortfolioHistoryPanel.tsx` and its test file). Net Worth,
+Loan-to-Value, and Leverage are computed identically regardless of
+protocol version, matching how the table already treated these three
+fields; `supplyApr`/Borrow-APR handling (the one field that is
+V3/V4-asymmetric) is untouched. No deployment/cloud work — the Path B
+(self-hostable, no operated production deployment) disposition is
+unaffected; see `docs/DEPLOYMENT_DISPOSITION.md`, itself unchanged.
+
+### `docs/VERSION_2_BACKLOG.md` wording corrected by this reconciliation
+
+Two items' own framing were factually contradicted by capability shipped
+across `v1.2.0`/`v1.3.0` and are corrected in this same batch, matching
+the precedent items 4/5 already set in the post-V1.1 reconciliation:
+
+- **Item 3, Portfolio analytics** — its rationale described this
+  entirely as undelivered Version 2 scope. A first coherent milestone
+  (this batch) has now shipped inside Version 1.x, not Version 2 — see
+  `docs/VERSION_2_BACKLOG.md`'s own corrected item 3 for the exact
+  wording. Priority tier and what remains genuinely undelivered
+  (anything requiring a cost basis; `annualizedInterestCost` visibility)
+  are unchanged.
+- **Item 1, Additional protocols** — its rationale described
+  Version 1.0.0 as supporting "exactly one protocol (Aave V3)," which
+  remains true of `1.0.0` specifically but could read as still true of
+  the current release, which now also supports Aave V4. Corrected to
+  clarify the current release supports two versions of the same
+  protocol family, not an additional protocol in the sense this item
+  means — priority tier and scope (a genuinely different lending
+  protocol) unchanged.
+
+Items 2, 4, 5, 6, 7, and 8 were reviewed and found to require no
+correction — nothing shipped in `v1.2.0`/`v1.3.0` factually contradicts
+their existing text. Items 4/5's own "Correction (post-V1.1
+reconciliation...)" paragraphs (added in the earlier doc-reconciliation
+batch) remain accurate and unchanged.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

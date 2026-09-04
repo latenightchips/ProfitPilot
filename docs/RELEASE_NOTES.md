@@ -13,18 +13,60 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.2.0
+## Version 1.3.0
 
-**Current release.** Promotes the Aave V4 capability and correctness
-work below out of Unreleased status — built, tested, and independently
-re-verified (4092/4092 tests passing) in the same batches that produced
-it, not a fresh Milestone-9/V1.1-style Release Candidate process with
-its own new manual exploratory pass. See `PROJECT_STATUS.md`'s "V1.2.0
-Release Reconciliation" section and `docs/CHANGELOG.md`'s `[1.2.0]`
-entry for the full record. Everything in "Version 1.1.0" and "Version
-1.0.0" below still applies; this section covers only what is new since
-1.1.0. **Still a self-hostable software release, not a hosted
-product** — see "Deployment" below, unchanged from Version 1.0.0.
+**Current release.** Promotes the Portfolio Analytics / Trend
+Visibility batch below out of Unreleased status — built, tested, and
+independently re-verified (4100/4100 tests passing, both in the
+implementation worktree and again after applying the delivered patch to
+a clean checkout) in the same batch that produced it, not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.3.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.3.0]` entry for the
+full record. Everything in "Version 1.2.0" and earlier below still
+applies; this section covers only what is new since 1.2.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.3.0
+
+- **The Portfolio History chart now offers four metrics.** A compact
+  selector switches the existing trend chart between Health Factor
+  (unchanged default), Net Worth, Loan-to-Value, and Leverage. The table
+  and mobile card list beneath it, and every value in them, are
+  unchanged.
+- **Net Worth is exactly the already-documented "Portfolio Value − Debt"
+  equation** applied to a stored snapshot's own collateral and debt
+  values — not a new formula. Loan-to-Value and Leverage plot the
+  already-persisted fields directly.
+- **Historical snapshots remain discrete observations, not a continuous
+  accounting record.** This release does not add portfolio profit/loss,
+  total return, gain since inception, a cost basis, or cumulative/
+  realized interest — ProfitPilot has no mechanism to capture an
+  acquisition price, so none of these can be computed without new
+  specification work this release does not do.
+
+### Explicitly unchanged in 1.3.0
+
+No financial formula changed, no persisted-data schema changed, no
+Engine file changed, no new protocol API call, no V3/V4 semantic change,
+still no live wallet connection or transaction execution, still no cloud
+backup or synchronization, still no publicly operated production
+deployment. Collateral quantity and debt balance remain always-manual
+for both protocol versions.
+
+## Version 1.2.0 (previous release)
+
+Promoted the Aave V4 capability and correctness work described below out
+of Unreleased status — built, tested, and independently re-verified
+(4092/4092 tests passing) in the same batches that produced it, not a
+fresh Milestone-9/V1.1-style Release Candidate process with its own new
+manual exploratory pass. See `PROJECT_STATUS.md`'s "V1.2.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.2.0]` entry for the
+full record. Everything in "Version 1.1.0" and "Version 1.0.0" below
+still applies; this section covers only what is new since 1.1.0. **Still
+a self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
 
 ### What's new in 1.2.0
 
