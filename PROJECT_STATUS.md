@@ -13694,6 +13694,167 @@ already recorded there. Neither was re-litigated or touched this batch.
 
 ---
 
+## v1.6.0 Release Reconciliation — Liquidation Buffer Visibility
+
+**Recorded at the time it happened**, the same convention the `v1.5.0`
+section above already used — this section documents one batch,
+`6222fa1` ("liquidationbuffervisibility"), applied directly on top of
+`v1.5.0` (`943014a`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.6.0`. Versions `1.0.0` through `1.5.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.5.0` to `1.6.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.6.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one. **No `v1.6.0` git tag exists yet** — tagging is a separate,
+explicit step for after this patch is applied and synced, not taken by
+this batch (see this batch's own final report for the exact recommended
+tag command).
+
+### Origin: Post-v1.5.0 Decision-Point Audit
+
+A read-only audit (same date) confirmed `v1.5.0` closed out the
+"already-computed, never-rendered field" pattern entirely: every field
+`comparePortfolioHistoryEntries.ts`'s `PortfolioHistoryComparison`
+interface compares a delta for (9 keys) was already visible in
+`PortfolioHistoryPanel.tsx` as of `v1.5.0`. Rather than force a feature
+onto an already-persisted-but-out-of-scope field (`supplyApr`,
+`collateral.quantity`, `debt.quantity`, `debt.asset` — all still
+explicit non-goals) or a genuinely new financial semantic (Health
+Factor risk bands, blocked on an unresolved 4-way documentation
+conflict; cumulative/realized interest, blocked on a missing
+acquisition-price capture mechanism), the audit identified one small,
+safe DERIVED analytic obtainable purely from the two fields `v1.5.0`
+had just exposed: the percentage distance between `marketPriceUsd` and
+`liquidationPriceUsd`. It recommended closing `v1.6.0` with one batch
+covering this single metric, which this reconciliation batch does.
+
+### Batch 1 — Liquidation Buffer Visibility (`6222fa1`)
+
+- **`services/portfolioHistory/calculateLiquidationBufferPercent.ts`
+  (new)**: `(marketPriceUsd − liquidationPriceUsd) / marketPriceUsd`,
+  returned as a plain fraction (matching `loanToValue`'s own
+  convention) so it composes directly with the existing `formatPercent`
+  helper. Returns `null` — never a fabricated `0%` or `Infinity` — when
+  `liquidationPriceUsd` is `null` (zero-debt) or the `marketPriceUsd`
+  denominator is non-finite or non-positive. Positive, zero, and
+  negative results are all returned unclamped.
+- **`services/portfolioHistory/comparePortfolioHistoryEntries.ts`**:
+  gains a tenth field, `liquidationBufferPercent`, a
+  `PortfolioHistoryNullableMetricDelta` computed by calling the new
+  helper on both sides of the comparison — the same
+  `nullableMetricDelta` machinery `healthFactor` and
+  `liquidationPriceUsd` already use.
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: an eighth
+  `PORTFOLIO_HISTORY_METRICS` entry, "Liquidation Buffer," appended
+  after "Liquidation Price" in the chart selector, the desktop table
+  (new last column), the mobile card list, and the before/after delta
+  display — the exact `PORTFOLIO_HISTORY_METRICS`/`formatNullableDelta`
+  pattern every metric since `v1.3.0` has used. A null buffer renders
+  "No liquidation risk," reusing `formatLiquidationPrice`'s own
+  established text rather than "∞" or a fabricated numeric value.
+- **Tests**: 26 new tests across three files — 8 for the new helper
+  (normal/zero/negative buffer, null liquidation price, invalid/zero/
+  negative/non-finite denominator, non-finite liquidation price), 6 for
+  `comparePortfolioHistoryEntries` (numeric deltas, both null↔numeric
+  transition directions, unchanged null↔null, V3/V4 parity), and 12 for
+  `PortfolioHistoryPanel` (full eight-item selector order, normal/zero/
+  negative rendering, null rendering in table and chart aria-label,
+  table deltas for both numeric-to-numeric and null-to-numeric
+  transitions, mobile card parity, V4 protocol-agnostic parity,
+  sub-2-entry table-only rendering, and regression coverage confirming
+  all seven prior metrics remain selectable). One pre-existing test's
+  exact-count assertion (`getAllByText('No liquidation risk')`) was
+  updated from 1 to 2 to account for the new column legitimately
+  showing the same text alongside the existing Liquidation Price cell.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4145/4145 tests
+  passing** (4119 baseline + 26 new), `pnpm typecheck`/`pnpm lint`/
+  `pnpm format:check`/`pnpm build` all clean (the same single
+  pre-existing, unrelated lint warning present in every prior batch
+  this session).
+
+### What did not change
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat 943014a..6222fa1`:
+exactly 7 files, all within `services/portfolioHistory/`,
+`app/portfolio/PortfolioHistoryPanel.tsx`, and their test files — no
+`engine/**`, `services/persistence/**`, `services/aave/**`, or
+`app/api/aave/**` path appears). Liquidation Buffer never branches on
+`protocolVersion`; a dedicated test confirms byte-identical output for
+otherwise-identical V3 and V4 entries. Liquidation Buffer is not itself
+persisted — it is computed on every read from two fields that already
+were. No deployment/cloud work — the Path B disposition is unaffected.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when v1.6.0 materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.5.0`/`1.4.0`/"current release" and found to need no update, since
+none reference a version-specific feature set or a current-version
+number this release would make stale: `docs/KNOWN_ISSUES.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md` — zero
+matches across all three. `docs/USER_GUIDE.md` was read in full and
+already accurately describes the live-vs-manual data boundary this
+release does not change; no Portfolio History-specific claim there
+needed updating for an eighth metric.
+
+### Stale-documentation cleanup (separate from the v1.6.0 feature itself)
+
+Two items flagged by the Post-v1.5.0 Decision-Point Audit as
+objectively stale, confirmed by fresh repository evidence this batch
+and corrected — pure documentation-text fixes, no product semantics
+changed:
+
+1. **`docs/TECHNICAL_DEBT.md`'s "Cloud Sync UI copy" Priority 1 item.**
+   The item's own text quoted `app/settings/SettingsPageClient.tsx`
+   lines 562/641 as still reading "does not yet sync to the cloud" —
+   fresh inspection confirms that text no longer exists; the component
+   has read "Sync state: Local only — your data is stored on this
+   device and is not synced anywhere" since Milestone 10 Batch 7,
+   per that file's own header comment. The debt-log entry was simply
+   never updated to reflect the fix across the `v1.4.0`/`v1.5.0`
+   reconciliations that came after it (both deliberately left
+   `docs/TECHNICAL_DEBT.md` untouched). Marked resolved in place.
+2. **`docs/CHANGELOG.md`'s "Known limitations" list, "Manual Mode
+   only" bullet.** Stated "No live BTC price feed, no live Aave
+   connection" — contradicted by `docs/USER_GUIDE.md`'s own text
+   (unchanged since V1.1: "not, as this section previously implied, an
+   absence of live data... BTC price and Aave V3 protocol parameters...
+   are fetched live and read-only by default") and by
+   `docs/KNOWN_ISSUES.md` category A, which explicitly names this exact
+   gap ("a distinction `docs/CHANGELOG.md` did not draw clearly and
+   this entry corrects") without the source ever having been fixed.
+   `docs/RELEASE_NOTES.md`'s own equivalent bullet was already corrected
+   in an earlier batch; `docs/CHANGELOG.md`'s was the one remaining
+   stale copy. Reworded to match the accurate live-vs-manual boundary
+   already established elsewhere in the documentation set.
+
+Neither correction touches a version-specific claim about `v1.6.0`
+itself, changes what any feature does, or resolves an unresolved
+product decision — both are corrections of already-decided, already-
+documented-elsewhere facts that two specific files had simply not
+caught up to.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Supply APR trend,
+collateral/debt quantity history, debt-asset history, Health Factor risk
+bands, cumulative/realized interest, P&L, cost basis, total return,
+Dependabot/Renovate, or production deployment. The CI/Playwright
+automation item in `docs/TECHNICAL_DEBT.md` (a different, separately-
+tracked stale-debt candidate not named in this batch's own scope) was
+also not touched.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

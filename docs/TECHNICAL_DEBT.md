@@ -18,26 +18,21 @@ unaffected).
 
 ## Priority 1 — highest leverage for the next release cycle
 
-- **Cloud Sync UI copy still reads "does not yet sync to the cloud"**
-  (`app/settings/SettingsPageClient.tsx`, lines 562/641). Found and
-  recorded in `docs/SECURITY_REVIEW.md` (Milestone 9 Batch 6, "Unauthorized
-  cloud deletion") and again in Milestone 10 Batch 3's disclosure audit
-  (`PROJECT_STATUS.md`). **Classification, precisely**: this is
-  **stale/misleading user-facing copy** — Cloud Database and Cloud
-  Synchronization are cancelled by explicit product decision
-  (`docs/MILESTONE_8_SCOPE_CHANGE.md`), a permanent disposition, not a
-  "deferred" one (`docs/KNOWN_ISSUES.md` category E's own "permanent,
-  not deferred" distinction). This text's own wording ("does not **yet**
-  sync") reads as if Cloud Sync were pending/deferred functionality —
-  it is not, and this item is not a request to build Cloud Sync; it is
-  a request to correct copy that misdescribes an already-cancelled
-  feature as still-coming. Low effort (a two-line copy change), real
-  user-facing accuracy impact — the highest ratio of impact to effort
-  of any item in this document. **Not fixed in this batch** —
-  application-code change, outside M10-022's own audit-only,
-  documentation-scope batch; recorded here as a concrete follow-up item
-  for the next approved release fix under
-  `docs/VERSIONING_STRATEGY.md`'s PATCH rules.
+- ~~**Cloud Sync UI copy still reads "does not yet sync to the cloud"**~~
+  **Resolved — corrected in Milestone 10 Batch 7, confirmed by fresh
+  inspection during v1.6.0's release reconciliation.**
+  `app/settings/SettingsPageClient.tsx` now states the local-only
+  storage model directly ("Sync state: Local only — your data is stored
+  on this device and is not synced anywhere," line 575), not the
+  earlier "does not yet sync to the cloud" wording this item originally
+  flagged (found and recorded in `docs/SECURITY_REVIEW.md`, Milestone 9
+  Batch 6, "Unauthorized cloud deletion," and Milestone 10 Batch 3's
+  disclosure audit). Left as a stale, uncorrected debt-log entry across
+  the `v1.4.0` and `v1.5.0` release reconciliations (both of which
+  deliberately did not fold `docs/TECHNICAL_DEBT.md` into ordinary
+  release work) — corrected here as an explicitly-scoped documentation
+  cleanup item, not a re-litigation of the underlying fix, which had
+  already shipped.
 - **No automated dependency-update tooling configured** (no Dependabot/
   Renovate — `docs/MAINTENANCE_SCHEDULE.md`'s own "Dependency updates"
   section already states this honestly). Every dependency bump today is
