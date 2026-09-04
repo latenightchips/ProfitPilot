@@ -89,20 +89,36 @@ function formatTimestamp(iso: string): string {
 }
 
 /**
- * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility"). Lets the
- * trend chart below plot one of four metrics without permanently
- * stacking four charts — a compact selector switches which of these
+ * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") plus V1.4.0
+ * Batch 1 ("Annualized Interest Cost Visibility"). Lets the trend chart
+ * below plot one of five metrics without permanently stacking five
+ * charts — a compact selector switches which of these
  * `getValue`/`formatValue` pairs feeds the same single `LineChart`.
  *
  * **Net Worth is exactly `docs/02_Formulas.md`'s own "Net Worth =
  * Portfolio Value − Debt" equation** (Assets minus Debt), applied to one
  * already-persisted snapshot's own `collateral.valueUsd`/`debt.valueUsd`
  * — no new formula, no Engine involvement, not an alternative
- * definition. Loan-to-Value and Leverage read the already-persisted
- * `loanToValue`/`leverage` fields directly, the same values the table
+ * definition. Loan-to-Value, Leverage, and Interest Cost (annualized)
+ * read the already-persisted `loanToValue`/`leverage`/
+ * `annualizedInterestCost` fields directly, the same values the table
  * above already renders — never recomputed here.
+ *
+ * **"Interest Cost (annualized)" is a point-in-time projection, not a
+ * running total.** `entry.annualizedInterestCost` is the projected
+ * annual borrowing cost implied by *that one snapshot's own* debt
+ * balance and rate — never interest already paid, cumulative interest,
+ * realized borrowing cost, or interest paid since inception. Plotting
+ * it across snapshots shows how that projection moved over time (e.g. a
+ * rate change even with debt held constant); it does not, and must
+ * never be read to, sum to a total amount actually paid — the "trend"
+ * language `PORTFOLIO_HISTORY_METRICS.label` values feed into the
+ * chart's own aria-label summary is the same non-causal, non-cumulative
+ * framing this file's own top comment already establishes for every
+ * other delta.
  */
-type PortfolioHistoryMetricKey = 'healthFactor' | 'netWorth' | 'loanToValue' | 'leverage';
+type PortfolioHistoryMetricKey =
+  'healthFactor' | 'netWorth' | 'loanToValue' | 'leverage' | 'annualizedInterestCost';
 
 interface PortfolioHistoryMetricConfig {
   label: string;
@@ -131,6 +147,11 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     getValue: (entry) => entry.leverage,
     formatValue: (value) => (value === null ? '—' : `${formatHealthFactor(value)}x`),
   },
+  annualizedInterestCost: {
+    label: 'Interest Cost (annualized)',
+    getValue: (entry) => entry.annualizedInterestCost,
+    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
+  },
 };
 
 /** Selector order, matching the order the task's own required list names them. */
@@ -139,7 +160,18 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'netWorth',
   'loanToValue',
   'leverage',
+  'annualizedInterestCost',
 ];
+
+/**
+ * Concise, user-facing disambiguation for `title` attributes on the
+ * "Interest Cost (annualized)" table header and card label — per this
+ * batch's own explicit semantic requirement: this figure must never be
+ * read as interest already paid, cumulative interest, realized
+ * borrowing cost, or interest paid since inception.
+ */
+const ANNUALIZED_INTEREST_COST_TOOLTIP =
+  "Projected annualized borrowing cost at this snapshot's own debt and rate — not interest already paid or a running total.";
 
 function formatDelta(
   delta: PortfolioHistoryMetricDelta,
@@ -228,11 +260,26 @@ function HistoryEntryCard({
                 entry.borrowApr !== undefined ? formatPercent(entry.borrowApr) : 'Not available',
               delta: delta !== null ? formatOptionalDelta(delta.borrowApr, formatPercent) : null,
             },
+            {
+              label: 'Interest Cost (annualized)',
+              value: formatCurrency(entry.annualizedInterestCost),
+              delta:
+                delta !== null ? formatDelta(delta.annualizedInterestCost, formatCurrency) : null,
+            },
           ] as const
         ).map((row) => (
           <div key={row.label} className="flex flex-col gap-0.5">
             <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-muted-foreground">{row.label}</dt>
+              <dt
+                className="text-muted-foreground"
+                title={
+                  row.label === 'Interest Cost (annualized)'
+                    ? ANNUALIZED_INTEREST_COST_TOOLTIP
+                    : undefined
+                }
+              >
+                {row.label}
+              </dt>
               <dd className="text-right text-foreground">{row.value}</dd>
             </div>
             {row.delta !== null && row.delta !== '—' && (
@@ -370,7 +417,11 @@ export function PortfolioHistoryPanel({
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="timestamp" hide />
                 <YAxis
-                  width={selectedMetric === 'netWorth' ? 56 : 32}
+                  width={
+                    selectedMetric === 'netWorth' || selectedMetric === 'annualizedInterestCost'
+                      ? 56
+                      : 32
+                  }
                   tick={{ fontSize: 10 }}
                   tickFormatter={(value: number) => selectedMetricConfig.formatValue(value)}
                 />
@@ -421,8 +472,15 @@ export function PortfolioHistoryPanel({
               <th scope="col" className="py-1.5 pr-3 font-medium">
                 Leverage
               </th>
-              <th scope="col" className="py-1.5 font-medium">
+              <th scope="col" className="py-1.5 pr-3 font-medium">
                 Borrow APR
+              </th>
+              <th
+                scope="col"
+                className="py-1.5 font-medium"
+                title={ANNUALIZED_INTEREST_COST_TOOLTIP}
+              >
+                Interest Cost (annualized)
               </th>
             </tr>
           </thead>
@@ -478,7 +536,7 @@ export function PortfolioHistoryPanel({
                       </div>
                     )}
                   </td>
-                  <td className="py-1.5">
+                  <td className="py-1.5 pr-3">
                     <div className="text-foreground">
                       {entry.borrowApr !== undefined
                         ? formatPercent(entry.borrowApr)
@@ -487,6 +545,16 @@ export function PortfolioHistoryPanel({
                     {delta !== null && (
                       <div className="text-muted-foreground">
                         {formatOptionalDelta(delta.borrowApr, formatPercent)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-1.5">
+                    <div className="text-foreground">
+                      {formatCurrency(entry.annualizedInterestCost)}
+                    </div>
+                    {delta !== null && (
+                      <div className="text-muted-foreground">
+                        {formatDelta(delta.annualizedInterestCost, formatCurrency)}
                       </div>
                     )}
                   </td>

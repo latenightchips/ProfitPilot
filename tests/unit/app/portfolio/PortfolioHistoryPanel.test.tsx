@@ -120,6 +120,8 @@ describe('PortfolioHistoryPanel — with entries', () => {
     expect(table.getByText('20%')).toBeInTheDocument(); // LTV
     expect(table.getByText('1.25x')).toBeInTheDocument(); // Leverage
     expect(table.getByText('5%')).toBeInTheDocument(); // Borrow APR
+    expect(table.getByText('$1,000.00')).toBeInTheDocument(); // Interest Cost (annualized)
+    expect(table.getByText('Interest Cost (annualized)')).toBeInTheDocument(); // column header
   });
 
   it('does not render the chart with only one entry, but always renders the table', async () => {
@@ -279,6 +281,8 @@ describe('PortfolioHistoryPanel — with entries', () => {
     expect(list.getByText('20%')).toBeInTheDocument(); // LTV
     expect(list.getByText('1.25x')).toBeInTheDocument(); // Leverage
     expect(list.getByText('5%')).toBeInTheDocument(); // Borrow APR
+    expect(list.getByText('$1,000.00')).toBeInTheDocument(); // Interest Cost (annualized)
+    expect(list.getByText('Interest Cost (annualized)')).toBeInTheDocument(); // row label
   });
 });
 
@@ -505,5 +509,227 @@ describe('PortfolioHistoryPanel — multi-metric trend chart', () => {
     label = screen.getByRole('img').getAttribute('aria-label') ?? '';
     expect(label).toContain('1.25x');
     expect(label).toContain('1.3x');
+  });
+});
+
+/**
+ * V1.4.0 Batch 1 ("Annualized Interest Cost Visibility") — extends the
+ * table, mobile card list, and chart metric selector with
+ * `entry.annualizedInterestCost`, the same "read the already-persisted
+ * field directly, never recompute it" discipline every other metric
+ * above already follows. **This field is a point-in-time projection**
+ * (that one snapshot's own debt/rate implying an annual cost), never
+ * interest already paid, cumulative interest, realized borrowing cost,
+ * or interest paid since inception — tests below assert on the label
+ * text ("Interest Cost (annualized)") and currency formatting, never on
+ * any summed/cumulative figure, since none is computed anywhere in this
+ * component.
+ */
+describe('PortfolioHistoryPanel — annualized interest cost', () => {
+  it('adds a fifth "Interest Cost (annualized)" option to the metric selector, after Leverage', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', annualizedInterestCost: 1000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', annualizedInterestCost: 1200 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Health Factor',
+      'Net Worth',
+      'Loan-to-Value',
+      'Leverage',
+      'Interest Cost (annualized)',
+    ]);
+  });
+
+  it('plots the already-persisted annualizedInterestCost field, currency-formatted, without recomputing it', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', annualizedInterestCost: 1000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', annualizedInterestCost: 1450.5 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'annualizedInterestCost');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Interest Cost (annualized) trend');
+    expect(label).toContain('$1,000.00');
+    expect(label).toContain('$1,450.50');
+    // Never a cumulative/summed figure (e.g. $2,450.50) anywhere in the summary.
+    expect(label).not.toContain('$2,450.50');
+  });
+
+  it('switches to and back from the annualizedInterestCost metric, restoring the prior chart correctly', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        healthFactor: 4,
+        annualizedInterestCost: 1000,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        healthFactor: 3,
+        annualizedInterestCost: 1200,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'annualizedInterestCost');
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain(
+      'Interest Cost (annualized) trend',
+    );
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'healthFactor');
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
+  });
+
+  it('renders the Interest Cost (annualized) delta in the table, reusing the existing before/after delta convention', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', annualizedInterestCost: 1000 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', annualizedInterestCost: 1200 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    // The newer (top) row's delta vs. the older one: $1,000.00 -> $1,200.00 (+$200.00),
+    // the exact same "before → after (delta)" convention every other column uses.
+    expect(
+      within(screen.getByRole('table')).getByText('$1,000.00 → $1,200.00 (+$200.00)'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not render the annualizedInterestCost option or chart with fewer than 2 entries', async () => {
+    await recordPortfolioHistoryEntry(entry({ annualizedInterestCost: 1000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    // The table itself still shows the value, currency-formatted, with no chart required.
+    expect(within(screen.getByRole('table')).getByText('$1,000.00')).toBeInTheDocument();
+  });
+
+  it('formats a zero annualizedInterestCost (e.g. a full-exit entry) as currency, never blank or NaN', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        collateral: { quantity: 0, valueUsd: 0 },
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        loanToValue: 0,
+        leverage: 0,
+        annualizedInterestCost: 0,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    // Collateral Value, Debt Value, and Interest Cost (annualized) are all
+    // legitimately $0.00 for this full-exit entry.
+    expect(within(screen.getByRole('table')).getAllByText('$0.00')).toHaveLength(3);
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
+  it('surfaces the same annualizedInterestCost value and label in the mobile card list as the table', async () => {
+    await recordPortfolioHistoryEntry(entry({ annualizedInterestCost: 1000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('list')).toBeInTheDocument();
+    });
+    const list = within(screen.getByRole('list'));
+    expect(list.getByText('Interest Cost (annualized)')).toBeInTheDocument();
+    expect(list.getByText('$1,000.00')).toBeInTheDocument();
+  });
+
+  it('works identically for a V4 portfolio entry — annualizedInterestCost is protocol-agnostic', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        annualizedInterestCost: 900,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        annualizedInterestCost: 1100,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'annualizedInterestCost');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('$900.00');
+    expect(label).toContain('$1,100.00');
   });
 });
