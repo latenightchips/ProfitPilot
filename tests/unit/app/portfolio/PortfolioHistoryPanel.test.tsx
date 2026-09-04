@@ -774,7 +774,10 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(optionLabels).toEqual([
+    // Scoped to the first seven positions only — v1.6.0's own Liquidation
+    // Buffer option (added after this one) is verified by its own describe
+    // block below, including the full eight-item list.
+    expect(optionLabels.slice(0, 7)).toEqual([
       'Health Factor',
       'Net Worth',
       'Loan-to-Value',
@@ -937,7 +940,10 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
     const table = within(screen.getByRole('table'));
-    expect(table.getAllByText('No liquidation risk')).toHaveLength(1);
+    // Two occurrences as of v1.6.0 Batch 1: the Liquidation Price cell and
+    // the derived Liquidation Buffer cell — see the dedicated
+    // "PortfolioHistoryPanel — liquidation buffer" describe block below.
+    expect(table.getAllByText('No liquidation risk')).toHaveLength(2);
   });
 
   it('does not render the Market Price/Liquidation Price options or chart with fewer than 2 entries, but the table still shows both values', async () => {
@@ -1037,6 +1043,327 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
 
     for (const metric of ['netWorth', 'loanToValue', 'leverage', 'annualizedInterestCost']) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
+  });
+});
+
+/**
+ * v1.6.0 Batch 1 ("Liquidation Buffer Visibility") — adds an eighth
+ * metric, "Liquidation Buffer", to the table, mobile card list, delta
+ * display, and chart metric selector. Unlike every prior metric here,
+ * this one is DISPLAY/SERVICE-LAYER DERIVED (`calculateLiquidationBufferPercent`
+ * in `services/portfolioHistory/`), not a directly-persisted field — it
+ * is `(marketPriceUsd - liquidationPriceUsd) / marketPriceUsd`, computed
+ * from the two already-persisted, already-rendered fields v1.5.0 exposed.
+ * No new Engine formula, no new persistence, no protocol branching.
+ * `null` (zero-debt / no liquidation risk, or an otherwise unavailable
+ * denominator) renders "No liquidation risk" — the exact same text
+ * `formatLiquidationPrice` already uses — never a fabricated `0%`. A
+ * negative buffer (market at or below the liquidation price) renders
+ * as-is, never clamped.
+ */
+describe('PortfolioHistoryPanel — liquidation buffer', () => {
+  it('adds Liquidation Buffer as the eighth metric-selector option, after Liquidation Price', async () => {
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Health Factor',
+      'Net Worth',
+      'Loan-to-Value',
+      'Leverage',
+      'Interest Cost (annualized)',
+      'Market Price',
+      'Liquidation Price',
+      'Liquidation Buffer',
+    ]);
+  });
+
+  it('plots the derived buffer from marketPriceUsd and liquidationPriceUsd, as a normal positive percentage, without persisting anything new', async () => {
+    const user = userEvent.setup();
+    // (50000-12500)/50000 = 0.75 -> 75%; (60000-15000)/60000 = 0.75 -> 75%
+    // Use distinct pairs so a coincidental match wouldn't hide a bug.
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 12500,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        marketPriceUsd: 60000,
+        liquidationPriceUsd: 30000,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationBufferPercent');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Liquidation Buffer trend');
+    expect(label).toContain('75%'); // (50000-12500)/50000
+    expect(label).toContain('50%'); // (60000-30000)/60000
+  });
+
+  it('renders a zero buffer as 0%, not blank, when market price equals liquidation price', async () => {
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 50000, liquidationPriceUsd: 50000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('0%')).toBeInTheDocument();
+  });
+
+  it('renders a negative buffer without clamping when market price is below liquidation price', async () => {
+    // (40000-50000)/40000 = -0.25 -> -25%
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 40000, liquidationPriceUsd: 50000 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('-25%')).toBeInTheDocument();
+  });
+
+  it('renders "No liquidation risk" — never "0%" or "Infinity" — for a null (zero-debt) liquidation price', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    // "No liquidation risk" now appears twice in this row: once for the
+    // Liquidation Price cell, once for the derived Liquidation Buffer cell.
+    const table = within(screen.getByRole('table'));
+    expect(table.getAllByText('No liquidation risk')).toHaveLength(2);
+    expect(screen.queryByText(/Infinity/)).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('renders "No liquidation risk" in the chart aria-label for a null buffer, never a fabricated numeric value', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 12500,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationBufferPercent');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('No liquidation risk');
+    expect(label).toContain('75%');
+  });
+
+  it('renders a numeric-to-numeric delta in the table, reusing the existing before/after delta convention', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 25000,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 10000,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    // before: (50000-25000)/50000=0.5 -> 50%; after: (50000-10000)/50000=0.8 -> 80%
+    expect(within(screen.getByRole('table')).getByText('50% → 80% (+30%)')).toBeInTheDocument();
+  });
+
+  it('renders a null-to-numeric transition delta as "No liquidation risk → X%", never a numeric delta', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        healthFactor: null,
+        liquidationPriceUsd: null,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 12500,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(
+      within(screen.getByRole('table')).getByText('No liquidation risk → 75%'),
+    ).toBeInTheDocument();
+  });
+
+  it('surfaces the same Liquidation Buffer value and label in the mobile card list as the table', async () => {
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 50000, liquidationPriceUsd: 12500 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('list')).toBeInTheDocument();
+    });
+    const list = within(screen.getByRole('list'));
+    expect(list.getByText('Liquidation Buffer')).toBeInTheDocument();
+    expect(list.getByText('75%')).toBeInTheDocument();
+  });
+
+  it('works identically for a V4 portfolio entry — Liquidation Buffer never branches on protocolVersion', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        marketPriceUsd: 50000,
+        liquidationPriceUsd: 12500,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        marketPriceUsd: 60000,
+        liquidationPriceUsd: 30000,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'liquidationBufferPercent');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('75%');
+    expect(label).toContain('50%');
+  });
+
+  it('does not render the Liquidation Buffer option or chart with fewer than 2 entries, but the table still shows the derived value', async () => {
+    await recordPortfolioHistoryEntry(entry({ marketPriceUsd: 50000, liquidationPriceUsd: 12500 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('75%')).toBeInTheDocument();
+  });
+
+  it('leaves all seven existing metrics fully available and unregressed', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', healthFactor: 3 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
+
+    for (const metric of [
+      'netWorth',
+      'loanToValue',
+      'leverage',
+      'annualizedInterestCost',
+      'marketPrice',
+      'liquidationPrice',
+    ]) {
       await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
       expect(screen.getByRole('img')).toBeInTheDocument();
     }

@@ -15,6 +15,8 @@
  */
 import type { PersistedPortfolioHistoryEntry } from '@/services/persistence';
 
+import { calculateLiquidationBufferPercent } from './calculateLiquidationBufferPercent';
+
 export interface PortfolioHistoryMetricDelta {
   before: number;
   after: number;
@@ -47,6 +49,8 @@ export interface PortfolioHistoryComparison {
   liquidationPriceUsd: PortfolioHistoryNullableMetricDelta;
   borrowApr: PortfolioHistoryOptionalMetricDelta;
   annualizedInterestCost: PortfolioHistoryMetricDelta;
+  /** `null` on either side means "no liquidation risk" — see `calculateLiquidationBufferPercent`'s own comment. Not a Formula-ID'd Engine value. */
+  liquidationBufferPercent: PortfolioHistoryNullableMetricDelta;
 }
 
 function metricDelta(before: number, after: number): PortfolioHistoryMetricDelta {
@@ -99,6 +103,10 @@ export function comparePortfolioHistoryEntries(
     annualizedInterestCost: metricDelta(
       before.annualizedInterestCost,
       after.annualizedInterestCost,
+    ),
+    liquidationBufferPercent: nullableMetricDelta(
+      calculateLiquidationBufferPercent(before.marketPriceUsd, before.liquidationPriceUsd),
+      calculateLiquidationBufferPercent(after.marketPriceUsd, after.liquidationPriceUsd),
     ),
   };
 }

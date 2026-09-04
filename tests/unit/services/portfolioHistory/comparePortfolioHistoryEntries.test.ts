@@ -136,4 +136,80 @@ describe('comparePortfolioHistoryEntries', () => {
       changed: true,
     });
   });
+
+  describe('liquidationBufferPercent (v1.6.0 Batch 1)', () => {
+    it('computes before/after/delta from marketPriceUsd and liquidationPriceUsd', () => {
+      // before: (50000-12500)/50000 = 0.75, after: (60000-12500)/60000 = 0.791666...
+      const comparison = comparePortfolioHistoryEntries(
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: 12500 }),
+        entry({ marketPriceUsd: 60000, liquidationPriceUsd: 12500 }),
+      );
+      expect(comparison.liquidationBufferPercent.before).toBeCloseTo(0.75, 10);
+      expect(comparison.liquidationBufferPercent.after).toBeCloseTo(0.791666667, 6);
+      expect(comparison.liquidationBufferPercent.changed).toBe(true);
+      expect(comparison.liquidationBufferPercent.delta).not.toBeNull();
+    });
+
+    it('numeric-to-numeric transition reports a numeric delta', () => {
+      const comparison = comparePortfolioHistoryEntries(
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: 25000 }),
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: 10000 }),
+      );
+      expect(comparison.liquidationBufferPercent).toEqual({
+        before: 0.5,
+        after: 0.8,
+        delta: expect.closeTo(0.3, 10),
+        changed: true,
+      });
+    });
+
+    it('null <-> numeric transition (zero-debt exit) renders as changed with a null delta, never a fabricated 0', () => {
+      const comparison = comparePortfolioHistoryEntries(
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: 12500 }),
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: null }),
+      );
+      expect(comparison.liquidationBufferPercent).toEqual({
+        before: 0.75,
+        after: null,
+        delta: null,
+        changed: true,
+      });
+    });
+
+    it('numeric <-> null transition (new debt taken on) also renders safely', () => {
+      const comparison = comparePortfolioHistoryEntries(
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: null }),
+        entry({ marketPriceUsd: 50000, liquidationPriceUsd: 12500 }),
+      );
+      expect(comparison.liquidationBufferPercent).toEqual({
+        before: null,
+        after: 0.75,
+        delta: null,
+        changed: true,
+      });
+    });
+
+    it('unchanged null <-> null reports changed: false', () => {
+      const same = entry({ marketPriceUsd: 50000, liquidationPriceUsd: null });
+      const comparison = comparePortfolioHistoryEntries(same, same);
+      expect(comparison.liquidationBufferPercent).toEqual({
+        before: null,
+        after: null,
+        delta: null,
+        changed: false,
+      });
+    });
+
+    it('is identical for a V3 entry and an otherwise-identical V4 entry — the calculation never branches on protocolVersion', () => {
+      const v3Comparison = comparePortfolioHistoryEntries(
+        entry({ protocolVersion: 'v3', marketPriceUsd: 50000, liquidationPriceUsd: 25000 }),
+        entry({ protocolVersion: 'v3', marketPriceUsd: 60000, liquidationPriceUsd: 25000 }),
+      );
+      const v4Comparison = comparePortfolioHistoryEntries(
+        entry({ protocolVersion: 'v4', marketPriceUsd: 50000, liquidationPriceUsd: 25000 }),
+        entry({ protocolVersion: 'v4', marketPriceUsd: 60000, liquidationPriceUsd: 25000 }),
+      );
+      expect(v4Comparison.liquidationBufferPercent).toEqual(v3Comparison.liquidationBufferPercent);
+    });
+  });
 });

@@ -11,6 +11,7 @@
  */
 export { attemptPortfolioHistorySnapshot } from './attemptPortfolioHistorySnapshot';
 export { buildPortfolioHistoryEntry } from './buildPortfolioHistoryEntry';
+export { calculateLiquidationBufferPercent } from './calculateLiquidationBufferPercent';
 export {
   comparePortfolioHistoryEntries,
   type PortfolioHistoryComparison,

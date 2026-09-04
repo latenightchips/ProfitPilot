@@ -6,6 +6,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } fro
 import type { PersistedPortfolioHistoryEntry } from '@/services/persistence';
 import { listPortfolioHistoryForPortfolio } from '@/services/persistence';
 import {
+  calculateLiquidationBufferPercent,
   comparePortfolioHistoryEntries,
   type PortfolioHistoryMetricDelta,
   type PortfolioHistoryNullableMetricDelta,
@@ -104,6 +105,18 @@ function formatLiquidationPrice(value: number | null): string {
 }
 
 /**
+ * `null` means "no liquidation risk" (zero-debt, or an otherwise
+ * unavailable denominator — see `calculateLiquidationBufferPercent`'s own
+ * comment) — same "No liquidation risk" text as `formatLiquidationPrice`,
+ * never a fabricated `0%`. A negative value (market at or below the
+ * liquidation price) is rendered as-is, not clamped.
+ */
+function formatLiquidationBufferPercent(value: number | null): string {
+  if (value === null) return 'No liquidation risk';
+  return formatPercent(value);
+}
+
+/**
  * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") plus V1.4.0
  * Batch 1 ("Annualized Interest Cost Visibility"). Lets the trend chart
  * below plot one of five metrics without permanently stacking five
@@ -142,6 +155,18 @@ function formatLiquidationPrice(value: number | null): string {
  * Recharts skips a `null` data point in the line (the same gap-not-zero
  * behavior Health Factor's own `null` entries already produce), so no
  * interpolation or substitution occurs here either.
+ *
+ * **V1.6.0 Batch 1 ("Liquidation Buffer Visibility")** adds Liquidation
+ * Buffer, an eighth metric that is DISPLAY/SERVICE-LAYER DERIVED, not a
+ * new Engine formula or Formula ID: `calculateLiquidationBufferPercent`
+ * (`services/portfolioHistory/`) computes `(marketPriceUsd −
+ * liquidationPriceUsd) / marketPriceUsd` from the two already-persisted,
+ * already-rendered fields v1.5.0 exposed — nothing new is persisted, no
+ * Aave adapter is touched, and no Health Factor risk band is implied.
+ * `null` (zero-debt / no liquidation risk, or an unavailable denominator)
+ * renders as "No liquidation risk," the same text `formatLiquidationPrice`
+ * already uses — never a fabricated `0%`. A negative buffer (market at or
+ * below the liquidation price) is shown as-is, not clamped.
  */
 type PortfolioHistoryMetricKey =
   | 'healthFactor'
@@ -150,7 +175,8 @@ type PortfolioHistoryMetricKey =
   | 'leverage'
   | 'annualizedInterestCost'
   | 'marketPrice'
-  | 'liquidationPrice';
+  | 'liquidationPrice'
+  | 'liquidationBufferPercent';
 
 interface PortfolioHistoryMetricConfig {
   label: string;
@@ -194,6 +220,12 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     getValue: (entry) => entry.liquidationPriceUsd,
     formatValue: (value) => formatLiquidationPrice(value),
   },
+  liquidationBufferPercent: {
+    label: 'Liquidation Buffer',
+    getValue: (entry) =>
+      calculateLiquidationBufferPercent(entry.marketPriceUsd, entry.liquidationPriceUsd),
+    formatValue: (value) => formatLiquidationBufferPercent(value),
+  },
 };
 
 /** Selector order, matching the order the task's own required list names them. */
@@ -205,6 +237,7 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'annualizedInterestCost',
   'marketPrice',
   'liquidationPrice',
+  'liquidationBufferPercent',
 ];
 
 /**
@@ -216,6 +249,16 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
  */
 const ANNUALIZED_INTEREST_COST_TOOLTIP =
   "Projected annualized borrowing cost at this snapshot's own debt and rate — not interest already paid or a running total.";
+
+/**
+ * Concise, user-facing disambiguation for the "Liquidation Buffer" table
+ * header and card label — per this batch's own explicit requirement that
+ * the label make clear this is a percentage distance between this
+ * snapshot's own market price and estimated liquidation price, not a
+ * Health Factor risk classification.
+ */
+const LIQUIDATION_BUFFER_TOOLTIP =
+  "Percentage distance between this snapshot's own market price and estimated liquidation price — not a Health Factor risk classification.";
 
 function formatDelta(
   delta: PortfolioHistoryMetricDelta,
@@ -335,6 +378,20 @@ function HistoryEntryCard({
                     )
                   : null,
             },
+            {
+              label: 'Liquidation Buffer',
+              value: formatLiquidationBufferPercent(
+                calculateLiquidationBufferPercent(entry.marketPriceUsd, entry.liquidationPriceUsd),
+              ),
+              delta:
+                delta !== null
+                  ? formatNullableDelta(
+                      delta.liquidationBufferPercent,
+                      formatPercent,
+                      'No liquidation risk',
+                    )
+                  : null,
+            },
           ] as const
         ).map((row) => (
           <div key={row.label} className="flex flex-col gap-0.5">
@@ -344,7 +401,9 @@ function HistoryEntryCard({
                 title={
                   row.label === 'Interest Cost (annualized)'
                     ? ANNUALIZED_INTEREST_COST_TOOLTIP
-                    : undefined
+                    : row.label === 'Liquidation Buffer'
+                      ? LIQUIDATION_BUFFER_TOOLTIP
+                      : undefined
                 }
               >
                 {row.label}
@@ -557,8 +616,11 @@ export function PortfolioHistoryPanel({
               <th scope="col" className="py-1.5 pr-3 font-medium">
                 Market Price
               </th>
-              <th scope="col" className="py-1.5 font-medium">
+              <th scope="col" className="py-1.5 pr-3 font-medium">
                 Liquidation Price
+              </th>
+              <th scope="col" className="py-1.5 font-medium" title={LIQUIDATION_BUFFER_TOOLTIP}>
+                Liquidation Buffer
               </th>
             </tr>
           </thead>
@@ -644,7 +706,7 @@ export function PortfolioHistoryPanel({
                       </div>
                     )}
                   </td>
-                  <td className="py-1.5">
+                  <td className="py-1.5 pr-3">
                     <div className="text-foreground">
                       {formatLiquidationPrice(entry.liquidationPriceUsd)}
                     </div>
@@ -653,6 +715,25 @@ export function PortfolioHistoryPanel({
                         {formatNullableDelta(
                           delta.liquidationPriceUsd,
                           formatCurrency,
+                          'No liquidation risk',
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-1.5">
+                    <div className="text-foreground">
+                      {formatLiquidationBufferPercent(
+                        calculateLiquidationBufferPercent(
+                          entry.marketPriceUsd,
+                          entry.liquidationPriceUsd,
+                        ),
+                      )}
+                    </div>
+                    {delta !== null && (
+                      <div className="text-muted-foreground">
+                        {formatNullableDelta(
+                          delta.liquidationBufferPercent,
+                          formatPercent,
                           'No liquidation risk',
                         )}
                       </div>
