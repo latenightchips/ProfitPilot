@@ -34,6 +34,7 @@
  * the Core KPI Grid and Liquidation Risk Panel's existing `KpiCard`s.
  */
 export * from './components/AnnualizedInterestCostTrendSection';
+export * from './components/BorrowAprTrendSection';
 export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSkeleton';

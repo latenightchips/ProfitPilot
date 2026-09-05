@@ -7,6 +7,7 @@ import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import {
   AnnualizedInterestCostTrendSection,
+  BorrowAprTrendSection,
   buildDashboardViewModel,
   buildDataFreshnessIndicators,
   buildDebtAndInterestPanel,
@@ -285,6 +286,28 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * own header comment for the full reasoning). Gated the same way its
  * neighboring sections already are (only in the `viewModel.ok === true`
  * branch).
+ *
+ * **`BorrowAprTrendSection` (v1.11.0 Batch 2, "Borrow APR Trend
+ * Completion")** renders directly after `AnnualizedInterestCostTrendSection`
+ * — grouped with the Dashboard's debt/interest analytics
+ * (`DebtAndInterestPanel` → `AnnualizedInterestCostTrendSection` →
+ * `BorrowAprTrendSection`), since Borrow APR is the same rate
+ * `DebtAndInterestPanel`'s own current-value card already shows,
+ * completing that pairing with a historical trend the same way
+ * `AnnualizedInterestCostTrendSection` already does for interest cost.
+ * Reads `entry.borrowApr` directly — the same field
+ * `PortfolioHistoryPanel.tsx`'s own `borrowApr` metric config already
+ * reads (v1.11.0 Batch 1) — never recalculated from today's portfolio
+ * state. `undefined` (a V4 portfolio with no synced debt state yet)
+ * renders "Not available," never a fabricated `0%`, distinct from
+ * `LiquidationPriceTrendSection`'s own "No liquidation risk" `null`
+ * case; a chart requires at least two *usable* (non-`undefined`)
+ * observations, not merely two persisted entries. No new Engine
+ * formula, no new persisted field, no risk-band classification, no
+ * V3/V4 branching (see that component's own header comment for the
+ * full reasoning). Rendered unconditionally, the same "always render
+ * the trend section" precedent `AnnualizedInterestCostTrendSection`
+ * already set.
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -524,6 +547,11 @@ export function DashboardPageClient() {
               )}
 
               <AnnualizedInterestCostTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+
+              <BorrowAprTrendSection
                 portfolioId={activePortfolioId}
                 portfolioUpdatedAt={record.portfolio.updatedAt}
               />
