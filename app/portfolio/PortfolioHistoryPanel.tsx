@@ -198,9 +198,28 @@ function formatBorrowApr(value: number | null): string {
  * gap rather than a fabricated line segment) — `formatValue` renders it
  * as **"Not available,"** not "No liquidation risk," so the distinct
  * reason is never conflated with the liquidation-risk convention.
+ *
+ * **V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History
+ * Chart Parity")** adds Collateral Value and Debt Value, the tenth and
+ * eleventh metrics — the same two already-persisted, already-rendered
+ * (table/card) fields Net Worth's own `entry.collateral.valueUsd -
+ * entry.debt.valueUsd` derivation already reads, now independently
+ * selectable rather than only visible as their difference. No new
+ * formula, no recomputation from quantity times current price, no
+ * live-data or current-market-price substitution — each snapshot's own
+ * stored `valueUsd` is plotted exactly as persisted, at record time,
+ * identically for V3 and V4 (this file never reads
+ * `entry.protocolVersion` for any metric, and these two are no
+ * exception). Positioned directly beside `netWorth` in the selector
+ * order, the same "raw inputs next to their derived difference"
+ * grouping this file's own table already establishes (Collateral Value
+ * and Debt Value are adjacent table columns, immediately after Health
+ * Factor).
  */
 type PortfolioHistoryMetricKey =
   | 'healthFactor'
+  | 'collateralValue'
+  | 'debtValue'
   | 'netWorth'
   | 'loanToValue'
   | 'leverage'
@@ -221,6 +240,16 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     label: 'Health Factor',
     getValue: (entry) => entry.healthFactor,
     formatValue: (value) => formatHealthFactor(value),
+  },
+  collateralValue: {
+    label: 'Collateral Value',
+    getValue: (entry) => entry.collateral.valueUsd,
+    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
+  },
+  debtValue: {
+    label: 'Debt Value',
+    getValue: (entry) => entry.debt.valueUsd,
+    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
   },
   netWorth: {
     label: 'Net Worth',
@@ -268,6 +297,8 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
 /** Selector order, matching the order the task's own required list names them. */
 const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'healthFactor',
+  'collateralValue',
+  'debtValue',
   'netWorth',
   'loanToValue',
   'leverage',
@@ -584,6 +615,8 @@ export function PortfolioHistoryPanel({
                 <XAxis dataKey="timestamp" hide />
                 <YAxis
                   width={
+                    selectedMetric === 'collateralValue' ||
+                    selectedMetric === 'debtValue' ||
                     selectedMetric === 'netWorth' ||
                     selectedMetric === 'annualizedInterestCost' ||
                     selectedMetric === 'marketPrice' ||
