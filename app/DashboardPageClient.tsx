@@ -29,6 +29,7 @@ import {
   LeverageSummarySection,
   LeverageTrendSection,
   LiquidationBufferTrendSection,
+  LiquidationPriceTrendSection,
   LiquidationRiskPanel,
   LoanToValueTrendSection,
   MarketPriceTrendSection,
@@ -264,6 +265,26 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * field, no risk-band classification (see each component's own header
  * comment for the full reasoning). Gated the same way their neighboring
  * sections already are (only in the `viewModel.ok === true` branch).
+ *
+ * **`LiquidationPriceTrendSection` (v1.10.0 Batch 3, "Dashboard Trend
+ * Parity")** renders directly after `MarketPriceTrendSection`, completing
+ * the liquidation-risk trend grouping (`LiquidationRiskPanel` →
+ * `LiquidationBufferTrendSection` → `MarketPriceTrendSection` →
+ * `LiquidationPriceTrendSection`) and completing the Dashboard's full
+ * mirror of every metric Portfolio History's own chart selector offers.
+ * Reads `entry.liquidationPriceUsd` directly — the canonical persisted
+ * field `buildPortfolioHistoryEntry.ts` populates once, at record time,
+ * from that snapshot's own Engine-computed liquidation price; never
+ * recalculated from today's portfolio state, never a live oracle or
+ * current market-price lookup for a historical point. `null` (zero-debt)
+ * renders "No liquidation risk," the same established text
+ * `PortfolioHistoryPanel.tsx`'s own `formatLiquidationPrice` and
+ * `LiquidationBufferTrendSection`'s own null case already use — never a
+ * fabricated `0`. No new Engine formula, no new persisted field, no
+ * risk-band classification, no V3/V4 branching (see that component's
+ * own header comment for the full reasoning). Gated the same way its
+ * neighboring sections already are (only in the `viewModel.ok === true`
+ * branch).
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -485,6 +506,11 @@ export function DashboardPageClient() {
               />
 
               <MarketPriceTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+
+              <LiquidationPriceTrendSection
                 portfolioId={activePortfolioId}
                 portfolioUpdatedAt={record.portfolio.updatedAt}
               />
