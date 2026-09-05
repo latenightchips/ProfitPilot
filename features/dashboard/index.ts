@@ -47,6 +47,8 @@ export * from './components/KpiCard';
 export * from './components/LeverageSummarySection';
 export * from './components/LiquidationBufferTrendSection';
 export * from './components/LiquidationRiskPanel';
+export * from './components/LoanToValueTrendSection';
+export * from './components/NetWorthTrendSection';
 export * from './components/NoDebtNotice';
 export * from './components/PortfolioCompositionSection';
 export * from './components/QuickActionsSection';

@@ -29,6 +29,8 @@ import {
   LeverageSummarySection,
   LiquidationBufferTrendSection,
   LiquidationRiskPanel,
+  LoanToValueTrendSection,
+  NetWorthTrendSection,
   NoDebtNotice,
   PortfolioCompositionSection,
   QuickActionsSection,
@@ -215,6 +217,26 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * succeeding) — the same "always render the trend section" precedent
  * both sibling trend sections already set, since Portfolio History
  * lookups do not depend on the current snapshot's own build succeeding.
+ *
+ * **`NetWorthTrendSection` and `LoanToValueTrendSection` (v1.10.0 Batch
+ * 1, "Dashboard Trend Parity")** render directly after `DashboardKpiGrid`
+ * — the KPI grid is the only existing "current value" display for
+ * either metric (unlike Health Factor, Liquidation Risk, and Interest
+ * Cost, none of these two have their own dedicated panel), so their
+ * trend charts pair with the grid itself rather than a metric-specific
+ * section. Both extend the Dashboard's trend-chart set to metrics
+ * Portfolio History has offered in its own chart selector since v1.3.0
+ * but the Dashboard never surfaced — Net Worth via the same "Net Worth =
+ * Portfolio Value − Debt" derivation `PortfolioHistoryPanel.tsx`'s own
+ * `netWorth` metric config already uses (`entry.collateral.valueUsd -
+ * entry.debt.valueUsd`, no new formula, no Engine involvement), and
+ * Loan-to-Value via a direct read of `entry.loanToValue`. Both fields
+ * are required, non-nullable numbers on every persisted entry regardless
+ * of protocol version, so neither component has a null branch or reads
+ * `entry.protocolVersion`. No new Engine formula, no new persisted
+ * field, no risk-band classification (see each component's own header
+ * comment for the full reasoning). Gated the same way their neighboring
+ * sections already are (only in the `viewModel.ok === true` branch).
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -398,6 +420,16 @@ export function DashboardPageClient() {
                 developerMode={developerMode}
                 engineVersion={viewModel.engineVersion}
                 formulaVersion={viewModel.formulaVersion}
+              />
+
+              <NetWorthTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+
+              <LoanToValueTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
               />
 
               {healthFactorStatus !== null && (
