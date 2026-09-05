@@ -521,17 +521,16 @@ describe('PortfolioHistoryPanel — multi-metric trend chart', () => {
 });
 
 /**
- * V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History Chart
- * Parity") — extends the chart metric selector with `entry.collateral.valueUsd`
- * and `entry.debt.valueUsd`, the same two already-persisted fields the
- * table/card view already renders (V1.1 Batch 2) and Net Worth's own
- * derivation already reads (V1.3.0 Batch 1) — now independently
- * selectable rather than only visible as their difference. No new
- * formula, no recomputation from quantity × current price, no live-data
- * or current-market-price substitution.
+ * V1.12.0 Batch 2 ("Collateral Quantity Portfolio History Chart Metric")
+ * — extends the chart metric selector with `entry.collateral.quantity`
+ * (raw BTC held), the field Collateral Value's own `valueUsd` is itself
+ * derived from at record time, but never re-derived or recomputed here —
+ * this metric plots exactly the persisted quantity. `formatCollateralQuantity`'s
+ * own `" BTC"` suffix keeps it unambiguous against every other,
+ * USD-denominated metric.
  */
-describe('PortfolioHistoryPanel — collateral value and debt value', () => {
-  it('adds Collateral Value and Debt Value as the second and third metric-selector options, after Health Factor', async () => {
+describe('PortfolioHistoryPanel — collateral quantity', () => {
+  it('adds Collateral Quantity as the second metric-selector option, after Health Factor', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -545,8 +544,236 @@ describe('PortfolioHistoryPanel — collateral value and debt value', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(optionLabels.slice(0, 4)).toEqual([
+    expect(optionLabels.slice(0, 3)).toEqual([
       'Health Factor',
+      'Collateral Quantity',
+      'Collateral Value',
+    ]);
+  });
+
+  it('plots the already-persisted collateral.quantity field, BTC-formatted, without deriving it from valueUsd or current price', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        collateral: { quantity: 2, valueUsd: 100000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        collateral: { quantity: 2.5, valueUsd: 162500 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralQuantity');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Collateral Quantity trend');
+    expect(label).toContain('2 BTC');
+    expect(label).toContain('2.5 BTC');
+    // Never the dollar values, which would indicate the wrong field was read.
+    expect(label).not.toContain('$100,000.00');
+    expect(label).not.toContain('$162,500.00');
+  });
+
+  it('preserves chronological ordering (oldest first) in the aria-label, regardless of the service’s newest-first read order', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        collateral: { quantity: 2, valueUsd: 100000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        collateral: { quantity: 3, valueUsd: 150000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label.indexOf('2 BTC')).toBeLessThan(label.indexOf('3 BTC'));
+  });
+
+  it('does not render the Collateral Quantity option or chart with fewer than 2 entries', async () => {
+    await recordPortfolioHistoryEntry(entry({ collateral: { quantity: 2, valueUsd: 100000 } }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('keeps multiple portfolios isolated — only the requested portfolioId’s entries feed the Collateral Quantity chart', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        collateral: { quantity: 2, valueUsd: 100000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        collateral: { quantity: 2.5, valueUsd: 162500 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        collateral: { quantity: 10, valueUsd: 500000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        collateral: { quantity: 11, valueUsd: 715000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('2 BTC');
+    expect(label).toContain('2.5 BTC');
+    expect(label).not.toContain('10 BTC');
+    expect(label).not.toContain('11 BTC');
+  });
+
+  it('works identically for a V4 portfolio entry — Collateral Quantity is protocol-agnostic', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        collateral: { quantity: 2, valueUsd: 100000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        collateral: { quantity: 2.5, valueUsd: 162500 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('2 BTC');
+    expect(label).toContain('2.5 BTC');
+  });
+
+  it('distinguishes a quantity change from a price-driven value change — Collateral Quantity stays flat while Collateral Value moves, and vice versa', async () => {
+    const user = userEvent.setup();
+    // Same quantity (2 BTC) both snapshots; value moves purely from price.
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        collateral: { quantity: 2, valueUsd: 100000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        collateral: { quantity: 2, valueUsd: 130000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralQuantity');
+    let label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    // Quantity trend shows the same "2 BTC" figure for both points — never
+    // rederived from the moving valueUsd.
+    expect(label).toContain('2 BTC, ');
+    expect(label.match(/2 BTC/g)).toHaveLength(2);
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'collateralValue');
+    label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    // Value trend shows the real price-driven movement — the two metrics
+    // tell genuinely different stories from the same snapshots.
+    expect(label).toContain('$100,000.00');
+    expect(label).toContain('$130,000.00');
+  });
+});
+
+/**
+ * V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History Chart
+ * Parity") — extends the chart metric selector with `entry.collateral.valueUsd`
+ * and `entry.debt.valueUsd`, the same two already-persisted fields the
+ * table/card view already renders (V1.1 Batch 2) and Net Worth's own
+ * derivation already reads (V1.3.0 Batch 1) — now independently
+ * selectable rather than only visible as their difference. No new
+ * formula, no recomputation from quantity × current price, no live-data
+ * or current-market-price substitution.
+ */
+describe('PortfolioHistoryPanel — collateral value and debt value', () => {
+  it('adds Collateral Value and Debt Value as the third and fourth metric-selector options, after Health Factor and Collateral Quantity', async () => {
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels.slice(0, 5)).toEqual([
+      'Health Factor',
+      'Collateral Quantity',
       'Collateral Value',
       'Debt Value',
       'Net Worth',
@@ -802,17 +1029,19 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first eight positions only — V1.5.0's own Market
+    // Scoped to the first nine positions only — V1.5.0's own Market
     // Price/Liquidation Price options (added after this one) are
     // verified by their own describe block below, including the full
     // list. Borrow APR (v1.11.0 Batch 1) sits between Leverage and
     // Interest Cost (annualized) — see the dedicated "borrow APR trend"
-    // describe block below for its own coverage. Collateral Value and
-    // Debt Value (v1.12.0 Batch 1) sit between Health Factor and Net
-    // Worth — see the dedicated "collateral value and debt value"
-    // describe block above for its own coverage.
-    expect(optionLabels.slice(0, 8)).toEqual([
+    // describe block below for its own coverage. Collateral Quantity
+    // (v1.12.0 Batch 2), Collateral Value, and Debt Value (v1.12.0 Batch
+    // 1) sit between Health Factor and Net Worth — see the dedicated
+    // "collateral quantity" and "collateral value and debt value"
+    // describe blocks above for their own coverage.
+    expect(optionLabels.slice(0, 9)).toEqual([
       'Health Factor',
+      'Collateral Quantity',
       'Collateral Value',
       'Debt Value',
       'Net Worth',
@@ -1032,14 +1261,16 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first ten positions only — v1.6.0's own Liquidation
+    // Scoped to the first eleven positions only — v1.6.0's own Liquidation
     // Buffer option (added after this one) is verified by its own describe
-    // block below, including the full eleven-item list. Borrow APR
+    // block below, including the full twelve-item list. Borrow APR
     // (v1.11.0 Batch 1) sits between Leverage and Interest Cost
-    // (annualized); Collateral Value and Debt Value (v1.12.0 Batch 1) sit
-    // between Health Factor and Net Worth.
-    expect(optionLabels.slice(0, 10)).toEqual([
+    // (annualized); Collateral Quantity (v1.12.0 Batch 2), Collateral
+    // Value, and Debt Value (v1.12.0 Batch 1) sit between Health Factor
+    // and Net Worth.
+    expect(optionLabels.slice(0, 11)).toEqual([
       'Health Factor',
+      'Collateral Quantity',
       'Collateral Value',
       'Debt Value',
       'Net Worth',
@@ -1329,7 +1560,7 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
  * as-is, never clamped.
  */
 describe('PortfolioHistoryPanel — liquidation buffer', () => {
-  it('adds Liquidation Buffer as the eleventh metric-selector option, after Liquidation Price', async () => {
+  it('adds Liquidation Buffer as the twelfth metric-selector option, after Liquidation Price', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -1345,6 +1576,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
       .map((option) => option.textContent);
     expect(optionLabels).toEqual([
       'Health Factor',
+      'Collateral Quantity',
       'Collateral Value',
       'Debt Value',
       'Net Worth',
@@ -1654,7 +1886,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
  * the two concepts are never conflated.
  */
 describe('PortfolioHistoryPanel — borrow APR trend', () => {
-  it('adds Borrow APR as the seventh metric-selector option, after Leverage', async () => {
+  it('adds Borrow APR as the eighth metric-selector option, after Leverage', async () => {
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', borrowApr: 0.05 }),
     );
@@ -1674,6 +1906,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
       .map((option) => option.textContent);
     expect(optionLabels).toEqual([
       'Health Factor',
+      'Collateral Quantity',
       'Collateral Value',
       'Debt Value',
       'Net Worth',
@@ -1852,7 +2085,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
     expect(list.getByText('5%')).toBeInTheDocument();
   });
 
-  it('leaves all ten existing metrics fully available and unregressed', async () => {
+  it('leaves all eleven existing metrics fully available and unregressed', async () => {
     const user = userEvent.setup();
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
@@ -1871,6 +2104,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
 
     for (const metric of [
+      'collateralQuantity',
       'collateralValue',
       'debtValue',
       'netWorth',

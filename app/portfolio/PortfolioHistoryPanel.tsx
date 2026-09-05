@@ -117,6 +117,22 @@ function formatLiquidationBufferPercent(value: number | null): string {
 }
 
 /**
+ * Collateral BTC quantity — up to 8 fraction digits, matching BTC's own
+ * on-chain precision (the same convention
+ * `features/dashboard/utils/format.ts`'s own `formatQuantity` already
+ * establishes for this project's Dashboard; defined locally here rather
+ * than imported, per this file's own established "each page/feature owns
+ * its thin formatting layer" convention — see every other `format*`
+ * helper above). A literal `" BTC"` suffix disambiguates this metric from
+ * every other value on this chart, which are all USD-denominated —
+ * required so a quantity is never mistaken for a dollar value.
+ */
+function formatCollateralQuantity(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value)} BTC`;
+}
+
+/**
  * `null` here stands in for `entry.borrowApr === undefined` — "not
  * available" (a V4 portfolio with no synced debt state yet), a distinct
  * concept from "no liquidation risk." Never a fabricated `0%`, never
@@ -215,9 +231,28 @@ function formatBorrowApr(value: number | null): string {
  * grouping this file's own table already establishes (Collateral Value
  * and Debt Value are adjacent table columns, immediately after Health
  * Factor).
+ *
+ * **V1.12.0 Batch 2 ("Collateral Quantity Portfolio History Chart
+ * Metric")** adds Collateral Quantity, the twelfth metric — the raw
+ * `entry.collateral.quantity` (BTC held) each snapshot's own Collateral
+ * Value is itself derived from, but never persisted or recomputed here:
+ * this metric plots exactly the stored quantity, never `valueUsd`
+ * divided by a price, never today's live/current quantity or market
+ * data. Positioned directly before `collateralValue` — quantity change
+ * (deposit/withdrawal) and value change (price movement) are distinct
+ * signals a user may want to tell apart, which is only possible with
+ * both plotted independently. `formatCollateralQuantity`'s own `" BTC"`
+ * suffix keeps this metric's chart/tooltip/aria-label text unambiguous
+ * against every other, USD-denominated metric on the same selector.
+ * Identical for V3 and V4 — collateral quantity/value never diverge by
+ * protocol version the way debt quantity/value can (see
+ * `services/persistence/types/models.ts`'s own doc comment on
+ * `collateral`/`debt`), so this metric introduces no protocol-version
+ * branching, the same discipline every metric above already follows.
  */
 type PortfolioHistoryMetricKey =
   | 'healthFactor'
+  | 'collateralQuantity'
   | 'collateralValue'
   | 'debtValue'
   | 'netWorth'
@@ -240,6 +275,11 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     label: 'Health Factor',
     getValue: (entry) => entry.healthFactor,
     formatValue: (value) => formatHealthFactor(value),
+  },
+  collateralQuantity: {
+    label: 'Collateral Quantity',
+    getValue: (entry) => entry.collateral.quantity,
+    formatValue: (value) => (value === null ? '—' : formatCollateralQuantity(value)),
   },
   collateralValue: {
     label: 'Collateral Value',
@@ -297,6 +337,7 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
 /** Selector order, matching the order the task's own required list names them. */
 const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'healthFactor',
+  'collateralQuantity',
   'collateralValue',
   'debtValue',
   'netWorth',
@@ -615,14 +656,16 @@ export function PortfolioHistoryPanel({
                 <XAxis dataKey="timestamp" hide />
                 <YAxis
                   width={
-                    selectedMetric === 'collateralValue' ||
-                    selectedMetric === 'debtValue' ||
-                    selectedMetric === 'netWorth' ||
-                    selectedMetric === 'annualizedInterestCost' ||
-                    selectedMetric === 'marketPrice' ||
-                    selectedMetric === 'liquidationPrice'
-                      ? 56
-                      : 32
+                    selectedMetric === 'collateralQuantity'
+                      ? 72
+                      : selectedMetric === 'collateralValue' ||
+                          selectedMetric === 'debtValue' ||
+                          selectedMetric === 'netWorth' ||
+                          selectedMetric === 'annualizedInterestCost' ||
+                          selectedMetric === 'marketPrice' ||
+                          selectedMetric === 'liquidationPrice'
+                        ? 56
+                        : 32
                   }
                   tick={{ fontSize: 10 }}
                   tickFormatter={(value: number) => selectedMetricConfig.formatValue(value)}
