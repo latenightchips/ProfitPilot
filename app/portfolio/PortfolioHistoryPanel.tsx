@@ -133,6 +133,26 @@ function formatCollateralQuantity(value: number): string {
 }
 
 /**
+ * Debt native quantity — same 8-fraction-digit convention
+ * `formatCollateralQuantity` uses (this project's general asset-quantity
+ * precision, not BTC-specific — see `features/dashboard/utils/format.ts`'s
+ * own `formatQuantity`). Unlike collateral, the debt asset is not a fixed
+ * symbol (`PersistedPortfolioHistoryEntry.debt.asset` is a free `string`,
+ * not a literal type) — the repository's own persisted contract does not
+ * guarantee it stays "USDC" or any other single symbol, so the unit
+ * suffix is read from the entry that produced the value, never
+ * hard-coded. `assetSymbol` is optional only so this function type-checks
+ * against `PortfolioHistoryMetricConfig.formatValue`'s shared signature
+ * (every other metric's own formatter ignores the second parameter); a
+ * real call site always has an entry to read it from.
+ */
+function formatDebtQuantity(value: number, assetSymbol?: string): string {
+  if (!Number.isFinite(value)) return '—';
+  const formatted = new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value);
+  return assetSymbol ? `${formatted} ${assetSymbol}` : formatted;
+}
+
+/**
  * `null` here stands in for `entry.borrowApr === undefined` — "not
  * available" (a V4 portfolio with no synced debt state yet), a distinct
  * concept from "no liquidation risk." Never a fabricated `0%`, never
@@ -249,11 +269,33 @@ function formatBorrowApr(value: number | null): string {
  * `services/persistence/types/models.ts`'s own doc comment on
  * `collateral`/`debt`), so this metric introduces no protocol-version
  * branching, the same discipline every metric above already follows.
+ *
+ * **V1.12.0 Batch 3 ("Debt Quantity Portfolio History Chart Metric")**
+ * adds Debt Quantity, the thirteenth metric — `entry.debt.quantity`, the
+ * single canonical, always-populated field
+ * `services/portfolioHistory/buildPortfolioHistoryEntry.ts` already
+ * resolves once per protocol version at record time (V3:
+ * `portfolio.debt.balance`; V4: `v4DebtState.drawnDebt +
+ * v4DebtState.premiumDebt`, or the legacy `0` balance when no V4 debt
+ * state has ever synced — never a fabricated non-zero value). This
+ * component reads that one already-resolved number directly and
+ * introduces no protocol-version branching of its own — the producer,
+ * not this presentation layer, is where V3/V4 isolation is already
+ * enforced (see that file's own header comment). Unlike Collateral
+ * Quantity, the debt asset symbol is not a fixed literal
+ * (`PersistedPortfolioHistoryEntry.debt.asset` is a free `string`), so
+ * `formatDebtQuantity` reads each point's own `entry.debt.asset` rather
+ * than hard-coding one — `PortfolioHistoryMetricConfig.formatValue` gains
+ * an optional second `entry` parameter for exactly this (every other
+ * metric's own formatter ignores it, unchanged). Positioned directly
+ * before `debtValue`, the same "quantity beside its own value" grouping
+ * `collateralQuantity`/`collateralValue` already established.
  */
 type PortfolioHistoryMetricKey =
   | 'healthFactor'
   | 'collateralQuantity'
   | 'collateralValue'
+  | 'debtQuantity'
   | 'debtValue'
   | 'netWorth'
   | 'loanToValue'
@@ -267,7 +309,13 @@ type PortfolioHistoryMetricKey =
 interface PortfolioHistoryMetricConfig {
   label: string;
   getValue: (entry: PersistedPortfolioHistoryEntry) => number | null;
-  formatValue: (value: number | null) => string;
+  /**
+   * `entry` is optional and unused by every metric except Debt Quantity
+   * (v1.12.0 Batch 3), which needs it to read that point's own
+   * `debt.asset` symbol — a backward-compatible signature widening, not a
+   * behavior change for any existing metric.
+   */
+  formatValue: (value: number | null, entry?: PersistedPortfolioHistoryEntry) => string;
 }
 
 const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHistoryMetricConfig> = {
@@ -285,6 +333,12 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     label: 'Collateral Value',
     getValue: (entry) => entry.collateral.valueUsd,
     formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
+  },
+  debtQuantity: {
+    label: 'Debt Quantity',
+    getValue: (entry) => entry.debt.quantity,
+    formatValue: (value, entry) =>
+      value === null ? '—' : formatDebtQuantity(value, entry?.debt.asset),
   },
   debtValue: {
     label: 'Debt Value',
@@ -339,6 +393,7 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'healthFactor',
   'collateralQuantity',
   'collateralValue',
+  'debtQuantity',
   'debtValue',
   'netWorth',
   'loanToValue',
@@ -610,9 +665,12 @@ export function PortfolioHistoryPanel({
   const chartData = [...entries].reverse().map((entry) => ({
     timestamp: formatTimestamp(entry.createdAt),
     value: selectedMetricConfig.getValue(entry),
+    entry,
   }));
   const chartSummary = `${selectedMetricConfig.label} trend: ${chartData
-    .map((point) => `${point.timestamp} ${selectedMetricConfig.formatValue(point.value)}`)
+    .map(
+      (point) => `${point.timestamp} ${selectedMetricConfig.formatValue(point.value, point.entry)}`,
+    )
     .join(', ')}`;
 
   return (
@@ -656,7 +714,7 @@ export function PortfolioHistoryPanel({
                 <XAxis dataKey="timestamp" hide />
                 <YAxis
                   width={
-                    selectedMetric === 'collateralQuantity'
+                    selectedMetric === 'collateralQuantity' || selectedMetric === 'debtQuantity'
                       ? 72
                       : selectedMetric === 'collateralValue' ||
                           selectedMetric === 'debtValue' ||
@@ -668,7 +726,15 @@ export function PortfolioHistoryPanel({
                         : 32
                   }
                   tick={{ fontSize: 10 }}
-                  tickFormatter={(value: number) => selectedMetricConfig.formatValue(value)}
+                  tickFormatter={(value: number) =>
+                    // Recharts hands the axis formatter only the raw tick
+                    // value, never the originating entry — a single
+                    // representative entry (the most recent) is used only
+                    // for this compact scale label; the fully accurate,
+                    // per-point debt asset symbol is what the accessible
+                    // `chartSummary` aria-label above actually states.
+                    selectedMetricConfig.formatValue(value, entries[0])
+                  }
                 />
                 <Line
                   type="monotone"

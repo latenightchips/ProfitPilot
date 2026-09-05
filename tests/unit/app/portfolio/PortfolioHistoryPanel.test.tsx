@@ -747,17 +747,18 @@ describe('PortfolioHistoryPanel — collateral quantity', () => {
 });
 
 /**
- * V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History Chart
- * Parity") — extends the chart metric selector with `entry.collateral.valueUsd`
- * and `entry.debt.valueUsd`, the same two already-persisted fields the
- * table/card view already renders (V1.1 Batch 2) and Net Worth's own
- * derivation already reads (V1.3.0 Batch 1) — now independently
- * selectable rather than only visible as their difference. No new
- * formula, no recomputation from quantity × current price, no live-data
- * or current-market-price substitution.
+ * V1.12.0 Batch 3 ("Debt Quantity Portfolio History Chart Metric") —
+ * extends the chart metric selector with `entry.debt.quantity`, the
+ * single canonical, always-populated field
+ * `services/portfolioHistory/buildPortfolioHistoryEntry.ts` already
+ * resolves per protocol version at record time (V3: `debt.balance`; V4:
+ * `drawnDebt + premiumDebt`, or `0` with no synced debt state). Unlike
+ * Collateral Quantity, the debt asset symbol is a free `string`
+ * (`entry.debt.asset`), not a fixed literal, so `formatDebtQuantity`
+ * reads it from each point's own entry rather than hard-coding one.
  */
-describe('PortfolioHistoryPanel — collateral value and debt value', () => {
-  it('adds Collateral Value and Debt Value as the third and fourth metric-selector options, after Health Factor and Collateral Quantity', async () => {
+describe('PortfolioHistoryPanel — debt quantity', () => {
+  it('adds Debt Quantity as the fourth metric-selector option, after Collateral Value', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -775,6 +776,330 @@ describe('PortfolioHistoryPanel — collateral value and debt value', () => {
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
+      'Debt Quantity',
+      'Debt Value',
+    ]);
+  });
+
+  it('plots the already-persisted debt.quantity field, using that entry’s own debt.asset symbol, without deriving it from valueUsd or current price', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 25000, valueUsd: 25100 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Debt Quantity trend');
+    expect(label).toContain('20,000 USDC');
+    expect(label).toContain('25,000 USDC');
+    // Never the dollar values, which would indicate the wrong field was read.
+    expect(label).not.toContain('$20,000.00');
+    expect(label).not.toContain('$25,100.00');
+  });
+
+  it('uses whatever debt asset symbol the entry actually persisted, never a hard-coded one', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'DAI', quantity: 5000, valueUsd: 5000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'DAI', quantity: 6000, valueUsd: 6000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('5,000 DAI');
+    expect(label).toContain('6,000 DAI');
+    expect(label).not.toContain('USDC');
+  });
+
+  it('preserves chronological ordering (oldest first) in the aria-label, regardless of the service’s newest-first read order', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 30000, valueUsd: 30000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label.indexOf('20,000 USDC')).toBeLessThan(label.indexOf('30,000 USDC'));
+  });
+
+  it('does not render the Debt Quantity option or chart with fewer than 2 entries', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 } }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('keeps multiple portfolios isolated — only the requested portfolioId’s entries feed the Debt Quantity chart', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 25000, valueUsd: 25000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 90000, valueUsd: 90000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 95000, valueUsd: 95000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('20,000 USDC');
+    expect(label).toContain('25,000 USDC');
+    expect(label).not.toContain('90,000 USDC');
+    expect(label).not.toContain('95,000 USDC');
+  });
+
+  it('works for a V3 portfolio entry (explicit protocolVersion "v3", the default in this codebase)', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        debt: { asset: 'USDC', quantity: 25000, valueUsd: 25000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('20,000 USDC');
+    expect(label).toContain('25,000 USDC');
+  });
+
+  it('works for a V4 portfolio entry with synced debt state (protocolVersion "v4") — reads the same already-resolved entry.debt.quantity, no branching here', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        debt: { asset: 'USDC', quantity: 15500, valueUsd: 15500 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        debt: { asset: 'USDC', quantity: 16200, valueUsd: 16200 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('15,500 USDC');
+    expect(label).toContain('16,200 USDC');
+  });
+
+  it('renders a V4 entry with no synced debt state as the legacy 0 balance, never a fabricated non-zero value', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: undefined,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: undefined,
+        debt: { asset: 'USDC', quantity: 0, valueUsd: 0 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('0 USDC');
+    expect(label).not.toContain('NaN');
+  });
+
+  it('distinguishes a debt quantity change from a price/value-driven change — Debt Quantity stays flat while Debt Value moves, and vice versa', async () => {
+    const user = userEvent.setup();
+    // Same quantity (20000) both snapshots; value differs slightly as if
+    // the debt asset were not perfectly $1-pegged — the trend must never
+    // rederive quantity from that moving value.
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20150 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtQuantity');
+    let label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label.match(/20,000 USDC/g)).toHaveLength(2);
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'debtValue');
+    label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('$20,000.00');
+    expect(label).toContain('$20,150.00');
+  });
+});
+
+/**
+ * V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History Chart
+ * Parity") — extends the chart metric selector with `entry.collateral.valueUsd`
+ * and `entry.debt.valueUsd`, the same two already-persisted fields the
+ * table/card view already renders (V1.1 Batch 2) and Net Worth's own
+ * derivation already reads (V1.3.0 Batch 1) — now independently
+ * selectable rather than only visible as their difference. No new
+ * formula, no recomputation from quantity × current price, no live-data
+ * or current-market-price substitution.
+ */
+describe('PortfolioHistoryPanel — collateral value and debt value', () => {
+  it('adds Collateral Value and Debt Value at the third and fifth metric-selector positions (with Debt Quantity now between them), after Health Factor and Collateral Quantity', async () => {
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
+    await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels.slice(0, 6)).toEqual([
+      'Health Factor',
+      'Collateral Quantity',
+      'Collateral Value',
+      'Debt Quantity',
       'Debt Value',
       'Net Worth',
     ]);
@@ -1029,20 +1354,22 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first nine positions only — V1.5.0's own Market
+    // Scoped to the first ten positions only — V1.5.0's own Market
     // Price/Liquidation Price options (added after this one) are
     // verified by their own describe block below, including the full
     // list. Borrow APR (v1.11.0 Batch 1) sits between Leverage and
     // Interest Cost (annualized) — see the dedicated "borrow APR trend"
     // describe block below for its own coverage. Collateral Quantity
-    // (v1.12.0 Batch 2), Collateral Value, and Debt Value (v1.12.0 Batch
-    // 1) sit between Health Factor and Net Worth — see the dedicated
-    // "collateral quantity" and "collateral value and debt value"
-    // describe blocks above for their own coverage.
-    expect(optionLabels.slice(0, 9)).toEqual([
+    // (v1.12.0 Batch 2), Collateral Value, Debt Quantity (v1.12.0 Batch
+    // 3), and Debt Value (v1.12.0 Batch 1) sit between Health Factor and
+    // Net Worth — see the dedicated "collateral quantity", "collateral
+    // value and debt value", and "debt quantity" describe blocks above
+    // for their own coverage.
+    expect(optionLabels.slice(0, 10)).toEqual([
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
+      'Debt Quantity',
       'Debt Value',
       'Net Worth',
       'Loan-to-Value',
@@ -1261,17 +1588,18 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first eleven positions only — v1.6.0's own Liquidation
+    // Scoped to the first twelve positions only — v1.6.0's own Liquidation
     // Buffer option (added after this one) is verified by its own describe
-    // block below, including the full twelve-item list. Borrow APR
+    // block below, including the full thirteen-item list. Borrow APR
     // (v1.11.0 Batch 1) sits between Leverage and Interest Cost
     // (annualized); Collateral Quantity (v1.12.0 Batch 2), Collateral
-    // Value, and Debt Value (v1.12.0 Batch 1) sit between Health Factor
-    // and Net Worth.
-    expect(optionLabels.slice(0, 11)).toEqual([
+    // Value, Debt Quantity (v1.12.0 Batch 3), and Debt Value (v1.12.0
+    // Batch 1) sit between Health Factor and Net Worth.
+    expect(optionLabels.slice(0, 12)).toEqual([
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
+      'Debt Quantity',
       'Debt Value',
       'Net Worth',
       'Loan-to-Value',
@@ -1560,7 +1888,7 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
  * as-is, never clamped.
  */
 describe('PortfolioHistoryPanel — liquidation buffer', () => {
-  it('adds Liquidation Buffer as the twelfth metric-selector option, after Liquidation Price', async () => {
+  it('adds Liquidation Buffer as the thirteenth metric-selector option, after Liquidation Price', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -1578,6 +1906,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
+      'Debt Quantity',
       'Debt Value',
       'Net Worth',
       'Loan-to-Value',
@@ -1886,7 +2215,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
  * the two concepts are never conflated.
  */
 describe('PortfolioHistoryPanel — borrow APR trend', () => {
-  it('adds Borrow APR as the eighth metric-selector option, after Leverage', async () => {
+  it('adds Borrow APR as the ninth metric-selector option, after Leverage', async () => {
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', borrowApr: 0.05 }),
     );
@@ -1908,6 +2237,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
+      'Debt Quantity',
       'Debt Value',
       'Net Worth',
       'Loan-to-Value',
@@ -2085,7 +2415,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
     expect(list.getByText('5%')).toBeInTheDocument();
   });
 
-  it('leaves all eleven existing metrics fully available and unregressed', async () => {
+  it('leaves all twelve existing metrics fully available and unregressed', async () => {
     const user = userEvent.setup();
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
@@ -2106,6 +2436,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
     for (const metric of [
       'collateralQuantity',
       'collateralValue',
+      'debtQuantity',
       'debtValue',
       'netWorth',
       'loanToValue',
