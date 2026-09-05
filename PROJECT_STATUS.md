@@ -14333,6 +14333,182 @@ above.
 
 ---
 
+## v1.10.0 Release Reconciliation — Dashboard Trend Parity
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents three batches, `40a4a61`
+("dashboardtrendparity"), `ab51211` ("batch2dashboardtrendparity"), and
+`974f9a6` ("batch3dashboardtrendparity"), applied directly on top of
+`v1.9.0` (`513832b`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.10.0`. Versions `1.0.0` through `1.9.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.9.0` to `1.10.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.10.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: all five new charts are
+presentation/read-layer only, each reading one already-persisted
+Portfolio History field directly (or, for Net Worth, the same
+already-established `collateral.valueUsd - debt.valueUsd` derivation),
+computing nothing new and persisting nothing new. **No `v1.10.0` git
+tag exists yet** — tagging is a separate, explicit step for after this
+patch is applied and synced, not taken by this batch (see this batch's
+own final report for the exact recommended tag command).
+
+### Origin: Post-v1.9.0 Roadmap Audit
+
+A read-only audit (same date) surveyed remaining candidates across
+user-visible product value, Aave/financial correctness, technical/
+quality debt, and deployment, and found that Portfolio History's own
+8-metric chart selector (established `v1.3.0`–`v1.6.0`) was only
+partially mirrored on the Dashboard — Health Factor, Liquidation
+Buffer, and Annualized Interest Cost had Dashboard trend charts
+(`v1.7.0`–`v1.9.0`), but Net Worth, Loan-to-Value, Leverage, Market
+Price, and Liquidation Price did not, despite all five already being
+chartable one page over. It recommended "Dashboard Trend Parity" as the
+`v1.10.0` release theme — closing that gap with the same
+zero-new-persistence, zero-Engine-change architecture already validated
+three times, staged across three batches so each metric group could be
+reviewed independently. The same audit ranked and explicitly deferred
+Health Factor risk-band classification (blocked on Conflict #1),
+Recommendation Engine leverage/staleness types (blocked on Conflict
+#29), the optional `borrowApr` Portfolio History chart expansion (a
+smaller, separately-flagged candidate not part of this release's
+approved scope), and Simulation's own documented display gaps —
+none of these are touched by `v1.10.0`.
+
+### Batch 1 — Net Worth + Loan-to-Value Dashboard Trends (`40a4a61`)
+
+- **`features/dashboard/components/NetWorthTrendSection.tsx` (new)**:
+  reads `listPortfolioHistoryForPortfolio` directly, the identical
+  service call every sibling trend section already uses. Every plotted
+  value is `entry.collateral.valueUsd - entry.debt.valueUsd` — exactly
+  `docs/02_Formulas.md`'s own "Net Worth = Portfolio Value − Debt"
+  equation, the identical derivation `PortfolioHistoryPanel.tsx`'s own
+  `netWorth` metric config already uses. No new formula, no Engine
+  involvement, no new Formula ID.
+- **`features/dashboard/components/LoanToValueTrendSection.tsx`
+  (new)**: reads `entry.loanToValue` directly — the identical field
+  `PortfolioHistoryPanel.tsx`'s own `loanToValue` metric config already
+  reads.
+- Both fields are required, non-nullable numbers on every persisted
+  entry regardless of protocol version, so neither component has a null
+  branch or reads `entry.protocolVersion`.
+- **`app/DashboardPageClient.tsx`**: wires both sections directly after
+  `DashboardKpiGrid` — the only existing "current value" display for
+  either metric, since neither has its own dedicated panel.
+- **Tests**: 19 new tests across both components' own test files —
+  empty/error/single/multi-entry states, chronological ordering,
+  multi-portfolio isolation, explicit V3 test, separate V4 parity test
+  per component.
+- **Validation**: full suite run twice (implementation worktree, then
+  independently after `git apply`) — both times **4199/4199 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean.
+
+### Batch 2 — Leverage + Market Price Dashboard Trends (`ab51211`)
+
+- **`features/dashboard/components/LeverageTrendSection.tsx` (new)**:
+  reads `entry.leverage` directly — no derivation, no reinterpretation,
+  exactly the already-persisted semantics. Formatted with the
+  Dashboard's own `formatLeverage`, the same formatter
+  `LeverageSummarySection`'s own current-value panel already uses.
+  Wired directly after `LeverageSummarySection` — the same
+  "current-value panel, then its own trend chart" pairing every other
+  sibling already established.
+- **`features/dashboard/components/MarketPriceTrendSection.tsx`
+  (new)**: reads `entry.marketPriceUsd` directly — historical
+  visualization only, never a new oracle/data-source lookup, never the
+  live `aaveMarketQuote` snapshot `DashboardSummaryHeader`'s own
+  current-price line uses. Wired directly after
+  `LiquidationBufferTrendSection`, grouped with the liquidation-risk
+  trend charts since Market Price is the direct input both
+  `LiquidationRiskPanel` and Liquidation Buffer already depend on.
+- Both fields are required, non-nullable numbers on every persisted
+  entry regardless of protocol version, so neither component has a null
+  branch or reads `entry.protocolVersion`.
+- **Tests**: 19 new tests, same pattern as Batch 1's own two components.
+- **Validation**: full suite run twice — both times **4218/4218 tests
+  passing**, all tooling clean. (One run in the implementation worktree
+  hit the same pre-existing, unrelated timestamp-collision flake in
+  `tests/unit/stores/portfolioStore.test.ts` already documented earlier
+  this session — confirmed non-reproducible in isolation and on a clean
+  rerun, unrelated to any file this batch touched.)
+
+### Batch 3 — Liquidation Price Dashboard Trend (`974f9a6`)
+
+- **`features/dashboard/components/LiquidationPriceTrendSection.tsx`
+  (new)**: reads `entry.liquidationPriceUsd` directly — the canonical
+  persisted field `buildPortfolioHistoryEntry.ts` populates once, at
+  record time, from `summary.liquidation?.price ?? null` (that
+  snapshot's own Engine-computed liquidation price); never recalculated
+  from today's portfolio state, never a live oracle or current
+  market-price lookup for a historical point. `null` (zero-debt)
+  renders "No liquidation risk" — the same established text
+  `PortfolioHistoryPanel.tsx`'s own `formatLiquidationPrice` and
+  `LiquidationBufferTrendSection`'s own null case already use, never a
+  fabricated `$0`. No V3/V4 branching — the field is computed
+  identically upstream for both protocol versions.
+- **`app/DashboardPageClient.tsx`**: wires the section directly after
+  `MarketPriceTrendSection`, completing the liquidation-risk trend
+  grouping (`LiquidationRiskPanel` → `LiquidationBufferTrendSection` →
+  `MarketPriceTrendSection` → `LiquidationPriceTrendSection`) and
+  completing the Dashboard's full mirror of Portfolio History's own
+  8-metric chart selector.
+- **Tests**: 11 new tests — including an explicit null/zero-debt
+  single-entry case and a null-among-multiple case, confirming the
+  accessible `aria-label` summary never silently drops a zero-debt
+  point even though Recharts itself renders no point for a `null` data
+  value at that position.
+- **Validation**: full suite run twice — both times **4229/4229 tests
+  passing**, all tooling clean.
+
+### What did not change, across all three batches
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat 513832b..974f9a6`:
+exactly 12 files, all within `features/dashboard/`, `app/`, and their
+test files — no `engine/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**` path appears, across the full
+three-batch range). Every new field read is identical regardless of
+`entry.protocolVersion`; each component carries its own explicit V3
+test plus a separate V4 parity test. No Health Factor risk-band
+classification introduced — Conflict #1 remains exactly as unresolved
+as before. No deployment/cloud work — the Path B disposition is
+unaffected. No generic/shared trend abstraction was introduced despite
+now having eight near-identical components — kept as eight independent,
+copy-pasted implementations per this release's own explicit instruction
+to prefer the proven pattern over a refactor.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.9.0`/`1.8.0`/"current release", and separately for "trend"/"dashboard"
+staleness, and found to need no update: `docs/DEPLOYMENT_DISPOSITION.md`,
+`docs/KNOWN_ISSUES.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `docs/PRODUCTION_READINESS.md` — zero
+version-specific or Dashboard-trend-count-specific claims in any of the
+five that this release would make stale.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), Recommendation Engine
+leverage/staleness recommendation types (Conflict #29), the optional
+`borrowApr` Portfolio History/Dashboard chart expansion, collateral/debt
+quantity or debt-asset history, cumulative/realized interest, P&L, cost
+basis, total return, Simulation's own documented display gaps,
+Dependabot/Renovate, production deployment, or Settings ABOUT work. No
+new infrastructure work was introduced by this reconciliation.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
