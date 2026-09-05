@@ -117,6 +117,19 @@ function formatLiquidationBufferPercent(value: number | null): string {
 }
 
 /**
+ * `null` here stands in for `entry.borrowApr === undefined` — "not
+ * available" (a V4 portfolio with no synced debt state yet), a distinct
+ * concept from "no liquidation risk." Never a fabricated `0%`, never
+ * interpolated, never inferred from another field. Matches the exact
+ * "Not available" wording this file's own table/card `borrowApr` row
+ * already uses.
+ */
+function formatBorrowApr(value: number | null): string {
+  if (value === null) return 'Not available';
+  return formatPercent(value);
+}
+
+/**
  * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") plus V1.4.0
  * Batch 1 ("Annualized Interest Cost Visibility"). Lets the trend chart
  * below plot one of five metrics without permanently stacking five
@@ -167,12 +180,31 @@ function formatLiquidationBufferPercent(value: number | null): string {
  * renders as "No liquidation risk," the same text `formatLiquidationPrice`
  * already uses — never a fabricated `0%`. A negative buffer (market at or
  * below the liquidation price) is shown as-is, not clamped.
+ *
+ * **V1.11.0 Batch 1 ("Borrow APR Trend Completion")** adds Borrow APR, a
+ * ninth metric reading the already-persisted `entry.borrowApr` field
+ * directly (no new formula, no recomputation) — the same value the table
+ * above already renders via its own `entry.borrowApr !== undefined ?
+ * formatPercent(entry.borrowApr) : 'Not available'` row. **`undefined`
+ * means "not available," a distinct concept from Liquidation
+ * Price/Buffer's own `null` ("no liquidation risk")** — `entry.borrowApr`
+ * is `undefined` only for a V4 portfolio with no synced debt state yet
+ * (`services/persistence/types/models.ts`'s own doc comment), never a
+ * fabricated `0%`, never interpolated across surrounding entries, and
+ * never inferred from another field. Converted to `null` here only to
+ * satisfy `PortfolioHistoryMetricConfig.getValue`'s existing `number |
+ * null` return type (the same nullable-chart-point plumbing Liquidation
+ * Price/Buffer already use — Recharts skips a `null` point, leaving a
+ * gap rather than a fabricated line segment) — `formatValue` renders it
+ * as **"Not available,"** not "No liquidation risk," so the distinct
+ * reason is never conflated with the liquidation-risk convention.
  */
 type PortfolioHistoryMetricKey =
   | 'healthFactor'
   | 'netWorth'
   | 'loanToValue'
   | 'leverage'
+  | 'borrowApr'
   | 'annualizedInterestCost'
   | 'marketPrice'
   | 'liquidationPrice'
@@ -205,6 +237,11 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     getValue: (entry) => entry.leverage,
     formatValue: (value) => (value === null ? '—' : `${formatHealthFactor(value)}x`),
   },
+  borrowApr: {
+    label: 'Borrow APR',
+    getValue: (entry) => entry.borrowApr ?? null,
+    formatValue: (value) => formatBorrowApr(value),
+  },
   annualizedInterestCost: {
     label: 'Interest Cost (annualized)',
     getValue: (entry) => entry.annualizedInterestCost,
@@ -234,6 +271,7 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'netWorth',
   'loanToValue',
   'leverage',
+  'borrowApr',
   'annualizedInterestCost',
   'marketPrice',
   'liquidationPrice',

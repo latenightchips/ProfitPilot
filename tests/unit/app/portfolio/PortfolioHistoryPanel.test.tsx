@@ -534,7 +534,7 @@ describe('PortfolioHistoryPanel — multi-metric trend chart', () => {
  * component.
  */
 describe('PortfolioHistoryPanel — annualized interest cost', () => {
-  it('adds "Interest Cost (annualized)" as the fifth metric-selector option, after Leverage', async () => {
+  it('adds "Interest Cost (annualized)" as the sixth metric-selector option, after Borrow APR', async () => {
     await recordPortfolioHistoryEntry(
       entry({ createdAt: '2026-01-01T00:00:00.000Z', annualizedInterestCost: 1000 }),
     );
@@ -552,15 +552,18 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first five positions only — V1.5.0's own Market
+    // Scoped to the first six positions only — V1.5.0's own Market
     // Price/Liquidation Price options (added after this one) are
     // verified by their own describe block below, including the full
-    // seven-item list.
-    expect(optionLabels.slice(0, 5)).toEqual([
+    // list. Borrow APR (v1.11.0 Batch 1) sits between Leverage and
+    // Interest Cost (annualized) — see the dedicated "borrow APR trend"
+    // describe block below for its own coverage.
+    expect(optionLabels.slice(0, 6)).toEqual([
       'Health Factor',
       'Net Worth',
       'Loan-to-Value',
       'Leverage',
+      'Borrow APR',
       'Interest Cost (annualized)',
     ]);
   });
@@ -760,7 +763,7 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
  * to Health Factor alone) and never a fabricated numeric price.
  */
 describe('PortfolioHistoryPanel — market price and liquidation price', () => {
-  it('adds Market Price and Liquidation Price as the sixth and seventh metric-selector options, after the existing five', async () => {
+  it('adds Market Price and Liquidation Price as the seventh and eighth metric-selector options, after the existing six', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -774,14 +777,16 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first seven positions only — v1.6.0's own Liquidation
+    // Scoped to the first eight positions only — v1.6.0's own Liquidation
     // Buffer option (added after this one) is verified by its own describe
-    // block below, including the full eight-item list.
-    expect(optionLabels.slice(0, 7)).toEqual([
+    // block below, including the full nine-item list. Borrow APR (v1.11.0
+    // Batch 1) sits between Leverage and Interest Cost (annualized).
+    expect(optionLabels.slice(0, 8)).toEqual([
       'Health Factor',
       'Net Worth',
       'Loan-to-Value',
       'Leverage',
+      'Borrow APR',
       'Interest Cost (annualized)',
       'Market Price',
       'Liquidation Price',
@@ -1065,7 +1070,7 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
  * as-is, never clamped.
  */
 describe('PortfolioHistoryPanel — liquidation buffer', () => {
-  it('adds Liquidation Buffer as the eighth metric-selector option, after Liquidation Price', async () => {
+  it('adds Liquidation Buffer as the ninth metric-selector option, after Liquidation Price', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -1084,6 +1089,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
       'Net Worth',
       'Loan-to-Value',
       'Leverage',
+      'Borrow APR',
       'Interest Cost (annualized)',
       'Market Price',
       'Liquidation Price',
@@ -1363,6 +1369,252 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
       'annualizedInterestCost',
       'marketPrice',
       'liquidationPrice',
+    ]) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
+  });
+});
+
+/**
+ * v1.11.0 Batch 1 ("Borrow APR Trend Completion") — adds a ninth
+ * metric, "Borrow APR", reading the already-persisted `entry.borrowApr`
+ * field directly (no new formula, no recomputation) — the same value
+ * the table/mobile card `borrowApr` row already renders via
+ * `formatOptionalDelta`. **`undefined` means "not available," a
+ * distinct concept from Liquidation Price/Buffer's own `null` ("no
+ * liquidation risk")** — `entry.borrowApr` is `undefined` only for a V4
+ * portfolio with no synced debt state yet, never a fabricated `0%`,
+ * never interpolated across surrounding entries, and never inferred
+ * from another field. The chart renders an `undefined` point as a gap
+ * (the same "Recharts skips a `null` point" behavior every other
+ * nullable metric already relies on), and its own aria-label/text
+ * representation reads "Not available," never "No liquidation risk" —
+ * the two concepts are never conflated.
+ */
+describe('PortfolioHistoryPanel — borrow APR trend', () => {
+  it('adds Borrow APR as the fifth metric-selector option, after Leverage', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', borrowApr: 0.05 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', borrowApr: 0.06 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+
+    const select = await screen.findByLabelText('Chart metric');
+    const optionLabels = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Health Factor',
+      'Net Worth',
+      'Loan-to-Value',
+      'Leverage',
+      'Borrow APR',
+      'Interest Cost (annualized)',
+      'Market Price',
+      'Liquidation Price',
+      'Liquidation Buffer',
+    ]);
+  });
+
+  it('plots the already-persisted borrowApr field, percent-formatted, without recomputing it (V3)', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', borrowApr: 0.05 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', protocolVersion: 'v3', borrowApr: 0.065 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'borrowApr');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Borrow APR trend');
+    expect(label).toContain('5%');
+    expect(label).toContain('6.5%');
+  });
+
+  it('works identically for a V4 portfolio entry with synced debt state (populated borrowApr)', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: 0.05,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: 0.065,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'borrowApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('5%');
+    expect(label).toContain('6.5%');
+  });
+
+  it('renders "Not available" — never a fabricated 0% — in the chart aria-label for a V4 entry with no synced debt state (undefined borrowApr)', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: undefined,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: undefined,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'borrowApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Not available');
+    expect(label).not.toContain('0%');
+    expect(label).not.toContain('NaN');
+    // Never conflated with the distinct "no liquidation risk" concept.
+    expect(label).not.toContain('No liquidation risk');
+  });
+
+  it('preserves surrounding valid observations in the aria-label when one entry has an undefined borrowApr among multiple, never dropping either point', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: undefined,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+        borrowApr: 0.065,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'borrowApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Not available');
+    expect(label).toContain('6.5%');
+  });
+
+  it('does not render the Borrow APR option or chart with fewer than 2 entries, but the table still shows "Not available" for an undefined value', async () => {
+    await recordPortfolioHistoryEntry(entry({ borrowApr: undefined }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('Not available')).toBeInTheDocument();
+  });
+
+  it('surfaces the same Borrow APR value and label in the mobile card list as the table', async () => {
+    await recordPortfolioHistoryEntry(entry({ borrowApr: 0.05 }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('list')).toBeInTheDocument();
+    });
+    const list = within(screen.getByRole('list'));
+    expect(list.getByText('Borrow APR')).toBeInTheDocument();
+    expect(list.getByText('5%')).toBeInTheDocument();
+  });
+
+  it('leaves all eight existing metrics fully available and unregressed', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', healthFactor: 3 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Health Factor trend');
+
+    for (const metric of [
+      'netWorth',
+      'loanToValue',
+      'leverage',
+      'annualizedInterestCost',
+      'marketPrice',
+      'liquidationPrice',
+      'liquidationBufferPercent',
     ]) {
       await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
       expect(screen.getByRole('img')).toBeInTheDocument();
