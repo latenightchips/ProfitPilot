@@ -63,6 +63,28 @@ import {
  * Debt" equation applied to a stored snapshot's own `collateral.valueUsd`/
  * `debt.valueUsd` — no new formula. LTV/Leverage read the already-
  * persisted `loanToValue`/`leverage` fields directly, never recomputed.
+ *
+ * **V1.12.0 Batch 4 ("Portfolio History Data-Source Provenance")** adds a
+ * small "Manual"/"Live" badge next to each row's own timestamp, in both
+ * the table's "When" cell and the mobile card's header — the same
+ * `entry.dataSource: 'manual' | 'live'` field already persisted on every
+ * entry (`services/persistence/types/models.ts`'s own header comment:
+ * "was any of the data behind this snapshot live-sourced at the time" —
+ * a summarizing flag, not a reconstruction of a live portfolio's own
+ * four separate provenance fields). Read directly, never inferred from
+ * `protocolVersion` or from any current/live state, and never
+ * recomputed — the same "display the persisted snapshot exactly"
+ * discipline every other field on this page already follows. Reuses the
+ * exact `"rounded-full bg-muted px-2 py-0.5"` badge className and
+ * `'live'` → `'Live'` / `'manual'` → `'Manual'` label convention already
+ * established elsewhere in this app (`utils/protocolStatus.ts`'s own
+ * `formatV4ProvenanceStatus`, `app/portfolios/PortfoliosPageClient.tsx`'s
+ * own status chips) — no new visual language introduced. Not added as a
+ * new chart-selector metric or its own table column: it is categorical,
+ * not a numeric trend, and pairing it with the timestamp that already
+ * anchors each row avoids widening the already-11-column table or adding
+ * a card row, per this batch's own "should not visually dominate"
+ * requirement.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -87,6 +109,19 @@ function formatTimestamp(iso: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+}
+
+/**
+ * `entry.dataSource` is always exactly `'manual'` or `'live'` — the
+ * persisted contract's own two allowed values
+ * (`services/persistence/types/models.ts`), never a third state to
+ * guess at. Same short-label convention every other manual/live
+ * indicator in this app already uses (`utils/protocolStatus.ts`'s own
+ * `formatV4ProvenanceStatus`) — not a new wording invented for this
+ * batch.
+ */
+function formatDataSource(value: 'manual' | 'live'): string {
+  return value === 'live' ? 'Live' : 'Manual';
 }
 
 /**
@@ -481,7 +516,12 @@ function HistoryEntryCard({
 }) {
   return (
     <li className="flex flex-col gap-2 rounded-md border border-border p-3 text-xs">
-      <p className="font-medium text-foreground">{formatTimestamp(entry.createdAt)}</p>
+      <p className="flex items-center gap-2 font-medium text-foreground">
+        <span>{formatTimestamp(entry.createdAt)}</span>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+          {formatDataSource(entry.dataSource)}
+        </span>
+      </p>
       <dl className="flex flex-col gap-1.5">
         {(
           [
@@ -812,7 +852,12 @@ export function PortfolioHistoryPanel({
               return (
                 <tr key={`${entry.createdAt}-${index}`} className="border-b border-border/50">
                   <td className="py-1.5 pr-3 text-foreground">
-                    {formatTimestamp(entry.createdAt)}
+                    <div className="flex items-center gap-2">
+                      <span>{formatTimestamp(entry.createdAt)}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        {formatDataSource(entry.dataSource)}
+                      </span>
+                    </div>
                   </td>
                   <td className="py-1.5 pr-3">
                     <div className="text-foreground">{formatHealthFactor(entry.healthFactor)}</div>

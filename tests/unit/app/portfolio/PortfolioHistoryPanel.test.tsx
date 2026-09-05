@@ -295,6 +295,221 @@ describe('PortfolioHistoryPanel — with entries', () => {
 });
 
 /**
+ * V1.12.0 Batch 4 ("Portfolio History Data-Source Provenance") — surfaces
+ * the already-persisted `entry.dataSource: 'manual' | 'live'` field as a
+ * small badge next to each row's own timestamp, in both the table's
+ * "When" cell and the mobile card's header. Read directly, never
+ * inferred from `protocolVersion` or any current/live state, and never
+ * recomputed — the same discipline every other field on this page
+ * already follows.
+ */
+describe('PortfolioHistoryPanel — data source provenance', () => {
+  it('displays "Manual" for a manual-sourced entry, in both the table and the mobile card', async () => {
+    await recordPortfolioHistoryEntry(entry({ dataSource: 'manual' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('Manual')).toBeInTheDocument();
+    expect(within(screen.getByRole('list')).getByText('Manual')).toBeInTheDocument();
+  });
+
+  it('displays "Live" for a live-sourced entry, in both the table and the mobile card', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ protocolVersion: 'v4', supplyApr: undefined, dataSource: 'live' }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('Live')).toBeInTheDocument();
+    expect(within(screen.getByRole('list')).getByText('Live')).toBeInTheDocument();
+  });
+
+  it('shows the correct, independent provenance for each of multiple historical snapshots', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', dataSource: 'manual' }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Manual')).toBeInTheDocument();
+    expect(table.getByText('Live')).toBeInTheDocument();
+    // Never a fabricated third state.
+    expect(table.queryByText('Unknown')).not.toBeInTheDocument();
+  });
+
+  it('does not affect chronological row ordering (still newest-first in the table)', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', dataSource: 'manual', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', dataSource: 'live', healthFactor: 3 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const rows = screen.getAllByRole('row');
+    // Header + newest (live, HF 3) + oldest (manual, HF 4).
+    expect(rows).toHaveLength(3);
+    expect(within(rows[1]).getByText('Live')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('3')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('Manual')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('4')).toBeInTheDocument();
+  });
+
+  it('keeps multiple portfolios isolated — provenance badges reflect only the requested portfolioId', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        dataSource: 'manual',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Manual')).toBeInTheDocument();
+    expect(table.queryByText('Live')).not.toBeInTheDocument();
+  });
+
+  it('reads the same persisted dataSource for a V3 entry and a V4 entry — provenance is independent of protocol version, never inferred from it', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        dataSource: 'live',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'manual',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    // V3 entry is 'live', V4 entry is 'manual' — the inverse of the usual
+    // pairing seen elsewhere in this file, proving the badge reflects
+    // each entry's own persisted value rather than a protocol-version
+    // assumption (e.g. "V4 implies live").
+    expect(table.getByText('Live')).toBeInTheDocument();
+    expect(table.getByText('Manual')).toBeInTheDocument();
+  });
+
+  it('never infers provenance from current/live state — a stale-looking manual entry is never silently upgraded to "Live"', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        marketPriceUsd: 50000,
+        dataSource: 'manual',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Manual')).toBeInTheDocument();
+    expect(table.queryByText('Live')).not.toBeInTheDocument();
+  });
+
+  it('leaves the Batch 1–3 chart metrics (Collateral Quantity, Collateral Value, Debt Quantity, Debt Value) fully functional', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        dataSource: 'manual',
+        collateral: { quantity: 2, valueUsd: 100000 },
+        debt: { asset: 'USDC', quantity: 20000, valueUsd: 20000 },
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        dataSource: 'live',
+        collateral: { quantity: 2.5, valueUsd: 130000 },
+        debt: { asset: 'USDC', quantity: 25000, valueUsd: 25000 },
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    for (const metric of ['collateralQuantity', 'collateralValue', 'debtQuantity', 'debtValue']) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
+  });
+});
+
+/**
  * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") — the compact
  * metric selector added to the same accessible chart the tests above
  * already cover. These tests seed entries with deliberately distinct
