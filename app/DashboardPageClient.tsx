@@ -27,9 +27,11 @@ import {
   HealthFactorStatusSection,
   HealthFactorTrendSection,
   LeverageSummarySection,
+  LeverageTrendSection,
   LiquidationBufferTrendSection,
   LiquidationRiskPanel,
   LoanToValueTrendSection,
+  MarketPriceTrendSection,
   NetWorthTrendSection,
   NoDebtNotice,
   PortfolioCompositionSection,
@@ -233,6 +235,31 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * Loan-to-Value via a direct read of `entry.loanToValue`. Both fields
  * are required, non-nullable numbers on every persisted entry regardless
  * of protocol version, so neither component has a null branch or reads
+ * `entry.protocolVersion`. No new Engine formula, no new persisted
+ * field, no risk-band classification (see each component's own header
+ * comment for the full reasoning). Gated the same way their neighboring
+ * sections already are (only in the `viewModel.ok === true` branch).
+ *
+ * **`MarketPriceTrendSection` and `LeverageTrendSection` (v1.10.0 Batch
+ * 2, "Dashboard Trend Parity")** continue the same metric-parity work
+ * Batch 1 started. `MarketPriceTrendSection` renders directly after
+ * `LiquidationBufferTrendSection` — grouped with the liquidation-risk
+ * trend charts since Market Price is the direct input both
+ * `LiquidationRiskPanel`'s own current-value card and the Liquidation
+ * Buffer trend already depend on, not because this component itself
+ * derives anything from it (it reads `entry.marketPriceUsd` directly,
+ * historical visualization only, never a live oracle lookup of its
+ * own). `LeverageTrendSection` renders directly after
+ * `LeverageSummarySection` — the same "current-value panel, then its
+ * own trend chart" pairing `HealthFactorStatusSection`/
+ * `LiquidationRiskPanel`/`DebtAndInterestPanel` already established,
+ * reading `entry.leverage` directly with no reinterpretation of the
+ * already-persisted semantics. Both extend the Dashboard's trend-chart
+ * set to metrics Portfolio History has offered in its own chart
+ * selector since v1.3.0 (Leverage) and v1.5.0 (Market Price) but the
+ * Dashboard never surfaced. Both fields are required, non-nullable
+ * numbers on every persisted entry regardless of protocol version, so
+ * neither component has a null branch or reads
  * `entry.protocolVersion`. No new Engine formula, no new persisted
  * field, no risk-band classification (see each component's own header
  * comment for the full reasoning). Gated the same way their neighboring
@@ -457,6 +484,11 @@ export function DashboardPageClient() {
                 portfolioUpdatedAt={record.portfolio.updatedAt}
               />
 
+              <MarketPriceTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
+
               {portfolioComposition !== null && (
                 <PortfolioCompositionSection composition={portfolioComposition} />
               )}
@@ -471,6 +503,11 @@ export function DashboardPageClient() {
               />
 
               {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
+
+              <LeverageTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
 
               <RecommendationSummarySection
                 summary={buildRecommendationSummary(record.portfolio)}
