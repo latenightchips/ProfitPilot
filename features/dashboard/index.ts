@@ -33,6 +33,7 @@
  * (M5-022) added the Developer Mode Toggle and wired its content into
  * the Core KPI Grid and Liquidation Risk Panel's existing `KpiCard`s.
  */
+export * from './components/AnnualizedInterestCostTrendSection';
 export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSkeleton';

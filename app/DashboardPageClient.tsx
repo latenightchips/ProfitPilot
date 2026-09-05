@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import {
+  AnnualizedInterestCostTrendSection,
   buildDashboardViewModel,
   buildDataFreshnessIndicators,
   buildDebtAndInterestPanel,
@@ -195,6 +196,25 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * (see that component's own header comment for the full reasoning).
  * Gated the same way its neighboring sections already are (only in the
  * `viewModel.ok === true` branch).
+ *
+ * **`AnnualizedInterestCostTrendSection` (v1.9.0 Batch 1, "Dashboard
+ * Annualized Interest Cost Trend")** renders directly after
+ * `DebtAndInterestPanel` — the same "current-value panel, then its own
+ * trend chart" pairing `HealthFactorTrendSection` and
+ * `LiquidationBufferTrendSection` already established, completing the
+ * Dashboard's trend-chart set. Reads the same already-persisted Portfolio
+ * History entries through the identical `listPortfolioHistoryForPortfolio`
+ * service call, plotting `entry.annualizedInterestCost` directly (no
+ * derived helper, unlike Liquidation Buffer) — the same point-in-time
+ * projection value `PortfolioHistoryPanel.tsx`'s own table and card view
+ * already render, never interest already paid, cumulative, realized, or
+ * paid since inception (see that component's own header comment for the
+ * full reasoning). No new Engine formula, no new persisted field, no
+ * risk-band classification. Rendered unconditionally (unlike
+ * `DebtAndInterestPanel` itself, which is gated on its own build
+ * succeeding) — the same "always render the trend section" precedent
+ * both sibling trend sections already set, since Portfolio History
+ * lookups do not depend on the current snapshot's own build succeeding.
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -412,6 +432,11 @@ export function DashboardPageClient() {
               {debtAndInterestPanel !== null && (
                 <DebtAndInterestPanel panel={debtAndInterestPanel} />
               )}
+
+              <AnnualizedInterestCostTrendSection
+                portfolioId={activePortfolioId}
+                portfolioUpdatedAt={record.portfolio.updatedAt}
+              />
 
               {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
 
