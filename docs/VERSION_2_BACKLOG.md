@@ -94,13 +94,25 @@ owner must still decide — every single item has at least one).
   entirely from already-persisted history data with no new external
   dependency, no new formula, and no cloud requirement — see
   `PROJECT_STATUS.md`'s "v1.3.0 Release Reconciliation" section and
-  `docs/CHANGELOG.md`'s `[1.3.0]` entry. What remains genuinely
-  undelivered and still requires an owner decision: anything needing
-  data this application does not persist (a real historical cost basis;
-  profit/loss; total return since inception) — deliberately not built,
-  since there is no acquisition-price capture mechanism; and
-  `annualizedInterestCost` trend visibility, evaluated and deliberately
-  deferred as a possible future enhancement, not ruled out.
+  `docs/CHANGELOG.md`'s `[1.3.0]` entry.
+- **Further correction (post-v1.8.0 planning audit, v1.9.0
+  reconciliation, evidence-based, priority tier unchanged)**: the
+  paragraph above previously also listed `annualizedInterestCost` trend
+  visibility as "evaluated and deliberately deferred as a possible
+  future enhancement, not ruled out." That was already stale as of
+  `v1.4.0` (Annualized Interest Cost Visibility, which added it to
+  Portfolio History's own trend chart selector) and is now further
+  delivered by `v1.9.0` (Dashboard Annualized Interest Cost Trend,
+  giving the Dashboard its own historical view of the same
+  already-persisted field) — see `PROJECT_STATUS.md`'s "v1.4.0 Release
+  Reconciliation" and "v1.9.0 Release Reconciliation" sections and
+  `docs/CHANGELOG.md`'s `[1.4.0]` and `[1.9.0]` entries. What remains
+  genuinely undelivered and still requires an owner decision: anything
+  needing data this application does not persist — a real historical
+  cost basis, profit/loss, or total return since inception — deliberately
+  not built, since there is no acquisition-price capture mechanism. This
+  is now the item's entire remaining scope; `annualizedInterestCost`
+  trend visibility is no longer part of it.
 - **Owner decision required**: what further analytics are actually
   wanted beyond the four metrics already shipped (a full
   historical-performance dashboard, or a cost-basis capture mechanism

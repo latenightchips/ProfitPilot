@@ -14163,6 +14163,176 @@ above.
 
 ---
 
+## v1.9.0 Release Reconciliation — Dashboard Annualized Interest Cost Trend
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents one batch, `f71ae74`
+("annualizedinterestcosttrend"), applied directly on top of `v1.8.0`
+(`e54044d`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.9.0`. Versions `1.0.0` through `1.8.0`
+remain the immutable previous releases** — no existing tag is touched
+by this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.8.0` to `1.9.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.9.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: the chart is presentation/
+read-layer only, reading `entry.annualizedInterestCost` directly (no
+derived helper layer, unlike Liquidation Buffer's own
+`calculateLiquidationBufferPercent`), computing nothing new and
+persisting nothing new. **No `v1.9.0` git tag exists yet** — tagging is
+a separate, explicit step for after this patch is applied and synced,
+not taken by this batch (see this batch's own final report for the
+exact recommended tag command).
+
+### Origin: Post-v1.8.0 Planning Audit
+
+A read-only audit (same date) surveyed Portfolio/risk analytics,
+Dashboard/UX, Aave V3/V4, data integrity, and deferred work, and
+recommended completing the Dashboard's trend-chart set with the one
+already-computed, already-persisted field Portfolio History had charted
+since `v1.4.0` but the Dashboard still lacked: `annualizedInterestCost`.
+It recommended closing `v1.9.0` with one batch adding a sibling
+Dashboard component mirroring `HealthFactorTrendSection.tsx`'s and
+`LiquidationBufferTrendSection.tsx`'s exact architecture, which this
+reconciliation batch documents. The same audit rejected/deferred Supply
+APR trend, collateral/debt quantity or debt-asset history, Health
+Factor risk-band classification, Health-Factor-distance-from-target
+trend, and P&L/cost-basis/cumulative-interest analytics — none of these
+are touched by this release.
+
+### Batch 1 — Dashboard Annualized Interest Cost Trend (`f71ae74`)
+
+- **`features/dashboard/components/AnnualizedInterestCostTrendSection.tsx`
+  (new)**: reads `listPortfolioHistoryForPortfolio` directly — the
+  identical service call `HealthFactorTrendSection.tsx` and
+  `LiquidationBufferTrendSection.tsx` already use — via local component
+  state and an effect, not a new persistence path or Zustand store.
+  Every plotted value is `entry.annualizedInterestCost` itself, read
+  directly with no derived-helper layer in between — unlike Liquidation
+  Buffer (`v1.8.0`), which recomputes a percentage from two raw fields
+  via a dedicated service-layer helper, this field is already the exact
+  number `PortfolioHistoryPanel.tsx`'s own table and card view render.
+  No Engine formula, no Formula ID, no new persisted field.
+- **Point-in-time-projection framing preserved exactly.** Per
+  `PortfolioHistoryPanel.tsx`'s own established framing (and its
+  `ANNUALIZED_INTEREST_COST_TOOLTIP` constant),
+  `entry.annualizedInterestCost` is the projected annual borrowing cost
+  implied by _that one snapshot's own_ debt balance and rate — never
+  interest already paid, cumulative interest, realized borrowing cost,
+  or interest paid since inception. The component's empty/single-entry
+  copy and its chart's own `aria-label` summary state this explicitly
+  ("not interest already paid," "not a running or cumulative total"),
+  rather than using generic "cost" language that could be misread as
+  cumulative.
+- **Always a plain, required number — no null handling, no
+  protocol-version branching.** Unlike Health Factor and Liquidation
+  Buffer (both nullable for a zero-debt portfolio),
+  `annualizedInterestCost` is a required `number` for every persisted
+  entry regardless of protocol version (`buildPortfolioHistoryEntry.ts`
+  always populates it from `summary.interestCost`), so this component
+  has no "no risk"/"not available" branch to render and never reads
+  `entry.protocolVersion` — simpler than both sibling components in
+  this one respect.
+- **Explicit non-chart states**: 0 entries reads "No Interest Cost
+  (annualized) history yet."; 1 entry shows its own value as plain text
+  (including the `$0.00` zero-value edge case, never blank or `NaN`)
+  rather than a fabricated one-point line, mirroring both sibling
+  components' own "no chart below two entries" rule; 2+ entries render
+  an accessible `role="img"` chart with a full `aria-label` summary,
+  `ResponsiveContainer`, and `isAnimationActive={false}` — the identical
+  accessible-chart pattern already established.
+- **`app/DashboardPageClient.tsx`**: wires the new section directly
+  after `DebtAndInterestPanel`, passing the same `portfolioId`/
+  `portfolioUpdatedAt` props used throughout, and rendered
+  unconditionally (unlike `DebtAndInterestPanel` itself, which is gated
+  on its own build succeeding) — the same "always render the trend
+  section" precedent both sibling trend sections already set.
+- **Tests**: 11 new tests in
+  `tests/unit/features/dashboard/AnnualizedInterestCostTrendSection.test.tsx`
+  — empty state, error state (malformed local-storage record), single
+  usable point (normal value plus the explicit zero-value edge case),
+  multiple entries (chart renders, exact displayed/accessible values,
+  chronological ordering, zero-value-among-multiple), multi-portfolio
+  isolation, an explicit V3 test, and a separate V4 protocol-agnostic
+  parity test. Regression confirmed via the existing
+  `tests/unit/app/page.test.tsx` Dashboard route suite,
+  `tests/integration/dashboard`, and both sibling trend-section test
+  files passing unchanged before and after.
+- **Validation**: full suite run twice — implementation worktree, then
+  independently after `git apply`-ing the delivered patch to a separate
+  clean worktree from `origin/main` — both times **4180/4180 tests
+  passing**, `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build`
+  all clean (the same single pre-existing, unrelated lint warning
+  present in every prior batch this session), plus coverage confirming
+  the new component (96.87% statements / 100% branches / 88.88%
+  functions / 96.55% lines) is in line with its two siblings.
+
+### What did not change
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat e54044d..f71ae74`:
+exactly 4 files, all within `features/dashboard/`, `app/`, and their
+test files — no `engine/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**` path appears).
+`entry.annualizedInterestCost` is read identically regardless of
+`entry.protocolVersion`; a dedicated V4 parity test (plus a separate
+explicit V3 test) confirms a V4 entry renders identically in substance
+to a V3 one. No Health Factor risk-band classification introduced —
+Conflict #1 remains exactly as unresolved as before. No deployment/cloud
+work — the Path B disposition is unaffected.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.8.0`/`1.7.0`/"current release" and found to need no update, since
+none reference a version-specific feature set or a current-version
+number this release would make stale: `docs/KNOWN_ISSUES.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md`,
+`docs/DEFECT_CLASSIFICATION.md` — zero matches across all four.
+`docs/TECHNICAL_DEBT.md`'s only match is a historical reference to
+`v1.7.0`'s own reconciliation (its CI/Playwright item, already resolved
+at that time) and required no further change this batch.
+
+### Stale-documentation cleanup (separate from the v1.9.0 feature itself)
+
+**`docs/VERSION_2_BACKLOG.md`'s "Portfolio analytics" item still
+described `annualizedInterestCost` trend visibility as "evaluated and
+deliberately deferred as a possible future enhancement, not ruled
+out."** This premise was already stale as of `v1.4.0` (Annualized
+Interest Cost Visibility, which added it to Portfolio History's own
+trend chart) and is now doubly so with this release's own Dashboard
+chart — not previously flagged as a correction target until the
+Post-v1.8.0 Planning Audit noticed it during its own fresh
+documentation inspection. Corrected to state plainly that
+`annualizedInterestCost` trend visibility now exists in both Portfolio
+History (`v1.4.0`) and the Dashboard (`v1.9.0`), leaving only the
+genuinely still-undelivered items (historical cost basis, profit/loss,
+total return since inception — all blocked on the same absent
+acquisition-price capture mechanism the surrounding paragraph already
+names) as this item's real remaining Version 2 scope. This is a
+correction of an already-decided, already-shipped fact this document
+had simply not caught up to, the same class of fix `v1.1.0` through
+`v1.8.0`'s own reconciliations made for other stale items — it does not
+reopen, expand, or resolve any other part of this backlog item's owner
+decision.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification, Supply APR trend, collateral/debt quantity or
+debt-asset history, cumulative/realized interest, P&L, cost basis, total
+return, Dependabot/Renovate, production deployment, or Settings ABOUT
+work. No new infrastructure work was introduced by the stale-doc cleanup
+above.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

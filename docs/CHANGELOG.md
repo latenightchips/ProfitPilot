@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.8.0`        | `package.json` `"version"`                                    |
-| Engine version                 | `1.8.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.8** — no batch in any of the eight releases modified a financial formula. Dashboard Liquidation Buffer Trend Visibility (V1.8.0) reuses the v1.6.0 service-layer `calculateLiquidationBufferPercent` helper verbatim on an already-persisted history entry's own `marketPriceUsd`/`liquidationPriceUsd`; it introduces no Engine formula, no recomputation, and no Formula ID of its own, and never substitutes for the Engine's own separate F-025 `calculateLiquidationBuffer`. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.8** — every batch across all eight releases persists through the existing envelope/schema, adding no new schema version and no migration. Dashboard Liquidation Buffer Trend Visibility (V1.8.0) reads already-persisted history entries and persists nothing new. |
+| Application version           | `1.9.0`        | `package.json` `"version"`                                    |
+| Engine version                 | `1.9.0`        | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.9** — no batch in any of the nine releases modified a financial formula. Dashboard Annualized Interest Cost Trend (V1.9.0) reads the already-persisted `entry.annualizedInterestCost` field directly, with no derived-helper layer and no recomputation of its own — the same already-established value `PortfolioHistoryPanel.tsx` already renders. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.9** — every batch across all nine releases persists through the existing envelope/schema, adding no new schema version and no migration. Dashboard Annualized Interest Cost Trend (V1.9.0) reads already-persisted history entries and persists nothing new. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -47,6 +47,29 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.6.0)     | 2026-09-04     | Liquidation Buffer Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4145/4145 tests passing) — see `PROJECT_STATUS.md`'s "v1.6.0 Release Reconciliation" section and the `[1.6.0]` entry below. Same promotion pattern as `1.5.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.7.0)     | 2026-09-04     | Dashboard Health Factor Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4155/4155 tests passing) — see `PROJECT_STATUS.md`'s "v1.7.0 Release Reconciliation" section and the `[1.7.0]` entry below. Same promotion pattern as `1.6.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.8.0)     | 2026-09-04     | Dashboard Liquidation Buffer Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4169/4169 tests passing) — see `PROJECT_STATUS.md`'s "v1.8.0 Release Reconciliation" section and the `[1.8.0]` entry below. Same promotion pattern as `1.7.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.9.0)     | 2026-09-05     | Dashboard Annualized Interest Cost Trend (Batch 1), re-validated against a fresh `origin/main` checkout (4180/4180 tests passing) — see `PROJECT_STATUS.md`'s "v1.9.0 Release Reconciliation" section and the `[1.9.0]` entry below. Same promotion pattern as `1.8.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.9.0`, not `1.8.x` or a new
+`2.0.0`**: not a PATCH — the Dashboard gains a compact Annualized
+Interest Cost trend visualization, completing the trend-chart set
+started by `1.7.0`'s Health Factor trend and `1.8.0`'s Liquidation
+Buffer trend — new user-facing capability, not a bug fix to existing
+capability, the same bar that already justified `1.1.0` through `1.8.0`
+being MINOR rather than PATCH bumps. Not a new MAJOR either, on the
+identical reasoning the `1.8.0` through `1.1.0` paragraphs below already
+give: no change to the Engine's calculation surface, the persisted-data
+shape, or the Manual-Mode-by-default product boundary `01_PRD.md`
+reserves Version 2 for. Every plotted value is read directly, on read,
+from one already-persisted history entry's own `annualizedInterestCost`
+field — with no derived-helper layer in between (unlike `1.8.0`'s own
+`calculateLiquidationBufferPercent`), and never recomputed from today's
+portfolio or market state. The point-in-time-projection framing
+`PortfolioHistoryPanel.tsx` already established is preserved exactly:
+never interest already paid, cumulative interest, realized borrowing
+cost, or interest paid since inception. No Health Factor risk-band
+classification is introduced either (Conflict #1 remains exactly as
+unresolved as before). A minor version bump, same class as `1.1.0`'s
+through `1.8.0`'s own.
 
 **Why the Application/Engine version is `1.8.0`, not `1.7.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard gains a compact Liquidation
@@ -247,6 +270,89 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.9.0] — 2026-09-05
+
+One batch on top of Version 1.8.0: Dashboard Annualized Interest Cost
+Trend. The Post-v1.8.0 Planning Audit recommended completing the
+Dashboard's trend-chart set with the one already-persisted field
+Portfolio History had charted since v1.4.0 but the Dashboard still
+lacked — Annualized Interest Cost now joins Health Factor and
+Liquidation Buffer as a Dashboard trend chart, reusing already-persisted
+Portfolio History data with zero new persistence. Full per-file detail
+lives in `PROJECT_STATUS.md`'s "v1.9.0 Release Reconciliation" section;
+this entry summarizes what changed for a user.
+
+### What's new in 1.9.0
+
+- **The Dashboard now shows an Interest Cost (annualized) Trend chart**,
+  directly below the existing Debt and Interest panel — a compact,
+  accessible line chart reading the same already-persisted Portfolio
+  History `annualizedInterestCost` values `PortfolioHistoryPanel.tsx`
+  (`app/portfolio/`) already charts, through the identical
+  `listPortfolioHistoryForPortfolio` service call. No new persistence
+  path, no new Store.
+- **Reads the persisted field directly** — no derived-helper layer in
+  between, unlike Liquidation Buffer's own service-layer percentage
+  calculation. This is already the exact number Portfolio History's own
+  table and card view render.
+- **A point-in-time projection, never a running total.** Each plotted
+  point is the projected annual borrowing cost implied by that one
+  snapshot's own debt balance and rate — never interest already paid,
+  cumulative interest, realized borrowing cost, or interest paid since
+  inception. The chart's own text and accessible summary state this
+  explicitly.
+- **Always a plain number — no "no risk" branch, no protocol-version
+  branching.** Unlike Health Factor and Liquidation Buffer,
+  `annualizedInterestCost` is a required field for every entry
+  regardless of protocol version, so this chart has no null case to
+  special-case and never reads which Aave version a portfolio uses.
+- **Explicit non-chart states for empty and single-entry history**,
+  mirroring the two existing Dashboard trend charts' own established
+  rule: zero entries reads "No Interest Cost (annualized) history yet."
+  A single entry shows its own value as plain text rather than a
+  fabricated one-point line — including a `$0.00` entry, shown as-is,
+  never blank or `NaN`.
+- **Accessible by design.** `role="img"` plus a full text `aria-label`
+  summarizing every plotted point, `ResponsiveContainer`, and
+  `isAnimationActive={false}` for deterministic rendering — the same
+  accessible-chart pattern the two existing Dashboard trend charts
+  already established.
+
+### What this is not
+
+This release adds no Health Factor risk-band classification, no Supply
+APR trend, no collateral/debt quantity or debt-asset history, no
+portfolio profit/loss, total return, gain since inception, cost basis,
+or cumulative/realized interest accounting. It introduces no new
+interest-cost *calculation* of its own — the value plotted is exactly
+the same already-persisted figure Portfolio History already computes and
+displays; the Dashboard simply gained its own historical view of it,
+completing the set alongside Health Factor and Liquidation Buffer.
+
+### Explicitly unchanged in 1.9.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no Formula ID, no
+persisted-data schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no
+migration, no Engine file, no new protocol API call, no V3/V4 semantic
+change (the chart never branches on protocol version), and no change to
+the Path B (self-hostable, no operated production deployment)
+deployment disposition — see `docs/DEPLOYMENT_DISPOSITION.md`. Supply
+APR trend, collateral/debt quantity history, debt-asset history, Health
+Factor risk bands, cumulative/realized interest, P&L, cost basis, total
+return, Dependabot/Renovate, production deployment, and Settings ABOUT
+work all remain deferred, unchanged from prior releases.
+
+### Release status
+
+This entry promotes one batch already independently verified by its own
+audit-implement-test-validate cycle (full suite: 4180/4180 tests
+passing, both in the implementation worktree and independently after
+applying the delivered patch to a clean checkout) — not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass, the same promotion pattern `1.8.0`'s own entry below
+already used. See `PROJECT_STATUS.md`'s "v1.9.0 Release Reconciliation"
+section for the full record.
 
 ## [1.8.0] — 2026-09-04
 
