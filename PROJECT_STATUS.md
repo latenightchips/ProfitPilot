@@ -14509,6 +14509,173 @@ new infrastructure work was introduced by this reconciliation.
 
 ---
 
+## v1.11.0 Release Reconciliation — Borrow APR Trend Completion
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents two batches, `f9a94e9`
+("v1.11.0batch1borrowaprtrend") and `4413b9e`
+("batch2dashboardborrowaprtrend"), applied directly on top of `v1.10.0`
+(`de45f59`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.11.0`. Versions `1.0.0` through `1.10.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.10.0` to `1.11.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.11.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: both new surfaces (a Portfolio
+History chart metric and a Dashboard trend chart) are presentation/
+read-layer only, each reading the already-persisted `borrowApr` field
+directly, computing nothing new and persisting nothing new. **No
+`v1.11.0` git tag exists yet** — tagging is a separate, explicit step
+for after this patch is applied and synced, not taken by this batch (see
+this batch's own final report for the exact recommended tag command).
+
+### Origin: Post-v1.10.0 Roadmap Audit
+
+A read-only audit (same date) found `borrowApr` remained the sole
+in-pattern gap in Portfolio History's own metric coverage — the field
+had been persisted on every history entry since Milestone 8, but was
+never surfaced in `PortfolioHistoryPanel.tsx`'s own chart selector/
+table/mobile card view, nor on the Dashboard, unlike every other
+snapshot field. It recommended "Borrow APR Trend Completion" as the
+`v1.11.0` release theme, staged across two batches, with one binding
+decision required before implementation: how to represent
+`entry.borrowApr === undefined` (genuinely unavailable — a V4 portfolio
+with no synced debt state yet, per that field's own doc comment in
+`services/persistence/types/models.ts`) — distinct from any existing
+`null`-means-something convention already in use elsewhere (e.g.
+`liquidationPriceUsd === null` meaning "no liquidation risk"). The same
+audit re-confirmed and continued to defer Health Factor risk-band
+classification (Conflict #1), the Recommendation Engine's three
+independent spec blockers (Conflict #29, Conflict #9/"Interest Warning"
+F-065, and the unmapped exit-readiness gap), Simulation's `ScenarioSummary`
+Engine-type structural gap, and Dependabot — none of these are touched
+by `v1.11.0`.
+
+### Implementation approval — Decision 1 (`undefined` → "Not available")
+
+Approved before either batch began: `borrowApr === undefined` renders
+the user-facing text **"Not available."** It must not become `0`, be
+interpolated, be inferred from another value, be recomputed, or be
+treated as equivalent to a known `0%` APR. For charting, it is
+represented as a missing/non-point/gap that preserves surrounding valid
+historical observations, never a fabricated numeric value and never
+`NaN`. Explicitly distinct from `liquidationPriceUsd === null` / "No
+liquidation risk" — the two `null`/`undefined` cases mean unrelated
+things (a genuinely-missing observation vs. a computed zero-debt state),
+and the approval explicitly forbids generalizing one convention to the
+other. Both batches implement this identically.
+
+### Batch 1 — Portfolio History Borrow APR Trend Support (`f9a94e9`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds `borrowApr` as a
+  ninth metric to `PORTFOLIO_HISTORY_METRICS`/`PORTFOLIO_HISTORY_METRIC_ORDER`
+  (positioned between Leverage and Annualized Interest Cost), reading
+  `entry.borrowApr` directly — no historical recomputation. A new
+  `formatBorrowApr(value: number | null): string` helper converts the
+  field's `undefined` to `null` only to reuse the existing nullable-chart-
+  point plumbing (the same mechanism `liquidationPriceUsd` already uses,
+  where Recharts skips a `null` chart point, leaving a gap) and renders
+  it as "Not available" — a dedicated formatter distinct from
+  `formatLiquidationPrice`'s own "No liquidation risk" text.
+- Correct behavior verified for 0/1/2+ entries, with explicit test
+  coverage for V3 populated history, V4 populated history with synced
+  debt state, and V4 history with no synced debt state (`undefined`).
+  All existing metric behavior (the other eight) preserved unchanged.
+- **Tests**: 270 lines added to
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`.
+- **Validation**: full suite — **4237/4237 tests passing**, `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build` all clean.
+
+### Batch 2 — Dashboard Borrow APR Trend (`4413b9e`)
+
+- **`features/dashboard/components/BorrowAprTrendSection.tsx` (new)**:
+  the established Dashboard trend-component pattern (`'use client'`,
+  local `useState`/`useEffect`, `listPortfolioHistoryForPortfolio`,
+  `status: 'loading' | 'ready' | 'error'`), adapted from
+  `LiquidationPriceTrendSection.tsx` — the only prior sibling that
+  already handled a nullable/gap value. Reads `entry.borrowApr ?? null`
+  directly; a local `formatHistoricalBorrowApr` helper renders "Not
+  available" for `null`, `formatPercent` otherwise — replicating
+  Batch 1's exact convention, never a fabricated `0%`.
+- **The one respect in which this component's chart-eligibility
+  threshold differs from every prior sibling trend section**: it
+  requires at least two _usable_ (non-`undefined`) `borrowApr`
+  observations, not merely two persisted entries — a V4 portfolio can
+  accumulate many entries while its debt state has never synced, so raw
+  entry count alone would not guarantee a meaningful line. Below that
+  threshold, the component falls back to a "not enough history yet"
+  text branch describing the most recently recorded entry's own value
+  (which may itself be "Not available"), the same fallback pattern
+  every sibling uses for a single entry.
+- No `entry.protocolVersion` branching anywhere in the component — V3
+  and V4 (synced) entries render identically; explicit test coverage for
+  both, plus the V4-undefined and mixed valid/undefined cases.
+- **`app/DashboardPageClient.tsx`**: wires the section directly after
+  `AnnualizedInterestCostTrendSection` — grouped with the Dashboard's
+  debt/interest analytics (`DebtAndInterestPanel` →
+  `AnnualizedInterestCostTrendSection` → `BorrowAprTrendSection`), since
+  Borrow APR is the same rate `DebtAndInterestPanel`'s own current-value
+  card already shows.
+- **Tests**: 13 new tests in
+  `tests/unit/features/dashboard/BorrowAprTrendSection.test.tsx` —
+  empty/error states, fewer-than-2-usable-observations (three distinct
+  shapes: single entry, all-undefined V4, exactly-one-usable-among-several),
+  multi-entry chart rendering, chronological ordering, mixed valid/
+  undefined history (surrounding points preserved), portfolio isolation,
+  explicit V3 and V4-synced parity.
+- **Validation**: full suite run twice (implementation worktree, then
+  independently after `git apply` against a fresh `origin/main`
+  checkout) — both times **4250/4250 tests passing**, all tooling
+  clean.
+
+### What did not change, across both batches
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat
+de45f59..4413b9e`: exactly 6 files, all within `app/portfolio/`,
+`app/`, `features/dashboard/`, and their test files — no `engine/**`,
+`services/persistence/**`, `services/aave/**`, or `app/api/aave/**` path
+appears, across the full two-batch range). `entry.borrowApr` is read
+identically regardless of protocol version by both surfaces; neither
+component branches on `entry.protocolVersion`. No Health Factor
+risk-band classification introduced — Conflict #1 remains exactly as
+unresolved as before. No deployment/cloud work — the Path B disposition
+is unaffected. No generic/shared trend-chart abstraction was
+introduced — `BorrowAprTrendSection.tsx` remains its own independent,
+adapted-not-shared implementation, per this release's own explicit
+instruction against a refactor.
+
+### Documentation inspected, found to require no change
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used, the following were freshly re-checked via direct grep for
+`1.10.0`/"current release", and separately for "borrow"/"apr" staleness,
+and found to need no update: `docs/DEPLOYMENT_DISPOSITION.md`,
+`docs/KNOWN_ISSUES.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `docs/PRODUCTION_READINESS.md` — zero
+version-specific or Borrow-APR-specific claims in any of the five that
+this release would make stale.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), the Recommendation Engine's
+three independent spec blockers (Conflict #29, Conflict #9/"Interest
+Warning" F-065, and the unmapped exit-readiness gap), Simulation's
+`ScenarioSummary` Engine-type structural gap, collateral/debt quantity
+or debt-asset history, cumulative/realized interest, P&L, cost basis,
+total return, Dependabot/Renovate, production deployment, or Settings
+ABOUT work. No new infrastructure work was introduced by this
+reconciliation.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

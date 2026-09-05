@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.10.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.10.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.10** — no batch in any of the ten releases modified a financial formula. Dashboard Trend Parity (V1.10.0) reads five already-persisted Portfolio History fields directly (Net Worth via the same already-established `collateral.valueUsd - debt.valueUsd` derivation; Loan-to-Value, Leverage, Market Price, and Liquidation Price via direct field reads), with no derived-helper layer and no recomputation of its own. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.10** — every batch across all ten releases persists through the existing envelope/schema, adding no new schema version and no migration. Dashboard Trend Parity (V1.10.0) reads already-persisted history entries and persists nothing new. |
+| Application version           | `1.11.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.11.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.11** — no batch in any of the eleven releases modified a financial formula. Borrow APR Trend Completion (V1.11.0) reads the already-persisted `borrowApr` field directly on both surfaces (Portfolio History and Dashboard), with no derived-helper layer and no recomputation of its own. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.11** — every batch across all eleven releases persists through the existing envelope/schema, adding no new schema version and no migration. Borrow APR Trend Completion (V1.11.0) reads already-persisted history entries and persists nothing new. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -49,6 +49,28 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.8.0)     | 2026-09-04     | Dashboard Liquidation Buffer Trend Visibility (Batch 1), re-validated against a fresh `origin/main` checkout (4169/4169 tests passing) — see `PROJECT_STATUS.md`'s "v1.8.0 Release Reconciliation" section and the `[1.8.0]` entry below. Same promotion pattern as `1.7.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.9.0)     | 2026-09-05     | Dashboard Annualized Interest Cost Trend (Batch 1), re-validated against a fresh `origin/main` checkout (4180/4180 tests passing) — see `PROJECT_STATUS.md`'s "v1.9.0 Release Reconciliation" section and the `[1.9.0]` entry below. Same promotion pattern as `1.8.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.10.0)    | 2026-09-05     | Dashboard Trend Parity (Batches 1–3), re-validated against a fresh `origin/main` checkout (4229/4229 tests passing) — see `PROJECT_STATUS.md`'s "v1.10.0 Release Reconciliation" section and the `[1.10.0]` entry below. Same promotion pattern as `1.9.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.11.0)    | 2026-09-05     | Borrow APR Trend Completion (Batches 1–2), re-validated against a fresh `origin/main` checkout (4250/4250 tests passing) — see `PROJECT_STATUS.md`'s "v1.11.0 Release Reconciliation" section and the `[1.11.0]` entry below. Same promotion pattern as `1.10.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.11.0`, not `1.10.x` or a new
+`2.0.0`**: not a PATCH — Portfolio History gains a ninth chart metric
+(Borrow APR) and the Dashboard gains a matching new trend chart,
+completing the Portfolio History field's own chart coverage — new
+user-facing capability, not a bug fix to existing capability, the same
+bar that already justified `1.1.0` through `1.10.0` being MINOR rather
+than PATCH bumps. Not a new MAJOR either, on the identical reasoning the
+`1.10.0` through `1.1.0` paragraphs below already give: no change to the
+Engine's calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary `01_PRD.md` reserves Version 2
+for. Every plotted value is `entry.borrowApr` read directly, on read,
+from one already-persisted history entry — never recomputed from
+today's portfolio or market state. `undefined` (a V4 portfolio with no
+synced debt state yet) renders "Not available," never a fabricated
+`0%`, distinct from `liquidationPriceUsd === null`'s own "No liquidation
+risk" text — Decision 1 of the v1.11.0 implementation approval
+explicitly forbids generalizing one convention to the other. No Health
+Factor risk-band classification is introduced either (Conflict #1
+remains exactly as unresolved as before). A minor version bump, same
+class as `1.1.0`'s through `1.10.0`'s own.
 
 **Why the Application/Engine version is `1.10.0`, not `1.9.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard gains five new trend
@@ -294,6 +316,77 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.11.0] — 2026-09-05
+
+Two batches on top of Version 1.10.0, together titled "Borrow APR Trend
+Completion": Portfolio History Borrow APR trend support (Batch 1) and
+Dashboard Borrow APR trend (Batch 2). The Post-v1.10.0 Roadmap Audit
+found `borrowApr` was the sole in-pattern gap remaining in Portfolio
+History's own field coverage — persisted on every history entry since
+Milestone 8, but never surfaced in its chart selector, table, or mobile
+card view, and never mirrored on the Dashboard. This release closes that
+gap on both surfaces, reusing already-persisted history data with zero
+new persistence. Full per-file, per-batch detail lives in
+`PROJECT_STATUS.md`'s "v1.11.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.11.0
+
+- **Portfolio History's chart selector, table, and mobile card view now
+  include Borrow APR** as a ninth metric, alongside the eight already
+  shipped (Health Factor, Net Worth, Loan-to-Value, Leverage, Market
+  Price, Liquidation Price, Liquidation Buffer, Annualized Interest
+  Cost).
+- **The Dashboard now shows a Borrow APR trend chart**, placed with the
+  existing debt/interest analytics (directly after the Annualized
+  Interest Cost trend), completing the Dashboard's mirror of this field.
+- **A V4 portfolio with no synced debt state yet renders "Not
+  available,"** never a fabricated `0%`, interpolated, or inferred
+  value — distinct from `liquidationPriceUsd === null`'s own "No
+  liquidation risk" text, since the two cases mean unrelated things.
+- **The Dashboard chart requires at least two usable (non-missing)
+  Borrow APR observations before drawing a line** — a V4 portfolio can
+  accumulate history entries before its debt state ever syncs, so entry
+  count alone would not guarantee a meaningful trend.
+- **No historical points are recomputed using current portfolio
+  state, and no live oracle or Aave lookup was introduced** — both
+  surfaces read only what Portfolio History already persisted at each
+  snapshot's own creation time, the same read-only discipline every
+  existing trend chart already follows.
+
+### What this is not
+
+This release adds no Health Factor risk-band classification, no
+Recommendation Engine changes, no Simulation changes, no persistence or
+schema change, and no Aave adapter change. It introduces no new Engine
+formula and no new Formula ID — every value plotted is the already-
+persisted `borrowApr` field, read directly, never a new calculation.
+
+### Explicitly unchanged in 1.11.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no Formula ID, no
+persisted-data schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no
+migration, no Engine file, no new protocol API call, no V3/V4 semantic
+change (neither surface branches on protocol version — `borrowApr` is
+read identically for both), and no change to the Path B (self-hostable,
+no operated production deployment) deployment disposition — see
+`docs/DEPLOYMENT_DISPOSITION.md`. Health Factor risk bands, the
+Recommendation Engine's three independent spec blockers, Simulation's
+`ScenarioSummary` gap, cumulative/realized interest, P&L, cost basis,
+total return, Dependabot/Renovate, production deployment, and Settings
+ABOUT work all remain deferred, unchanged from prior releases.
+
+### Release status
+
+This entry promotes two batches, each already independently verified by
+its own audit-implement-test-validate cycle (final full suite:
+4250/4250 tests passing, both in the implementation worktree and
+independently after applying the delivered patch to a clean checkout)
+— not a fresh Milestone-9/V1.1-style Release Candidate process with its
+own new manual exploratory pass, the same promotion pattern `1.10.0`'s
+own entry below already used. See `PROJECT_STATUS.md`'s "v1.11.0
+Release Reconciliation" section for the full record.
 
 ## [1.10.0] — 2026-09-05
 

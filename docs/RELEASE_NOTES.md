@@ -13,21 +13,68 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.10.0
+## Version 1.11.0
 
-**Current release.** Promotes the Dashboard Trend Parity work (three
-batches: Net Worth + Loan-to-Value, Leverage + Market Price, and
-Liquidation Price) below out of Unreleased status — built, tested, and
-independently re-verified (4229/4229 tests passing, both in the
+**Current release.** Promotes the Borrow APR Trend Completion work (two
+batches: Portfolio History Borrow APR trend support, and Dashboard
+Borrow APR trend) below out of Unreleased status — built, tested, and
+independently re-verified (4250/4250 tests passing, both in the
 implementation worktree and again after applying the delivered patch to
 a clean checkout) in the same batches that produced it, not a fresh
 Milestone-9/V1.1-style Release Candidate process with its own new manual
-exploratory pass. See `PROJECT_STATUS.md`'s "v1.10.0 Release
-Reconciliation" section and `docs/CHANGELOG.md`'s `[1.10.0]` entry for
-the full record. Everything in "Version 1.9.0" and earlier below still
-applies; this section covers only what is new since 1.9.0. **Still a
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.11.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.11.0]` entry for
+the full record. Everything in "Version 1.10.0" and earlier below still
+applies; this section covers only what is new since 1.10.0. **Still a
 self-hostable software release, not a hosted product** — see
 "Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.11.0
+
+- **Portfolio History's chart selector, table, and mobile card view now
+  include Borrow APR** as a ninth metric, reading `entry.borrowApr`
+  directly — no new formula, no recomputation.
+- **The Dashboard now shows a matching Borrow APR trend chart**, placed
+  with the existing debt/interest analytics, directly after the
+  Annualized Interest Cost trend chart.
+- **A V4 portfolio with no synced debt state yet renders "Not
+  available"** on both surfaces — never a fabricated `0%`, interpolated,
+  or inferred value, and distinct from `liquidationPriceUsd === null`'s
+  own "No liquidation risk" text elsewhere on Portfolio History and the
+  Dashboard.
+- **The Dashboard chart requires at least two usable (non-missing)
+  observations before drawing a line** — with fewer, it shows the latest
+  recorded value as text instead of fabricating a second point.
+- **Historical points only** — no chart recomputes a value from today's
+  portfolio state, and no live oracle or Aave lookup was introduced for
+  any historical point.
+
+### Explicitly unchanged in 1.11.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine file changed, no new protocol
+API call, no V3/V4 semantic change (`borrowApr` is read identically for
+both protocol versions on both surfaces), still no live wallet
+connection or transaction execution, still no cloud backup or
+synchronization, still no publicly operated production deployment.
+Collateral quantity and debt balance remain always-manual for both
+protocol versions.
+
+## Version 1.10.0 (previous release)
+
+Promoted the Dashboard Trend Parity work (three batches: Net Worth +
+Loan-to-Value, Leverage + Market Price, and Liquidation Price) below out
+of Unreleased status — built, tested, and independently re-verified
+(4229/4229 tests passing, both in the implementation worktree and again
+after applying the delivered patch to a clean checkout) in the same
+batches that produced it, not a fresh Milestone-9/V1.1-style Release
+Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.10.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.10.0]` entry for the full record. Everything in
+"Version 1.9.0" and earlier below still applies; this section covers
+only what was new since 1.9.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
 
 ### What's new in 1.10.0
 
