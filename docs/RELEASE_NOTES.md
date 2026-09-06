@@ -13,9 +13,67 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.11.0
+## Version 1.12.0
 
-**Current release.** Promotes the Borrow APR Trend Completion work (two
+**Current release.** Promotes five batches on top of Version 1.11.0,
+together titled "Portfolio History Field Completeness Part 2": Collateral
+Value & Debt Value chart parity (Batch 1), Collateral Quantity chart
+metric (Batch 2), Debt Quantity chart metric (Batch 3), Portfolio History
+data-source provenance (Batch 4), and Dependabot dependency-update
+automation (Batch 5) — built, tested, and independently re-verified
+(4282/4282 tests passing) in the same batches that produced them, not a
+fresh Milestone-9/V1.1-style Release Candidate process with its own new
+manual exploratory pass. See `PROJECT_STATUS.md`'s "v1.12.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.12.0]` entry for the
+full record. Everything in "Version 1.11.0" and earlier below still
+applies; this section covers only what is new since 1.11.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.12.0
+
+- **Portfolio History's chart selector now includes Collateral Value and
+  Debt Value**, reading `entry.collateral.valueUsd`/`entry.debt.valueUsd`
+  directly, alongside the metrics already shipped through 1.11.0.
+- **Portfolio History's chart selector now includes Collateral Quantity**,
+  reading `entry.collateral.quantity` directly.
+- **Portfolio History's chart selector now includes Debt Quantity**,
+  reading `entry.debt.quantity` directly — the debt-asset symbol shown in
+  the formatted value comes from that same history entry's own
+  `debt.asset`, never assumed or hardcoded, so it stays correct for a
+  portfolio whose borrowed asset changed between snapshots.
+- **Portfolio History now shows a data-source provenance badge** on each
+  entry, reflecting that entry's own persisted `dataSource` (`manual` or
+  `live`) — never inferred or recomputed after the fact.
+- **Dependency updates are now scanned automatically.**
+  `.github/dependabot.yml` opens pull requests monthly for available
+  `npm`/`pnpm` and GitHub Actions updates, grouping minor/patch bumps and
+  leaving major bumps for individual review. **This only opens PRs — it
+  does not approve, merge, or deploy anything;** every PR still goes
+  through the full validation pipeline and manual review before a human
+  merges it, same as any other dependency change.
+- **No historical points are recomputed using current portfolio
+  state, and no live oracle or Aave lookup was introduced** for any of
+  the new chart metrics or the provenance badge — all four read only
+  what Portfolio History already persisted at each snapshot's own
+  creation time, the same read-only discipline every existing trend
+  chart already follows.
+
+### Explicitly unchanged in 1.12.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine file changed, no new protocol
+API call, no V3/V4 semantic change (every new metric and the provenance
+badge read identically for both protocol versions), still no live
+wallet connection or transaction execution, still no cloud backup or
+synchronization, still no publicly operated production deployment.
+Dependabot does not change CI behavior, does not auto-merge, and does
+not bypass review — it only surfaces available updates as ordinary pull
+requests.
+
+## Version 1.11.0 (previous release)
+
+Promotes the Borrow APR Trend Completion work (two
 batches: Portfolio History Borrow APR trend support, and Dashboard
 Borrow APR trend) below out of Unreleased status — built, tested, and
 independently re-verified (4250/4250 tests passing, both in the

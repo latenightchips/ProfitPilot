@@ -125,10 +125,18 @@ dependency is never bumped merely because a newer version exists.
 
 **No blind or automatic upgrades.** Every dependency bump is a
 deliberate, individually-reviewed change, not a bulk or automatic
-update — this repository has no automated update tooling (e.g.
-Dependabot/Renovate) configured today, and none is implied to exist; a
-real, currently-manual gap, stated honestly rather than glossed over.
-A bump updates `package.json` and regenerates `pnpm-lock.yaml` together
+update. As of v1.12.0, `.github/dependabot.yml` (added in Batch 5,
+`9076687`) scans two ecosystems — `npm` (covering `pnpm` via its
+auto-detected lockfile) and `github-actions` — monthly, grouping
+minor/patch bumps into one PR per ecosystem and leaving major bumps
+ungrouped for individual review. **Dependabot only opens pull
+requests — it never approves, merges, or deploys anything.** Every PR
+it opens goes through the exact same gate a manually-opened dependency
+bump always has: the full validation pipeline below and a human
+review before merge. It closes the "who notices a new release exists"
+gap this section previously described as manual; it does not change
+who decides to ship a bump. A bump updates `package.json` and
+regenerates `pnpm-lock.yaml` together
 in the same change (`pnpm install`, never a hand-edited lockfile), so
 the two never drift — the same lockfile-consistency discipline
 `pnpm install --frozen-lockfile` already enforces in this project's own

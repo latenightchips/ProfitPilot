@@ -14676,6 +14676,199 @@ reconciliation.
 
 ---
 
+## v1.12.0 Release Reconciliation — Portfolio History Field Completeness Part 2
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents five batches, `ac1d3b3`
+("v1.12.0batch1collateraldebtvaluechartparity"), `a1ede44`
+("v1.12.0batch2collateralquantitychartmetric"), `86fb936`
+("v1.12.0batch3debtquantitychartmetric"), `aa38fc6`
+("v1.12.0batch4datasourceprovenance"), and `9076687`
+("v1.12.0batch5dependabot"), applied directly on top of `v1.11.0`
+(`531026d`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.12.0`. Versions `1.0.0` through `1.11.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.11.0` still resolves to `531026d60022a466842e473ea73c5c455139db92`,
+confirmed by fresh inspection during this batch. `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.11.0` to
+`1.12.0` — a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own
+"Why the Application/Engine version is `1.12.0`" paragraph gives.
+`FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION` are unchanged, `1.0`/`1.0.0`
+respectively, same as every release before this one — this release
+requires neither: Batches 1-4 are presentation/read-layer only, each
+reading an already-persisted history-entry field directly, computing
+nothing new and persisting nothing new; Batch 5 touches no application
+code at all. **No `v1.12.0` git tag exists yet** — tagging is a
+separate, explicit step for after this patch is applied and synced, not
+taken by this batch (see this batch's own tag-readiness verdict below).
+
+### Origin: Post-v1.11.0 Roadmap Audit
+
+A read-only audit (same date) found four remaining in-pattern gaps in
+Portfolio History's own field coverage — Collateral Value, Debt Value,
+Collateral Quantity, and Debt Quantity were all persisted on every
+history entry but never charted, and no entry-level data-source
+provenance was ever surfaced despite `dataSource: 'manual' | 'live'`
+being persisted on every entry since Milestone 8 — plus Dependabot as an
+independent maintenance-track recommendation. It recommended "Portfolio
+History Field Completeness Part 2" as the `v1.12.0` release theme,
+staged across Batches 1-4 for the field-completeness work and an
+independent Batch 5 for Dependabot. The same audit re-confirmed and
+continued to defer Health Factor risk-band classification (Conflict #1),
+the Recommendation Engine's three independent spec blockers, Simulation's
+`ScenarioSummary` Engine-type structural gap, cumulative/realized
+interest, P&L, cost basis, and total return — none of these are touched
+by `v1.12.0`.
+
+### Batch 1 — Collateral Value & Debt Value Portfolio History Chart Parity (`ac1d3b3`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds Collateral Value
+  and Debt Value as two new metrics to `PORTFOLIO_HISTORY_METRICS`/
+  `PORTFOLIO_HISTORY_METRIC_ORDER`, reading `entry.collateral.valueUsd`/
+  `entry.debt.valueUsd` directly — no historical recomputation, no
+  branching on `entry.protocolVersion`.
+- **Tests**: 285 lines added/changed in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`.
+- **Validation**: full suite — **4257/4257 tests passing**, `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build` all clean.
+
+### Batch 2 — Collateral Quantity Portfolio History Chart Metric (`a1ede44`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds Collateral
+  Quantity as a new metric, reading `entry.collateral.quantity`
+  directly.
+- **Tests**: 266 lines added/changed in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`.
+- **Validation**: full suite — **4264/4264 tests passing**, all tooling
+  clean.
+
+### Batch 3 — Debt Quantity Portfolio History Chart Metric (`86fb936`)
+
+- **Pre-implementation investigation required** (this batch's own STOP-
+  if-no-canonical-field instruction): confirmed `entry.debt.quantity` is
+  canonical and already V3/V4-abstracted at the producer — no protocol-
+  version branching needed at the consumer.
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds Debt Quantity as a
+  new metric. Because `debt.asset` is a free-form string, not a fixed
+  literal, the metric's formatter needs each entry's own asset symbol —
+  this required backward-compatibly widening
+  `PortfolioHistoryMetricConfig.formatValue` from
+  `(value: number | null) => string` to
+  `(value: number | null, entry?: PersistedPortfolioHistoryEntry) =>
+string`. Every one of the (now thirteen) other metrics ignores the new
+  optional parameter; only Debt Quantity's formatter reads
+  `entry.debt.asset` from it.
+- **Tests**: 363 lines added/changed in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`, including
+  coverage for a portfolio whose borrowed asset changed between
+  snapshots.
+- **Validation**: full suite — **4274/4274 tests passing**, all tooling
+  clean.
+
+### Batch 4 — Portfolio History Data-Source Provenance (`aa38fc6`)
+
+- **Pre-implementation investigation required** (this batch's own STOP-
+  if-no-canonical-field instruction): confirmed `dataSource: 'manual' |
+'live'` is authoritative and already persisted on every history entry.
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds a provenance badge
+  per entry, reusing the app's existing badge conventions — implemented
+  as a badge, not a new chart metric or table column, since a
+  categorical two-value field is not a chartable numeric series.
+- **Tests**: 215 lines added in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`.
+- **Validation**: full suite — **4282/4282 tests passing**, all tooling
+  clean.
+
+### Batch 5 — Dependabot / Dependency Update Automation (`9076687`)
+
+- **Pre-implementation investigation required** (this batch's own STOP-
+  if-policy-conflict instruction): inspected `package.json`,
+  `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.nvmrc`, `.github/workflows/**`,
+  and every existing dependency-management doc; found no conflict with
+  `docs/MAINTENANCE_SCHEDULE.md`'s "no blind or automatic upgrades"
+  policy, since Dependabot only opens PRs and every PR still goes
+  through the same manual-review-plus-full-CI gate.
+- **`.github/dependabot.yml` (new)**: two ecosystems (`npm`, covering
+  `pnpm` via its auto-detected `pnpm-lock.yaml`, and `github-actions`),
+  both `directory: "/"`, `schedule.interval: "monthly"`,
+  `open-pull-requests-limit` 10/5, `groups.minor-and-patch.update-types:
+["minor","patch"]` (major versions never grouped, each opens its own
+  PR), labeled. Opens PRs only — never merges, never auto-approves,
+  never bypasses CI or review.
+- **No tests added** — this batch touches no application code, so the
+  test count is unchanged from Batch 4's own 4282.
+- **Validation**: full suite — **4282/4282 tests passing** (unchanged,
+  as expected), `pnpm typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm
+build` all clean.
+
+### What did not change, across all five batches
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no V3/V4 semantic change** —
+confirmed by direct diff inspection (`git diff --stat 531026d..9076687`:
+exactly 3 files touched across all five batches — `app/portfolio/
+PortfolioHistoryPanel.tsx`, its test file, and the new
+`.github/dependabot.yml` — no `engine/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**` path appears anywhere in the
+range). Every new metric and the provenance badge are read identically
+regardless of protocol version; no component branches on
+`entry.protocolVersion`. No Health Factor risk-band classification
+introduced — Conflict #1 remains exactly as unresolved as before. No
+deployment/cloud work — the Path B disposition is unaffected. No
+dependency was actually bumped by Batch 5 — `pnpm-lock.yaml` is
+untouched; only the Dependabot configuration file was added.
+
+### Documentation reconciled this batch
+
+Unlike every all-clean prior reconciliation, this batch found two
+documents with statements the v1.12.0 work makes stale, both reconciled
+here (requirement 3 of this batch's own scope):
+
+- **`docs/TECHNICAL_DEBT.md`**: the Priority 1 "No automated
+  dependency-update tooling configured" item is marked resolved, using
+  the same strikethrough-plus-"Resolved" pattern already established for
+  the pre-existing "Cloud Sync UI copy" item, citing `.github/
+dependabot.yml` (Batch 5, `9076687`). The item's own "this is about
+  the missing tooling, not the current advisory count" framing, and the
+  unchanged 18-advisory/11-high/7-moderate/0-critical `pnpm audit`
+  baseline (`docs/KNOWN_ISSUES.md` category C, `docs/
+DEFECT_CLASSIFICATION.md` §6), are both preserved verbatim — that
+  baseline is unaffected by adding a scanning tool and was never itself
+  listed as debt.
+- **`docs/MAINTENANCE_SCHEDULE.md`**: the "Dependency updates" section's
+  "No blind or automatic upgrades" paragraph is updated to state that
+  Dependabot is now configured (monthly, npm/pnpm + GitHub Actions,
+  minor/patch grouped, major ungrouped) — while explicitly preserving
+  that it only opens pull requests, never approves/merges/deploys, and
+  every PR still goes through the identical manual review and full
+  validation pipeline this section already described.
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used, the remaining documents named in this batch's own inspection list
+— `docs/DEPLOYMENT_DISPOSITION.md`, `docs/KNOWN_ISSUES.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `docs/PRODUCTION_READINESS.md` — were
+freshly re-checked via direct grep for `Dependabot|Renovate` and for
+`1.11.0|current release`, and found to need no update: zero matches in
+any of the four.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), the Recommendation Engine's
+three independent spec blockers (Conflict #29, Conflict #9/"Interest
+Warning" F-065, and the unmapped exit-readiness gap), Simulation's
+`ScenarioSummary` Engine-type structural gap, cumulative/realized
+interest, P&L, cost basis, total return, the optional `borrowApr`-style
+debt-asset history beyond what Batch 3 already added, production
+deployment, or Settings ABOUT work. No new infrastructure work beyond
+Dependabot itself was introduced by this reconciliation. v1.13.0 work
+was not started.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering

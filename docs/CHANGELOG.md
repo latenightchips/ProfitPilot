@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.11.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.11.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.11** — no batch in any of the eleven releases modified a financial formula. Borrow APR Trend Completion (V1.11.0) reads the already-persisted `borrowApr` field directly on both surfaces (Portfolio History and Dashboard), with no derived-helper layer and no recomputation of its own. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.11** — every batch across all eleven releases persists through the existing envelope/schema, adding no new schema version and no migration. Borrow APR Trend Completion (V1.11.0) reads already-persisted history entries and persists nothing new. |
+| Application version           | `1.12.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.12.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.12** — no batch in any of the twelve releases modified a financial formula. Portfolio History Field Completeness Part 2 (V1.12.0) reads already-persisted fields (`collateral.valueUsd`, `debt.valueUsd`, `collateral.quantity`, `debt.quantity`, `dataSource`) directly on Portfolio History, with no derived-helper layer and no recomputation of its own; its Dependabot batch touches no Engine code at all. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.12** — every batch across all twelve releases persists through the existing envelope/schema, adding no new schema version and no migration. Portfolio History Field Completeness Part 2 (V1.12.0) reads already-persisted history entries and persists nothing new. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -50,6 +50,29 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.9.0)     | 2026-09-05     | Dashboard Annualized Interest Cost Trend (Batch 1), re-validated against a fresh `origin/main` checkout (4180/4180 tests passing) — see `PROJECT_STATUS.md`'s "v1.9.0 Release Reconciliation" section and the `[1.9.0]` entry below. Same promotion pattern as `1.8.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.10.0)    | 2026-09-05     | Dashboard Trend Parity (Batches 1–3), re-validated against a fresh `origin/main` checkout (4229/4229 tests passing) — see `PROJECT_STATUS.md`'s "v1.10.0 Release Reconciliation" section and the `[1.10.0]` entry below. Same promotion pattern as `1.9.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.11.0)    | 2026-09-05     | Borrow APR Trend Completion (Batches 1–2), re-validated against a fresh `origin/main` checkout (4250/4250 tests passing) — see `PROJECT_STATUS.md`'s "v1.11.0 Release Reconciliation" section and the `[1.11.0]` entry below. Same promotion pattern as `1.10.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.12.0)    | 2026-09-06     | Portfolio History Field Completeness Part 2 (Batches 1–5), re-validated against a fresh `origin/main` checkout (4282/4282 tests passing) — see `PROJECT_STATUS.md`'s "v1.12.0 Release Reconciliation" section and the `[1.12.0]` entry below. Same promotion pattern as `1.11.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.12.0`, not `1.11.x` or a new
+`2.0.0`**: not a PATCH — Portfolio History gains four new chart/display
+surfaces (Collateral Value, Debt Value, Collateral Quantity, Debt
+Quantity chart metrics, plus a data-source provenance badge) and the
+repository gains automated dependency-update scanning — new user-facing
+and tooling capability, not a bug fix to existing capability, the same
+bar that already justified `1.1.0` through `1.11.0` being MINOR rather
+than PATCH bumps. Not a new MAJOR either, on the identical reasoning the
+`1.11.0` through `1.1.0` paragraphs below already give: no change to the
+Engine's calculation surface, the persisted-data shape, or the
+Manual-Mode-by-default product boundary `01_PRD.md` reserves Version 2
+for. Every plotted value and the provenance badge are read directly, on
+read, from one already-persisted history entry's own fields — never
+recomputed from today's portfolio or market state. `.github/
+dependabot.yml` (Batch 5) only opens pull requests on a schedule; it
+does not approve, merge, or deploy anything, and does not alter CI
+behavior — every PR it opens still requires the same manual review and
+full validation pipeline any other dependency change already does. No
+Health Factor risk-band classification is introduced either (Conflict #1
+remains exactly as unresolved as before). A minor version bump, same
+class as `1.1.0`'s through `1.11.0`'s own.
 
 **Why the Application/Engine version is `1.11.0`, not `1.10.x` or a new
 `2.0.0`**: not a PATCH — Portfolio History gains a ninth chart metric
@@ -316,6 +339,79 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.12.0] — 2026-09-06
+
+Five batches on top of Version 1.11.0, together titled "Portfolio History
+Field Completeness Part 2" (per the Post-v1.11.0 Roadmap Audit): Collateral
+Value & Debt Value chart parity (`ac1d3b3`), Collateral Quantity chart
+metric (`a1ede44`), Debt Quantity chart metric (`86fb936`), Portfolio
+History data-source provenance (`aa38fc6`), and Dependabot dependency-
+update automation (`9076687`), plus this reconciliation batch itself. Full
+per-file, per-batch detail lives in `PROJECT_STATUS.md`'s "v1.12.0 Release
+Reconciliation" section; this entry summarizes what changed for a user.
+
+### What's new in 1.12.0
+
+- **Portfolio History's chart selector gains Collateral Value and Debt
+  Value**, reading `entry.collateral.valueUsd`/`entry.debt.valueUsd`
+  directly — the same already-persisted fields the table/mobile card view
+  already showed, now also chartable.
+- **Portfolio History's chart selector gains Collateral Quantity**,
+  reading `entry.collateral.quantity` directly.
+- **Portfolio History's chart selector gains Debt Quantity**, reading
+  `entry.debt.quantity` directly. Its formatter reads the debt-asset
+  symbol from that same entry's own `debt.asset` (a free-form string, not
+  a fixed literal), so a portfolio whose borrowed asset changed between
+  snapshots still labels each historical point correctly. This required
+  widening `PortfolioHistoryMetricConfig.formatValue` to accept an
+  optional `entry` parameter — a backward-compatible addition; every
+  other metric's formatter ignores it.
+- **Portfolio History now shows a data-source provenance badge** per
+  entry, reflecting that entry's own persisted `dataSource: 'manual' |
+  'live'` field — reusing the app's existing badge conventions, not a new
+  chart metric or table column.
+- **`.github/dependabot.yml` now scans for dependency updates.** Two
+  ecosystems (`npm`, covering `pnpm` via its auto-detected lockfile, and
+  `github-actions`), monthly, minor/patch bumps grouped into one PR per
+  ecosystem, major bumps left ungrouped for individual review.
+  **Dependabot only opens pull requests — it does not approve, merge, or
+  deploy anything**, and it does not change CI behavior. Every PR it
+  opens still requires the full validation pipeline
+  (`pnpm typecheck`/`lint`/`format:check`/`test`/`build`) and manual
+  review before a human merges it, identical to any manually-opened
+  dependency bump.
+- **No historical points are recomputed using current portfolio state,
+  and no live oracle or Aave lookup was introduced** for any of the four
+  new Portfolio History surfaces — all read only what was already
+  persisted at each snapshot's own creation time, the same read-only
+  discipline every existing trend chart already follows.
+
+### What this is not
+
+This release adds no Health Factor risk-band classification, no
+Recommendation Engine changes, no Simulation changes, no persistence or
+schema change, and no Aave adapter change. It introduces no new Engine
+formula and no new Formula ID — every chart value is an already-persisted
+field, read directly. Dependabot is configuration only — it is not a CI
+pipeline change, not an auto-merge policy, and not a relaxation of review
+requirements.
+
+### Explicitly unchanged in 1.12.0
+
+No financial formula (`FORMULA_VERSION` stays `1.0`), no Formula ID, no
+persisted-data schema (`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no
+migration, no Engine file, no new protocol API call, no V3/V4 semantic
+change (every new metric and the provenance badge read identically for
+both protocol versions), and no change to the Path B (self-hostable, no
+operated production deployment) deployment disposition — see
+`docs/DEPLOYMENT_DISPOSITION.md`. No dependency version was bumped and
+`pnpm-lock.yaml` is unchanged — Batch 5 added only the Dependabot
+configuration file, it did not itself upgrade anything. Health Factor
+risk bands, the Recommendation Engine's three independent spec blockers,
+Simulation's `ScenarioSummary` gap, cumulative/realized interest, P&L,
+cost basis, total return, production deployment, and Settings ABOUT work
+all remain deferred, unchanged from prior releases.
 
 ## [1.11.0] — 2026-09-05
 

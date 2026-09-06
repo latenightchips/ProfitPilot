@@ -33,19 +33,30 @@ unaffected).
   release work) — corrected here as an explicitly-scoped documentation
   cleanup item, not a re-litigation of the underlying fix, which had
   already shipped.
-- **No automated dependency-update tooling configured** (no Dependabot/
-  Renovate — `docs/MAINTENANCE_SCHEDULE.md`'s own "Dependency updates"
-  section already states this honestly). Every dependency bump today is
-  fully manual. Moderate effort to configure, meaningful reduction in
-  how easily a future security advisory is missed. **This item is about
-  the missing tooling, not about the current advisory count** — the
-  existing dependency-audit baseline (`docs/KNOWN_ISSUES.md` category C,
+- ~~**No automated dependency-update tooling configured**~~
+  **Resolved — `.github/dependabot.yml` added in v1.12.0 Batch 5
+  (`9076687`), confirmed by fresh inspection during v1.12.0's release
+  reconciliation.** Two ecosystems (`npm`, covering `pnpm` via its
+  auto-detected `pnpm-lock.yaml`, and `github-actions`), both scanned
+  monthly, minor/patch versions grouped into one PR per ecosystem, major
+  versions never grouped (each opens its own PR for individual review).
+  See `PROJECT_STATUS.md`'s "v1.12.0 Release Reconciliation" section for
+  the full record. **This closes the tooling gap only — it does not
+  change how a dependency bump ships.** Dependabot opens pull requests;
+  it does not approve, merge, or deploy anything. Every PR it opens
+  still goes through the identical path a manually-opened dependency
+  bump always has: the full validation pipeline (`pnpm typecheck`/
+  `lint`/`format:check`/`test`/`build`) and manual review before a human
+  merges it — `docs/MAINTENANCE_SCHEDULE.md`'s "Dependency updates"
+  section now reflects this. **This item was always about the missing
+  tooling, not about the current advisory count** — the existing
+  dependency-audit baseline (`docs/KNOWN_ISSUES.md` category C,
   `docs/DEFECT_CLASSIFICATION.md` §6: 18 `pnpm audit` advisory
   instances, 11 high / 7 moderate / 0 critical, every one a build/lint/
   test-time-only tooling-dependency path, none reachable from
-  client-shipped runtime code) is accurate and unchanged as of this
-  batch, already classified P2/non-blocking, and is not itself listed
-  as debt here.
+  client-shipped runtime code) is unaffected by this change, remains
+  accurate as of this batch, stays classified P2/non-blocking, and was
+  never itself listed as debt here.
 
 ## Priority 2 — real, bounded, lower urgency
 
