@@ -1758,18 +1758,18 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first ten positions only — V1.5.0's own Market
+    // Scoped to the first eleven positions only — V1.5.0's own Market
     // Price/Liquidation Price options (added after this one) are
     // verified by their own describe block below, including the full
-    // list. Borrow APR (v1.11.0 Batch 1) sits between Leverage and
-    // Interest Cost (annualized) — see the dedicated "borrow APR trend"
-    // describe block below for its own coverage. Collateral Quantity
-    // (v1.12.0 Batch 2), Collateral Value, Debt Quantity (v1.12.0 Batch
-    // 3), and Debt Value (v1.12.0 Batch 1) sit between Health Factor and
-    // Net Worth — see the dedicated "collateral quantity", "collateral
-    // value and debt value", and "debt quantity" describe blocks above
-    // for their own coverage.
-    expect(optionLabels.slice(0, 10)).toEqual([
+    // list. Borrow APR (v1.11.0 Batch 1) and Supply APR (v1.13.0 Batch 2)
+    // sit between Leverage and Interest Cost (annualized) — see the
+    // dedicated "borrow APR trend" and "supply APR" describe blocks below
+    // for their own coverage. Collateral Quantity (v1.12.0 Batch 2),
+    // Collateral Value, Debt Quantity (v1.12.0 Batch 3), and Debt Value
+    // (v1.12.0 Batch 1) sit between Health Factor and Net Worth — see the
+    // dedicated "collateral quantity", "collateral value and debt value",
+    // and "debt quantity" describe blocks above for their own coverage.
+    expect(optionLabels.slice(0, 11)).toEqual([
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
@@ -1779,6 +1779,7 @@ describe('PortfolioHistoryPanel — annualized interest cost', () => {
       'Loan-to-Value',
       'Leverage',
       'Borrow APR',
+      'Supply APR',
       'Interest Cost (annualized)',
     ]);
   });
@@ -1992,14 +1993,15 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
     const optionLabels = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);
-    // Scoped to the first twelve positions only — v1.6.0's own Liquidation
-    // Buffer option (added after this one) is verified by its own describe
-    // block below, including the full thirteen-item list. Borrow APR
-    // (v1.11.0 Batch 1) sits between Leverage and Interest Cost
-    // (annualized); Collateral Quantity (v1.12.0 Batch 2), Collateral
-    // Value, Debt Quantity (v1.12.0 Batch 3), and Debt Value (v1.12.0
-    // Batch 1) sit between Health Factor and Net Worth.
-    expect(optionLabels.slice(0, 12)).toEqual([
+    // Scoped to the first thirteen positions only — v1.6.0's own
+    // Liquidation Buffer option (added after this one) is verified by its
+    // own describe block below, including the full fourteen-item list.
+    // Borrow APR (v1.11.0 Batch 1) and Supply APR (v1.13.0 Batch 2) sit
+    // between Leverage and Interest Cost (annualized); Collateral
+    // Quantity (v1.12.0 Batch 2), Collateral Value, Debt Quantity
+    // (v1.12.0 Batch 3), and Debt Value (v1.12.0 Batch 1) sit between
+    // Health Factor and Net Worth.
+    expect(optionLabels.slice(0, 13)).toEqual([
       'Health Factor',
       'Collateral Quantity',
       'Collateral Value',
@@ -2009,6 +2011,7 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
       'Loan-to-Value',
       'Leverage',
       'Borrow APR',
+      'Supply APR',
       'Interest Cost (annualized)',
       'Market Price',
       'Liquidation Price',
@@ -2292,7 +2295,7 @@ describe('PortfolioHistoryPanel — market price and liquidation price', () => {
  * as-is, never clamped.
  */
 describe('PortfolioHistoryPanel — liquidation buffer', () => {
-  it('adds Liquidation Buffer as the thirteenth metric-selector option, after Liquidation Price', async () => {
+  it('adds Liquidation Buffer as the fourteenth metric-selector option, after Liquidation Price', async () => {
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-01-01T00:00:00.000Z' }));
     await recordPortfolioHistoryEntry(entry({ createdAt: '2026-02-01T00:00:00.000Z' }));
     render(
@@ -2316,6 +2319,7 @@ describe('PortfolioHistoryPanel — liquidation buffer', () => {
       'Loan-to-Value',
       'Leverage',
       'Borrow APR',
+      'Supply APR',
       'Interest Cost (annualized)',
       'Market Price',
       'Liquidation Price',
@@ -2647,6 +2651,7 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
       'Loan-to-Value',
       'Leverage',
       'Borrow APR',
+      'Supply APR',
       'Interest Cost (annualized)',
       'Market Price',
       'Liquidation Price',
@@ -2845,6 +2850,332 @@ describe('PortfolioHistoryPanel — borrow APR trend', () => {
       'netWorth',
       'loanToValue',
       'leverage',
+      'annualizedInterestCost',
+      'marketPrice',
+      'liquidationPrice',
+      'liquidationBufferPercent',
+    ]) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
+  });
+});
+
+/**
+ * V1.13.0 Batch 2 ("Supply APR Portfolio History Chart Metric") — adds
+ * Supply APR, the fourteenth chart-selector metric, reading the
+ * already-persisted `entry.supplyApr` field directly. Unlike Borrow APR
+ * (which can be `undefined` for a V4 portfolio only until its debt state
+ * syncs), `entry.supplyApr` is `undefined` for every V4 entry
+ * unconditionally and permanently — `resolveSupplyAprDisplay`'s own
+ * `'not-applicable'` case, `services/portfolio/mapping.ts`. Rendered as
+ * "Not applicable," never "Not available." Chart-selector only, matching
+ * v1.12.0 Batches 2–3's own precedent (Collateral Quantity/Debt
+ * Quantity) that not every metric duplicates into the table/mobile card.
+ */
+describe('PortfolioHistoryPanel — supply APR', () => {
+  it('plots the already-persisted supplyApr field, percent-formatted, without recomputing it (V3)', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.02 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.025 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const chart = screen.getByRole('img');
+    const label = chart.getAttribute('aria-label') ?? '';
+    expect(label).toContain('Supply APR trend');
+    expect(label).toContain('2%');
+    expect(label).toContain('2.5%');
+  });
+
+  it('renders a valid V3 entry with supplyApr of exactly 0 as "0%", never conflated with "Not applicable"', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.01 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('0%');
+    expect(label).toContain('1%');
+    expect(label).not.toContain('Not applicable');
+  });
+
+  it('renders "Not applicable" — never a fabricated 0% and never "Not available" — for a V4 entry, where supplyApr is permanently, not just temporarily, unavailable', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Not applicable');
+    expect(label).not.toContain('0%');
+    expect(label).not.toContain('NaN');
+    // Deliberately distinct from Borrow APR's "Not available" wording —
+    // V4 Supply APR is not a value that could become available later.
+    expect(label).not.toContain('Not available');
+  });
+
+  it('retains each entry’s own persisted supplyApr for mixed V3/V4 history — numeric for V3, "Not applicable" for V4, never inferred from the other', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.03 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('3%');
+    expect(label).toContain('Not applicable');
+  });
+
+  it('preserves surrounding valid V3 observations in the aria-label around an unavailable V4 entry, never dropping either point', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.03 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-03-01T00:00:00.000Z', protocolVersion: 'v3', supplyApr: 0.04 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('3%');
+    expect(label).toContain('Not applicable');
+    expect(label).toContain('4%');
+  });
+
+  it('never infers supplyApr from borrowApr or any other rate field — a V4 entry with a populated borrowApr still shows "Not applicable" for Supply APR', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        borrowApr: 0.07,
+        dataSource: 'live',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        borrowApr: 0.08,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('Not applicable');
+    // Never leaks Borrow APR's own numeric values into Supply APR's chart.
+    expect(label).not.toContain('7%');
+    expect(label).not.toContain('8%');
+  });
+
+  it('does not render the Supply APR option or chart with fewer than 2 entries', async () => {
+    await recordPortfolioHistoryEntry(entry({ supplyApr: undefined }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText('Chart metric')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('keeps multiple portfolios isolated — the Supply APR chart reflects only the requested portfolioId', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        supplyApr: 0.02,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        supplyApr: 0.03,
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        supplyApr: 0.09,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+
+    const label = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    expect(label).toContain('2%');
+    expect(label).toContain('3%');
+    expect(label).not.toContain('9%');
+  });
+
+  it('leaves the Batch 1 protocol-version provenance badge and the existing data-source provenance badge correct while Supply APR is the selected metric', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+        supplyApr: 0.02,
+        dataSource: 'manual',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        dataSource: 'live',
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    await user.selectOptions(screen.getByLabelText('Chart metric'), 'supplyApr');
+    expect(screen.getByRole('img')).toBeInTheDocument();
+
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Aave V3')).toBeInTheDocument();
+    expect(table.getByText('Aave V4')).toBeInTheDocument();
+    expect(table.getByText('Manual')).toBeInTheDocument();
+    expect(table.getByText('Live')).toBeInTheDocument();
+  });
+
+  it('leaves every other existing metric fully functional alongside Supply APR', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-02-01T00:00:00.000Z', healthFactor: 3 }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    for (const metric of [
+      'collateralQuantity',
+      'collateralValue',
+      'debtQuantity',
+      'debtValue',
+      'netWorth',
+      'loanToValue',
+      'leverage',
+      'borrowApr',
+      'supplyApr',
       'annualizedInterestCost',
       'marketPrice',
       'liquidationPrice',

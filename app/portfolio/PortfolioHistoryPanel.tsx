@@ -107,6 +107,26 @@ import {
  * text-muted-foreground"` badge className as the data-source badge,
  * placed immediately before it — categorical, not a chart metric or
  * table column, for the same reason the data-source badge isn't one.
+ *
+ * **V1.13.0 Batch 2 ("Supply APR Portfolio History Chart Metric")** adds
+ * Supply APR, the fourteenth chart-selector metric — the already-persisted
+ * `entry.supplyApr` field read directly (no new formula, no
+ * recomputation), positioned directly after Borrow APR, the same
+ * "adjacent rate metrics" grouping this file's own selector order already
+ * follows elsewhere. `entry.supplyApr` is `undefined` for every V4 entry
+ * unconditionally — not "not yet synced" the way `borrowApr` can be for a
+ * V4 portfolio, but permanently absent, since no V4-facing form or live
+ * boundary in this codebase ever produces a V3-shaped supply rate for V4
+ * (`resolveSupplyAprDisplay`'s own `'not-applicable'` case,
+ * `services/portfolio/mapping.ts`). `formatSupplyApr` renders this as
+ * **"Not applicable,"** deliberately distinct from `formatBorrowApr`'s
+ * "Not available" — the same distinction
+ * `components/strategy/StrategyAssumptionsPanel.tsx` already draws in its
+ * own comment for the current-value display of this same field. Like
+ * Collateral Quantity and Debt Quantity (v1.12.0 Batches 2–3), this
+ * metric is chart-selector only — it does not add a new table column or
+ * mobile-card row, matching that same established precedent that not
+ * every selectable metric duplicates into the table/card views.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -233,6 +253,29 @@ function formatDebtQuantity(value: number, assetSymbol?: string): string {
  */
 function formatBorrowApr(value: number | null): string {
   if (value === null) return 'Not available';
+  return formatPercent(value);
+}
+
+/**
+ * `null` here stands in for `entry.supplyApr === undefined`, which is
+ * `undefined` for every V4 entry unconditionally
+ * (`services/persistence/types/models.ts`'s own doc comment on
+ * `supplyApr`, mirroring `resolveSupplyAprDisplay`'s own `'not-applicable'`
+ * case) — deliberately **"Not applicable," not "Not available."**
+ * `app/portfolio/AaveProtocolVersionForm.tsx`'s sibling,
+ * `components/strategy/StrategyAssumptionsPanel.tsx`, already draws this
+ * exact distinction explicitly in its own comment: V4 Supply APR "is not
+ * a value that could become available later" (unlike a V4 portfolio's
+ * Borrow APR before its debt state syncs, which genuinely can), so
+ * reusing `formatBorrowApr`'s "Not available" wording here would imply a
+ * pending state that does not exist. No V3/V4 semantics are invented by
+ * this text — it only gives a user-facing rendering to the same
+ * `'not-applicable'` discriminant `SupplyAprDisplay` already names
+ * internally. Never a fabricated `0%`, never interpolated, never
+ * inferred from `borrowApr` or any other field.
+ */
+function formatSupplyApr(value: number | null): string {
+  if (value === null) return 'Not applicable';
   return formatPercent(value);
 }
 
@@ -372,6 +415,7 @@ type PortfolioHistoryMetricKey =
   | 'loanToValue'
   | 'leverage'
   | 'borrowApr'
+  | 'supplyApr'
   | 'annualizedInterestCost'
   | 'marketPrice'
   | 'liquidationPrice'
@@ -436,6 +480,11 @@ const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHist
     getValue: (entry) => entry.borrowApr ?? null,
     formatValue: (value) => formatBorrowApr(value),
   },
+  supplyApr: {
+    label: 'Supply APR',
+    getValue: (entry) => entry.supplyApr ?? null,
+    formatValue: (value) => formatSupplyApr(value),
+  },
   annualizedInterestCost: {
     label: 'Interest Cost (annualized)',
     getValue: (entry) => entry.annualizedInterestCost,
@@ -470,6 +519,7 @@ const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
   'loanToValue',
   'leverage',
   'borrowApr',
+  'supplyApr',
   'annualizedInterestCost',
   'marketPrice',
   'liquidationPrice',
