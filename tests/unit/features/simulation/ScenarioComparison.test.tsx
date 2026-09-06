@@ -69,7 +69,7 @@ function saveAPriceScenario(btcPriceUsd: number, name = 'Test Scenario'): string
   return id;
 }
 
-function saveAnInterestScenario(): string {
+function saveAnInterestScenario(name = 'Test Scenario'): string {
   useSimulationStore.getState().setCurrentScenario({
     type: 'interest',
     priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
@@ -78,12 +78,37 @@ function saveAnInterestScenario(): string {
   });
   useSimulationStore.getState().runSimulation(PORTFOLIO);
   const id = useSimulationStore.getState().saveCurrentScenario({
-    name: 'Test Scenario',
+    name,
     portfolioId: 'portfolio-1',
     portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
   });
   if (id === null) throw new Error('setup failed');
   return id;
+}
+
+/** A zero-debt variant of `PORTFOLIO` — v1.13.0 Batch 5 zero-debt edge case. */
+const ZERO_DEBT_PORTFOLIO: ApplicationPortfolio = {
+  ...PORTFOLIO,
+  debt: { asset: 'USDC', balance: 0 },
+};
+
+function saveAZeroDebtPriceScenario(name = 'Zero Debt Scenario'): string {
+  useSimulationStore.getState().setCurrentScenario({
+    type: 'price',
+    priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+  });
+  useSimulationStore.getState().runSimulation(ZERO_DEBT_PORTFOLIO);
+  const id = useSimulationStore.getState().saveCurrentScenario({
+    name,
+    portfolioId: 'portfolio-1',
+    portfolioUpdatedAt: PORTFOLIO_UPDATED_AT,
+  });
+  if (id === null) throw new Error('setup failed');
+  return id;
+}
+
+function currencyToNumber(formatted: string): number {
+  return Number(formatted.replace(/[^0-9.-]/g, ''));
 }
 
 function rowValues(label: string): string[] {
@@ -172,21 +197,121 @@ describe('ScenarioComparison — selecting scenarios renders a real comparison t
     ).toBeInTheDocument();
   });
 
-  it('documents the Debt/Liquidation Price/Risk gaps instead of fabricating them', async () => {
+  it('renders Debt and Liquidation Price rows (v1.13.0 Batch 5) and still documents the Risk gap only', async () => {
     const user = userEvent.setup();
     saveAPriceScenario(60000);
 
     render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
     await user.click(screen.getByRole('checkbox'));
 
-    expect(screen.queryByText('Debt')).not.toBeInTheDocument();
+    expect(screen.getByText('Debt')).toBeInTheDocument();
+    expect(screen.getByText('Liquidation Price')).toBeInTheDocument();
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Debt and Liquidation Price aren.t available for saved scenarios/),
+      screen.queryByText(/Debt and Liquidation Price aren.t available for saved scenarios/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/no single agreed-upon set of.*Health Factor risk bands/),
     ).toBeInTheDocument();
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).not.toMatch(/Conflict #\d+/);
     expect(bodyText).not.toContain('source comment');
+  });
+
+  it('reads Debt from each saved scenario’s own result — differing scenarios show differing values, not a repeated column (v1.13.0 Batch 5)', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Price Case');
+    saveAnInterestScenario('Interest Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    const [priceDebt, interestDebt] = rowValues('Debt');
+    // A price-only scenario changes no debt-projection input, so debt is
+    // unchanged from the $20,000 baseline — read directly, not fabricated.
+    expect(priceDebt).toBe('$20,000.00');
+    // The interest scenario accrues debt over its own 30-day horizon; its
+    // column must show its own saved value, not repeat the price
+    // scenario's (first) column or the current-portfolio baseline.
+    expect(interestDebt).not.toBe(priceDebt);
+    expect(interestDebt).not.toBe('$20,000.00');
+    expect(currencyToNumber(interestDebt)).toBeGreaterThan(20000);
+  });
+
+  it('reads Liquidation Price from each saved scenario’s own result — differing scenarios show differing values (v1.13.0 Batch 5)', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Price Case');
+    saveAnInterestScenario('Interest Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    const [priceLiqPrice, interestLiqPrice] = rowValues('Liquidation Price');
+    // F-024's price term cancels for BTC collateral (Current Price × Debt
+    // / (Qty × Current Price × Threshold) = Debt / (Qty × Threshold)), so
+    // a price-only scenario leaves Liquidation Price at the same
+    // $20,000 / (2 × 0.8) = $12,500 baseline value regardless of the
+    // scenario's own BTC price.
+    expect(priceLiqPrice).toBe('$12,500.00');
+    // The interest scenario's higher debt (same collateral, same
+    // threshold) must raise its own Liquidation Price above the price
+    // scenario's column — not repeat it.
+    expect(interestLiqPrice).not.toBe(priceLiqPrice);
+    expect(currencyToNumber(interestLiqPrice)).toBeGreaterThan(12500);
+  });
+
+  it('shows Debt as $0.00 and Liquidation Price as "—" for a zero-debt saved scenario, alongside a non-zero-debt scenario\'s real values (v1.13.0 Batch 5)', async () => {
+    const user = userEvent.setup();
+    saveAZeroDebtPriceScenario('Zero Debt Case');
+    saveAPriceScenario(60000, 'Normal Debt Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    const [zeroDebt, normalDebt] = rowValues('Debt');
+    expect(zeroDebt).toBe('$0.00');
+    expect(normalDebt).toBe('$20,000.00');
+
+    const [zeroLiqPrice, normalLiqPrice] = rowValues('Liquidation Price');
+    // No debt means no price triggers liquidation — represented with the
+    // same "—" convention `ScenarioSummary.tsx` already established for
+    // `null`, never a fabricated $0 or Infinity.
+    expect(zeroLiqPrice).toBe('—');
+    expect(normalLiqPrice).toBe('$12,500.00');
+  });
+
+  it('preserves every existing comparison row (Equity, Health Factor, Interest, Leverage, Liquidation Distance) unchanged alongside the new Debt/Liquidation Price rows, with no NaN/Infinity output', async () => {
+    const user = userEvent.setup();
+    saveAPriceScenario(60000, 'Price Case');
+    saveAnInterestScenario('Interest Case');
+    saveAZeroDebtPriceScenario('Zero Debt Case');
+
+    render(<ScenarioComparison portfolio={testPortfolio()} portfolioNames={PORTFOLIO_NAMES} />);
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      await user.click(checkbox);
+    }
+
+    expect(screen.getByText('Equity')).toBeInTheDocument();
+    expect(screen.getByText('Health Factor')).toBeInTheDocument();
+    expect(screen.getByText('Interest')).toBeInTheDocument();
+    expect(screen.getByText('Leverage')).toBeInTheDocument();
+    expect(screen.getByText('Liquidation Distance')).toBeInTheDocument();
+    expect(screen.getByText('Debt')).toBeInTheDocument();
+    expect(screen.getByText('Liquidation Price')).toBeInTheDocument();
+
+    // Liquidation Distance is Infinity for the zero-debt scenario by
+    // design (F-023's own documented zero-debt convention, unrelated to
+    // this batch) — `formatHealthFactor`'s `Intl.NumberFormat` renders
+    // that as "∞", never the raw "NaN"/"Infinity" strings.
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('NaN');
+    expect(bodyText).not.toContain('Infinity');
   });
 });
 

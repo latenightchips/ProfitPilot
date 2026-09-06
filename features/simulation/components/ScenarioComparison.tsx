@@ -53,14 +53,26 @@ import {
  * real timestamp (`formatDateTime`)** — `name` (Batch 14) replaces the
  * generic type-only label this component used before M6-015 existed.
  *
- * **Same two documented field-availability gaps `ScenarioSummary`
- * already found (Batch 8), carried forward, not re-litigated**: "Debt"
- * and "Liquidation price" have no home in `ScenarioSummary`
- * (`engine/simulation/compareScenarios.ts`) — only `debtCost` (interest
- * cost) and `liquidationDistance` exist. Shown here as "Interest" (the
- * `Compare` list's own item, mapping directly to `debtCost`) and
- * "Liquidation Distance" (honestly relabeled, not fabricated as a
- * price).
+ * **"Debt" and "Liquidation Price" (v1.13.0 Batch 5, "Multi-Scenario
+ * Comparison Debt + Liquidation Price") complete two of the two
+ * previously-documented field-availability gaps this component used to
+ * carry forward from `ScenarioSummary` (Batch 8).** `ScenarioSummary`
+ * (`engine/simulation/compareScenarios.ts`) gained `debtValue`/
+ * `liquidationPrice` in v1.13.0 Batch 3 — this batch reads those two
+ * already-canonical fields directly from each saved scenario's own
+ * `result.scenario`, additively, next to the pre-existing "Interest"
+ * (`debtCost`) and "Liquidation Distance" (`liquidationDistance`) rows,
+ * which are unchanged and still shown — Debt/Liquidation Price answer a
+ * different question than Interest/Liquidation Distance, neither
+ * replaces the other. `liquidationPrice` renders as
+ * `formatCurrency(...)`, or `'—'` for the same `null` "no liquidation
+ * risk" (zero-debt) case `ScenarioSummary.tsx`'s own Liquidation Price
+ * row already established in Batch 3 — never a fabricated price.
+ * Zero new Engine/Service/Store work: both fields were already
+ * computed and sitting on every `SavedSimulation.result.scenario` since
+ * Batch 3 shipped (`savedScenarios` is pure in-memory Zustand state,
+ * never persisted to storage, so there is no legacy saved scenario
+ * anywhere missing these fields).
  *
  * **"Risk" is blocked by Conflict #1, the same Health Factor risk-band
  * classification blocked since Milestone 5** (`app/page.tsx`'s own
@@ -391,6 +403,14 @@ export function ScenarioComparison({
                 ))}
               </tr>
               <tr>
+                <td className="pr-4 text-muted-foreground">Debt</td>
+                {selected.map((saved) => (
+                  <td key={saved.id} className="px-2 text-foreground">
+                    {formatCurrency(saved.result.scenario.debtValue)}
+                  </td>
+                ))}
+              </tr>
+              <tr>
                 <td className="pr-4 text-muted-foreground">Health Factor</td>
                 {selected.map((saved) => (
                   <td key={saved.id} className="px-2 text-foreground">
@@ -422,13 +442,21 @@ export function ScenarioComparison({
                   </td>
                 ))}
               </tr>
+              <tr>
+                <td className="pr-4 text-muted-foreground">Liquidation Price</td>
+                {selected.map((saved) => (
+                  <td key={saved.id} className="px-2 text-foreground">
+                    {saved.result.scenario.liquidationPrice === null
+                      ? '—'
+                      : formatCurrency(saved.result.scenario.liquidationPrice)}
+                  </td>
+                ))}
+              </tr>
             </tbody>
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
-            Debt and Liquidation Price aren&rsquo;t available for saved scenarios — see Interest and
-            Liquidation Distance above instead. A Risk category isn&rsquo;t shown because
-            there&rsquo;s no single agreed-upon set of Health Factor risk bands to classify against;
-            use the Health Factor number itself.
+            A Risk category isn&rsquo;t shown because there&rsquo;s no single agreed-upon set of
+            Health Factor risk bands to classify against; use the Health Factor number itself.
           </p>
         </div>
       )}
