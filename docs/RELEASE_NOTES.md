@@ -13,9 +13,54 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.13.0
+## Version 1.14.0
 
-**Current release.** Promotes five batches on top of Version 1.12.0,
+**Current release.** Promotes three batches on top of Version 1.13.0,
+together titled "Dashboard Trend Parity, Part 2": Collateral Value + Debt
+Value Dashboard Trend Charts (Batch 1), Collateral Quantity + Debt
+Quantity Dashboard Trend Charts (Batch 2), and Supply APR Dashboard Trend
+Chart (Batch 3) — built, tested, and independently re-verified (final
+count 4374/4374 tests passing) in the same batches that produced them,
+not a fresh Milestone-9/V1.1-style Release Candidate process with its own
+new manual exploratory pass. See `PROJECT_STATUS.md`'s "v1.14.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.14.0]` entry for
+the full record. Everything in "Version 1.13.0" and earlier below still
+applies; this section covers only what is new since 1.13.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.14.0
+
+- **The Dashboard now shows five more trend charts**: Collateral Value,
+  Debt Value, Collateral Quantity, Debt Quantity, and Supply APR —
+  completing the Dashboard's own mirror of every metric Portfolio
+  History's chart selector has offered since `v1.12.0`–`v1.13.0`.
+- **Collateral/Debt Value and Quantity** read the same already-persisted
+  fields Portfolio History has charted since `v1.12.0`, directly — never
+  derived from one another or from market price. Debt Quantity shows
+  each historical point's own real debt-asset symbol, correctly handling
+  a portfolio whose borrowed asset changed between snapshots.
+- **Supply APR** reads `entry.supplyApr` directly; a V4 entry's
+  permanently-unavailable Supply APR renders as "Not applicable," never
+  a fabricated percentage.
+- **No historical point is recomputed using current portfolio state,
+  and no live oracle or Aave lookup was introduced** for any of the five
+  new Dashboard surfaces.
+
+### Explicitly unchanged in 1.14.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine file changed, no new protocol
+API call, no V3/V4 semantic change (every new chart reads identically
+for both protocol versions, and Supply APR's V4 "Not applicable" case
+uses the same established, permanent semantic Portfolio History already
+uses), still no live wallet connection or transaction execution, still
+no cloud backup or synchronization, still no publicly operated
+production deployment.
+
+## Version 1.13.0 (previous release)
+
+Promotes five batches on top of Version 1.12.0,
 together titled "Portfolio History & Simulation Completeness, Part 3":
 Protocol-Version Provenance Badge (Batch 1), Supply APR Portfolio History
 Chart Metric (Batch 2), Simulation `ScenarioSummary` Debt + Liquidation

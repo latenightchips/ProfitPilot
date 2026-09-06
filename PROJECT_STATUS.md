@@ -15111,6 +15111,241 @@ reconciliation. v1.14.0 work was not started.
 
 ---
 
+## v1.14.0 Release Reconciliation — Dashboard Trend Parity, Part 2
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents three batches, `1646816`
+("v1.14.0batch1dashboardtrendparitycollateraldebtvalue"), `5615e68`
+("v1.14.0batch2dashboardtrendparitycollateraldebtquantity"), and
+`91a7692` ("v1.14.0batch3dashboardtrendparitysupplyapr"), applied
+directly on top of `v1.13.0` (`923561c`), plus this reconciliation batch
+itself.
+
+**Current release candidate: `1.14.0`. Versions `1.0.0` through `1.13.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.13.0` still resolves to
+`923561c0d5b913489438b5a00a4efb6c2a4f2a8e`, confirmed by fresh
+inspection during this batch. `APP_VERSION`/`ENGINE_VERSION`/
+`package.json` `"version"` move from `1.13.0` to `1.14.0` — a MINOR
+bump, the same reasoning `docs/CHANGELOG.md`'s own "Why the Application/
+Engine version is `1.14.0`" paragraph gives. `FORMULA_VERSION`/
+`STORAGE_SCHEMA_VERSION` are unchanged, `1.0`/`1.0.0` respectively, same
+as every release before this one — this release requires neither: all
+three batches are presentation/read-layer only, each reading an
+already-persisted `PersistedPortfolioHistoryEntry` field directly,
+computing nothing new and persisting nothing new. **No `v1.14.0` git tag
+exists yet** — tagging is a separate, explicit step for after this patch
+is applied and synced, not taken by this batch (see this batch's own
+tag-readiness verdict below).
+
+### Origin: Post-v1.13.0 Roadmap Audit
+
+A read-only planning audit (same date) found that Portfolio History's
+own chart selector had grown by five metrics since v1.11.0's "Borrow APR
+Trend Completion" last closed the Dashboard-vs-Portfolio-History
+trend-parity gap: Collateral Value, Debt Value, Collateral Quantity, and
+Debt Quantity (all added `v1.12.0`) and Supply APR (added `v1.13.0`
+Batch 2) — none of which had ever been mirrored onto the Dashboard's own
+trend-chart set. It recommended "Dashboard Trend Parity, Part 2" as the
+`v1.14.0` release theme, staged across three batches grouped by metric
+pairing (Collateral + Debt Value; Collateral + Debt Quantity; Supply
+APR, sequenced last for its own protocol-semantic complexity). The same
+audit re-confirmed and continued to defer Health Factor risk-band
+classification (Conflict #1), the Recommendation Engine's three
+independent spec blockers, and cumulative/realized interest, P&L, cost
+basis, and total return — none of these are touched by `v1.14.0`.
+
+### Batch 1 — Collateral Value + Debt Value Dashboard Trend Charts (`1646816`)
+
+- **`features/dashboard/components/CollateralValueTrendSection.tsx`**
+  (new) and **`DebtValueTrendSection.tsx`** (new): plot
+  `entry.collateral.valueUsd`/`entry.debt.valueUsd` directly — the
+  identical fields `PortfolioHistoryPanel.tsx`'s own `collateralValue`/
+  `debtValue` metrics have read since `v1.12.0` Batch 1. Both fields are
+  required, non-nullable on every persisted entry regardless of protocol
+  version, so neither component has a null-handling branch and neither
+  reads `entry.protocolVersion` — the simplest complexity class among
+  every sibling Dashboard trend section, matching
+  `NetWorthTrendSection.tsx`'s own precedent.
+- **`app/DashboardPageClient.tsx`**: both new sections wired into the
+  existing "Composition & Debt" group, immediately after the current-
+  state panels (`PortfolioCompositionSection`, `DebtAndInterestPanel`)
+  and before the pre-existing interest/leverage trend charts —
+  additive placement, zero reordering of existing content.
+- **Tests**: 297 lines in `CollateralValueTrendSection.test.tsx`, 341
+  lines in `DebtValueTrendSection.test.tsx` (new files), 6 lines added
+  to `tests/unit/app/page.test.tsx`'s existing "Composition & Debt"
+  landmark-placement test.
+- **Validation**: full suite — **4339/4339 tests passing**, `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build` all clean, in
+  both the implementation worktree and, independently, a second clean
+  worktree with the delivered patch applied to a fresh `origin/main`
+  checkout (exact diff-stat parity confirmed: 7 files, +974/-0).
+
+### Batch 2 — Collateral Quantity + Debt Quantity Dashboard Trend Charts (`5615e68`)
+
+- **Pre-implementation investigation required** (this batch's own
+  instruction to inspect `PortfolioHistoryPanel.tsx`'s established Debt
+  Quantity semantics before implementing): confirmed
+  `PersistedPortfolioHistoryEntry.debt.asset` is a free `string`, not a
+  fixed literal, and can genuinely differ between snapshots of a
+  portfolio whose borrowed asset changed.
+- **`features/dashboard/components/CollateralQuantityTrendSection.tsx`**
+  (new): plots `entry.collateral.quantity` directly, unit hard-coded
+  "BTC" — a fixed, single-asset literal for this application's entire
+  documented Version 1 scope, identical for V3 and V4.
+- **`DebtQuantityTrendSection.tsx`** (new): plots `entry.debt.quantity`
+  directly. Preserves `PortfolioHistoryPanel.tsx`'s own exact
+  established compromise for a per-point-varying unit: the Y-axis tick
+  labels use one representative entry (the most recent) for their
+  compact scale text, since Recharts hands an axis `tickFormatter` only
+  the raw tick value, never the originating data point; the accessible
+  `aria-label` chart summary is fully accurate, since each plotted point
+  carries its own `entry` and therefore its own real `debt.asset`
+  symbol — never merged, averaged, or carried forward from a different
+  snapshot.
+- **`app/DashboardPageClient.tsx`**: both new sections positioned before
+  their corresponding value trend charts (Collateral Quantity →
+  Collateral Value → Debt Quantity → Debt Value), matching
+  `PortfolioHistoryPanel.tsx`'s own selector ordering exactly.
+- **Tests**: 275 lines in `CollateralQuantityTrendSection.test.tsx`, 410
+  lines in `DebtQuantityTrendSection.test.tsx` (new files, the latter
+  including 3 tests dedicated to the debt-asset-change scenario), 6
+  lines added to `tests/unit/app/page.test.tsx`.
+- **Validation**: full suite — **4360/4360 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 7 files, +1069/-0).
+
+### Batch 3 — Supply APR Dashboard Trend Chart (`91a7692`)
+
+- **Critical protocol-semantic requirement, investigated before
+  implementing**: `PersistedPortfolioHistoryEntry.supplyApr` is
+  `undefined` for every V4 entry **unconditionally and permanently** —
+  unlike `borrowApr`, which can be temporarily `undefined` pending a V4
+  debt-state sync. `PortfolioHistoryPanel.tsx`'s own `formatSupplyApr`
+  already renders this as "Not applicable," deliberately distinct from
+  `BorrowAprTrendSection.tsx`'s "Not available" wording — this batch
+  preserves that exact distinction rather than reusing Borrow APR's
+  text.
+- **`features/dashboard/components/SupplyAprTrendSection.tsx`** (new):
+  reads `entry.supplyApr` directly, no recomputation from utilization,
+  reserve data, or rates. Never reads `entry.protocolVersion` — V3/V4
+  isolation is enforced entirely by the persisted-`undefined`-for-V4
+  invariant the producer already guarantees, the same discipline
+  `PortfolioHistoryPanel.tsx`'s Debt Quantity metric already established
+  for a different field. Mixed V3/V4 history (e.g. a portfolio that
+  switched protocol versions) is handled correctly by the same
+  `usableCount`-filtering mechanism `BorrowAprTrendSection.tsx` already
+  uses: each V3 entry's real value plots, each V4 entry is excluded and
+  renders as a chart gap.
+- **`app/DashboardPageClient.tsx`**: positioned in "Composition & Debt,"
+  directly after `BorrowAprTrendSection`, matching
+  `PortfolioHistoryPanel.tsx`'s own selector order (Borrow APR, Supply
+  APR).
+- **One genuine pre-existing test corrected, not a regression**: a
+  "V3/V4 semantic isolation" test in `tests/unit/app/page.test.tsx`
+  asserted a V4 portfolio never renders the text "Supply APR" anywhere
+  on the Dashboard — true before this batch (no Dashboard-level Supply
+  APR UI existed at all), no longer accurate now that a "Supply APR
+  Trend" heading legitimately renders for every portfolio, matching
+  `BorrowAprTrendSection`'s own precedent (which has no equivalent
+  blanket-absence assertion). Corrected to assert what actually
+  matters: the heading renders for V4, but the V3-only "Supply APR: 2%"
+  assumptions-copy phrase never appears for a V4 portfolio.
+- **Tests**: 370 lines in `SupplyAprTrendSection.test.tsx` (new file, 14
+  tests including 2 dedicated to mixed V3/V4 history and protocol/
+  version truthfulness), 14 lines changed in
+  `tests/unit/app/page.test.tsx` (1 new placement assertion + the
+  corrected isolation test above).
+- **Validation**: full suite — **4374/4374 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 5 files, +599/-2).
+
+### What did not change, across all three batches
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no new V3/V4 branching in
+application logic** — confirmed by direct diff inspection
+(`git diff --stat v1.13.0..91a7692`: exactly 13 files touched across all
+three batches, none under `engine/**`, `services/**`, `stores/**`,
+`services/persistence/**`, or any Aave-adapter path). None of the five
+new components reads `entry.protocolVersion`; V3/V4 correctness is
+carried entirely by the already-established persisted-field invariants
+(`collateral`/`debt` value and quantity always defined; `supplyApr`
+permanently `undefined` for V4). No Health Factor risk-band
+classification was introduced — Conflict #1 remains exactly as
+unresolved as before. No deployment/cloud work — the Path B disposition
+is unaffected.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows and Formula/Storage-schema-version descriptions updated
+  to reflect `1.14.0`; a new `Sign-off completed (1.14.0)` row, a new
+  "Why the Application/Engine version is `1.14.0`" paragraph, and a new
+  `[1.14.0]` entry added — all following the identical pattern every
+  prior release already established.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.14.0` section added
+  with the `**Current release.**` marker; the prior `## Version 1.13.0`
+  section is demoted to `## Version 1.13.0 (previous release)` with
+  that marker removed, the same demotion pattern used for every prior
+  release transition in this file.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.13.0`
+  to `1.14.0`, the same three constants every one of the thirteen prior
+  release-reconciliation batches bumped together.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `docs/TECHNICAL_DEBT.md`,
+`docs/VERSION_2_BACKLOG.md`, `docs/DEFECT_CLASSIFICATION.md`,
+`README.md` — were freshly re-checked via direct grep for
+`1.13.0`/`1.14.0`/`Dashboard`/`trend` and found to need no update: zero
+version-number references exist in `docs/KNOWN_ISSUES.md`,
+`docs/PRODUCTION_READINESS.md`, `docs/DEPLOYMENT_DISPOSITION.md`,
+`docs/MAINTENANCE_SCHEDULE.md`, or `docs/OPERATIONAL_RUNBOOK.md` at all
+— none of them make a version- or Dashboard-trend-coverage-specific
+claim this release could make stale. `docs/VERSION_2_BACKLOG.md`'s
+"Portfolio analytics" item (item 3) was specifically re-inspected, since
+it is the item most adjacent to this release's own theme — its current,
+already-corrected "remaining scope" statement (cumulative/realized
+interest, P&L, cost basis, total return — the one piece requiring data
+this application does not persist) is **still accurate**: `v1.14.0`
+extends the Dashboard's own existing trend-chart mirroring mechanism
+(the same one this item's own `v1.9.0` correction already classified as
+delivered, no longer Version 2 scope), it does not touch cost-basis
+capture. Left untouched, matching the precedent that this document is
+corrected only when its own stated premise becomes factually wrong (last
+done at the `v1.9.0` reconciliation), not for every incremental Dashboard
+trend-parity metric — none of `v1.10.0` through `v1.13.0` touched it
+either. `docs/DEFECT_CLASSIFICATION.md` gets no new section, consistent
+with every "promotion" release since `1.2.0` (only `1.0.0`/`1.1.0` — the
+two genuine manual-RC passes — have dedicated sign-off sections there).
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), the Recommendation Engine's
+three independent spec blockers (Conflict #29, Conflict #9/"Interest
+Warning" F-065, and the unmapped exit-readiness gap), cumulative/
+realized interest, P&L, cost basis, total return, production
+deployment, or Settings ABOUT work. No new infrastructure work was
+introduced by this reconciliation. Dashboard Trend Parity is now
+complete for every metric Portfolio History's chart selector currently
+offers — a new Portfolio History metric would reopen this exact gap
+again, the same way `v1.12.0`–`v1.13.0`'s own additions did after
+`v1.11.0`'s "Borrow APR Trend Completion" last closed it. v1.15.0 work
+was not started.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
