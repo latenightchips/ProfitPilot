@@ -558,11 +558,6 @@ export function DashboardPageClient() {
                   <HealthFactorStatusSection status={healthFactorStatus} />
                 )}
 
-                <HealthFactorTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
                 <LiquidationRiskPanel
                   panel={buildLiquidationRiskPanel(
                     record.portfolio,
@@ -572,21 +567,6 @@ export function DashboardPageClient() {
                   developerMode={developerMode}
                   engineVersion={viewModel.engineVersion}
                   formulaVersion={viewModel.formulaVersion}
-                />
-
-                <LiquidationBufferTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <MarketPriceTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LiquidationPriceTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
                 />
               </section>
 
@@ -646,6 +626,38 @@ export function DashboardPageClient() {
                 {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
 
                 <LeverageTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+              </section>
+
+              <section
+                aria-labelledby="dashboard-group-trends-heading"
+                className="flex flex-col gap-4"
+              >
+                <h2
+                  id="dashboard-group-trends-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Trends
+                </h2>
+
+                <HealthFactorTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <LiquidationBufferTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <MarketPriceTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <LiquidationPriceTrendSection
                   portfolioId={activePortfolioId}
                   portfolioUpdatedAt={record.portfolio.updatedAt}
                 />
