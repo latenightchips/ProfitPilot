@@ -308,6 +308,31 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * full reasoning). Rendered unconditionally, the same "always render
  * the trend section" precedent `AnnualizedInterestCostTrendSection`
  * already set.
+ *
+ * **v1.13.0 Batch 4 ("Dashboard Section Grouping")** wraps the
+ * `viewModel.ok === true` branch's own ~19-section flat stack into four
+ * labeled `<section aria-labelledby>` groups — Overview, Health & Risk,
+ * Composition & Debt, Recommendations — each with its own `<h2>`
+ * heading. **Purely additive presentation, no reordering**: every child
+ * component, prop, and conditional-render guard above is unchanged and
+ * appears in this file in exactly the same sequence it always has; only
+ * grouping wrappers were added around already-contiguous runs, so no
+ * "current value panel, then its own trend chart" pairing documented
+ * above (e.g. `LiquidationRiskPanel` → `LiquidationBufferTrendSection`
+ * → `MarketPriceTrendSection` → `LiquidationPriceTrendSection`) was
+ * split across a group boundary. The four group names are this batch's
+ * own grouping labels, not a new IA/navigation system — no tabs, no
+ * collapsing, nothing hidden. `<h2>` headings sit between the existing
+ * `<h1>Dashboard</h1>` and every child section's own existing `<h3>`
+ * (unchanged), completing rather than disrupting the page's heading
+ * hierarchy — previously `<h1>` skipped directly to many sibling
+ * `<h3>`s with no `<h2>` level at all. The `DashboardSummaryHeader`/
+ * protocol-status line/`AaveV4LiveErrorNotice`/`DataFreshnessSection`/
+ * `DeveloperModeToggle`/`QuickActionsSection` block above this branch,
+ * and `DashboardErrorBanner`'s own error branch, are both unchanged and
+ * outside these four groups — they already read as a single intro
+ * block/mutually-exclusive alternative, not part of the dense stack
+ * this batch groups.
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -477,95 +502,145 @@ export function DashboardPageClient() {
               viewModel={viewModel}
             />
           ) : (
-            <div className="flex flex-col gap-4">
-              <p className="text-xs text-muted-foreground">
-                Calculated {viewModel.formattedCalculationTimestamp}
-              </p>
+            <div className="flex flex-col gap-6">
+              <section
+                aria-labelledby="dashboard-group-overview-heading"
+                className="flex flex-col gap-4"
+              >
+                <h2
+                  id="dashboard-group-overview-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Overview
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Calculated {viewModel.formattedCalculationTimestamp}
+                </p>
 
-              <RiskWarningBanner warnings={riskWarnings} />
+                <RiskWarningBanner warnings={riskWarnings} />
 
-              <NoDebtNotice hasDebt={summary !== null && summary.liquidation !== null} />
+                <NoDebtNotice hasDebt={summary !== null && summary.liquidation !== null} />
 
-              <DashboardKpiGrid
-                metrics={viewModel.metrics}
-                developerMode={developerMode}
-                engineVersion={viewModel.engineVersion}
-                formulaVersion={viewModel.formulaVersion}
-              />
+                <DashboardKpiGrid
+                  metrics={viewModel.metrics}
+                  developerMode={developerMode}
+                  engineVersion={viewModel.engineVersion}
+                  formulaVersion={viewModel.formulaVersion}
+                />
 
-              <NetWorthTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <NetWorthTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              <LoanToValueTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <LoanToValueTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+              </section>
 
-              {healthFactorStatus !== null && (
-                <HealthFactorStatusSection status={healthFactorStatus} />
-              )}
-
-              <HealthFactorTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
-
-              <LiquidationRiskPanel
-                panel={buildLiquidationRiskPanel(
-                  record.portfolio,
-                  viewModel.metrics,
-                  viewModel.freshness.market,
+              <section
+                aria-labelledby="dashboard-group-health-risk-heading"
+                className="flex flex-col gap-4"
+              >
+                <h2
+                  id="dashboard-group-health-risk-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Health &amp; Risk
+                </h2>
+                {healthFactorStatus !== null && (
+                  <HealthFactorStatusSection status={healthFactorStatus} />
                 )}
-                developerMode={developerMode}
-                engineVersion={viewModel.engineVersion}
-                formulaVersion={viewModel.formulaVersion}
-              />
 
-              <LiquidationBufferTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <HealthFactorTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              <MarketPriceTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <LiquidationRiskPanel
+                  panel={buildLiquidationRiskPanel(
+                    record.portfolio,
+                    viewModel.metrics,
+                    viewModel.freshness.market,
+                  )}
+                  developerMode={developerMode}
+                  engineVersion={viewModel.engineVersion}
+                  formulaVersion={viewModel.formulaVersion}
+                />
 
-              <LiquidationPriceTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <LiquidationBufferTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              {portfolioComposition !== null && (
-                <PortfolioCompositionSection composition={portfolioComposition} />
-              )}
+                <MarketPriceTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              {debtAndInterestPanel !== null && (
-                <DebtAndInterestPanel panel={debtAndInterestPanel} />
-              )}
+                <LiquidationPriceTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+              </section>
 
-              <AnnualizedInterestCostTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+              <section
+                aria-labelledby="dashboard-group-composition-debt-heading"
+                className="flex flex-col gap-4"
+              >
+                <h2
+                  id="dashboard-group-composition-debt-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Composition &amp; Debt
+                </h2>
+                {portfolioComposition !== null && (
+                  <PortfolioCompositionSection composition={portfolioComposition} />
+                )}
 
-              <BorrowAprTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                {debtAndInterestPanel !== null && (
+                  <DebtAndInterestPanel panel={debtAndInterestPanel} />
+                )}
 
-              {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
+                <AnnualizedInterestCostTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              <LeverageTrendSection
-                portfolioId={activePortfolioId}
-                portfolioUpdatedAt={record.portfolio.updatedAt}
-              />
+                <BorrowAprTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
-              <RecommendationSummarySection
-                summary={buildRecommendationSummary(record.portfolio)}
-              />
+                {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
+
+                <LeverageTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+              </section>
+
+              <section
+                aria-labelledby="dashboard-group-recommendations-heading"
+                className="flex flex-col gap-4"
+              >
+                {/* "Recommended Actions," not "Recommendations" — avoids an
+                    exact-text collision with `RecommendationSummarySection`'s
+                    own child `<h3>Recommendations</h3>` immediately below,
+                    which `screen.getByText('Recommendations')` in
+                    `tests/unit/app/page.test.tsx` already depends on
+                    resolving to exactly one element. */}
+                <h2
+                  id="dashboard-group-recommendations-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Recommended Actions
+                </h2>
+                <RecommendationSummarySection
+                  summary={buildRecommendationSummary(record.portfolio)}
+                />
+              </section>
             </div>
           )}
         </div>

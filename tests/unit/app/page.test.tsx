@@ -801,3 +801,166 @@ describe('DashboardPage — V3/V4 semantic isolation (Dashboard V3/V4 Semantic I
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * v1.13.0 Batch 4 ("Dashboard Section Grouping") — the `viewModel.ok ===
+ * true` branch's own dense stack is now wrapped in four labeled
+ * `<section aria-labelledby>` groups (Overview, Health & Risk,
+ * Composition & Debt, Recommended Actions), each with its own `<h2>`
+ * heading. Purely additive presentation: no child component, prop, or
+ * render order changed — see `DashboardPageClient.tsx`'s own updated
+ * header comment for the full reasoning.
+ */
+describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
+  it('renders all four group landmarks with their own accessible heading', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Health & Risk' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Composition & Debt' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recommended Actions' })).toBeInTheDocument();
+  });
+
+  it('renders each group heading as an <h2>, between the page <h1> and every child section’s own existing <h3>', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Health & Risk' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Composition & Debt' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Recommended Actions' }),
+    ).toBeInTheDocument();
+    // A pre-existing child heading, still exactly level 3, unchanged.
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Health Factor Status' }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not collide with RecommendationSummarySection’s own "Recommendations" heading — the group is labeled "Recommended Actions" instead', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    // Exactly one "Recommendations" text node (the child's own <h3>) —
+    // proves the group heading did not introduce a duplicate.
+    expect(screen.getByText('Recommendations')).toBeInTheDocument();
+    expect(screen.getAllByText('Recommendations')).toHaveLength(1);
+  });
+
+  it('places the KPI grid and its two orphan trend charts inside the "Overview" region, with pre-existing content and order unchanged', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const overview = within(screen.getByRole('region', { name: 'Overview' }));
+    expect(overview.getByText('Net Portfolio Value')).toBeInTheDocument();
+    expect(overview.getByText('Health Factor')).toBeInTheDocument();
+    expect(
+      overview.getByRole('heading', { level: 3, name: 'Net Worth Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      overview.getByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
+    ).toBeInTheDocument();
+  });
+
+  it('places Health Factor Status, Liquidation Risk, and their trend charts inside the "Health & Risk" region', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const healthRisk = within(screen.getByRole('region', { name: 'Health & Risk' }));
+    expect(healthRisk.getByText('Health Factor Status')).toBeInTheDocument();
+    expect(healthRisk.getByText('Estimated Liquidation Price')).toBeInTheDocument();
+    expect(
+      healthRisk.getByRole('heading', { level: 3, name: 'Health Factor Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      healthRisk.getByRole('heading', { level: 3, name: 'Liquidation Buffer Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      healthRisk.getByRole('heading', { level: 3, name: 'Market Price Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      healthRisk.getByRole('heading', { level: 3, name: 'Liquidation Price Trend' }),
+    ).toBeInTheDocument();
+  });
+
+  it('places Portfolio Composition, Debt and Interest, and Leverage inside the "Composition & Debt" region', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const compositionDebt = within(screen.getByRole('region', { name: 'Composition & Debt' }));
+    expect(compositionDebt.getByText('Portfolio Composition')).toBeInTheDocument();
+    expect(compositionDebt.getByText('Debt and Interest')).toBeInTheDocument();
+    expect(compositionDebt.getByText('Leverage Summary')).toBeInTheDocument();
+    expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Interest Cost (annualized) Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Borrow APR Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Leverage Trend' }),
+    ).toBeInTheDocument();
+  });
+
+  it('places RecommendationSummarySection inside the "Recommended Actions" region', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const recommended = within(screen.getByRole('region', { name: 'Recommended Actions' }));
+    expect(recommended.getByText('Recommendations')).toBeInTheDocument();
+  });
+
+  it('renders no group landmarks when calculation fails — DashboardErrorBanner’s own error branch is outside the four groups', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/Unable to calculate a summary/)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Overview' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Health & Risk' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Composition & Debt' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Recommended Actions' })).not.toBeInTheDocument();
+  });
+
+  it('preserves the RiskWarningBanner/NoDebtNotice zero-debt behavior inside the "Overview" region', () => {
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ debt: { asset: 'USDC', balance: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const overview = within(screen.getByRole('region', { name: 'Overview' }));
+    expect(overview.getByText(/This portfolio has no debt position/)).toBeInTheDocument();
+  });
+});
