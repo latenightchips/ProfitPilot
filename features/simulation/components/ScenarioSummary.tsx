@@ -43,18 +43,26 @@ import { formatCurrency, formatHealthFactor, formatLeverage } from '../utils/for
  * addition (`services/simulation/portfolioAction.ts`) — never
  * recomputed in this component.
  *
- * **"Debt" is a documented gap for price/interest scenarios, not
- * fabricated.** `ScenarioSummary` (`engine/simulation/compareScenarios.ts`)
- * has no raw debt-balance field — only `debtCost` (interest cost, a
- * different concept). Deriving Debt from Health Factor/Liquidation
- * Distance algebraically would duplicate Formula Engine logic in the UI
- * (forbidden), and extending `ScenarioSummary` itself would modify a
- * completed Milestone 2 Engine type. Only portfolio-action results (which
- * use `PortfolioSummary`, a richer Service-level type with a real
- * `debtValue` field) show Debt. "Liquidation Price" has the same
- * asymmetry: only `liquidationDistance` exists for price/interest
- * scenarios, so that row is honestly labeled "Liquidation Distance"
- * there, not mislabeled "Price."
+ * **"Debt" and "Liquidation Price" (v1.13.0 Batch 3, "Simulation
+ * ScenarioSummary: Debt + Liquidation Price") now render for
+ * price/interest scenarios too — the former gap this comment used to
+ * describe.** `ScenarioSummary` (`engine/simulation/compareScenarios.ts`)
+ * now carries `debtValue`/`liquidationPrice` as two additional,
+ * display-only fields, populated by `services/simulation/scenario.ts`
+ * from the canonical simulation pipeline (never recomputed here — see
+ * that Service file's own doc comment for exactly which upstream fields
+ * feed each). Both are read directly from `currentResult.baseline`/
+ * `currentResult.scenario` — not from `comparison.differences`, since
+ * these two fields are deliberately outside F-053's own six-metric
+ * "Compare" set (`compareScenarios.ts`'s own doc comment has the
+ * reasoning) — the same "read a `ScenarioSummary` field directly"
+ * pattern `PortfolioActionSummary` below already uses for its own
+ * `preview.before.debtValue`/`.liquidation?.price`. `liquidationPrice`
+ * is `null` for a zero-debt scenario result and renders "—", the same
+ * convention `PortfolioActionSummary`'s own Liquidation Price row
+ * already uses. "Liquidation Distance" (the pre-existing metric) is
+ * unchanged and still shown separately — Distance and Price answer
+ * different questions and neither replaces the other.
  *
  * **"Warnings" surfaces real, already-computed `ServiceWarning[]`
  * (Batch 9's own Store change) — not M6-014's own richer warning
@@ -146,25 +154,48 @@ function PriceOrInterestSummary() {
   const currentResult = useSimulationStore((state) => state.currentResult);
   if (currentResult === null) return null;
 
+  const { baseline, scenario } = currentResult;
+  const liquidationPriceBefore = baseline.liquidationPrice;
+  const liquidationPriceAfter = scenario.liquidationPrice;
+
+  // "Liquidation Price" is rendered directly after "Liquidation
+  // Distance" — the same "group the two liquidation-related metrics
+  // together" ordering `PortfolioActionSummary` below establishes for
+  // its own Health Factor → Liquidation Price pairing, adapted here
+  // since this section additionally has a pre-existing Distance metric
+  // neither duplicates.
+  const liquidationDistanceIndex = METRIC_ORDER.indexOf('liquidationDistance');
+  const metricsBeforeLiquidationPrice = METRIC_ORDER.slice(0, liquidationDistanceIndex + 1);
+  const metricsAfterLiquidationPrice = METRIC_ORDER.slice(liquidationDistanceIndex + 1);
+
+  function renderMetricRow(metric: ScenarioMetric) {
+    const difference = currentResult!.comparison.differences.find((d) => d.metric === metric);
+    if (!difference) return null;
+    return (
+      <SummaryRow
+        key={metric}
+        label={METRIC_LABELS[metric]}
+        before={formatMetric(metric, difference.scenarioAValue)}
+        after={formatMetric(metric, difference.scenarioBValue)}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <span className="text-xs font-medium text-foreground">Price / Interest Scenario</span>
-      {METRIC_ORDER.map((metric) => {
-        const difference = currentResult.comparison.differences.find((d) => d.metric === metric);
-        if (!difference) return null;
-        return (
-          <SummaryRow
-            key={metric}
-            label={METRIC_LABELS[metric]}
-            before={formatMetric(metric, difference.scenarioAValue)}
-            after={formatMetric(metric, difference.scenarioBValue)}
-          />
-        );
-      })}
-      <p className="text-xs text-muted-foreground">
-        Debt balance isn&rsquo;t shown here because a price/interest scenario doesn&rsquo;t change
-        your debt amount — see the Portfolio Action section below for scenarios that do.
-      </p>
+      <SummaryRow
+        label="Debt"
+        before={formatCurrency(baseline.debtValue)}
+        after={formatCurrency(scenario.debtValue)}
+      />
+      {metricsBeforeLiquidationPrice.map(renderMetricRow)}
+      <SummaryRow
+        label="Liquidation Price"
+        before={liquidationPriceBefore === null ? '—' : formatCurrency(liquidationPriceBefore)}
+        after={liquidationPriceAfter === null ? '—' : formatCurrency(liquidationPriceAfter)}
+      />
+      {metricsAfterLiquidationPrice.map(renderMetricRow)}
     </div>
   );
 }

@@ -11,6 +11,8 @@ function summary(overrides: Partial<ScenarioSummary> = {}): ScenarioSummary {
     liquidationDistance: 0.6,
     debtCost: 2500,
     leverage: 1.8,
+    debtValue: 100000,
+    liquidationPrice: 30000,
     ...overrides,
   };
 }

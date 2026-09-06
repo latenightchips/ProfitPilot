@@ -45,6 +45,9 @@ describe('simulateScenario — price scenarios (M3-009)', () => {
       liquidationDistance: 3,
       debtCost: 1000,
       leverage: 1.25,
+      // v1.13.0 Batch 3 — 50,000 x 20,000 / (100,000 x 0.8) = $12,500.
+      debtValue: 20000,
+      liquidationPrice: 12500,
     });
 
     expect(result.data.scenario.label).toBe('BTC drops to $40,000');
@@ -54,6 +57,16 @@ describe('simulateScenario — price scenarios (M3-009)', () => {
     expect(result.data.scenario.liquidationDistance).toBe(2.2);
     expect(result.data.scenario.debtCost).toBe(1000);
     expect(result.data.scenario.leverage).toBeCloseTo(1.333333, 6);
+    // v1.13.0 Batch 3 — a price scenario never moves debt ("Debt:
+    // Unchanged", `simulatePriceScenario`'s own doc comment), so
+    // `debtValue` is byte-identical to the baseline's. Liquidation price
+    // is likewise unchanged: F-024's own equation is `currentBtcPrice x
+    // debt / (collateralValue x threshold)`, and `collateralValue`
+    // scales linearly with `currentBtcPrice` for BTC collateral, so the
+    // price term cancels algebraically — 40,000 x 20,000 /
+    // (80,000 x 0.8) = $12,500, identical to the baseline.
+    expect(result.data.scenario.debtValue).toBe(20000);
+    expect(result.data.scenario.liquidationPrice).toBe(12500);
   });
 
   it('reports a zero-debt baseline liquidationDistance as Infinity rather than failing (conflict #20 resolved)', () => {
@@ -70,6 +83,35 @@ describe('simulateScenario — price scenarios (M3-009)', () => {
     if (!result.ok) return;
     expect(result.data.baseline.liquidationDistance).toBe(Infinity);
     expect(result.data.baseline.healthFactor).toBe(Infinity);
+    // v1.13.0 Batch 3 — zero debt is a valid canonical value (never
+    // fabricated as a fallback), but a liquidation price is genuinely
+    // undefined at zero debt (F-024's own `NOT_APPLICABLE_NO_DEBT`
+    // case) — `null`, never a fabricated number, on both sides.
+    expect(result.data.baseline.debtValue).toBe(0);
+    expect(result.data.baseline.liquidationPrice).toBeNull();
+    expect(result.data.scenario.debtValue).toBe(0);
+    expect(result.data.scenario.liquidationPrice).toBeNull();
+  });
+
+  it('shows the scenario’s own debt/liquidation price differing from the baseline for an interest scenario, which genuinely moves debt (v1.13.0 Batch 3)', () => {
+    const scenario: SimulationScenario = {
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.05,
+    };
+    const result = simulateScenario(basePortfolio(), scenario, '1 year at 5%', 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.baseline.debtValue).toBe(20000);
+    expect(result.data.baseline.liquidationPrice).toBe(12500);
+    // Debt accrues over 365 days at 5% on $20,000 principal — the exact
+    // accrual convention is `projectProtocolDebt`'s own (not re-derived
+    // here); what matters for this test is that it genuinely grew.
+    expect(result.data.scenario.debtValue).toBeGreaterThan(20000);
+    expect(result.data.scenario.debtValue).not.toBe(result.data.baseline.debtValue);
+    expect(result.data.scenario.liquidationPrice).not.toBe(result.data.baseline.liquidationPrice);
+    expect(result.data.scenario.liquidationPrice).not.toBeNull();
   });
 
   it('produces a comparison-ready result via compareScenarios', () => {
@@ -599,6 +641,31 @@ describe('simulateScenario — protocol/version dispatch (V4 Readiness Audit §1
       if (!result.ok) return;
       // 21600 (projected totalDebt) - 20500 (20000 + 500 current) = 1100.
       expect(result.data.scenario.debtCost).toBeCloseTo(1100, 6);
+    });
+
+    it('exposes debtValue/liquidationPrice for both baseline and scenario, sourced from the real V4 accrual pipeline, never inferred from a V3 formula (v1.13.0 Batch 3)', () => {
+      const result = simulateScenario(v4DebtPortfolio(), oneYearInterestScenario, '1 year', 'live');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Baseline: drawnDebt 20,000 + premiumDebt 500 = $20,500 (current,
+      // pre-projection total). Scenario: projected totalDebt $21,600
+      // (same figure the debtCost test above already confirms).
+      expect(result.data.baseline.debtValue).toBe(20500);
+      expect(result.data.scenario.debtValue).toBeCloseTo(21600, 6);
+      expect(result.data.scenario.debtValue).not.toBe(result.data.baseline.debtValue);
+      // Liquidation price scales with debt at a fixed price/collateral
+      // (F-024), so it must move in the same direction as debt did.
+      expect(result.data.baseline.liquidationPrice).not.toBeNull();
+      expect(result.data.scenario.liquidationPrice).not.toBeNull();
+      expect(result.data.scenario.liquidationPrice).not.toBe(result.data.baseline.liquidationPrice);
+      if (
+        result.data.baseline.liquidationPrice !== null &&
+        result.data.scenario.liquidationPrice !== null
+      ) {
+        expect(result.data.scenario.liquidationPrice).toBeGreaterThan(
+          result.data.baseline.liquidationPrice,
+        );
+      }
     });
 
     it('does not apply scenario.borrowApr to a V4 projection — the real baseDrawnApr/riskPremium are used unconditionally (documented boundary limitation)', () => {

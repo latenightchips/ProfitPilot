@@ -201,6 +201,8 @@ describe('Engine Performance Benchmarks (M2-030)', () => {
       liquidationDistance: 0.777777776,
       debtCost: 2250,
       leverage: 1.8181818196694215,
+      debtValue: 45000,
+      liquidationPrice: 25000,
     };
     const scenarioB: ScenarioSummary = {
       label: 'Scenario',
@@ -210,6 +212,8 @@ describe('Engine Performance Benchmarks (M2-030)', () => {
       liquidationDistance: 1.0,
       debtCost: 2250,
       leverage: 1.7,
+      debtValue: 45000,
+      liquidationPrice: 27000,
     };
 
     const duration = medianDurationMs(() => {

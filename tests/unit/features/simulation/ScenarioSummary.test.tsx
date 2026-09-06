@@ -55,8 +55,20 @@ describe('ScenarioSummary — price/interest scenario result', () => {
       '$80,000.00 → $100,000.00',
     );
   });
+});
 
-  it('does not render a Debt row and documents why', () => {
+/**
+ * v1.13.0 Batch 3 ("Simulation ScenarioSummary: Debt + Liquidation
+ * Price") — the price/interest scenario section now also renders Debt
+ * and Liquidation Price, both read directly from
+ * `currentResult.baseline`/`currentResult.scenario` (never derived or
+ * recomputed in this component — see `ScenarioSummary.tsx`'s own
+ * updated doc comment). Replaces the pre-Batch-3
+ * "does not render a Debt row and documents why" test, whose documented
+ * gap this batch closes.
+ */
+describe('ScenarioSummary — Debt and Liquidation Price (v1.13.0 Batch 3)', () => {
+  it('renders a Debt row for a price scenario, showing the canonical unchanged debt value — a price scenario never moves debt', () => {
     useSimulationStore.getState().setCurrentScenario({
       type: 'price',
       priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
@@ -65,12 +77,123 @@ describe('ScenarioSummary — price/interest scenario result', () => {
 
     render(<ScenarioSummary />);
 
-    expect(screen.queryByText('Debt')).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/Debt balance isn.t shown here because a price\/interest scenario/),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Debt')).toBeInTheDocument();
+    expect(screen.getByText('Debt').nextElementSibling?.textContent).toBe(
+      '$20,000.00 → $20,000.00',
+    );
+  });
+
+  it('renders a Liquidation Price row for a price scenario, showing the same canonical value on both sides — price cancels out of F-024’s own threshold equation when debt/collateral quantity are unchanged', () => {
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(PORTFOLIO);
+
+    render(<ScenarioSummary />);
+
+    expect(screen.getByText('Liquidation Price')).toBeInTheDocument();
+    // F-024: 50,000 x 20,000 / (100,000 x 0.8) = $12,500 — unchanged by
+    // a price-only scenario since currentBtcPrice cancels algebraically.
+    expect(screen.getByText('Liquidation Price').nextElementSibling?.textContent).toBe(
+      '$12,500.00 → $12,500.00',
+    );
+  });
+
+  it('shows scenario Debt and Liquidation Price winning over the baseline when an interest scenario genuinely changes debt (V3)', () => {
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.05,
+    });
+    useSimulationStore.getState().runSimulation(PORTFOLIO);
+
+    render(<ScenarioSummary />);
+
+    const debtText = screen.getByText('Debt').nextElementSibling?.textContent ?? '';
+    const liquidationPriceText =
+      screen.getByText('Liquidation Price').nextElementSibling?.textContent ?? '';
+    const [debtBefore, debtAfter] = debtText.split(' → ');
+    const [liquidationPriceBefore, liquidationPriceAfter] = liquidationPriceText.split(' → ');
+    // Baseline debt $20,000 accrues simple interest at 5%/year over 365
+    // days — the scenario side must show a genuinely larger figure, and
+    // it must be the SCENARIO's own debt, not the baseline repeated.
+    expect(debtBefore).toBe('$20,000.00');
+    expect(debtAfter).not.toBe('$20,000.00');
+    expect(debtAfter).not.toBe(debtBefore);
+    // Liquidation price scales with debt (F-024) at a fixed price/collateral,
+    // so it must move the same direction and must not equal the baseline.
+    expect(liquidationPriceBefore).toBe('$12,500.00');
+    expect(liquidationPriceAfter).not.toBe('$12,500.00');
+    expect(liquidationPriceAfter).not.toBe(liquidationPriceBefore);
+  });
+
+  it('shows Debt as $0.00 and Liquidation Price as — for a zero-debt portfolio, never fabricating a price at zero debt and never leaking NaN/Infinity', () => {
+    const zeroDebtPortfolio: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      debt: { asset: 'USDC', balance: 0 },
+    };
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(zeroDebtPortfolio);
+
+    render(<ScenarioSummary />);
+
+    expect(screen.getByText('Debt').nextElementSibling?.textContent).toBe('$0.00 → $0.00');
+    expect(screen.getByText('Liquidation Price').nextElementSibling?.textContent).toBe('— → —');
     const bodyText = document.body.textContent ?? '';
-    expect(bodyText).not.toContain('source comment');
+    expect(bodyText).not.toContain('NaN');
+    expect(bodyText).not.toContain('Infinity');
+  });
+
+  it('shows scenario Debt and Liquidation Price winning over the baseline for a V4 interest scenario, using the real V4 accrual pipeline (V4 behavior per the existing canonical contract)', () => {
+    const v4Portfolio: ApplicationPortfolio = {
+      ...PORTFOLIO,
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 20000, premiumDebt: 500, baseDrawnApr: 0.05, riskPremium: 0.1 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 1 },
+    };
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'interest',
+      priceScenario: { type: 'absolute', btcPriceUsd: 50000 },
+      timeHorizonDays: 365,
+      borrowApr: 0.09, // deliberately unused for V4 — the real baseDrawnApr/riskPremium govern instead.
+    });
+    useSimulationStore.getState().runSimulation(v4Portfolio);
+
+    render(<ScenarioSummary />);
+
+    const debtText = screen.getByText('Debt').nextElementSibling?.textContent ?? '';
+    const [debtBefore, debtAfter] = debtText.split(' → ');
+    // Current total debt: drawnDebt 20,000 + premiumDebt 500 = $20,500.
+    expect(debtBefore).toBe('$20,500.00');
+    expect(debtAfter).not.toBe(debtBefore);
+    const liquidationPriceText =
+      screen.getByText('Liquidation Price').nextElementSibling?.textContent ?? '';
+    const [liquidationPriceBefore, liquidationPriceAfter] = liquidationPriceText.split(' → ');
+    expect(liquidationPriceAfter).not.toBe(liquidationPriceBefore);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('NaN');
+    expect(bodyText).not.toContain('Infinity');
+  });
+
+  it('leaves the pre-existing "Liquidation Distance" row intact and distinct from the new "Liquidation Price" row', () => {
+    useSimulationStore.getState().setCurrentScenario({
+      type: 'price',
+      priceScenario: { type: 'absolute', btcPriceUsd: 60000 },
+    });
+    useSimulationStore.getState().runSimulation(PORTFOLIO);
+
+    render(<ScenarioSummary />);
+
+    expect(screen.getByText('Liquidation Distance')).toBeInTheDocument();
+    expect(screen.getByText('Liquidation Price')).toBeInTheDocument();
+    expect(screen.getByText('Liquidation Distance').nextElementSibling?.textContent).not.toBe(
+      screen.getByText('Liquidation Price').nextElementSibling?.textContent,
+    );
   });
 });
 
@@ -213,6 +336,8 @@ describe('ScenarioSummary — warnings', () => {
           liquidationDistance: 3,
           debtCost: 1000,
           leverage: 1.25,
+          debtValue: 20000,
+          liquidationPrice: 12500,
         },
         scenario: {
           label: 'Simulated Scenario',
@@ -222,6 +347,8 @@ describe('ScenarioSummary — warnings', () => {
           liquidationDistance: 4,
           debtCost: 1000,
           leverage: 1.2,
+          debtValue: 20000,
+          liquidationPrice: 12500,
         },
         comparison: {
           scenarioALabel: 'Current Portfolio',
@@ -249,6 +376,8 @@ describe('ScenarioSummary — warnings', () => {
           liquidationDistance: 3,
           debtCost: 1000,
           leverage: 1.25,
+          debtValue: 20000,
+          liquidationPrice: 12500,
         },
         scenario: {
           label: 'Simulated Scenario',
@@ -258,6 +387,8 @@ describe('ScenarioSummary — warnings', () => {
           liquidationDistance: -2,
           debtCost: 1000,
           leverage: 1.2,
+          debtValue: 20000,
+          liquidationPrice: 12500,
         },
         comparison: {
           scenarioALabel: 'Current Portfolio',

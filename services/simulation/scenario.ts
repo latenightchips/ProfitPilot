@@ -30,7 +30,14 @@
  * included), so this file supplements it with additional already-public
  * Engine calls (`calculateEffectiveLeverage`, `calculateAnnualInterest` —
  * the same "Annual Interest" interpretation M3-005 already established
- * for "debt cost").
+ * for "debt cost"). **v1.13.0 Batch 3 extends this same pattern to
+ * `debtValue`/`liquidationPrice`** — `calculateLiquidationPrice` (F-024)
+ * composed a second time here via `resolveScenarioLiquidationPrice`,
+ * using each branch's own already-computed collateral/debt/market values
+ * and `riskCapacityFraction`, resolving `ScenarioSummary.tsx`'s own
+ * former "documented gap" comment (`engine/simulation/compareScenarios.ts`'s
+ * own doc comment has the full reasoning for why these two fields sit
+ * outside F-053's six-metric "Compare" set).
  *
  * **Interest scenarios compose Engine primitives directly rather than
  * calling `simulateInterestScenario`.** `simulateInterestScenario`
@@ -164,6 +171,7 @@ import {
   calculateEffectiveLeverage,
   calculateHealthFactor,
   calculateLiquidationDistance,
+  calculateLiquidationPrice,
   calculateNetWorth,
   calculatePortfolioGain,
   compareScenarios,
@@ -259,7 +267,45 @@ function toScenarioSummary(
     liquidationDistance: portfolioSummary.liquidation?.distance ?? Infinity,
     debtCost: portfolioSummary.interestCost,
     leverage: portfolioSummary.leverage,
+    // v1.13.0 Batch 3 — both already computed by `calculatePortfolioSummary`
+    // above; read directly, never recomputed here.
+    debtValue: portfolioSummary.debtValue,
+    liquidationPrice: portfolioSummary.liquidation?.price ?? null,
   };
+}
+
+/**
+ * Liquidation Price for a scenario's own post-scenario state (v1.13.0
+ * Batch 3) — F-024, the same Engine formula `calculatePortfolioSummary`
+ * already calls for the current/baseline portfolio
+ * (`services/portfolio/summary.ts`). **Never a new formula**: this
+ * composes the identical, already-validated `calculateLiquidationPrice`
+ * a second time, at the Service layer, using each scenario branch's own
+ * already-computed collateral/debt/market values and the same
+ * `riskCapacityFraction` already dispatched for that branch's Health
+ * Factor/Liquidation Distance recomputation above — exactly the "Field
+ * completion per scenario type" pattern this file's own header comment
+ * already documents. `null` for a zero-debt scenario result, mirroring
+ * `PortfolioLiquidationSummary`'s own established convention
+ * (`services/portfolio/summary.ts`'s conflict #20 note) — never a
+ * fabricated price at zero debt.
+ */
+function resolveScenarioLiquidationPrice(
+  marketPriceUsd: number,
+  debtValue: number,
+  collateralValue: number,
+  riskCapacityFraction: number,
+  tracked: TrackedFormulaVersion,
+  sourceStatus: string,
+) {
+  if (debtValue === 0) {
+    return { ok: true as const, value: null, tracked, warnings: [] as ServiceWarning[] };
+  }
+  return formulaStep(
+    calculateLiquidationPrice(marketPriceUsd, debtValue, collateralValue, riskCapacityFraction),
+    tracked,
+    sourceStatus,
+  );
 }
 
 /**
@@ -459,6 +505,22 @@ export function simulateScenario(
       priceLiquidationDistance = v4LiquidationDistanceStep.value;
     }
 
+    // v1.13.0 Batch 3 — `priceResult.debtValue`/`.collateralValue` are
+    // already protocol-neutral (see this branch's own comment above);
+    // `riskCapacityFraction` is the same correctly-dispatched fraction
+    // already used for `priceHealthFactor`/`priceLiquidationDistance`.
+    const priceLiquidationPriceStep = resolveScenarioLiquidationPrice(
+      priceResult.scenarioBtcPriceUsd,
+      priceResult.debtValue,
+      priceResult.collateralValue,
+      riskCapacityFraction,
+      tracked,
+      sourceStatus,
+    );
+    if (!priceLiquidationPriceStep.ok) return priceLiquidationPriceStep.failure;
+    tracked = priceLiquidationPriceStep.tracked;
+    warnings.push(...priceLiquidationPriceStep.warnings);
+
     const scenarioSummary: ScenarioSummary = {
       label: scenarioLabel,
       equity: priceResult.netEquity,
@@ -467,6 +529,8 @@ export function simulateScenario(
       liquidationDistance: priceLiquidationDistance,
       debtCost: debtCostStep.value,
       leverage: leverageStep.value,
+      debtValue: priceResult.debtValue,
+      liquidationPrice: priceLiquidationPriceStep.value,
     };
 
     return finalize(baselineSummary, scenarioSummary, tracked, warnings, scenario, sourceStatus);
@@ -663,6 +727,23 @@ export function simulateScenario(
   tracked = leverageStep.tracked;
   warnings.push(...leverageStep.warnings);
 
+  // v1.13.0 Batch 3 — `projectedCollateralValueStep.value`/`projectedDebt`
+  // are already protocol-neutral (both V3 and V4 flow through the same
+  // variables above); `riskCapacityFraction` is the same
+  // correctly-dispatched fraction already used for
+  // `projectedHealthFactorStep`/`liquidationDistanceStep` above.
+  const interestLiquidationPriceStep = resolveScenarioLiquidationPrice(
+    scenarioMarket.btcPriceUsd,
+    projectedDebt,
+    projectedCollateralValueStep.value,
+    riskCapacityFraction,
+    tracked,
+    sourceStatus,
+  );
+  if (!interestLiquidationPriceStep.ok) return interestLiquidationPriceStep.failure;
+  tracked = interestLiquidationPriceStep.tracked;
+  warnings.push(...interestLiquidationPriceStep.warnings);
+
   const scenarioSummary: ScenarioSummary = {
     label: scenarioLabel,
     equity: projectedEquityStep.value,
@@ -671,6 +752,8 @@ export function simulateScenario(
     liquidationDistance: liquidationDistanceStep.value,
     debtCost: accruedInterest,
     leverage: leverageStep.value,
+    debtValue: projectedDebt,
+    liquidationPrice: interestLiquidationPriceStep.value,
   };
 
   return finalize(

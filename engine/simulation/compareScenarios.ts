@@ -21,6 +21,25 @@ const FORMULA_VERSION = '1.0';
  * calculateEffectiveLeverage F-011 / a loop cost's accrued interest for
  * "Debt cost") rather than recomputing anything themselves — callers
  * assemble this summary from whichever scenario function they used.
+ *
+ * **`debtValue`/`liquidationPrice` (v1.13.0 Batch 3, "Simulation
+ * ScenarioSummary: Debt + Liquidation Price") are additional,
+ * display-only fields — deliberately NOT part of the six-metric F-053
+ * "Compare" set above, and excluded from `ScenarioMetric`/
+ * `SCENARIO_METRICS` below.** `06_TASKS.md` M6-009's own separate DoD
+ * ("Display... Debt, ... Liquidation price...") names both as required
+ * Scenario Summary *display* items, distinct from M2-022's earlier,
+ * narrower *Compare* list — this widening completes that
+ * previously-undeliverable M6-009 requirement (see
+ * `features/simulation/components/ScenarioSummary.tsx`'s own former
+ * "documented gap" comment) without touching F-053's own documented
+ * scope. Both fields are canonical, already-computed values the caller
+ * supplies from the existing simulation/domain pipeline — never derived
+ * or recomputed inside this type or its consumers. `liquidationPrice` is
+ * `null` for a zero-debt scenario result, mirroring
+ * `PortfolioLiquidationSummary`'s own established "no liquidation risk"
+ * convention (`services/portfolio/summary.ts`) — never a fabricated
+ * price at zero debt.
  */
 export interface ScenarioSummary {
   label: string;
@@ -30,9 +49,20 @@ export interface ScenarioSummary {
   liquidationDistance: number;
   debtCost: number;
   leverage: number;
+  debtValue: number;
+  liquidationPrice: number | null;
 }
 
-export type ScenarioMetric = Exclude<keyof ScenarioSummary, 'label'>;
+/**
+ * Deliberately excludes `debtValue`/`liquidationPrice` — these are
+ * display-only additions (see the interface's own doc comment above),
+ * not part of F-053's own documented six-metric "Compare" set that
+ * `compareScenarios`/`SCENARIO_METRICS` below compute differences for.
+ */
+export type ScenarioMetric = Exclude<
+  keyof ScenarioSummary,
+  'label' | 'debtValue' | 'liquidationPrice'
+>;
 
 const SCENARIO_METRICS: ScenarioMetric[] = [
   'equity',
