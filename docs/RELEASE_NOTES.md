@@ -13,9 +13,64 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.12.0
+## Version 1.13.0
 
-**Current release.** Promotes five batches on top of Version 1.11.0,
+**Current release.** Promotes five batches on top of Version 1.12.0,
+together titled "Portfolio History & Simulation Completeness, Part 3":
+Protocol-Version Provenance Badge (Batch 1), Supply APR Portfolio History
+Chart Metric (Batch 2), Simulation `ScenarioSummary` Debt + Liquidation
+Price (Batch 3), Dashboard Section Grouping (Batch 4), and Multi-Scenario
+Comparison Debt + Liquidation Price (Batch 5) — built, tested, and
+independently re-verified (final count 4319/4319 tests passing) in the
+same batches that produced them, not a fresh Milestone-9/V1.1-style
+Release Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.13.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.13.0]` entry for the full record. Everything in
+"Version 1.12.0" and earlier below still applies; this section covers
+only what is new since 1.12.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
+
+### What's new in 1.13.0
+
+- **Portfolio History now shows a protocol-version provenance badge**
+  per entry, reading each snapshot's own persisted `protocolVersion`
+  ("Aave V3"/"Aave V4") directly — legible even for a portfolio that has
+  since switched protocol versions.
+- **Portfolio History's chart selector now includes Supply APR**,
+  reading `entry.supplyApr` directly; shown as "Not applicable" for V4
+  entries, which never carry this field, distinct from "Not available."
+- **Saved Simulation scenarios now carry their own Debt and Liquidation
+  Price**, shown both on the active scenario's Simulation Results and,
+  new this release, as two additional rows in the multi-scenario
+  Comparison table — each column reading directly from that scenario's
+  own already-computed result, never recomputed and never repeated
+  across scenarios. A scenario with no debt shows Liquidation Price as
+  `—`, the same "no liquidation risk" convention used elsewhere.
+- **The Dashboard is now organized into four labeled sections** —
+  Overview, Health & Risk, Composition & Debt, and Recommended Actions —
+  making its long single-column layout easier to navigate. No section's
+  own content changed or moved out of place.
+- **No historical points are recomputed using current portfolio state,
+  and no live oracle or Aave lookup was introduced** for the provenance
+  badge or Supply APR — both read only what Portfolio History already
+  persisted at each snapshot's own creation time.
+
+### Explicitly unchanged in 1.13.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no new protocol API call, no V3/V4
+semantic change (every new field and badge is read identically for both
+protocol versions), still no live wallet connection or transaction
+execution, still no cloud backup or synchronization, still no publicly
+operated production deployment. `savedScenarios` remains pure in-memory
+state — the new Debt/Liquidation Price fields carry no backward-
+compatibility concern, since no saved scenario is ever persisted across
+a reload.
+
+## Version 1.12.0 (previous release)
+
+Promotes five batches on top of Version 1.11.0,
 together titled "Portfolio History Field Completeness Part 2": Collateral
 Value & Debt Value chart parity (Batch 1), Collateral Quantity chart
 metric (Batch 2), Debt Quantity chart metric (Batch 3), Portfolio History

@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.12.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.12.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.12** — no batch in any of the twelve releases modified a financial formula. Portfolio History Field Completeness Part 2 (V1.12.0) reads already-persisted fields (`collateral.valueUsd`, `debt.valueUsd`, `collateral.quantity`, `debt.quantity`, `dataSource`) directly on Portfolio History, with no derived-helper layer and no recomputation of its own; its Dependabot batch touches no Engine code at all. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.12** — every batch across all twelve releases persists through the existing envelope/schema, adding no new schema version and no migration. Portfolio History Field Completeness Part 2 (V1.12.0) reads already-persisted history entries and persists nothing new. |
+| Application version           | `1.13.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.13.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.13** — no batch in any of the thirteen releases modified a financial formula. `engine/simulation/compareScenarios.ts` (F-053) was touched by V1.13.0 Batch 3, but only to widen the `ScenarioSummary` *type* with two additional display-only fields (`debtValue`/`liquidationPrice`), deliberately excluded from `SCENARIO_METRICS` — F-053's own `FORMULA_VERSION` constant, and every value it computes, is unchanged; the two new fields are populated by the Service layer composing the pre-existing, unmodified F-024 (`calculateLiquidationPrice`) a second time, not a new or edited formula. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.13** — every batch across all thirteen releases persists through the existing envelope/schema, adding no new schema version and no migration. V1.13.0's `savedScenarios`/`SavedSimulation.result` (the source of the new Batch 3/5 fields) is pure in-memory Zustand state, never persisted through this envelope at all — see the `v1.13.0 Release Reconciliation` section of `PROJECT_STATUS.md`. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -51,6 +51,29 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.10.0)    | 2026-09-05     | Dashboard Trend Parity (Batches 1–3), re-validated against a fresh `origin/main` checkout (4229/4229 tests passing) — see `PROJECT_STATUS.md`'s "v1.10.0 Release Reconciliation" section and the `[1.10.0]` entry below. Same promotion pattern as `1.9.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.11.0)    | 2026-09-05     | Borrow APR Trend Completion (Batches 1–2), re-validated against a fresh `origin/main` checkout (4250/4250 tests passing) — see `PROJECT_STATUS.md`'s "v1.11.0 Release Reconciliation" section and the `[1.11.0]` entry below. Same promotion pattern as `1.10.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.12.0)    | 2026-09-06     | Portfolio History Field Completeness Part 2 (Batches 1–5), re-validated against a fresh `origin/main` checkout (4282/4282 tests passing) — see `PROJECT_STATUS.md`'s "v1.12.0 Release Reconciliation" section and the `[1.12.0]` entry below. Same promotion pattern as `1.11.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.13.0)    | 2026-09-06     | Portfolio History & Simulation Completeness, Part 3 (Batches 1–5), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4319/4319 tests passing) — see `PROJECT_STATUS.md`'s "v1.13.0 Release Reconciliation" section and the `[1.13.0]` entry below. Same promotion pattern as `1.12.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.13.0`, not `1.12.x` or a new
+`2.0.0`**: not a PATCH — Portfolio History gains a protocol-version
+provenance badge and a Supply APR chart metric, Simulation's saved-scenario
+`ScenarioSummary`/multi-scenario Comparison gain Debt and Liquidation Price
+(previously undeliverable — see `PROJECT_STATUS.md` Conflict history), and
+the Dashboard gains four labeled section groups for its ~19-section stack —
+new user-facing capability across three surfaces, not a bug fix to
+existing capability, the same bar that already justified `1.1.0` through
+`1.12.0` being MINOR rather than PATCH bumps. Not a new MAJOR either, on
+the identical reasoning the `1.12.0` through `1.1.0` paragraphs below
+already give: `engine/simulation/compareScenarios.ts` (F-053) gained two
+new, deliberately non-`SCENARIO_METRICS` display fields on its
+`ScenarioSummary` type — not a changed formula, not a changed
+`FORMULA_VERSION`, and not a change to the Manual-Mode-by-default product
+boundary `01_PRD.md` reserves Version 2 for. No persisted-data schema
+changed — `savedScenarios` is pure in-memory Zustand state, never
+persisted. Every new field/badge/group is read directly from an
+already-computed or already-persisted value, or is a pure presentation
+reorganization of already-existing sections — never recomputed from
+today's portfolio or market state, never a new V3/V4 branch. A minor
+version bump, same class as `1.1.0`'s through `1.12.0`'s own.
 
 **Why the Application/Engine version is `1.12.0`, not `1.11.x` or a new
 `2.0.0`**: not a PATCH — Portfolio History gains four new chart/display
@@ -339,6 +362,80 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.13.0] — 2026-09-06
+
+Five batches on top of Version 1.12.0, together titled "Portfolio History
+& Simulation Completeness, Part 3" (per the Post-v1.12.0 Roadmap Audit):
+Protocol-Version Provenance Badge (`4474e52`), Supply APR Portfolio
+History Chart Metric (`7c2edc5`), Simulation `ScenarioSummary` Debt +
+Liquidation Price (`3a8fc67`), Dashboard Section Grouping (`41b7ae7`), and
+Multi-Scenario Comparison Debt + Liquidation Price (`ff93ee5`), plus this
+reconciliation batch itself. Full per-file, per-batch detail lives in
+`PROJECT_STATUS.md`'s "v1.13.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.13.0
+
+- **Portfolio History now shows a protocol-version provenance badge**
+  per entry, reading each snapshot's own persisted
+  `entry.protocolVersion: 'v3' | 'v4'` directly — "Aave V3"/"Aave V4," the
+  same wording used elsewhere. A portfolio can switch protocol versions
+  on an existing record, so its own history can genuinely span both; this
+  badge makes each older snapshot's protocol version legible again, not
+  only the portfolio's current setting. Never inferred, never
+  recomputed; this file still never branches its own logic on the value.
+- **Portfolio History's chart selector gains Supply APR**, reading the
+  already-persisted `entry.supplyApr` directly. Unconditionally
+  `undefined` for every V4 entry (not "pending sync," the way
+  `borrowApr` can be) — rendered as **"Not applicable,"** deliberately
+  distinct from Borrow APR's "Not available."
+- **Saved Simulation scenarios now carry Debt and Liquidation Price as
+  part of their own canonical result** (`ScenarioSummary.debtValue`/
+  `liquidationPrice`), composing the pre-existing F-024
+  (`calculateLiquidationPrice`) a second time at the Service layer —
+  never a new formula, and deliberately excluded from the 6-metric
+  `SCENARIO_METRICS` "Compare" diff set F-053 already defines, so that
+  set's own documented scope is unchanged.
+- **Simulation Results now display Debt and Liquidation Price** for the
+  active scenario (`ScenarioSummary.tsx`), and **the multi-scenario
+  Comparison table now shows Debt and Liquidation Price rows**
+  (`ScenarioComparison.tsx`) for every selected saved scenario, each read
+  directly from that scenario's own already-computed result — never
+  recomputed, never repeated across columns. A `null` Liquidation Price
+  (zero-debt scenario) renders as `—`, the same convention already used
+  elsewhere for "no liquidation risk."
+- **The Dashboard's ~19-section stack is now grouped into four labeled
+  landmark sections** — Overview, Health & Risk, Composition & Debt, and
+  Recommended Actions — wrapping already-contiguous existing content with
+  zero reordering and zero content changes, improving navigability
+  without changing what any section shows.
+
+### What this is not
+
+This release adds no Health Factor risk-band classification (Conflict #1
+remains unresolved), no new Recommendation Engine logic, no persistence
+or schema change, and no Aave adapter change. It introduces no new
+Engine formula and no new Formula ID — Batch 3's `ScenarioSummary`
+widening is a type/field addition backed entirely by the pre-existing
+F-024 formula, composed again, not edited. No V3/V4 branching was added
+anywhere in this release beyond the protocol-version badge's own display
+value (which does not change how any other cell is computed).
+
+### Explicitly unchanged in 1.13.0
+
+No financial formula's `FORMULA_VERSION` changed (still `1.0`
+everywhere), no persisted-data schema (`STORAGE_SCHEMA_VERSION` stays
+`1.0.0`), no migration, no new protocol API call, no V3/V4 semantic
+change, and no change to the Path B (self-hostable, no operated
+production deployment) deployment disposition — see
+`docs/DEPLOYMENT_DISPOSITION.md`. `savedScenarios` remains pure in-memory
+Zustand state, never persisted to storage — so there is no legacy saved
+scenario anywhere missing the new `debtValue`/`liquidationPrice` fields.
+Health Factor risk bands, the Recommendation Engine's three independent
+spec blockers, cumulative/realized interest, P&L, cost basis, total
+return, production deployment, and Settings ABOUT work all remain
+deferred, unchanged from prior releases.
 
 ## [1.12.0] — 2026-09-06
 

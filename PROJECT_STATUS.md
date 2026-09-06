@@ -14869,6 +14869,248 @@ was not started.
 
 ---
 
+## v1.13.0 Release Reconciliation — Portfolio History & Simulation Completeness, Part 3
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents five batches, `4474e52`
+("v1.13.0batch1protocolversionbadge"), `7c2edc5`
+("v1.13.0batch2supplyaprchartmetric"), `3a8fc67`
+("v1.13.0batch3scenariodebtliquidationprice"), `41b7ae7`
+("v1.13.0batch4dashboardsectiongrouping"), and `ff93ee5`
+("multiscenariocomparisondebtliquidationprice"), applied directly on top
+of `v1.12.0` (`0b892a0`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.13.0`. Versions `1.0.0` through `1.12.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.12.0` still resolves to
+`0b892a022430ef1f3487ad1d57c1380bf1c8a25e`, confirmed by fresh inspection
+during this batch. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.12.0` to `1.13.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.13.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: Batches 1, 2, and 4 are
+presentation/read-layer only, each reading an already-persisted or
+already-computed value directly, computing nothing new and persisting
+nothing new; Batch 3 widens an Engine _type_ (`ScenarioSummary`) with two
+new display-only fields, backed entirely by the pre-existing, unmodified
+F-024 formula composed a second time, not a new or edited formula; Batch
+5 is presentation-only consumption of Batch 3's new fields. **No
+`v1.13.0` git tag exists yet** — tagging is a separate, explicit step for
+after this patch is applied and synced, not taken by this batch (see this
+batch's own tag-readiness verdict below).
+
+### Origin: Post-v1.12.0 Roadmap Audit
+
+A read-only planning audit (same date) found no dedicated written
+v1.13.0 roadmap document in the repository — the audit itself became the
+only record of the theme and batch sequence, re-derived from repository
+evidence at the start of each subsequent batch rather than assumed from
+prior conversational planning. It recommended "Portfolio History &
+Simulation Completeness, Part 3" as the `v1.13.0` release theme, staged
+across four ordered implementation batches (protocol-version provenance,
+Supply APR chart metric, Simulation `ScenarioSummary` Debt/Liquidation
+Price, Dashboard section grouping) plus a fifth batch determined by a
+second, independent read-only scope audit performed after Batch 4 shipped
+(Multi-Scenario Comparison Debt/Liquidation Price — found via a fresh
+inspection that `ScenarioComparison.tsx`'s own header comment had gone
+stale the moment Batch 3 landed, still claiming Debt/Liquidation Price
+"have no home in `ScenarioSummary`"). Both audits re-confirmed and
+continued to defer Health Factor risk-band classification (Conflict #1),
+the Recommendation Engine's three independent spec blockers, cumulative/
+realized interest, P&L, cost basis, and total return — none of these are
+touched by `v1.13.0`.
+
+### Batch 1 — Protocol-Version Provenance Badge (`4474e52`)
+
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds a protocol-version
+  badge per history entry, reading each snapshot's own persisted
+  `entry.protocolVersion: 'v3' | 'v4'` directly — "Aave V3"/"Aave V4," the
+  same wording already used elsewhere (`AaveProtocolVersionForm.tsx`,
+  `NewPortfolioPageClient.tsx`). Addresses a real path, not a
+  hypothetical one: a portfolio can switch protocol versions on an
+  existing record, so its own history can genuinely span both. This file
+  still never branches its own logic on `entry.protocolVersion` — the
+  badge only displays the value.
+- **Tests**: 189 lines added in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`.
+- **Validation**: full suite — **4289/4289 tests passing**, `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build` all clean.
+
+### Batch 2 — Supply APR Portfolio History Chart Metric (`7c2edc5`)
+
+- **Pre-implementation investigation required** (this batch's own STOP-
+  if-no-canonical-meaning instruction): confirmed `entry.supplyApr` is
+  canonical and permanently `undefined` for every V4 entry — unlike
+  `borrowApr`, which can be `undefined` for a V4 portfolio only until its
+  debt state syncs, `supplyApr` has no V4-facing form or live boundary in
+  this codebase that ever produces it, mirroring
+  `resolveSupplyAprDisplay`'s own `'not-applicable'` case
+  (`services/portfolio/mapping.ts`).
+- **`app/portfolio/PortfolioHistoryPanel.tsx`**: adds Supply APR as the
+  fourteenth chart-selector metric, positioned directly after Borrow
+  APR. `formatSupplyApr` renders the V4 case as **"Not applicable,"**
+  deliberately distinct from `formatBorrowApr`'s "Not available" —
+  `components/strategy/StrategyAssumptionsPanel.tsx` already draws this
+  exact distinction in its own comment.
+- **Tests**: 369 lines added/changed in
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx`, including
+  updates to 4 pre-existing tests whose exact `optionLabels`
+  arrays/slices needed the new metric inserted.
+- **Validation**: full suite — **4299/4299 tests passing**, all tooling
+  clean.
+
+### Batch 3 — Simulation `ScenarioSummary`: Debt + Liquidation Price (`3a8fc67`)
+
+- **Deep V3/V4 semantic-safety investigation required** (this batch's
+  own STOP-if-not-canonical instruction): confirmed `debtValue`/
+  post-scenario liquidation price are both derivable purely from each
+  scenario branch's own already-computed collateral/debt/market values,
+  with no new V3/V4 branching needed.
+- **`engine/simulation/compareScenarios.ts`**: widens `ScenarioSummary`
+  with `debtValue: number` and `liquidationPrice: number | null`,
+  **deliberately excluded** from `ScenarioMetric`/`SCENARIO_METRICS`
+  (still exactly the same 6 metrics: equity, profitOrLoss, healthFactor,
+  liquidationDistance, debtCost, leverage) — preserving F-053's own
+  documented 6-metric "Compare" scope untouched while satisfying a
+  separate, previously-undeliverable "Display" requirement.
+- **`services/simulation/scenario.ts`**: adds `resolveScenarioLiquidationPrice`,
+  a Service-layer helper that composes the pre-existing, unmodified F-024
+  (`calculateLiquidationPrice`) a second time — zero-debt-guarded,
+  returning `null` rather than a fabricated price, mirroring
+  `PortfolioLiquidationSummary`'s own established convention
+  (`services/portfolio/summary.ts`).
+- **`features/simulation/components/ScenarioSummary.tsx`**: displays the
+  two new fields for the active scenario, using `'—'` for a `null`
+  Liquidation Price.
+- **Tests**: 143 lines changed in `ScenarioSummary.test.tsx`, 67 lines
+  added in `scenario.test.ts`, plus small fixture updates in
+  `engineBenchmarks.test.ts`, `compareScenarios.test.ts`, and
+  `rankScenarios.test.ts` to satisfy the widened, non-optional type.
+- **Validation**: full suite — **4306/4306 tests passing**, all tooling
+  clean.
+
+### Batch 4 — Dashboard Section Grouping (`41b7ae7`)
+
+- **Explicit scope identification required from repository evidence
+  before editing** (this batch's own instruction not to infer scope from
+  prior conversational planning alone): confirmed no written v1.13.0
+  roadmap document exists anywhere in the repository.
+- **`app/DashboardPageClient.tsx`**: wraps the Dashboard's flat ~19-
+  section stack into 4 additive `<section aria-labelledby>` landmark
+  groups — Overview, Health & Risk, Composition & Debt, and Recommended
+  Actions (renamed from "Recommendations" to avoid an exact-text
+  collision with `RecommendationSummarySection`'s own pre-existing
+  `<h3>Recommendations</h3>`, caught by a collision check before
+  implementing) — wrapping already-contiguous existing content with zero
+  reordering and zero content changes.
+- **Tests**: 163 lines added in `tests/unit/app/page.test.tsx`.
+- **Validation**: full suite — **4315/4315 tests passing**, all tooling
+  clean.
+
+### Batch 5 — Multi-Scenario Comparison Debt + Liquidation Price (`ff93ee5`)
+
+- **Origin**: a second, independent read-only scope audit (performed
+  after Batch 4) found `ScenarioComparison.tsx`'s own header comment had
+  gone stale the moment Batch 3 shipped — it still claimed Debt/
+  Liquidation Price "have no home in `ScenarioSummary`," which was no
+  longer true.
+- **`features/simulation/components/ScenarioComparison.tsx`**: adds
+  "Debt" and "Liquidation Price" rows to the multi-scenario comparison
+  table, additively — the pre-existing "Liquidation Distance" row (and
+  Equity, Health Factor, Interest, Leverage) is unchanged, unreordered.
+  Each new row reads directly from that column's own saved scenario
+  `result.scenario.debtValue`/`liquidationPrice` — never recomputed,
+  never repeated across columns. `null` Liquidation Price renders as
+  `'—'`, the same convention `ScenarioSummary.tsx` (Batch 3) already
+  established. The stale header comment is rewritten to describe the
+  post-Batch-5 state.
+- **Tests**: 135 lines added/changed in
+  `tests/unit/features/simulation/ScenarioComparison.test.tsx`, including
+  explicit per-scenario-correctness coverage (a price scenario and an
+  interest scenario saved and selected together, proving genuinely
+  differing Debt/Liquidation Price values rather than a repeated
+  column), a zero-debt edge case (`$0.00`/`'—'`), and a combined
+  3-scenario render asserting no `NaN`/`Infinity` leakage.
+- **Validation**: full suite — **4319/4319 tests passing**, `pnpm
+typecheck`/`pnpm lint`/`pnpm format:check`/`pnpm build` all clean, in
+  both the implementation worktree and, independently, a second clean
+  worktree with the delivered patch applied to a fresh `origin/main`
+  checkout (exact diff-stat parity confirmed).
+
+### What did not change, across all five batches
+
+**No persisted-data schema, no migration, no protocol API call, and no
+new V3/V4 branching in application logic** — confirmed by direct diff
+inspection (`git diff --stat 0b892a0..ff93ee5`: exactly 14 files touched
+across all five batches, none under `stores/**`, `services/persistence/**`,
+`services/aave/**`, or `app/api/aave/**`). The only V3/V4-conditional
+code added anywhere in the release is Batch 1's own display-only
+`formatProtocolVersion` formatter — it renders a value, it does not
+change how any other cell is computed. `engine/simulation/compareScenarios.ts`
+(Batch 3) is the one Engine file touched — a type widening backed by the
+pre-existing F-024 formula, not a new or edited Formula ID; F-053's own
+`FORMULA_VERSION` is unchanged. No Health Factor risk-band classification
+was introduced — Conflict #1 remains exactly as unresolved as before. No
+deployment/cloud work — the Path B disposition is unaffected.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows and Formula/Storage-schema-version descriptions updated to
+  reflect `1.13.0`; a new `Sign-off completed (1.13.0)` row, a new "Why
+  the Application/Engine version is `1.13.0`" paragraph, and a new
+  `[1.13.0]` entry added — all following the identical pattern the prior
+  twelve releases already established.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.13.0` section added
+  with the `**Current release.**` marker; the prior `## Version 1.12.0`
+  section is demoted to `## Version 1.12.0 (previous release)` with that
+  marker removed, the same demotion pattern used for every prior release
+  transition in this file.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.12.0`
+  to `1.13.0`, the same three constants every one of the twelve prior
+  release-reconciliation batches bumped together.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/TECHNICAL_DEBT.md`,
+`docs/VERSION_2_BACKLOG.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/OPERATIONAL_RUNBOOK.md`,
+`docs/MAINTENANCE_SCHEDULE.md`, `docs/DEFECT_CLASSIFICATION.md`,
+`README.md`, `docs/VERSIONING_STRATEGY.md` — were freshly re-checked via
+direct grep for `1.12.0`/`1.13.0`/`current release`/`current version` and
+found to need no update. `docs/TECHNICAL_DEBT.md`'s and
+`docs/MAINTENANCE_SCHEDULE.md`'s own existing `v1.12.0` references are
+historical citations of when Dependabot was added (category B, previous-
+release baseline — still accurate, not restated) — left untouched, the
+same discipline that left `docs/DEFECT_CLASSIFICATION.md`'s dedicated
+per-release sign-off sections at just `1.0.0` (§6) and `1.1.0` (§7): every
+"promotion" release from `1.2.0` through `1.12.0` also did not add a new
+section there, since none of them (including this one) were a fresh
+Milestone-9/V1.1-style manual exploratory Release Candidate pass —
+`v1.13.0` follows that same established precedent, not a new one.
+`docs/DEPLOYMENT_DISPOSITION.md` carries zero version-number references
+at all and needs none — the Path B disposition is unaffected by this
+release, confirmed by direct inspection rather than assumed.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), the Recommendation Engine's
+three independent spec blockers (Conflict #29, Conflict #9/"Interest
+Warning" F-065, and the unmapped exit-readiness gap), cumulative/realized
+interest, P&L, cost basis, total return, production deployment, or
+Settings ABOUT work. No new infrastructure work was introduced by this
+reconciliation. v1.14.0 work was not started.
+
+---
+
 ## Unresolved documentation conflicts
 
 These are **not** resolved in code. They are flagged for a product/engineering
