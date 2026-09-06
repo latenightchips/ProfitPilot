@@ -85,6 +85,28 @@ import {
  * anchors each row avoids widening the already-11-column table or adding
  * a card row, per this batch's own "should not visually dominate"
  * requirement.
+ *
+ * **V1.13.0 Batch 1 ("Protocol-Version Provenance Badge")** adds a second
+ * small badge next to the data-source one above, showing each entry's
+ * own persisted `entry.protocolVersion: 'v3' | 'v4'`
+ * (`services/persistence/types/models.ts`) — "Aave V3"/"Aave V4", the
+ * exact wording already used for user-facing protocol-version
+ * identification elsewhere (`AaveProtocolVersionForm.tsx`,
+ * `NewPortfolioPageClient.tsx`). A portfolio can switch protocol
+ * versions on an existing record (`AaveProtocolVersionForm.tsx`), so its
+ * own history can genuinely span both — this badge is what makes each
+ * older snapshot's protocol version legible again, rather than only the
+ * portfolio's *current* setting. Read directly from the snapshot, the
+ * same discipline the data-source badge already established: never
+ * inferred from the portfolio's current `protocolVersion`, never
+ * recomputed, and both versions treated identically (this file still
+ * never branches its own logic on `entry.protocolVersion` — the badge
+ * only displays the value, it does not change how any other cell is
+ * computed). Reuses the exact same
+ * `"rounded-full bg-muted px-2 py-0.5 text-xs font-normal
+ * text-muted-foreground"` badge className as the data-source badge,
+ * placed immediately before it — categorical, not a chart metric or
+ * table column, for the same reason the data-source badge isn't one.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -122,6 +144,20 @@ function formatTimestamp(iso: string): string {
  */
 function formatDataSource(value: 'manual' | 'live'): string {
   return value === 'live' ? 'Live' : 'Manual';
+}
+
+/**
+ * `entry.protocolVersion` is always exactly `'v3'` or `'v4'` — the
+ * persisted contract's own two allowed values
+ * (`services/persistence/types/models.ts`), never a third state to
+ * guess at. "Aave V3"/"Aave V4" matches the exact wording this app
+ * already uses for user-facing protocol-version identification
+ * elsewhere (`app/portfolio/AaveProtocolVersionForm.tsx`'s own "Aave
+ * V3"/"Aave V4" radio labels, `app/portfolios/new/NewPortfolioPageClient.tsx`'s
+ * matching labels) — no new wording invented for this batch.
+ */
+function formatProtocolVersion(value: 'v3' | 'v4'): string {
+  return value === 'v4' ? 'Aave V4' : 'Aave V3';
 }
 
 /**
@@ -519,6 +555,9 @@ function HistoryEntryCard({
       <p className="flex items-center gap-2 font-medium text-foreground">
         <span>{formatTimestamp(entry.createdAt)}</span>
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+          {formatProtocolVersion(entry.protocolVersion)}
+        </span>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
           {formatDataSource(entry.dataSource)}
         </span>
       </p>
@@ -854,6 +893,9 @@ export function PortfolioHistoryPanel({
                   <td className="py-1.5 pr-3 text-foreground">
                     <div className="flex items-center gap-2">
                       <span>{formatTimestamp(entry.createdAt)}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        {formatProtocolVersion(entry.protocolVersion)}
+                      </span>
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
                         {formatDataSource(entry.dataSource)}
                       </span>

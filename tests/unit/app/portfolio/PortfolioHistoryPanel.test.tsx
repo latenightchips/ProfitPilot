@@ -510,6 +510,195 @@ describe('PortfolioHistoryPanel — data source provenance', () => {
 });
 
 /**
+ * V1.13.0 Batch 1 ("Protocol-Version Provenance Badge") — surfaces the
+ * already-persisted `entry.protocolVersion: 'v3' | 'v4'` field as a
+ * second small badge next to each row's own timestamp, alongside the
+ * v1.12.0 Batch 4 data-source badge. Read directly, never inferred from
+ * the portfolio's current protocol-version setting (the component is
+ * never even given that setting — only `portfolioId`/`portfolioUpdatedAt`
+ * — so there is no "current version" to infer from in the first place;
+ * every entry's badge can only ever reflect that entry's own persisted
+ * value).
+ */
+describe('PortfolioHistoryPanel — protocol-version provenance', () => {
+  it('visibly identifies a V3 history entry as "Aave V3", in both the table and the mobile card', async () => {
+    await recordPortfolioHistoryEntry(entry({ protocolVersion: 'v3' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('Aave V3')).toBeInTheDocument();
+    expect(within(screen.getByRole('list')).getByText('Aave V3')).toBeInTheDocument();
+  });
+
+  it('visibly identifies a V4 history entry as "Aave V4", in both the table and the mobile card', async () => {
+    await recordPortfolioHistoryEntry(entry({ protocolVersion: 'v4', supplyApr: undefined }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole('table')).getByText('Aave V4')).toBeInTheDocument();
+    expect(within(screen.getByRole('list')).getByText('Aave V4')).toBeInTheDocument();
+  });
+
+  it('retains each entry’s own persisted protocol version for mixed V3/V4 history, rather than showing the portfolio’s current version for every row', async () => {
+    // Older entry recorded while the portfolio was V3; newer entry
+    // recorded after switching to V4 — exactly the real
+    // `AaveProtocolVersionForm.tsx` mid-life switch scenario this batch
+    // exists for. If the badge were derived from "the portfolio's
+    // current setting" rather than each entry's own persisted field,
+    // both rows would incorrectly show "Aave V4".
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        healthFactor: 3,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const rows = screen.getAllByRole('row');
+    // Header + newest (V4, HF 3) + oldest (V3, HF 4) — table is
+    // newest-first, same ordering every other test in this file asserts.
+    expect(rows).toHaveLength(3);
+    expect(within(rows[1]).getByText('Aave V4')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('3')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('Aave V3')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('4')).toBeInTheDocument();
+  });
+
+  it('leaves existing data-source provenance rendering intact — both badges render together without colliding', async () => {
+    await recordPortfolioHistoryEntry(entry({ protocolVersion: 'v3', dataSource: 'live' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Aave V3')).toBeInTheDocument();
+    expect(table.getByText('Live')).toBeInTheDocument();
+    const list = within(screen.getByRole('list'));
+    expect(list.getByText('Aave V3')).toBeInTheDocument();
+    expect(list.getByText('Live')).toBeInTheDocument();
+  });
+
+  it('never infers protocol version from anything other than the entry itself — a V3 entry paired with "Live" (an otherwise V4-associated status elsewhere in the app) still shows "Aave V3"', async () => {
+    await recordPortfolioHistoryEntry(entry({ protocolVersion: 'v3', dataSource: 'live' }));
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Aave V3')).toBeInTheDocument();
+    expect(table.queryByText('Aave V4')).not.toBeInTheDocument();
+  });
+
+  it('keeps multiple portfolios isolated — protocol-version badges reflect only the requested portfolioId', async () => {
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v3',
+      }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        portfolioId: 'portfolio-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Aave V3')).toBeInTheDocument();
+    expect(table.queryByText('Aave V4')).not.toBeInTheDocument();
+  });
+
+  it('leaves every existing chart metric and the data-source badge fully functional', async () => {
+    const user = userEvent.setup();
+    await recordPortfolioHistoryEntry(
+      entry({ createdAt: '2026-01-01T00:00:00.000Z', protocolVersion: 'v3', healthFactor: 4 }),
+    );
+    await recordPortfolioHistoryEntry(
+      entry({
+        createdAt: '2026-02-01T00:00:00.000Z',
+        protocolVersion: 'v4',
+        supplyApr: undefined,
+        healthFactor: 3,
+      }),
+    );
+    render(
+      <PortfolioHistoryPanel
+        portfolioId="portfolio-1"
+        portfolioUpdatedAt="2026-01-01T00:00:00.000Z"
+      />,
+    );
+    await screen.findByLabelText('Chart metric');
+
+    for (const metric of [
+      'healthFactor',
+      'collateralQuantity',
+      'collateralValue',
+      'debtQuantity',
+      'debtValue',
+      'netWorth',
+      'loanToValue',
+      'leverage',
+      'borrowApr',
+      'annualizedInterestCost',
+      'marketPrice',
+      'liquidationPrice',
+      'liquidationBufferPercent',
+    ]) {
+      await user.selectOptions(screen.getByLabelText('Chart metric'), metric);
+      expect(screen.getByRole('img')).toBeInTheDocument();
+    }
+    const table = within(screen.getByRole('table'));
+    expect(table.getByText('Aave V3')).toBeInTheDocument();
+    expect(table.getByText('Aave V4')).toBeInTheDocument();
+  });
+});
+
+/**
  * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") — the compact
  * metric selector added to the same accessible chart the tests above
  * already cover. These tests seed entries with deliberately distinct
