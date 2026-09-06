@@ -1,0 +1,65 @@
+# Dependabot configuration — v1.12.0 Batch 5 ("Dependency Update
+# Automation"). Opens pull requests for available dependency updates; it
+# never merges anything itself — every PR still goes through this
+# project's existing CI gate (.github/workflows/ci.yml: lint, typecheck,
+# format check, unit tests with coverage, build, production smoke test)
+# and requires the same individually-reviewed, manual-merge process every
+# other change here does (docs/MAINTENANCE_SCHEDULE.md's own "Dependency
+# updates" section: "No blind or automatic upgrades... every dependency
+# bump is a deliberate, individually-reviewed change").
+#
+# Security-alert pull requests are opened by GitHub as soon as an
+# advisory is published, regardless of the `schedule` below —
+# `schedule.interval` only paces routine, non-security version updates.
+#
+# Minor/patch updates are grouped into a single pull request per
+# ecosystem per run, to keep routine-update review noise low; major
+# version updates are never grouped, so each stays its own individually
+# reviewable pull request — major-version risk stays visible on its own,
+# never bundled into a "routine" batch.
+#
+# This repository is a single package (`pnpm-workspace.yaml` declares no
+# `packages:` list — it exists only for its own `allowBuilds` entries),
+# so `directory: "/"` is correct for the npm ecosystem; pnpm's own
+# lockfile (`pnpm-lock.yaml`) is auto-detected under the `npm`
+# ecosystem, the same one GitHub documents for npm/pnpm/Yarn projects
+# alike.
+#
+# The pinned Node (`>=22.0.0 <23.0.0`) and pnpm (`>=10.0.0 <11.0.0`)
+# runtime policy in package.json's own "engines" field is untouched by
+# either ecosystem below — Dependabot proposes updates only to the
+# versioned dependencies/actions it manages, never to "engines" version
+# ranges, and there is no "packageManager" field here for it to touch
+# either.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+    labels:
+      - 'dependencies'
+
+  # actions/checkout, pnpm/action-setup, and actions/setup-node are the
+  # only actions used, identically, across all three existing workflows
+  # (.github/workflows/ci.yml, e2e-full.yml, aave-v4-boundary.yml) — all
+  # under this same root directory.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+    labels:
+      - 'dependencies'
+      - 'github-actions'
