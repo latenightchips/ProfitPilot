@@ -18,12 +18,14 @@ import {
   buildQuickActions,
   buildRecommendationSummary,
   buildRiskWarnings,
+  CollateralValueTrendSection,
   DashboardErrorBanner,
   DashboardKpiGrid,
   DashboardSkeleton,
   DashboardSummaryHeader,
   DataFreshnessSection,
   DebtAndInterestPanel,
+  DebtValueTrendSection,
   DeveloperModeToggle,
   HealthFactorStatusSection,
   HealthFactorTrendSection,
@@ -602,6 +604,16 @@ export function DashboardPageClient() {
                 {debtAndInterestPanel !== null && (
                   <DebtAndInterestPanel panel={debtAndInterestPanel} />
                 )}
+
+                <CollateralValueTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <DebtValueTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
                 <AnnualizedInterestCostTrendSection
                   portfolioId={activePortfolioId}

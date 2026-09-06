@@ -914,6 +914,12 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(compositionDebt.getByText('Debt and Interest')).toBeInTheDocument();
     expect(compositionDebt.getByText('Leverage Summary')).toBeInTheDocument();
     expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Collateral Value Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Debt Value Trend' }),
+    ).toBeInTheDocument();
+    expect(
       compositionDebt.getByRole('heading', { level: 3, name: 'Interest Cost (annualized) Trend' }),
     ).toBeInTheDocument();
     expect(

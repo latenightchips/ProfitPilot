@@ -35,12 +35,14 @@
  */
 export * from './components/AnnualizedInterestCostTrendSection';
 export * from './components/BorrowAprTrendSection';
+export * from './components/CollateralValueTrendSection';
 export * from './components/DashboardErrorBanner';
 export * from './components/DashboardKpiGrid';
 export * from './components/DashboardSkeleton';
 export * from './components/DashboardSummaryHeader';
 export * from './components/DataFreshnessSection';
 export * from './components/DebtAndInterestPanel';
+export * from './components/DebtValueTrendSection';
 export * from './components/DeveloperModeToggle';
 export * from './components/HealthFactorStatusSection';
 export * from './components/HealthFactorTrendSection';
