@@ -15344,6 +15344,187 @@ again, the same way `v1.12.0`–`v1.13.0`'s own additions did after
 `v1.11.0`'s "Borrow APR Trend Completion" last closed it. v1.15.0 work
 was not started.
 
+## v1.15.0 Release Reconciliation — Dashboard Information Architecture — Trend/Current-State Separation
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents three batches, `b00a4ca`
+("v1.15.0batch1trendsgrouphealthriskmigration"), `7db5794`
+("v1.15.0batch2trendsgroupcompositiondebtmigration"), and `008f028`
+("v1.15.0batch3trendsgroupoverviewmigrationfinal"), applied directly on
+top of `v1.14.0` (`beb0da7`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.15.0`. Versions `1.0.0` through `1.14.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.14.0` still resolves to
+`beb0da78db000ff4f37749424e12f88cbf4cbb72`, confirmed by fresh inspection
+during this batch. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.14.0` to `1.15.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.15.0`" paragraph gives. `FORMULA_VERSION`/`STORAGE_SCHEMA_VERSION`
+are unchanged, `1.0`/`1.0.0` respectively, same as every release before
+this one — this release requires neither: all three batches are
+information-architecture-only, relocating existing, unmodified
+components across the same page — computing nothing new, persisting
+nothing new, and reading nothing they did not already read before their
+move. **No `v1.15.0` git tag exists yet** — tagging is a separate,
+explicit step for after this patch is applied and synced, not taken by
+this batch (see this batch's own tag-readiness verdict below).
+
+### Origin: v1.15.0 Planning Audit
+
+A read-only planning audit (same date) found that Dashboard Trend Parity
+(closed by `v1.14.0`) had left a fresh information-density imbalance:
+14 trend charts unevenly distributed across the Dashboard's four
+existing groups (Overview 2, Health & Risk 4, Composition & Debt 8,
+Recommendations 0), with Composition & Debt in particular dominating the
+page. It recommended "Dashboard Information Architecture — Trend/
+Current-State Separation" as the `v1.15.0` release theme. Two IA shapes
+were proposed — a fifth top-level "Trends" group, or per-group trend/
+current-state sub-sectioning — and the user explicitly chose the
+fifth-group approach (de-dominates Composition & Debt, gives every
+future trend metric one predictable home, avoids unnecessary nested
+headings). Staged across three batches by source group (Health & Risk;
+Composition & Debt; Overview, sequenced last together with final
+regression cleanup). The same audit re-confirmed and continued to defer
+Health Factor risk-band classification (Conflict #1), the Recommendation
+Engine's three independent spec blockers, and cumulative/realized
+interest, P&L, cost basis, and total return — none of these are touched
+by `v1.15.0`.
+
+### Batch 1 — Trends Group + Health & Risk Trend Migration (`b00a4ca`)
+
+- **`app/DashboardPageClient.tsx`**: introduced the new
+  `dashboard-group-trends-heading` landmark (`<section
+aria-labelledby>` + `<h2 id>`, the identical pattern the four existing
+  groups already use), positioned after "Composition & Debt" and before
+  "Recommended Actions". Moved `HealthFactorTrendSection`,
+  `LiquidationBufferTrendSection`, `MarketPriceTrendSection`, and
+  `LiquidationPriceTrendSection` out of "Health & Risk" and into
+  "Trends", unmodified — same props, same data source. Health & Risk
+  keeps `HealthFactorStatusSection` and `LiquidationRiskPanel`.
+- **Tests**: `tests/unit/app/page.test.tsx` updated to prove the 5-group
+  structure, the 4 moved charts inside "Trends" and no longer inside
+  "Health & Risk", and the not-yet-migrated Overview/Composition & Debt
+  trend charts still in their original groups.
+- **Validation**: full suite — **4376/4376 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 2 files, +110/-26).
+
+### Batch 2 — Composition & Debt Trend Migration (`7db5794`)
+
+- **`app/DashboardPageClient.tsx`**: moved the eight Composition & Debt
+  trend charts (`CollateralQuantityTrendSection`,
+  `CollateralValueTrendSection`, `DebtQuantityTrendSection`,
+  `DebtValueTrendSection`, `AnnualizedInterestCostTrendSection`,
+  `BorrowAprTrendSection`, `SupplyAprTrendSection`,
+  `LeverageTrendSection`) into the existing "Trends" group created in
+  Batch 1 — no new landmark, unmodified props/data. Composition & Debt
+  keeps `PortfolioCompositionSection`, `DebtAndInterestPanel`, and
+  `LeverageSummarySection`.
+- **Tests**: `tests/unit/app/page.test.tsx` updated to prove the 8 moved
+  charts inside "Trends" alongside Batch 1's 4, no longer inside
+  "Composition & Debt", and Overview's still-unmigrated trend charts
+  unaffected.
+- **Validation**: full suite — **4377/4377 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 2 files, +88/-53).
+
+### Batch 3 — Overview Trend Migration + Final Regression Cleanup (`008f028`)
+
+- **`app/DashboardPageClient.tsx`**: moved Overview's last two trend
+  charts, `NetWorthTrendSection` and `LoanToValueTrendSection`, into
+  "Trends", positioned first (Overview → Health & Risk → Composition &
+  Debt ordering, per this batch's own instruction for the final
+  arrangement). Overview keeps `RiskWarningBanner`, `NoDebtNotice`, and
+  `DashboardKpiGrid`. This completes the migration: Overview, Health &
+  Risk, and Composition & Debt now hold current-state content only;
+  "Trends" holds all 14 historical trend charts; Recommended Actions is
+  untouched.
+- **Tests**: `tests/unit/app/page.test.tsx` updated with the two moved
+  charts' placement proof, plus two new final-state tests — one asserting
+  the exact 14-item heading order inside the single "Trends" region, one
+  sweeping all three other groups to confirm zero trend headings remain
+  in any of them while their current-state content is still present.
+- **Validation**: full suite — **4379/4379 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 2 files, +102/-30).
+
+### What did not change, across all three batches
+
+**No Engine file, no Formula ID, no persisted-data schema, no
+migration, no protocol API call, and no new V3/V4 branching in
+application logic** — confirmed by direct diff inspection
+(`git diff --stat v1.14.0..008f028`: exactly 2 files touched across all
+three batches, `app/DashboardPageClient.tsx` and
+`tests/unit/app/page.test.tsx` — no `engine/**`, `services/**`,
+`stores/**`, `services/persistence/**`, or Aave-adapter path appears at
+all). Every one of the 14 relocated components is pre-existing and
+unmodified in this release — only its JSX position changed. V3/V4
+correctness is unaffected: Supply APR's permanently-`undefined`-for-V4
+("Not applicable") versus Borrow APR's temporarily-`undefined` ("Not
+available") distinction, and every other protocol-sensitive chart's own
+handling, is exactly as it was before relocation. No Health Factor
+risk-band classification was introduced — Conflict #1 remains exactly as
+unresolved as before. No deployment/cloud work — the Path B disposition
+is unaffected.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows and Formula/Storage-schema-version descriptions updated
+  to reflect `1.15.0`; a new `Sign-off completed (1.15.0)` row, a new
+  "Why the Application/Engine version is `1.15.0`" paragraph, and a new
+  `[1.15.0]` entry added — all following the identical pattern every
+  prior release already established.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.15.0` section added
+  with the `**Current release.**` marker; the prior `## Version 1.14.0`
+  section is demoted to `## Version 1.14.0 (previous release)` with
+  that marker removed, the same demotion pattern used for every prior
+  release transition in this file.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.14.0`
+  to `1.15.0`, the same three constants every one of the fourteen prior
+  release-reconciliation batches bumped together.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`,
+`docs/VERSION_2_BACKLOG.md` — were freshly re-checked via direct grep
+for `1.14.0`/`1.15.0`/Dashboard-group/`Trends` and found to need no
+update: zero matches in any of them. `docs/RELEASE_NOTES.md`'s and
+`docs/CHANGELOG.md`'s own historical `1.13.0` entries describing "four
+labeled section groups" were deliberately left untouched — they
+accurately describe what `v1.13.0` introduced at the time, the same
+"frozen historical record" convention every prior release's own
+superseded entries already follow (e.g. `1.13.0`'s entry was never
+rewritten when `v1.14.0` added new Dashboard charts to those same four
+groups). `docs/DEFECT_CLASSIFICATION.md` gets no new section, consistent
+with every "promotion" release since `1.2.0` (only `1.0.0`/`1.1.0` — the
+two genuine manual-RC passes — have dedicated sign-off sections there).
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: Health Factor
+risk-band classification (Conflict #1), the Recommendation Engine's
+three independent spec blockers (Conflict #29, Conflict #9/"Interest
+Warning" F-065, and the unmapped exit-readiness gap), cumulative/
+realized interest, P&L, cost basis, total return, production
+deployment, or Settings ABOUT work. No new infrastructure work was
+introduced by this reconciliation. Dashboard Information Architecture —
+Trend/Current-State Separation is now complete: all 14 existing
+historical trend charts live in one "Trends" group, and Overview,
+Health & Risk, and Composition & Debt hold current-state content only.
+A new Portfolio History or Dashboard metric added in a future release
+would need to decide its own placement within this now-established
+five-group structure.
+
 ---
 
 ## Unresolved documentation conflicts

@@ -13,9 +13,51 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.14.0
+## Version 1.15.0
 
-**Current release.** Promotes three batches on top of Version 1.13.0,
+**Current release.** Promotes three batches on top of Version 1.14.0,
+together titled "Dashboard Information Architecture — Trend/Current-State
+Separation": Trends Group + Health & Risk Trend Migration (Batch 1),
+Composition & Debt Trend Migration (Batch 2), and Overview Trend
+Migration + Final Regression Cleanup (Batch 3) — built, tested, and
+independently re-verified (final count 4379/4379 tests passing) in the
+same batches that produced them, not a fresh Milestone-9/V1.1-style
+Release Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.15.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.15.0]` entry for the full record. Everything in
+"Version 1.14.0" and earlier below still applies; this section covers
+only what is new since 1.14.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
+
+### What's new in 1.15.0
+
+- **The Dashboard now has a dedicated "Trends" section**, centralizing
+  all 14 existing historical trend charts that were previously scattered
+  across Overview, Health & Risk, and Composition & Debt. Overview,
+  Health & Risk, and Composition & Debt now show current-state content
+  only — separating "what is my position right now" from "how has it
+  changed over time" as two distinct, predictable places to look.
+  Recommended Actions is unchanged.
+- **No chart's own behavior changed.** Every relocated trend chart is a
+  pre-existing component, moved without modification — same data, same
+  calculation, same formatting, same provenance handling, only a
+  different position on the page.
+
+### Explicitly unchanged in 1.15.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Engine/Service/Store file changed, no
+new protocol API call, no V3/V4 semantic change (every relocated chart's
+own protocol-version handling — including Supply APR's V4 "Not
+applicable" case — is exactly as it was before relocation), no
+historical value is recomputed or normalized differently, still no live
+wallet connection or transaction execution, still no cloud backup or
+synchronization, still no publicly operated production deployment.
+
+## Version 1.14.0 (previous release)
+
+Promotes three batches on top of Version 1.13.0,
 together titled "Dashboard Trend Parity, Part 2": Collateral Value + Debt
 Value Dashboard Trend Charts (Batch 1), Collateral Quantity + Debt
 Quantity Dashboard Trend Charts (Batch 2), and Supply APR Dashboard Trend
