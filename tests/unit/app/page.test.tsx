@@ -830,8 +830,14 @@ describe('DashboardPage — V3/V4 semantic isolation (Dashboard V3/V4 Semantic I
  * same "Trends" group created in Batch 1, alongside the four Health & Risk
  * trend charts already there. Composition & Debt's three current-state
  * panels (Portfolio Composition, Debt and Interest, Leverage Summary) stay
- * in place. The Overview trend charts are NOT moved in this batch — they
- * remain covered by the pre-existing tests below unchanged.
+ * in place.
+ *
+ * v1.15.0 Batch 3 ("Dashboard Information Architecture — Trends, Part 3",
+ * final) relocates Overview's last two historical trend charts (Net Worth
+ * Trend, Loan-to-Value Trend) into "Trends," completing the separation:
+ * Overview, Health & Risk, and Composition & Debt now hold current-state
+ * content only, and "Trends" holds all 14 historical trend charts, ordered
+ * Overview → Health & Risk → Composition & Debt.
  */
 describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
   it('renders all five group landmarks with their own accessible heading', () => {
@@ -884,7 +890,7 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(screen.getAllByText('Recommendations')).toHaveLength(1);
   });
 
-  it('places the KPI grid and its two orphan trend charts inside the "Overview" region, with pre-existing content and order unchanged', () => {
+  it('places the KPI grid inside the "Overview" region, with its trend charts moved out (v1.15.0 Batch 3)', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
@@ -895,11 +901,11 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(overview.getByText('Net Portfolio Value')).toBeInTheDocument();
     expect(overview.getByText('Health Factor')).toBeInTheDocument();
     expect(
-      overview.getByRole('heading', { level: 3, name: 'Net Worth Trend' }),
-    ).toBeInTheDocument();
+      overview.queryByRole('heading', { level: 3, name: 'Net Worth Trend' }),
+    ).not.toBeInTheDocument();
     expect(
-      overview.getByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
-    ).toBeInTheDocument();
+      overview.queryByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
+    ).not.toBeInTheDocument();
   });
 
   it('places Health Factor Status and Liquidation Risk inside the "Health & Risk" region, with their trend charts moved out (v1.15.0 Batch 1)', () => {
@@ -948,7 +954,7 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     ).toBeInTheDocument();
   });
 
-  it('does not move the not-yet-migrated Overview trend charts into "Trends" (v1.15.0 Batch 2)', () => {
+  it('places the two Overview trend charts inside the "Trends" region (v1.15.0 Batch 3)', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
@@ -956,19 +962,9 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     render(<DashboardPage />);
 
     const trends = within(screen.getByRole('region', { name: 'Trends' }));
+    expect(trends.getByRole('heading', { level: 3, name: 'Net Worth Trend' })).toBeInTheDocument();
     expect(
-      trends.queryByRole('heading', { level: 3, name: 'Net Worth Trend' }),
-    ).not.toBeInTheDocument();
-    expect(
-      trends.queryByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
-    ).not.toBeInTheDocument();
-
-    const overview = within(screen.getByRole('region', { name: 'Overview' }));
-    expect(
-      overview.getByRole('heading', { level: 3, name: 'Net Worth Trend' }),
-    ).toBeInTheDocument();
-    expect(
-      overview.getByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
     ).toBeInTheDocument();
   });
 
@@ -1050,6 +1046,82 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(
       trends.getByRole('heading', { level: 3, name: 'Liquidation Price Trend' }),
     ).toBeInTheDocument();
+  });
+
+  it('places all 14 historical trend charts inside the single "Trends" region, ordered Overview → Health & Risk → Composition & Debt (v1.15.0 Batch 3, final)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    // Exactly one Trends landmark exists — getByRole itself throws if 0 or
+    // more than 1 match, so a successful call already proves this.
+    const trendsRegion = screen.getByRole('region', { name: 'Trends' });
+    const trends = within(trendsRegion);
+
+    const expectedOrder = [
+      'Net Worth Trend',
+      'Loan-to-Value Trend',
+      'Health Factor Trend',
+      'Liquidation Buffer Trend',
+      'Market Price Trend',
+      'Liquidation Price Trend',
+      'Collateral Quantity Trend',
+      'Collateral Value Trend',
+      'Debt Quantity Trend',
+      'Debt Value Trend',
+      'Interest Cost (annualized) Trend',
+      'Borrow APR Trend',
+      'Supply APR Trend',
+      'Leverage Trend',
+    ];
+
+    const actualHeadings = trends
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(actualHeadings).toEqual(expectedOrder);
+  });
+
+  it('leaves zero historical trend charts inside Overview, Health & Risk, or Composition & Debt after all three v1.15.0 batches (final regression sweep)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const allTrendHeadingNames = [
+      'Net Worth Trend',
+      'Loan-to-Value Trend',
+      'Health Factor Trend',
+      'Liquidation Buffer Trend',
+      'Market Price Trend',
+      'Liquidation Price Trend',
+      'Collateral Quantity Trend',
+      'Collateral Value Trend',
+      'Debt Quantity Trend',
+      'Debt Value Trend',
+      'Interest Cost (annualized) Trend',
+      'Borrow APR Trend',
+      'Supply APR Trend',
+      'Leverage Trend',
+    ];
+
+    const overview = within(screen.getByRole('region', { name: 'Overview' }));
+    const healthRisk = within(screen.getByRole('region', { name: 'Health & Risk' }));
+    const compositionDebt = within(screen.getByRole('region', { name: 'Composition & Debt' }));
+
+    for (const name of allTrendHeadingNames) {
+      expect(overview.queryByRole('heading', { level: 3, name })).not.toBeInTheDocument();
+      expect(healthRisk.queryByRole('heading', { level: 3, name })).not.toBeInTheDocument();
+      expect(compositionDebt.queryByRole('heading', { level: 3, name })).not.toBeInTheDocument();
+    }
+
+    // Each group's current-state content remains, confirming these are
+    // still valid, non-empty, independently labelled regions.
+    expect(overview.getByText('Net Portfolio Value')).toBeInTheDocument();
+    expect(healthRisk.getByText('Health Factor Status')).toBeInTheDocument();
+    expect(compositionDebt.getByText('Portfolio Composition')).toBeInTheDocument();
   });
 
   it('places RecommendationSummarySection inside the "Recommended Actions" region', () => {

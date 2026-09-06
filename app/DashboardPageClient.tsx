@@ -532,16 +532,6 @@ export function DashboardPageClient() {
                   engineVersion={viewModel.engineVersion}
                   formulaVersion={viewModel.formulaVersion}
                 />
-
-                <NetWorthTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LoanToValueTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
               </section>
 
               <section
@@ -601,6 +591,16 @@ export function DashboardPageClient() {
                 >
                   Trends
                 </h2>
+
+                <NetWorthTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <LoanToValueTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
 
                 <HealthFactorTrendSection
                   portfolioId={activePortfolioId}
