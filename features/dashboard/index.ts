@@ -62,6 +62,7 @@ export * from './components/PortfolioCompositionSection';
 export * from './components/QuickActionsSection';
 export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
+export * from './components/SupplyAprTrendSection';
 export * from './types/dataFreshnessIndicators';
 export * from './types/debtAndInterestPanel';
 export * from './types/healthFactorStatus';

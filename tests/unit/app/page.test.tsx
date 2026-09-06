@@ -744,11 +744,18 @@ function selectFullyLiveV4Portfolio(): string {
 }
 
 describe('DashboardPage — V3/V4 semantic isolation (Dashboard V3/V4 Semantic Isolation audit)', () => {
-  it('a V4 portfolio never renders "Supply APR" anywhere on the Dashboard', () => {
+  it('a V4 portfolio never renders a live Supply APR value or the V3-only assumptions-copy phrase — the always-rendered Supply APR Trend heading (v1.14.0 Batch 3, same as Borrow APR Trend) is the sole exception, and it never shows a fabricated V4 percentage', () => {
     selectFullyLiveV4Portfolio();
     render(<DashboardPage />);
 
-    expect(screen.queryByText(/Supply APR/)).not.toBeInTheDocument();
+    // The trend section heading renders for every portfolio, V3 or V4 —
+    // identical to `BorrowAprTrendSection`'s own precedent, which has no
+    // equivalent blanket-absence assertion in this suite.
+    expect(screen.getByRole('heading', { level: 3, name: 'Supply APR Trend' })).toBeInTheDocument();
+    // The V3-only assumptions-copy phrase this test originally protected
+    // against (see the "Supply APR: 2%" control assertion below) must
+    // still never appear for a V4 portfolio.
+    expect(screen.queryByText(/Supply APR: \d/)).not.toBeInTheDocument();
   });
 
   it('a V4 portfolio never renders "Maximum LTV" or "Liquidation Threshold" — shows "Collateral Factor" instead', () => {
@@ -930,6 +937,9 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     ).toBeInTheDocument();
     expect(
       compositionDebt.getByRole('heading', { level: 3, name: 'Borrow APR Trend' }),
+    ).toBeInTheDocument();
+    expect(
+      compositionDebt.getByRole('heading', { level: 3, name: 'Supply APR Trend' }),
     ).toBeInTheDocument();
     expect(
       compositionDebt.getByRole('heading', { level: 3, name: 'Leverage Trend' }),

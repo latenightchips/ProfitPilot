@@ -44,6 +44,7 @@ import {
   QuickActionsSection,
   RecommendationSummarySection,
   RiskWarningBanner,
+  SupplyAprTrendSection,
 } from '@/features/dashboard';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
@@ -633,6 +634,11 @@ export function DashboardPageClient() {
                 />
 
                 <BorrowAprTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <SupplyAprTrendSection
                   portfolioId={activePortfolioId}
                   portfolioUpdatedAt={record.portfolio.updatedAt}
                 />
