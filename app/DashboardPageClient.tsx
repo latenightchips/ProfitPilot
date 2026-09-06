@@ -588,6 +588,40 @@ export function DashboardPageClient() {
                   <DebtAndInterestPanel panel={debtAndInterestPanel} />
                 )}
 
+                {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
+              </section>
+
+              <section
+                aria-labelledby="dashboard-group-trends-heading"
+                className="flex flex-col gap-4"
+              >
+                <h2
+                  id="dashboard-group-trends-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Trends
+                </h2>
+
+                <HealthFactorTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <LiquidationBufferTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <MarketPriceTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
+                <LiquidationPriceTrendSection
+                  portfolioId={activePortfolioId}
+                  portfolioUpdatedAt={record.portfolio.updatedAt}
+                />
+
                 <CollateralQuantityTrendSection
                   portfolioId={activePortfolioId}
                   portfolioUpdatedAt={record.portfolio.updatedAt}
@@ -623,41 +657,7 @@ export function DashboardPageClient() {
                   portfolioUpdatedAt={record.portfolio.updatedAt}
                 />
 
-                {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
-
                 <LeverageTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-              </section>
-
-              <section
-                aria-labelledby="dashboard-group-trends-heading"
-                className="flex flex-col gap-4"
-              >
-                <h2
-                  id="dashboard-group-trends-heading"
-                  className="text-base font-semibold text-foreground"
-                >
-                  Trends
-                </h2>
-
-                <HealthFactorTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LiquidationBufferTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <MarketPriceTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LiquidationPriceTrendSection
                   portfolioId={activePortfolioId}
                   portfolioUpdatedAt={record.portfolio.updatedAt}
                 />

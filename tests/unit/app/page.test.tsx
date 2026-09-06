@@ -823,9 +823,15 @@ describe('DashboardPage — V3/V4 semantic isolation (Dashboard V3/V4 Semantic I
  * before "Recommended Actions"), and relocates the four Health & Risk
  * historical trend charts into it. This is an information-architecture-only
  * change: the moved components' own props, data, and render logic are
- * unchanged. The Overview and Composition & Debt trend charts are NOT
- * moved in this batch — they remain covered by the pre-existing tests
- * below unchanged.
+ * unchanged.
+ *
+ * v1.15.0 Batch 2 ("Dashboard Information Architecture — Trends, Part 2")
+ * relocates the eight Composition & Debt historical trend charts into the
+ * same "Trends" group created in Batch 1, alongside the four Health & Risk
+ * trend charts already there. Composition & Debt's three current-state
+ * panels (Portfolio Composition, Debt and Interest, Leverage Summary) stay
+ * in place. The Overview trend charts are NOT moved in this batch — they
+ * remain covered by the pre-existing tests below unchanged.
  */
 describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
   it('renders all five group landmarks with their own accessible heading', () => {
@@ -942,7 +948,7 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     ).toBeInTheDocument();
   });
 
-  it('does not move the not-yet-migrated Overview or Composition & Debt trend charts into "Trends" (v1.15.0 Batch 1)', () => {
+  it('does not move the not-yet-migrated Overview trend charts into "Trends" (v1.15.0 Batch 2)', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
@@ -956,12 +962,6 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(
       trends.queryByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
     ).not.toBeInTheDocument();
-    expect(
-      trends.queryByRole('heading', { level: 3, name: 'Collateral Quantity Trend' }),
-    ).not.toBeInTheDocument();
-    expect(
-      trends.queryByRole('heading', { level: 3, name: 'Debt Value Trend' }),
-    ).not.toBeInTheDocument();
 
     const overview = within(screen.getByRole('region', { name: 'Overview' }));
     expect(
@@ -970,17 +970,9 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(
       overview.getByRole('heading', { level: 3, name: 'Loan-to-Value Trend' }),
     ).toBeInTheDocument();
-
-    const compositionDebt = within(screen.getByRole('region', { name: 'Composition & Debt' }));
-    expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Collateral Quantity Trend' }),
-    ).toBeInTheDocument();
-    expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Debt Value Trend' }),
-    ).toBeInTheDocument();
   });
 
-  it('places Portfolio Composition, Debt and Interest, and Leverage inside the "Composition & Debt" region', () => {
+  it('places Portfolio Composition, Debt and Interest, and Leverage inside the "Composition & Debt" region, with their trend charts moved out (v1.15.0 Batch 2)', () => {
     const created = usePortfolioStore.getState().create(validInput());
     if (!created.ok) throw new Error('setup failed');
     usePortfolioStore.getState().select(created.data.id);
@@ -992,28 +984,71 @@ describe('DashboardPage — Section Grouping (v1.13.0 Batch 4)', () => {
     expect(compositionDebt.getByText('Debt and Interest')).toBeInTheDocument();
     expect(compositionDebt.getByText('Leverage Summary')).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Collateral Quantity Trend' }),
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Collateral Quantity Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Collateral Value Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Debt Quantity Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Debt Value Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', {
+        level: 3,
+        name: 'Interest Cost (annualized) Trend',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Borrow APR Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Supply APR Trend' }),
+    ).not.toBeInTheDocument();
+    expect(
+      compositionDebt.queryByRole('heading', { level: 3, name: 'Leverage Trend' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('places the eight Composition & Debt trend charts inside the "Trends" region, alongside the Batch 1 Health & Risk trend charts (v1.15.0 Batch 2)', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const trends = within(screen.getByRole('region', { name: 'Trends' }));
+    // Batch 2 additions.
+    expect(
+      trends.getByRole('heading', { level: 3, name: 'Collateral Quantity Trend' }),
     ).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Collateral Value Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Collateral Value Trend' }),
     ).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Debt Quantity Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Debt Quantity Trend' }),
+    ).toBeInTheDocument();
+    expect(trends.getByRole('heading', { level: 3, name: 'Debt Value Trend' })).toBeInTheDocument();
+    expect(
+      trends.getByRole('heading', { level: 3, name: 'Interest Cost (annualized) Trend' }),
+    ).toBeInTheDocument();
+    expect(trends.getByRole('heading', { level: 3, name: 'Borrow APR Trend' })).toBeInTheDocument();
+    expect(trends.getByRole('heading', { level: 3, name: 'Supply APR Trend' })).toBeInTheDocument();
+    expect(trends.getByRole('heading', { level: 3, name: 'Leverage Trend' })).toBeInTheDocument();
+    // Batch 1 additions, still present and unaffected by Batch 2.
+    expect(
+      trends.getByRole('heading', { level: 3, name: 'Health Factor Trend' }),
     ).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Debt Value Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Liquidation Buffer Trend' }),
     ).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Interest Cost (annualized) Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Market Price Trend' }),
     ).toBeInTheDocument();
     expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Borrow APR Trend' }),
-    ).toBeInTheDocument();
-    expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Supply APR Trend' }),
-    ).toBeInTheDocument();
-    expect(
-      compositionDebt.getByRole('heading', { level: 3, name: 'Leverage Trend' }),
+      trends.getByRole('heading', { level: 3, name: 'Liquidation Price Trend' }),
     ).toBeInTheDocument();
   });
 
