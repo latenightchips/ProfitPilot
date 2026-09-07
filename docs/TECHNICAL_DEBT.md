@@ -74,13 +74,17 @@ unaffected).
   a product decision (which banding scheme governs), not an engineering
   gap — tracked here as debt because the blocker itself has never been
   resolved across ten milestones, not because the workaround is wrong.
-- **`03_UI.md`'s Settings "ABOUT" section was never built** (Conflict
-  #39, Milestone 10 Batch 3) — Application/Formula/Engine Version, Data
-  Provider, Last Synchronization, License. Two of its six fields are
-  themselves blocked on owner decisions (governing license; how to
-  describe a cancelled-sync product's "Last Synchronization" field) —
-  see "Unresolved owner decisions" in `PROJECT_STATUS.md`'s Batch 3
-  record. Not actionable until those decisions are made.
+- **`03_UI.md`'s Settings "ABOUT" section is partially built** (Conflict
+  #39, Milestone 10 Batch 3; partially resolved `v1.16.0`) —
+  Application/Formula/Engine Version now display (`v1.16.0`, "Settings
+  About — Version Transparency"). Three of its six fields remain
+  unbuilt, each themselves blocked on its own owner decision: License
+  (governing license), Data Provider (how to honestly describe a
+  manual-entry application's price source), and Last Synchronization
+  (what this field should even mean for a product whose Cloud
+  Synchronization is cancelled) — see `PROJECT_STATUS.md` Conflict #39's
+  own updated text for the full record. Not actionable until those three
+  decisions are made.
 - ~~**CI does not run the Playwright suite automatically**~~ **Resolved
   — substantially addressed by Post-M10 hardening (R1-3, R2-4),
   confirmed by fresh inspection during v1.7.0's release reconciliation.**

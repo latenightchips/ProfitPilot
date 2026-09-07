@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.15.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.15.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.15** — no batch in any of the fifteen releases modified a financial formula. V1.15.0 touches no Engine file at all — every batch is a pure Dashboard information-architecture change: existing trend components moved to a new landmark, none of their own rendering logic touched. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.15** — every batch across all fifteen releases persists through the existing envelope/schema, adding no new schema version and no migration. V1.15.0 persists nothing new and reads nothing new — it relocates existing Dashboard components without touching what they read. |
+| Application version           | `1.16.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.16.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.16** — no batch in any of the sixteen releases modified a financial formula. V1.16.0 exports this exact, already-unanimous value from `engine/shared/result.ts` for the first time (so Settings' new About section can display it) but does not change it, and touches no calculation file. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.16** — every batch across all sixteen releases persists through the existing envelope/schema, adding no new schema version and no migration. V1.16.0 persists nothing new and reads nothing new — it displays three already-existing version constants as static, read-only text. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -54,6 +54,23 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.13.0)    | 2026-09-06     | Portfolio History & Simulation Completeness, Part 3 (Batches 1–5), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4319/4319 tests passing) — see `PROJECT_STATUS.md`'s "v1.13.0 Release Reconciliation" section and the `[1.13.0]` entry below. Same promotion pattern as `1.12.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.14.0)    | 2026-09-06     | Dashboard Trend Parity, Part 2 (Batches 1–3), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4374/4374 tests passing) — see `PROJECT_STATUS.md`'s "v1.14.0 Release Reconciliation" section and the `[1.14.0]` entry below. Same promotion pattern as `1.13.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.15.0)    | 2026-09-06     | Dashboard Information Architecture — Trend/Current-State Separation (Batches 1–3), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4379/4379 tests passing) — see `PROJECT_STATUS.md`'s "v1.15.0 Release Reconciliation" section and the `[1.15.0]` entry below. Same promotion pattern as `1.14.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.16.0)    | 2026-09-07     | Settings About — Version Transparency (Batch 1), re-validated against a fresh `origin/main` checkout after patch apply (final count 4385/4385 tests passing) — see `PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section and the `[1.16.0]` entry below. Same promotion pattern as `1.15.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.16.0`, not `1.15.x` or a new
+`2.0.0`**: not a PATCH — Settings gains a new, user-facing "About"
+section showing three real values (Application Version, Formula
+Version, Calculation Engine Version) that were not visible anywhere in
+the application before — new user-facing capability, not a bug fix to
+existing capability, the same bar every prior MINOR bump already used.
+Deliberately partial, not the full six-field section `03_UI.md`'s own
+mockup describes — License, Data Provider, and Last Synchronization
+remain undisplayed, each still blocked on its own unresolved product
+decision (`PROJECT_STATUS.md` Conflict #39). Not a new MAJOR either: no
+Engine calculation file changed, `FORMULA_VERSION`'s value is unchanged
+(only newly exported), `STORAGE_SCHEMA_VERSION` is untouched, and
+nothing about the Manual-Mode-by-default product boundary `01_PRD.md`
+reserves Version 2 for was touched. A minor version bump, same class as
+`1.1.0`'s through `1.15.0`'s own.
 
 **Why the Application/Engine version is `1.15.0`, not `1.14.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard's information architecture changes
@@ -401,6 +418,54 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.16.0] — 2026-09-07
+
+One batch on top of Version 1.15.0, titled "Settings About — Version
+Transparency": Settings About Section (`8da4f37`), plus this
+reconciliation batch itself. Full per-file detail lives in
+`PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.16.0
+
+- **Settings now has an "About" section** showing three real, live
+  values: Application Version (`1.16.0`), Formula Version (`1.0`), and
+  Calculation Engine Version (`1.16.0`) — nowhere in the application
+  showed any of these before this release.
+- **`ENGINE_VERSION`** (`engine/shared/result.ts`), previously a private
+  constant, is now exported — the smallest possible change, not an
+  Engine refactor. **`FORMULA_VERSION`** is newly exported from the same
+  file as the single reachable source for the value every `engine/**`
+  calculation file's own private `FORMULA_VERSION` constant already
+  agreed on (`'1.0'`, unchanged) — none of those 46 individual
+  declarations were touched, consolidated, or refactored.
+
+### What this is not
+
+**Deliberately partial — not the full "ABOUT" section `03_UI.md`'s own
+mockup describes.** License, Data Provider, and Last Synchronization are
+not shown; each remains blocked on its own unresolved product decision
+(no license has been chosen; no wording has been decided for how a
+manual-entry application should describe its "data provider"; Cloud
+Synchronization is cancelled, so what "Last Synchronization" should even
+mean for this product is undecided). `PROJECT_STATUS.md` Conflict #39 is
+**partially resolved, not closed** — see its own updated text.
+
+### Explicitly unchanged in 1.16.0
+
+**No financial-calculation or protocol-semantic change of any kind.** No
+Engine formula changed (`FORMULA_VERSION` stays `1.0`, byte-for-byte
+identical across all 46 calculation files and the newly-exported
+canonical value), no Formula ID, no persisted-data schema
+(`STORAGE_SCHEMA_VERSION` stays `1.0.0`), no migration, no Service or
+Store file changed, no new protocol API call, no V3/V4 semantic change
+(this batch introduces no protocol-version branching anywhere — the
+About section reads three static build-time constants, not portfolio or
+protocol data). Health Factor risk bands, the Recommendation Engine's
+spec blockers, cumulative/realized interest, P&L, cost basis, total
+return, production deployment, and the three still-excluded About
+fields all remain deferred, unchanged from prior releases.
 
 ## [1.15.0] — 2026-09-06
 

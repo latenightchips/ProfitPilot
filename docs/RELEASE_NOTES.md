@@ -13,9 +13,47 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.15.0
+## Version 1.16.0
 
-**Current release.** Promotes three batches on top of Version 1.14.0,
+**Current release.** Promotes one batch on top of Version 1.15.0, titled
+"Settings About — Version Transparency": Settings About Section — built,
+tested, and independently re-verified (final count 4385/4385 tests
+passing) in the same batch that produced it, not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.16.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.16.0]` entry for
+the full record. Everything in "Version 1.15.0" and earlier below still
+applies; this section covers only what is new since 1.15.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.16.0
+
+- **Settings now has an "About" section**, showing Application Version,
+  Formula Version, and Calculation Engine Version — real, live values,
+  not hardcoded strings.
+- **Deliberately partial.** License, Data Provider, and Last
+  Synchronization are not shown — each is still blocked on its own
+  unresolved product decision (no license chosen yet; no agreed wording
+  for a manual-entry application's "data provider"; Cloud Synchronization
+  is cancelled, so what this field would even mean is undecided). This
+  is not the full About section a future release might complete, only
+  what is currently unblocked.
+
+### Explicitly unchanged in 1.16.0
+
+No financial formula changed, no Formula ID added, no persisted-data
+schema changed, no migration, no Service or Store file changed, no new
+protocol API call, no V3/V4 semantic change — this release introduces no
+protocol-version branching anywhere, and reads no portfolio or protocol
+data at all; the About section displays three static build-time
+constants. Still no live wallet connection or transaction execution,
+still no cloud backup or synchronization, still no publicly operated
+production deployment.
+
+## Version 1.15.0 (previous release)
+
+Promotes three batches on top of Version 1.14.0,
 together titled "Dashboard Information Architecture — Trend/Current-State
 Separation": Trends Group + Health & Risk Trend Migration (Batch 1),
 Composition & Debt Trend Migration (Batch 2), and Overview Trend

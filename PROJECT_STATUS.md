@@ -2735,10 +2735,10 @@ change. Added: `id`, `name`, `description?`, `baseCurrency`, `settings`,
   M4-001's "Include" list names "Settings" with no field definition
   anywhere. M4-005/M4-006 corroborate that it holds per-portfolio safety
   targets but define no concrete fields either. The only concrete field
-  list anywhere resembling this is 03_UI.md's Settings page → "PORTFOLIO"
+  list anywhere resembling this is 03*UI.md's Settings page → "PORTFOLIO"
   section (Default Target Health Factor, Default Holding Period, Default
   BTC Target Price, Default Safety Buffer) — described there as
-  _global_ defaults for new portfolios/simulations, not explicitly a
+  \_global* defaults for new portfolios/simulations, not explicitly a
   per-portfolio override schema. Reused conservatively, scoped
   per-portfolio, as `PortfolioSafetyTargets` (all fields optional,
   matching M4-005's "Optional safety targets" wording). "Default display
@@ -3070,8 +3070,8 @@ reusing M4-002's schema directly rather than a duplicate).
   call for.
 - **New finding — conflict #24: "Protocol parameters or preset" — no
   preset values exist anywhere in the documentation.** No numeric Aave
-  V3 parameter values are stated anywhere — 04_BUILD_GUIDE.md's
-  "PROTOCOL SERVICE" section names required _fields_, never values, and
+  V3 parameter values are stated anywhere — 04*BUILD_GUIDE.md's
+  "PROTOCOL SERVICE" section names required \_fields*, never values, and
   no `AaveV3Provider` has ever been built (the same unbuilt
   infrastructure-layer gap found repeatedly across Milestone 3). Only
   manual entry is offered; inventing a specific preset number would
@@ -3091,8 +3091,8 @@ portfolio's identity/settings fields.
   real content as entirely out of scope/unassigned. Re-reading M4-006
   corrected this — its own Dependencies chain (M4-005 → M4-003 → M3-005)
   names no other UI task that would build this route first, and
-  03_UI.md's own "PORTFOLIO PAGE" section already names this exact route
-  for this exact purpose. The _read-only calculated metrics_ that same
+  03*UI.md's own "PORTFOLIO PAGE" section already names this exact route
+  for this exact purpose. The \_read-only calculated metrics* that same
   03_UI.md section also describes (Position Metrics, Milestones,
   Interest, Performance) remain unbuilt — no task in this batch covers
   them.
@@ -3536,7 +3536,7 @@ UI**:
   contradictory active-portfolio surface.
 - **Delete**: clicking "Delete" opens an inline, per-row confirmation
   panel — no new global Dialog/Modal component was introduced. None is
-  defined anywhere in 03_UI.md's design system, and the only "no modal"
+  defined anywhere in 03*UI.md's design system, and the only "no modal"
   rule in 03_UI.md ("No modal dialogs on page load") is explicitly scoped
   to the Dashboard's page-load behavior, not a blanket ban on
   user-initiated confirmations elsewhere — an inline expand-to-confirm
@@ -3544,7 +3544,7 @@ UI**:
   inventing a component this codebase has no other use for yet. The panel
   states plainly that deletion is permanent. If the portfolio being
   deleted is the active one, the panel additionally requires selecting a
-  replacement from the other _active_ (non-archived) portfolios before
+  replacement from the other \_active* (non-archived) portfolios before
   "Confirm Delete" enables — the literal text of "Prevent accidental
   deletion of the active portfolio without selecting a replacement." When
   no other active portfolio exists, no replacement can be offered; the
@@ -3655,8 +3655,8 @@ itself.
 **Pre-implementation verification**: re-fetched `origin/main`, confirmed
 `git diff origin/main..HEAD --stat` was empty, realigned the local
 branch. Re-read M4-014/M4-015's exact text from `06_TASKS.md`. Grepped
-03_UI.md for "manual price"/"protocol configuration"/"freshness"/"stale"
-— found nothing beyond the Settings page's _global_ Data Sources section
+03*UI.md for "manual price"/"protocol configuration"/"freshness"/"stale"
+— found nothing beyond the Settings page's \_global* Data Sources section
 (Price Provider, Protocol Data, Connection Status, "Display a warning if
 data becomes stale") — confirmed these two tasks are governed entirely
 by `06_TASKS.md`'s own text, no separate per-portfolio UI spec exists.
@@ -4190,8 +4190,8 @@ Playwright tests" — two named test layers, taken literally as two
 distinct test suites, not one.
 
 **No new application code — this batch is entirely test infrastructure,
-confirmed by `git diff --stat -- ':!tests/**' ':!*.test.ts'
-':!*.spec.ts'` being empty.** M4-018's own Description ("Test complete
+confirmed by `git diff --stat -- ':!tests/**' ':!_.test.ts'
+':!_.spec.ts'` being empty.\*\* M4-018's own Description ("Test complete
 portfolio-management workflows") and DoD name only tests; every feature
 its "Cover" list exercises (create, switch, edit, duplicate, archive,
 delete, recover) was already built in Batches 1–9.
@@ -5618,8 +5618,8 @@ the two sections above it:
 (new): JSON and CSV downloads of the already-calculated `DashboardMetrics`
 (the same 10 values already shown in `DashboardKpiGrid`/`LiquidationRiskPanel`),
 plus portfolio name and calculation timestamp ("Exports include
-calculation timestamps," 03_UI.md). Deliberately **not** a duplicate of
-M4-017's `downloadPortfolioRecoveryCopy`: that export is raw _entered_
+calculation timestamps," 03*UI.md). Deliberately **not** a duplicate of
+M4-017's `downloadPortfolioRecoveryCopy`: that export is raw \_entered*
 data for the failure case; this one is calculated _output_ data for the
 success case — reusing its shape here would either fabricate calculated
 fields that do not exist, or silently drop the timestamp requirement.
@@ -7612,8 +7612,8 @@ Restarted the local branch from `origin/main`.
 synchronized to GitHub.
 
 **Significant finding, fixed before this batch's own validation could
-be trusted: `features/simulation/**` and `app/simulation/**` were never
-in `vitest.config.ts`'s coverage `include` list, for the entire
+be trusted: `features/simulation/**`and`app/simulation/**`were never
+in`vitest.config.ts`'s coverage `include` list, for the entire
 milestone.** Discovered while investigating why this batch's own new
 `ScenarioCharts.tsx` showed no coverage row at all. `vitest.config.ts`
 lists each feature/route explicitly as it is built
@@ -8404,7 +8404,7 @@ Scenario was run at BTC Price $65,000 and saved as "Bull Run 65k"; the
 active scenario was then changed to $30,000, confirming Simulation
 Results updated to reflect the $30k run (Portfolio Value, Health
 Factor, Liquidation Distance, Leverage all changed); clicking "Load" on
-"Bull Run 65k" was confirmed to revert Simulation Results *exactly* to
+"Bull Run 65k" was confirmed to revert Simulation Results _exactly_ to
 the original $65k-scenario numbers (Portfolio Value $80,000.00 →
 $110,000.00; Health Factor 4 → 5.2; Liquidation Distance 3 → 4.2;
 Leverage 1.25x → 1.18x) — proving no recalculation occurred and the
@@ -9953,11 +9953,9 @@ shape.
 **A real, pre-existing coverage-configuration gap was found and fixed
 during this batch's own validation — the same class of finding
 Milestone 6 Batch 10 made for `features/simulation/**`.**
-`vitest.config.ts`'s coverage `include` list had no entry for
-`components/strategy/**`, `features/loop-builder/**`,
-`features/exit-planner/**`, or `features/recommendations/**` — every
-new file in this batch would have been silently unmeasured by
-`pnpm test:coverage`, exactly the kind of invisible gap Batch 10 found
+`vitest.config.ts`'s coverage `include`list had no entry for`components/strategy/**`, `features/loop-builder/**`,
+`features/exit-planner/**`, or `features/recommendations/**`— every
+new file in this batch would have been silently unmeasured by`pnpm test:coverage`, exactly the kind of invisible gap Batch 10 found
 for Simulation. Fixed by adding all four entries before this batch's
 own coverage run was treated as meaningful.
 
@@ -15525,6 +15523,169 @@ A new Portfolio History or Dashboard metric added in a future release
 would need to decide its own placement within this now-established
 five-group structure.
 
+## v1.16.0 Release Reconciliation — Settings About — Version Transparency
+
+**Recorded after the fact, the same convention every release-reconciliation
+section above uses** — this section documents one batch, `8da4f37`
+("settingsaboutversiontransparency"), applied directly on top of
+`v1.15.0` (`793f2e1`), plus this reconciliation batch itself.
+
+**Current release candidate: `1.16.0`. Versions `1.0.0` through `1.15.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.15.0` still resolves to
+`793f2e1c505f97f7f8994c532c40f9fb5b8e7546`, confirmed by fresh inspection
+during this batch. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.15.0` to `1.16.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.16.0`" paragraph gives. `FORMULA_VERSION` remains `1.0`,
+`STORAGE_SCHEMA_VERSION` remains `1.0.0`, same as every release before
+this one — this release requires neither: the batch is presentation-only,
+displaying three already-existing version constants as static text,
+computing nothing new and persisting nothing new. **No `v1.16.0` git tag
+exists yet** — tagging is a separate, explicit step for after this patch
+is applied and synced, not taken by this batch (see this batch's own
+tag-readiness verdict below).
+
+### Origin: v1.16.0 Roadmap Audit
+
+A read-only planning audit (2026-09-06/07) found that Dashboard Trend
+Parity and Dashboard IA work (closed by `v1.14.0`/`v1.15.0`) left no
+further Dashboard gap, and that every other candidate examined —
+Recommendation Engine expansion (Conflict #29), Health Factor risk-band
+classification (Conflict #1), cost-basis-dependent analytics
+(`docs/VERSION_2_BACKLOG.md` item 3) — remains blocked on a product
+decision nobody has made. It found exactly one small, real, evidenced,
+zero-risk candidate: `PROJECT_STATUS.md` Conflict #39 (`03_UI.md`'s
+Settings "ABOUT" section, never built) names three of its six fields as
+genuinely unblocked (Application Version, Formula Version, Calculation
+Engine Version), with the other three (License, Data Provider, Last
+Synchronization) each separately blocked on its own unresolved product
+decision. It recommended "Settings About — Version Transparency" as the
+`v1.16.0` release theme, deliberately scoped to only the unblocked
+subset, and explicitly recommended NO-GO on a larger release given no
+other candidate was both real and unblocked.
+
+### Batch 1 — Settings About Section (`8da4f37`)
+
+- **`engine/shared/result.ts`**: `ENGINE_VERSION` — previously a private
+  `const` — is now `export const`, the smallest possible change (same
+  declaration, same value, no rename, no move). A new `export const
+FORMULA_VERSION = '1.0'` was added as the single reachable source for
+  the value every one of the 46 `engine/**` calculation files' own
+  private `FORMULA_VERSION` constant already agreed on — none of those
+  46 declarations were touched, consolidated, or refactored.
+- **`app/settings/SettingsPageClient.tsx`**: a 7th `<section>`, "About",
+  added after "Clear Local Data" — the established `rounded-lg border
+border-border p-4` visual pattern, a `<dl>`/`<dt>`/`<dd>` semantic
+  label/value structure (reused from `app/portfolio/AaveTechnicalDetails.tsx`'s
+  own established precedent for this exact display shape), showing
+  `APP_VERSION` (imported from the existing `@/services/persistence`
+  barrel, already exported there via `export * from './envelope'`) and
+  the newly-exported `ENGINE_VERSION`/`FORMULA_VERSION` (imported
+  directly from `@/engine/shared/result`, not routed through the
+  `@/engine` public barrel, to keep the touched-file count minimal —
+  these are Engine-wide version metadata, not calculation functions the
+  M2-031 barrel exists to curate). No controls, buttons, editable
+  fields, network requests, persistence, or protocol-version branching.
+  License, Data Provider, and Last Synchronization are absent — not
+  placeholder text, simply not rendered.
+- **Tests**: 6 new tests in `tests/unit/app/settings/page.test.tsx`'s
+  new `describe('SettingsPage — About (v1.16.0 Batch 1)')` block —
+  the "About" heading renders; each of the 3 shown fields' `<dt>`/`<dd>`
+  pair matches its real imported constant (not a hardcoded expectation);
+  License/Data Provider/Last Synchronization are absent from the
+  rendered page; all 6 pre-existing section headings still render.
+- **Validation**: full suite — **4385/4385 tests passing**, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 3 files, +91/-3).
+
+### What did not change, this batch
+
+**No financial calculation, Service, Store, persistence, or Aave-adapter
+file was touched.** Confirmed by direct diff inspection
+(`git diff --stat v1.15.0..8da4f37`: exactly 3 files touched —
+`app/settings/SettingsPageClient.tsx`, `engine/shared/result.ts`,
+`tests/unit/app/settings/page.test.tsx` — none under `services/**`
+(besides the pre-existing barrel import), `stores/**`, or any Aave-adapter
+path). No protocol-version branching was introduced anywhere in this
+batch — the About section reads three static build-time constants, never
+portfolio or protocol data. No persisted-data schema changed.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows and Formula/Storage-schema-version descriptions updated
+  to reflect `1.16.0`; a new `Sign-off completed (1.16.0)` row, a new
+  "Why the Application/Engine version is `1.16.0`" paragraph, and a new
+  `[1.16.0]` entry added — all following the identical pattern every
+  prior release already established, and explicitly naming the 3 shown
+  and 3 deferred About fields.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.16.0` section added
+  with the `**Current release.**` marker, explicitly noting the
+  deliberately partial scope; the prior `## Version 1.15.0` section is
+  demoted to `## Version 1.15.0 (previous release)` with that marker
+  removed, the same demotion pattern used for every prior release
+  transition in this file.
+- **`PROJECT_STATUS.md` Conflict #39**: heading annotated "⚠️ PARTIALLY
+  RESOLVED (v1.16.0)"; a new paragraph appended (the same
+  append-don't-rewrite correction convention `docs/VERSION_2_BACKLOG.md`
+  already established) recording that the three previously-unblocked
+  fields are now built, and explicitly stating **this conflict is not
+  closed** — License, Data Provider, and Last Synchronization remain
+  exactly as blocked as before, with no owner decision made or attempted
+  on any of the three by this batch.
+- **`docs/TECHNICAL_DEBT.md`**: its matching Settings/About Priority 2
+  entry, which read "was never built" and undercounted the blocked
+  fields as two rather than three (omitting Data Provider), corrected to
+  reflect the partial implementation and to list all three genuinely
+  remaining blocked fields accurately. No other entry in this document
+  was touched.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.15.0`
+  to `1.16.0`, the same three constants every one of the fifteen prior
+  release-reconciliation batches bumped together. `FORMULA_VERSION`
+  (`1.0`) and `STORAGE_SCHEMA_VERSION` (`1.0.0`) are unchanged — this
+  release requires neither.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for
+`1.15.0`/`1.16.0`/`About`/`License`/`Data Provider`/`Synchronization`
+and found to need no update: none makes a version- or Settings-About-
+specific claim this release could make stale.
+
+### FORMULA_VERSION consistency audit
+
+Every one of the 46 `engine/**` calculation files' own private
+`FORMULA_VERSION` constant was individually inspected this batch: all 46
+declare the identical literal `'1.0'`, matching the newly-exported
+canonical `FORMULA_VERSION` in `engine/shared/result.ts` exactly. Zero
+divergence. This batch did not refactor, consolidate, or touch any of
+the 46 individual declarations — only exposed the single, already-
+unanimous value they all already agreed on.
+
+### Deferred items — not addressed this batch
+
+Per this batch's own explicit scope, none of the following were
+implemented, silently resolved, or otherwise touched: the three
+remaining Settings About fields (License, Data Provider, Last
+Synchronization — each still blocked on its own unresolved product
+decision), Health Factor risk-band classification (Conflict #1), the
+Recommendation Engine's three independent spec blockers (Conflict #29,
+Conflict #9/"Interest Warning" F-065, and the unmapped exit-readiness
+gap), cumulative/realized interest, P&L, cost basis, total return,
+Version 2 backlog decisions, or operated production deployment/
+monitoring under Path B. No new infrastructure work was introduced by
+this reconciliation. Per the user's own explicit instruction, there is
+no Batch 2 — v1.16.0 implementation is complete with this one batch.
+
 ---
 
 ## Unresolved documentation conflicts
@@ -16224,10 +16385,10 @@ currency/positions/timestamps, with no field definition. M4-005
 ("Optional safety targets") and M4-006 ("Default display settings,"
 "Safety target settings") both reference the concept later but define no
 concrete fields either. The only concrete field list anywhere in the
-documentation resembling this is 03_UI.md's Settings page → "PORTFOLIO"
+documentation resembling this is 03*UI.md's Settings page → "PORTFOLIO"
 section (Default Target Health Factor, Default Holding Period, Default
 BTC Target Price, Default Safety Buffer, Default Portfolio Name) —
-explicitly described there as _global application defaults_ for new
+explicitly described there as \_global application defaults* for new
 portfolios/simulations, not stated to be a per-portfolio override
 schema.
 
@@ -16283,8 +16444,8 @@ users should be able to choose a predefined parameter set (e.g., "Aave
 V3 defaults") instead of typing every value manually. No such values —
 a concrete `maxLoanToValue`/`liquidationThreshold`/`borrowApr`/
 `supplyApr` for any real protocol — appear anywhere in the entire
-documentation set. 04_BUILD_GUIDE.md's "PROTOCOL SERVICE" section names
-the _required fields_ a preset would need but gives no numbers, and the
+documentation set. 04*BUILD_GUIDE.md's "PROTOCOL SERVICE" section names
+the \_required fields* a preset would need but gives no numbers, and the
 only place such values would legitimately originate — an
 `AaveV3Provider` — has never been built (the same unbuilt
 infrastructure-layer gap identified repeatedly across Milestone 3
@@ -16857,7 +17018,7 @@ the living-document treatment of this finding.
 
 ---
 
-### 39. `03_UI.md`'s Settings-page "ABOUT" section (Section 7) was never implemented and never previously recorded — found during the M10-016 documentation review (Milestone 10 Batch 3)
+### 39. `03_UI.md`'s Settings-page "ABOUT" section (Section 7) was never implemented and never previously recorded — found during the M10-016 documentation review (Milestone 10 Batch 3) — ⚠️ PARTIALLY RESOLVED (v1.16.0): Application/Formula/Engine Version now shown; License, Data Provider, and Last Synchronization remain unbuilt, still blocked
 
 `docs/03_UI.md`'s Settings page mockup (Page 10) lists **About** as one
 of five Settings sub-sections (alongside Calculations, Appearance, Data
@@ -16907,6 +17068,20 @@ recommended as a scoped future task once the License and Data Provider
 product decisions are made, and once a decision is made on whether
 "Last Synchronization" is dropped, reworded, or reinterpreted for a
 cancelled-sync product.
+
+**Partial resolution (v1.16.0, "Settings About — Version Transparency",
+evidence-based)**: the three previously-unblocked fields named above are
+now built. `app/settings/SettingsPageClient.tsx`'s new "About" section
+(verified directly, this batch) displays Application Version, Formula
+Version, and Calculation Engine Version, each reading its real canonical
+constant (`APP_VERSION`, the newly-exported `FORMULA_VERSION`, the
+newly-exported `ENGINE_VERSION` — see this batch's own "Batch 1" write-up
+below) rather than a hardcoded string. **This conflict is not closed.**
+License, Data Provider, and Last Synchronization remain exactly as
+blocked as the three bullets above already describe — no owner decision
+on any of the three has been made by this batch, and none was attempted.
+The "recommended as a scoped future task" sentence above now applies to
+only these three remaining fields, not six.
 
 ---
 
@@ -17907,15 +18082,14 @@ exportSimulation.ts` + a new `ExportSimulation.tsx`), the same
     Conflict #31 for a product decision instead. Resolved two minor,
     non-blocking gaps in favor of `06_TASKS.md`'s own silence on both,
     the same precedent this audit methodology applies throughout: the
-    BTC Price Slider input type (`03_UI.md` Page 5 names a Number Input
-    - Slider; only the Number Input is built, and M6-004's own literal
-      Include list names no slider) and Green/Red/Gray difference-
-      highlighting in the comparison table (`03_UI.md` Page 5 Section 3
-      names it; M6-010's own DoD names no color rule). Zero
-      Engine/Service/Store/Type changes — `git diff --stat -- engine/
+    BTC Price Slider input type (`03_UI.md` Page 5 names a Number Input - Slider; only the Number Input is built, and M6-004's own literal
+    Include list names no slider) and Green/Red/Gray difference-
+    highlighting in the comparison table (`03_UI.md` Page 5 Section 3
+    names it; M6-010's own DoD names no color rule). Zero
+    Engine/Service/Store/Type changes — `git diff --stat -- engine/
 services/ types/ stores/` empty; only `ScenarioSummary.tsx` and its
-      test file touched. This closes Milestone 6's own task list
-      (M6-001 through M6-026).
+    test file touched. This closes Milestone 6's own task list
+    (M6-001 through M6-026).
 31. **Batch 1 raised no new numbered conflict, but recorded one deliberate
     scoping decision worth flagging**: 03_UI.md's own Dashboard mockups
     name a `Portfolio Status`/`Risk Category` field (example values
