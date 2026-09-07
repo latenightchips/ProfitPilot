@@ -115,9 +115,50 @@ export interface ExecutionCostAssumptionsSettings {
   gasCostUsd?: number;
 }
 
+/**
+ * Recommendation Engine preferences — `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §3, §4 (v1.18.0 Batch 1). Sources the four Conflict #29 preference
+ * fields `calculateBorrowRecommendation` (F-061) and
+ * `calculateLoopRecommendation` (F-064) require and previously had no
+ * portfolio-level source for — `PROJECT_STATUS.md` entry 29.
+ *
+ * A new sibling object under `PortfolioSettings`, not merged into
+ * `PortfolioSafetyTargets` — the spec's §4 evaluates this on semantic
+ * cohesion (a "rule floor" for a recommendation rule vs. a user "goal")
+ * and follows the same precedent `ExecutionCostAssumptionsSettings`
+ * already set: a distinct preference domain gets its own object rather
+ * than being folded into `PortfolioSafetyTargets`.
+ *
+ * Grouped exactly as `RecommendationRuleConfig` already groups its own
+ * `borrow`/`loop` fields (`engine/recommendation/generateRecommendations.ts`)
+ * so the mapping from persisted preference to Engine parameter is direct.
+ * Each leaf field is independently optional — `borrow`/`loop` being
+ * present does not imply both of their own fields are set (spec §5,
+ * "partial configuration semantics": a recommendation becomes available
+ * only once its own complete required field set is present, never a
+ * partial substitution).
+ *
+ * This batch (Schema & Persistence only) does not read, source, default,
+ * or act on these fields anywhere — it only makes them real, validated,
+ * persisted `Portfolio` data. `loop.targetHealthFactor` is deliberately
+ * not a field here — F-064 reuses the existing, already-persisted
+ * `PortfolioSafetyTargets.targetHealthFactor` (spec §3).
+ */
+export interface RecommendationPreferences {
+  borrow?: {
+    userMinHealthFactor?: number;
+    targetDebtRatio?: number;
+  };
+  loop?: {
+    loopBorrowPercentage?: number;
+    maxAcceptableAnnualInterestCost?: number;
+  };
+}
+
 export interface PortfolioSettings {
   safetyTargets?: PortfolioSafetyTargets;
   executionCostAssumptions?: ExecutionCostAssumptionsSettings;
+  recommendationPreferences?: RecommendationPreferences;
 }
 
 /**

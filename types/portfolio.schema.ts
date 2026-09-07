@@ -152,9 +152,65 @@ export const executionCostAssumptionsSchema = z.object({
     .optional(),
 });
 
+/**
+ * Recommendation Engine preferences — `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §3, §4 (v1.18.0 Batch 1). Validates `types/portfolio.ts`'s
+ * `RecommendationPreferences`. Every bound below is the exact bound the
+ * corresponding Engine rule already enforces, cited by the spec's §3
+ * field table — no narrower or looser bound is invented here:
+ * `userMinHealthFactor`/`maxAcceptableAnnualInterestCost` mirror
+ * `calculateBorrowRecommendation`'s/`calculateLoopRecommendation`'s own
+ * `validatePositive` (finite, strictly greater than zero);
+ * `targetDebtRatio`/`loopBorrowPercentage` mirror
+ * `calculateBorrowRecommendation`'s/`calculateLoopStep`'s own
+ * `validatePercentage` ([0, 1] inclusive — matching
+ * `protocolParametersSchema`'s LTV-style fields above, not
+ * `executionCostAssumptionsSchema`'s `[0, 1)` convention, since the
+ * Engine's own `validatePercentage` allows exactly 1).
+ *
+ * Each field independently optional, and each leaf treated
+ * independently by the Recommendation Service this schema does not yet
+ * wire into (a later batch's job, per the spec's own scope boundary) —
+ * `borrow`/`loop` being present does not imply both of their own fields
+ * are set.
+ */
+export const recommendationPreferencesSchema = z.object({
+  borrow: z
+    .object({
+      userMinHealthFactor: z
+        .number({ error: 'Enter your minimum Health Factor for borrowing.' })
+        .finite('Enter your minimum Health Factor for borrowing.')
+        .positive('Minimum Health Factor must be greater than zero.')
+        .optional(),
+      targetDebtRatio: z
+        .number({ error: 'Enter your target Debt Ratio ceiling as a percentage.' })
+        .finite('Enter your target Debt Ratio ceiling as a percentage.')
+        .min(0, 'Target Debt Ratio must be between 0% and 100%.')
+        .max(1, 'Target Debt Ratio must be between 0% and 100%.')
+        .optional(),
+    })
+    .optional(),
+  loop: z
+    .object({
+      loopBorrowPercentage: z
+        .number({ error: 'Enter your Loop borrow percentage.' })
+        .finite('Enter your Loop borrow percentage.')
+        .min(0, 'Loop borrow percentage must be between 0% and 100%.')
+        .max(1, 'Loop borrow percentage must be between 0% and 100%.')
+        .optional(),
+      maxAcceptableAnnualInterestCost: z
+        .number({ error: 'Enter your maximum acceptable annual interest cost.' })
+        .finite('Enter your maximum acceptable annual interest cost.')
+        .positive('Maximum acceptable annual interest cost must be greater than zero.')
+        .optional(),
+    })
+    .optional(),
+});
+
 export const portfolioSettingsSchema = z.object({
   safetyTargets: portfolioSafetyTargetsSchema.optional(),
   executionCostAssumptions: executionCostAssumptionsSchema.optional(),
+  recommendationPreferences: recommendationPreferencesSchema.optional(),
 });
 
 /**

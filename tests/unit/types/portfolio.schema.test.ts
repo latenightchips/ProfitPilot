@@ -14,6 +14,7 @@ import {
   portfolioInputUpdateSchema,
   protocolParametersSchema,
   protocolVersionSchema,
+  recommendationPreferencesSchema,
 } from '@/types/portfolio.schema';
 
 /**
@@ -271,6 +272,134 @@ describe('executionCostAssumptionsSchema (P1-6)', () => {
       false,
     );
     expect(executionCostAssumptionsSchema.safeParse({ gasCostUsd: -Infinity }).success).toBe(false);
+  });
+});
+
+/**
+ * `recommendationPreferencesSchema` — `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §3, §4 (v1.18.0 Batch 1). Bounds mirror the exact Engine `validate.ts`
+ * calls the spec's §3 field table cites: `userMinHealthFactor`/
+ * `maxAcceptableAnnualInterestCost` use `validatePositive` (finite,
+ * strictly > 0); `targetDebtRatio`/`loopBorrowPercentage` use
+ * `validatePercentage` ([0, 1] inclusive). Every field is independently
+ * optional at every nesting level (see `types/portfolio.ts`'s own doc
+ * comment for why).
+ */
+describe('recommendationPreferencesSchema (v1.18.0 Batch 1)', () => {
+  it('accepts an empty object — both borrow and loop are independently optional', () => {
+    expect(recommendationPreferencesSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts borrow present but empty, and loop present but empty', () => {
+    expect(recommendationPreferencesSchema.safeParse({ borrow: {} }).success).toBe(true);
+    expect(recommendationPreferencesSchema.safeParse({ loop: {} }).success).toBe(true);
+  });
+
+  it('accepts a fully populated set of preferences', () => {
+    const result = recommendationPreferencesSchema.safeParse({
+      borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+      loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts each leaf field configured independently of its sibling (partial borrow, partial loop)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { userMinHealthFactor: 1.5 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: 0.5 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: 0.5 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        loop: { maxAcceptableAnnualInterestCost: 5000 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts targetDebtRatio/loopBorrowPercentage at both inclusive boundaries (0 and 1)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: 0 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: 1 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: 0 } }).success,
+    ).toBe(true);
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: 1 } }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a non-positive userMinHealthFactor (zero or negative)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { userMinHealthFactor: 0 } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { userMinHealthFactor: -1 } }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an out-of-range targetDebtRatio (below 0 or above 1)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: -0.1 } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: 1.1 } }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an out-of-range loopBorrowPercentage (below 0 or above 1)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: -0.1 } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: 1.5 } }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-positive maxAcceptableAnnualInterestCost (zero or negative)', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        loop: { maxAcceptableAnnualInterestCost: 0 },
+      }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        loop: { maxAcceptableAnnualInterestCost: -500 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects NaN and Infinity for every field', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { userMinHealthFactor: NaN } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({ borrow: { targetDebtRatio: Infinity } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({ loop: { loopBorrowPercentage: NaN } }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        loop: { maxAcceptableAnnualInterestCost: -Infinity },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('gives a friendly error message, not the raw Zod default, for an invalid userMinHealthFactor', () => {
+    const result = recommendationPreferencesSchema.safeParse({
+      borrow: { userMinHealthFactor: NaN },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe('Enter your minimum Health Factor for borrowing.');
+    expect(result.error.issues[0]?.message).not.toContain('NaN');
   });
 });
 

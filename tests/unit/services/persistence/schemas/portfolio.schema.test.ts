@@ -547,3 +547,142 @@ describe('persistedPortfolioPayloadSchema (v1.17.0 Batch 1: Starting-Value Basel
     expect(result.data.collateralQuantity).toBe(0);
   });
 });
+
+/**
+ * `settings.recommendationPreferences` — v1.18.0 Batch 1
+ * (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §3, §4, §5). Same
+ * "don't silently strip it" regression this schema already closed for
+ * every field above (`portfolioSettingsSchema` is imported directly from
+ * `types/portfolio.schema.ts`, so this schema automatically picks up the
+ * new field — this suite exists to prove that round-trip explicitly, and
+ * to prove every row of the spec's §5 partial-configuration table
+ * persists exactly as entered, not because any separate wiring was
+ * needed here).
+ */
+const VALID_RECOMMENDATION_PREFERENCES = {
+  borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+  loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 },
+};
+
+describe('persistedPortfolioPayloadSchema (v1.18.0 Batch 1: settings.recommendationPreferences)', () => {
+  it('accepts a payload with no recommendationPreferences at all (every portfolio persisted before v1.18.0)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toBeUndefined();
+  });
+
+  it('accepts and preserves a fully populated recommendationPreferences through a round trip', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: { recommendationPreferences: VALID_RECOMMENDATION_PREFERENCES },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toEqual(
+      VALID_RECOMMENDATION_PREFERENCES,
+    );
+    // The rest of the payload round-trips unchanged alongside it.
+    expect(result.data.name).toBe('My Portfolio');
+    expect(result.data.collateral).toEqual({ asset: 'BTC', quantity: 1.5 });
+  });
+
+  it('preserves a Borrow-only configuration (loop absent)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: {
+          recommendationPreferences: { borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 } },
+        },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toEqual({
+      borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+    });
+  });
+
+  it('preserves a Loop-only configuration (borrow absent)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: {
+          recommendationPreferences: {
+            loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 },
+          },
+        },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toEqual({
+      loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 },
+    });
+  });
+
+  it('preserves a partially configured Borrow (only userMinHealthFactor set)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: { recommendationPreferences: { borrow: { userMinHealthFactor: 1.5 } } },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toEqual({
+      borrow: { userMinHealthFactor: 1.5 },
+    });
+  });
+
+  it('preserves a partially configured Loop (only loopBorrowPercentage set)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: { recommendationPreferences: { loop: { loopBorrowPercentage: 0.5 } } },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.recommendationPreferences).toEqual({
+      loop: { loopBorrowPercentage: 0.5 },
+    });
+  });
+
+  it('rejects a targetDebtRatio outside [0, 1], never silently clamping or dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: { recommendationPreferences: { borrow: { targetDebtRatio: 1.5 } } },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-positive maxAcceptableAnnualInterestCost, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: {
+          recommendationPreferences: { loop: { maxAcceptableAnnualInterestCost: -1 } },
+        },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('coexists with safetyTargets, executionCostAssumptions, and every V4 field set together', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        settings: {
+          safetyTargets: { targetHealthFactor: 2 },
+          executionCostAssumptions: { swapFeeRate: 0.003, slippageRate: 0.005, gasCostUsd: 15 },
+          recommendationPreferences: VALID_RECOMMENDATION_PREFERENCES,
+        },
+        protocolVersion: 'v4',
+        v4Position: { userAddress: VALID_V4_ADDRESS },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.safetyTargets).toEqual({ targetHealthFactor: 2 });
+    expect(result.data.settings.recommendationPreferences).toEqual(
+      VALID_RECOMMENDATION_PREFERENCES,
+    );
+  });
+});
