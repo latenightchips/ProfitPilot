@@ -15686,6 +15686,153 @@ monitoring under Path B. No new infrastructure work was introduced by
 this reconciliation. Per the user's own explicit instruction, there is
 no Batch 2 — v1.16.0 implementation is complete with this one batch.
 
+## v1.17.0 Specification Phase — Starting-Value Baseline
+
+**This is a specification/decision-phase record, not a release
+reconciliation.** No code, schema, version literal, or test was changed
+by any of the three turns this section documents — each was explicitly
+scoped read-only or documentation-only, and none touched
+`package.json`/`ENGINE_VERSION`/`APP_VERSION`. Recorded here per this
+project's own established convention of using this document as the
+complete audit trail for every decision, not only every code change.
+
+### Phase 1 — v1.17.0 Roadmap Audit (read-only, no code/doc changes)
+
+A fresh, from-first-principles audit found that sixteen consecutive
+releases (`v1.1.0` through `v1.16.0`) had systematically closed nearly
+every "usual suspect" product-quality gap — Dashboard trend parity/IA,
+mobile responsiveness, accessibility conformance, freshness/provenance
+indicators, CI/security hardening, and (as of `v1.16.0`) the unblocked
+portion of the Settings About conflict. The only genuinely new, small
+finding was an isolated flaky test
+(`tests/unit/stores/portfolioStore.test.ts`'s `applyPortfolioState`
+`updatedAt` assertion — a millisecond-resolution timestamp collision,
+confirmed as the only test of its exact shape in the suite, too small to
+justify a themed release on its own). Every substantive remaining item —
+Recommendation Engine expansion (Conflict #29), Health Factor risk-band
+classification (Conflict #1), cumulative/realized interest/P&L/cost
+basis/total return, the three remaining Settings About fields, and all
+eight Version 2 backlog items — remained blocked on an unresolved
+owner/product decision, none of which had moved since the prior audit.
+**Recommendation: NO-GO for v1.17.0 implementation**, with cost-basis
+capture named as the single highest-leverage unresolved prerequisite (it
+potentially unlocks cumulative/realized interest, P&L, and total return
+simultaneously) and recommended as the first decision topic for a
+dedicated specification/decision phase, in priority order ahead of the
+Health Factor risk-band scheme, the Recommendation Engine's missing
+config fields, and the remaining Settings About fields.
+
+### Phase 2 — Cost-Basis & Financial-Performance Decision Research (read-only, no code/doc changes)
+
+A comprehensive, source-verified research pass (not a repeat of the
+roadmap audit's summary) established, among other findings:
+
+- **No existing field, live or historical, can legitimately serve as a
+  cost basis** — `CollateralPosition`, `DebtPosition`, `MarketPrices`,
+  and `PersistedPortfolioHistoryEntry` were each individually inspected;
+  none carries an acquisition price, and `Portfolio.createdAt` marks
+  when a position was _entered into ProfitPilot_, not when it was
+  acquired in real life.
+- **F-007 "Portfolio Gain" is already implemented** — but verified,
+  at all three real call sites, to be exclusively Simulation-scoped (a
+  scenario's own transient baseline collateral value), not a real
+  acquisition-based gain. The roadmap audit's framing of
+  "cumulative/realized interest, P&L, cost basis, total return" as one
+  single blocked cluster was **imprecise**: F-007 is not blocked at
+  all, and accrued (not realized) borrowing interest is likewise
+  already fully implemented and correct today, independent of any
+  cost-basis question.
+- **A new, previously-unrecorded finding**: `docs/03_UI.md`'s "C-014
+  Strategy Snapshot Card" (Initial Investment, Current Portfolio, Total
+  Return, Interest Paid, Leverage Gain, Time Held, Net Strategy Return)
+  is an orphaned component — zero page-layout reference, zero
+  `06_TASKS.md` task assignment, the same "`03_UI.md` mockup element
+  never turned into a buildable task" shape as Conflicts #30–#33 and
+  #39.
+- **Realized/paid interest tracking's true blocker is a missing
+  debt-repayment ledger, not a missing collateral cost basis** — the two
+  are independent prerequisites, not sequenced as the roadmap audit's
+  shorthand implied.
+- Five acquisition-price/baseline models were compared (single manual
+  price, manual total cost basis, starting-value baseline, lot/
+  transaction-based ledger, no feature at all) against correctness,
+  complexity, persistence impact, and — critically — misleading-output
+  risk, verified directly against how this codebase's own Loop/Exit
+  "apply to portfolio" mechanism (`applyPortfolioState`) **fully
+  replaces** `collateral.quantity` with zero lot tracking, which
+  silently breaks any single-average-price model the first time a loop
+  or partial exit runs.
+- **Recommended direction**: a Starting-Value Baseline model (never
+  claiming to be a real cost basis), contingent on five explicit owner
+  decisions.
+
+### Phase 3 — Owner decisions
+
+1. **Should ProfitPilot measure any investment/position performance
+   relative to a real-world reference point at all? → A (Yes).**
+2. **What should the baseline represent? → B (a user-chosen/observed
+   reference point, explicitly not a real cost basis) — Starting-Value
+   Baseline.**
+3. **Behavior when quantity changes after the baseline is set? → A
+   (preserve the original baseline; never silently blend/recalculate;
+   mark the comparison as partial/stale; disclose the composition
+   change). No lot accounting.**
+4. **Pursue debt-side realized/paid-interest ledger tracking now? → B
+   (No — deferred as an independent future/Version 2 consideration, not
+   treated as blocked by cost basis).**
+5. **Approved terminology? → A** — "Performance since [date]," "Change
+   since baseline," "Baseline value," "Current value" only; "Cost
+   basis," "Acquisition cost," "P&L," "Profit/Loss," "Total return" are
+   forbidden for this feature (F-007's own existing, separately-scoped
+   "Profit or loss" terminology is untouched and not reinterpreted).
+
+### Phase 4 — Canonical specification (this batch)
+
+The full implementation-ready specification implementing the five
+decisions above is `docs/STARTING_VALUE_BASELINE_SPEC.md` — the single
+canonical source for this feature's semantics; this section does not
+duplicate it. Highlights, each fully justified in that document:
+
+- Baseline stores exactly three source facts
+  (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) on the
+  `Portfolio` record; the baseline value itself is derived on read, not
+  persisted redundantly.
+- Established only by an explicit "Set Baseline Now" action — never
+  auto-adopted from a `portfolioHistory` entry.
+- Quantity-change detection is a single deterministic equality check
+  (live `collateral.quantity` vs. the baseline's own recorded value),
+  requiring no knowledge of _why_ it changed.
+- Debt, accrued/realized interest, supply yield, and execution costs
+  are all explicitly out of scope for this one metric — it measures
+  collateral value only, never net equity or net worth.
+- F-007/F-008 are confirmed **not** reused — a new, non-Formula-ID
+  Service-layer calculation is specified instead, preserving F-007's
+  own Simulation-scoped meaning untouched.
+- No `STORAGE_SCHEMA_VERSION` bump is required, per the established
+  "optional field, `undefined` on old data" precedent every other
+  optional `Portfolio` field since V1.1 has already followed.
+- C-014 is resolved only partially (roughly two of its seven fields, by
+  analogy, under materially narrower semantics) — explicitly recorded
+  as still unbuildable as a whole.
+- Tax/accounting cost basis, transaction lots, realized P&L, the
+  debt-repayment ledger, net portfolio P&L, accounting-grade total
+  return, and supply-yield accounting all remain explicitly deferred,
+  classified as Version 2 candidates (except the debt-repayment ledger,
+  which Decision 4 frames as an independent future consideration, not
+  Version-2-classified by this phase).
+
+### What remains — not addressed by this phase
+
+Per this phase's own explicit scope, no code, schema, test, or version
+literal was written. `docs/VERSION_2_BACKLOG.md` is deliberately left
+unedited — that document's own convention corrects itself only after a
+release materially changes what is true, not speculatively ahead of an
+implementation that has not yet happened; the eventual implementation
+batch's own release reconciliation is where that correction belongs.
+GO for implementation _planning_ (not implementation) — see
+`docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
+future implementation batch should build against.
+
 ---
 
 ## Unresolved documentation conflicts
