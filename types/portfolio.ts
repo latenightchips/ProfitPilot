@@ -151,4 +151,21 @@ export interface Portfolio extends ApplicationPortfolio {
   protocolUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Starting-Value Baseline (`docs/STARTING_VALUE_BASELINE_SPEC.md` §2) —
+   * a performance reference point, not a cost basis. All three fields are
+   * independently optional and are only ever written together, by the
+   * Store's explicit `setBaseline` action (§3 of that document): a
+   * portfolio persisted before this feature, or one that has simply never
+   * had a baseline set, has all three `undefined` — not an error state,
+   * not something a normalizer backfills (see that document's §10 for why
+   * "no baseline" has no meaningful conservative default to normalize
+   * toward, unlike the V4 provenance fields above).
+   */
+  /** ISO 8601 — when this baseline was established. */
+  establishedAt?: string;
+  /** Collateral quantity at the moment the baseline was established. */
+  collateralQuantity?: number;
+  /** BTC price (USD) at the moment the baseline was established. */
+  marketPriceUsd?: number;
 }

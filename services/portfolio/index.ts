@@ -135,6 +135,10 @@ export type {
   PersistenceProtocolParameters,
 } from './models';
 export {
+  calculateStartingValueBaselineComparison,
+  type StartingValueBaselineComparison,
+} from './startingValueBaseline';
+export {
   calculatePortfolioSummary,
   type PortfolioLiquidationSummary,
   type PortfolioSummary,

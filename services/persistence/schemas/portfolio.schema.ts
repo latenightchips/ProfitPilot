@@ -118,6 +118,15 @@ export const persistedPortfolioPayloadSchema = z.object({
   // `load()` normalization backfills the conservative `'manual'` default,
   // not this schema.
   v4BaseDrawnAprSource: aaveV4DataSourceSchema.optional(),
+  // Starting-Value Baseline (`docs/STARTING_VALUE_BASELINE_SPEC.md` §2,
+  // §10) — all three optional, independently, same round-trip-only
+  // discipline as every V4 field above: a portfolio with no baseline set
+  // has all three `undefined`, and this schema's job is only to
+  // round-trip whatever `stores/portfolioStore.ts`'s `setBaseline`
+  // already attached, never to backfill a value for old data.
+  establishedAt: z.string().datetime().optional(),
+  collateralQuantity: z.number().optional(),
+  marketPriceUsd: z.number().optional(),
   archivedAt: z.string().datetime().nullable(),
   marketUpdatedAt: z.string().datetime(),
   protocolUpdatedAt: z.string().datetime(),

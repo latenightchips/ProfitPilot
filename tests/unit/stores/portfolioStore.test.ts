@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   autoSaveCoordinator,
   calculatePortfolioSummary,
+  calculateStartingValueBaselineComparison,
   type PortfolioApplyProposal,
 } from '@/services';
 import { buildLocalStorageKey } from '@/services/persistence/adapters/localStorageKeys';
@@ -2621,5 +2622,401 @@ describe('usePortfolioStore.applyPortfolioState (V1.1 Batch 3)', () => {
     expect(recordB.portfolio.collateral.quantity).toBe(b.collateral.quantity);
     expect(recordB.portfolio.debt.balance).toBe(b.debt.balance);
     expect(recordB.portfolio.updatedAt).toBe(b.updatedAt);
+  });
+});
+
+/**
+ * Starting-Value Baseline — v1.17.0 Batch 1 (data model, persistence,
+ * store action, derived comparison). Canonical specification:
+ * `docs/STARTING_VALUE_BASELINE_SPEC.md`.
+ */
+describe('usePortfolioStore.setBaseline (v1.17.0 Batch 1)', () => {
+  it("captures establishedAt/collateralQuantity/marketPriceUsd from the portfolio's current live state", () => {
+    const created = createValidPortfolio();
+    // A forced later system time, not just the next call — `updatedAt` is
+    // millisecond-precision and a same-tick create+setBaseline in a fast
+    // test run can otherwise land on the identical timestamp, which would
+    // make this assertion fail for the wrong reason. Same pattern this
+    // file's own `applyPortfolioState` staleness test already uses.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.updatedAt) + 60_000));
+    const result = usePortfolioStore.getState().setBaseline(created.id);
+    vi.useRealTimers();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toEqual(expect.any(String));
+    expect(result.data.collateralQuantity).toBe(created.collateral.quantity);
+    expect(result.data.marketPriceUsd).toBe(created.market.btcPriceUsd);
+    expect(result.data.updatedAt).not.toBe(created.updatedAt);
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record.portfolio.establishedAt).toBe(result.data.establishedAt);
+  });
+
+  it('reinvocation fully replaces all three previous baseline values, with no baseline history', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+
+    const first = usePortfolioStore.getState().setBaseline(created.data.id);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    // A genuinely different live state before re-invoking.
+    usePortfolioStore.getState().update(created.data.id, {
+      collateral: { asset: 'BTC', quantity: 5 },
+      market: { btcPriceUsd: 70000 },
+    });
+
+    // A forced later system time — `establishedAt` is millisecond-
+    // precision and a same-tick pair of `setBaseline` calls in a fast
+    // test run can otherwise land on the identical timestamp, which
+    // would make this assertion fail for the wrong reason. Same pattern
+    // this file's own `applyPortfolioState` staleness test already uses.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(first.data.establishedAt as string) + 60_000));
+    const second = usePortfolioStore.getState().setBaseline(created.data.id);
+    vi.useRealTimers();
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.data.collateralQuantity).toBe(5);
+    expect(second.data.marketPriceUsd).toBe(70000);
+    expect(second.data.establishedAt).not.toBe(first.data.establishedAt);
+    // No separate history/array of baselines — the record carries exactly
+    // one baseline's worth of fields, fully overwritten.
+    expect(second.data.collateralQuantity).not.toBe(first.data.collateralQuantity);
+  });
+
+  it('reports a not-found error for an unknown id and does not throw', () => {
+    const result = usePortfolioStore.getState().setBaseline('missing-id');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('PORTFOLIO_NOT_FOUND');
+  });
+
+  it('refuses to set a baseline when the portfolio has no valid summary (§3 point 1 precondition)', () => {
+    // Zero collateral with nonzero debt — calculateLoanToValue divides by
+    // zero, the same fixture this file's own M4-017 block already uses
+    // to reach a genuine `summary.ok === false` state.
+    const created = usePortfolioStore
+      .getState()
+      .create(validInput({ collateral: { asset: 'BTC', quantity: 0 } }));
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(false);
+
+    const result = usePortfolioStore.getState().setBaseline(created.data.id);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]?.code).toBe('PORTFOLIO_BASELINE_SUMMARY_UNAVAILABLE');
+    expect(
+      usePortfolioStore.getState().portfolios[created.data.id].portfolio.establishedAt,
+    ).toBeUndefined();
+  });
+
+  it('never creates a Portfolio History entry, on either establishment or replacement (§3 point 4, §13)', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().setBaseline(created.id);
+    usePortfolioStore.getState().setBaseline(created.id);
+    // Give any (incorrect) fire-and-forget attempt a real chance to run
+    // before asserting the negative.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(1);
+  });
+});
+
+describe('calculateStartingValueBaselineComparison (v1.17.0 Batch 1)', () => {
+  it('returns null for a portfolio with no baseline set (new or pre-feature portfolio)', () => {
+    const created = createValidPortfolio();
+    expect(calculateStartingValueBaselineComparison(created)).toBeNull();
+  });
+
+  it('returns "current" with the exact §4 formulas when collateral quantity is unchanged', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+
+    const comparison = calculateStartingValueBaselineComparison(baselined.data);
+    expect(comparison).not.toBeNull();
+    if (comparison === null) return;
+    expect(comparison.status).toBe('current');
+    expect(comparison.baselineCollateralQuantity).toBe(2);
+    expect(comparison.baselineValueUsd).toBe(100000);
+    expect(comparison.currentCollateralQuantity).toBe(2);
+    expect(comparison.currentValueUsd).toBe(100000);
+    expect(comparison.absoluteChangeUsd).toBe(0);
+    expect(comparison.percentageChange).toBe(0);
+  });
+
+  it('returns "compositionChanged" when collateral quantity differs from the recorded baseline, while still computing figures', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+
+    const changed = usePortfolioStore
+      .getState()
+      .update(created.data.id, { collateral: { asset: 'BTC', quantity: 3 } });
+    expect(changed.ok).toBe(true);
+    if (!changed.ok) return;
+
+    const comparison = calculateStartingValueBaselineComparison(changed.data);
+    expect(comparison).not.toBeNull();
+    if (comparison === null) return;
+    expect(comparison.status).toBe('compositionChanged');
+    // Baseline's own recorded facts are unchanged.
+    expect(comparison.baselineCollateralQuantity).toBe(2);
+    expect(comparison.baselineValueUsd).toBe(100000);
+    // Current figures still computed, not hidden.
+    expect(comparison.currentCollateralQuantity).toBe(3);
+    expect(comparison.currentValueUsd).toBe(150000);
+    expect(comparison.absoluteChangeUsd).toBe(50000);
+    expect(comparison.percentageChange).toBe(0.5);
+  });
+
+  it('a price-only change (quantity unchanged) stays "current", moving only the value figures', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+
+    const repriced = usePortfolioStore
+      .getState()
+      .setMarket(created.data.id, { btcPriceUsd: 60000 });
+    expect(repriced.ok).toBe(true);
+    if (!repriced.ok) return;
+
+    const comparison = calculateStartingValueBaselineComparison(repriced.data);
+    expect(comparison).not.toBeNull();
+    if (comparison === null) return;
+    expect(comparison.status).toBe('current');
+    expect(comparison.currentValueUsd).toBe(120000);
+    expect(comparison.absoluteChangeUsd).toBe(20000);
+  });
+
+  it('a zero-value baseline (quantity 0 at establishment) yields an unavailable percentage change, never NaN/Infinity, with absolute change still defined', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 0 },
+        debt: { asset: 'USDC', balance: 0 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    expect(usePortfolioStore.getState().portfolios[created.data.id].summary.ok).toBe(true);
+
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    expect(baselined.data.collateralQuantity).toBe(0);
+
+    const funded = usePortfolioStore
+      .getState()
+      .update(created.data.id, { collateral: { asset: 'BTC', quantity: 1 } });
+    expect(funded.ok).toBe(true);
+    if (!funded.ok) return;
+
+    const comparison = calculateStartingValueBaselineComparison(funded.data);
+    expect(comparison).not.toBeNull();
+    if (comparison === null) return;
+    expect(comparison.baselineValueUsd).toBe(0);
+    expect(comparison.percentageChange).toBeNull();
+    expect(comparison.absoluteChangeUsd).toBe(50000);
+    expect(Number.isNaN(comparison.absoluteChangeUsd)).toBe(false);
+  });
+
+  it('behaves identically regardless of manual/live provenance or V3/V4 protocol version (reads only collateral/market fields)', () => {
+    const manual = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!manual.ok) throw new Error('setup failed');
+    const manualBaselined = usePortfolioStore.getState().setBaseline(manual.data.id);
+    if (!manualBaselined.ok) throw new Error('setup failed');
+
+    const v4 = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!v4.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().setProtocolVersion(v4.data.id, 'v4');
+    // A "v4" summary needs synced v4DebtState/v4CollateralRisk to
+    // calculate at all (see this file's own Stage 25 fixtures) — without
+    // them, `summary.ok` stays false and `setBaseline`'s own §3-point-1
+    // precondition correctly refuses. Not this test's own concern
+    // (provenance independence), so set up a valid summary the same way
+    // every other V4 test in this file already does.
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(v4.data.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(v4.data.id, VALID_V4_DEBT_STATE, 'manual');
+    const v4Baselined = usePortfolioStore.getState().setBaseline(v4.data.id);
+    if (!v4Baselined.ok) throw new Error('setup failed');
+
+    const manualComparison = calculateStartingValueBaselineComparison(manualBaselined.data);
+    const v4Comparison = calculateStartingValueBaselineComparison(v4Baselined.data);
+    expect(manualComparison).not.toBeNull();
+    expect(v4Comparison).not.toBeNull();
+    if (manualComparison === null || v4Comparison === null) return;
+    expect(v4Comparison.status).toBe(manualComparison.status);
+    expect(v4Comparison.baselineValueUsd).toBe(manualComparison.baselineValueUsd);
+    expect(v4Comparison.currentValueUsd).toBe(manualComparison.currentValueUsd);
+    expect(v4Comparison.percentageChange).toBe(manualComparison.percentageChange);
+  });
+});
+
+describe('usePortfolioStore — Starting-Value Baseline persistence round trip (v1.17.0 Batch 1)', () => {
+  it('all three baseline fields survive a genuine local storage round trip', async () => {
+    const created = createValidPortfolio();
+    const baselined = usePortfolioStore.getState().setBaseline(created.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
+
+    // Simulates a page refresh, exactly like the identical Stage 5 round-
+    // trip test above — hydrate purely from `persistenceService`/local
+    // storage, exercising the real `persistedPortfolioPayloadSchema`
+    // parse path, not an in-memory copy.
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.establishedAt).toBe(baselined.data.establishedAt);
+    expect(record.portfolio.collateralQuantity).toBe(baselined.data.collateralQuantity);
+    expect(record.portfolio.marketPriceUsd).toBe(baselined.data.marketPriceUsd);
+  });
+
+  it('a portfolio that never had a baseline set loads with all three fields undefined (pre-feature portfolio)', async () => {
+    const created = createValidPortfolio();
+    await autoSaveCoordinator.flushAll();
+
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.establishedAt).toBeUndefined();
+    expect(record.portfolio.collateralQuantity).toBeUndefined();
+    expect(record.portfolio.marketPriceUsd).toBeUndefined();
+  });
+});
+
+describe('usePortfolioStore — Starting-Value Baseline immutability across other writers (v1.17.0 Batch 1)', () => {
+  function baselinedPortfolio() {
+    const created = createValidPortfolio();
+    const baselined = usePortfolioStore.getState().setBaseline(created.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    return baselined.data;
+  }
+
+  it('update() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    usePortfolioStore.getState().update(baselined.id, { name: 'Renamed' });
+    const record = usePortfolioStore.getState().portfolios[baselined.id];
+    expect(record.portfolio.establishedAt).toBe(baselined.establishedAt);
+    expect(record.portfolio.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(record.portfolio.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('applyPortfolioState() leaves a previously-set baseline byte-identical, even though it changes live collateral', () => {
+    const baselined = baselinedPortfolio();
+    const proposal = applyProposalFor(baselined);
+    const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.collateral.quantity).toBe(3);
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('setMarket() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    const result = usePortfolioStore.getState().setMarket(baselined.id, { btcPriceUsd: 90000 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('setProtocol() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    const result = usePortfolioStore.getState().setProtocol(baselined.id, {
+      maxLoanToValue: 0.7,
+      liquidationThreshold: 0.75,
+      borrowApr: 0.06,
+      supplyApr: 0.03,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('setAaveV4Position() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4Position(baselined.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('setAaveV4DebtState() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(baselined.id, VALID_V4_DEBT_STATE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
+  });
+
+  it('setAaveV4CollateralRisk() leaves a previously-set baseline byte-identical', () => {
+    const baselined = baselinedPortfolio();
+    const result = usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(baselined.id, VALID_V4_COLLATERAL_RISK);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.establishedAt).toBe(baselined.establishedAt);
+    expect(result.data.collateralQuantity).toBe(baselined.collateralQuantity);
+    expect(result.data.marketPriceUsd).toBe(baselined.marketPriceUsd);
   });
 });

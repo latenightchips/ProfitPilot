@@ -488,3 +488,62 @@ describe('persistedPortfolioPayloadSchema (P2-1: v4DebtStateUpdatedAt/v4Collater
     expect(result.success).toBe(false);
   });
 });
+
+/**
+ * `establishedAt`/`collateralQuantity`/`marketPriceUsd` — Starting-Value
+ * Baseline, v1.17.0 Batch 1 (`docs/STARTING_VALUE_BASELINE_SPEC.md` §2,
+ * §10). All three optional and independent at the schema level (the
+ * "always written together" invariant is enforced by the Store's
+ * `setBaseline` action, not by this schema — the same "round-trip only,
+ * no cross-field enforcement here" discipline every other optional field
+ * in this schema already follows).
+ */
+describe('persistedPortfolioPayloadSchema (v1.17.0 Batch 1: Starting-Value Baseline)', () => {
+  it('accepts a payload with none of the three baseline fields (backward compatibility)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(validPayload());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.establishedAt).toBeUndefined();
+    expect(result.data.collateralQuantity).toBeUndefined();
+    expect(result.data.marketPriceUsd).toBeUndefined();
+  });
+
+  it('accepts a payload with all three baseline fields set together', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        establishedAt: '2026-08-25T12:00:00.000Z',
+        collateralQuantity: 2.5,
+        marketPriceUsd: 62000,
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.establishedAt).toBe('2026-08-25T12:00:00.000Z');
+    expect(result.data.collateralQuantity).toBe(2.5);
+    expect(result.data.marketPriceUsd).toBe(62000);
+  });
+
+  it('rejects a malformed (non-ISO-8601) establishedAt, never silently dropping it', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        establishedAt: 'not-a-date',
+        collateralQuantity: 2.5,
+        marketPriceUsd: 62000,
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a zero collateralQuantity/marketPriceUsd (the zero-baseline-value edge case, §4)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        establishedAt: '2026-08-25T12:00:00.000Z',
+        collateralQuantity: 0,
+        marketPriceUsd: 62000,
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.collateralQuantity).toBe(0);
+  });
+});

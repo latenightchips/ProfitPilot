@@ -557,6 +557,28 @@ export interface PortfolioStoreActions {
     id: string,
     error: { code: string | null; message: string } | undefined,
   ) => void;
+  /**
+   * Starting-Value Baseline (`docs/STARTING_VALUE_BASELINE_SPEC.md` §3,
+   * §6) — the sole "Set Baseline Now" / "Reset Baseline" action. Captures
+   * `establishedAt`/`collateralQuantity`/`marketPriceUsd` from the
+   * portfolio's CURRENT live state at invocation time. A portfolio has at
+   * most one baseline: calling this again fully replaces all three
+   * previous values, with no confirmation step and no baseline history.
+   *
+   * **Precondition (§3 point 1)**: fails with
+   * `PORTFOLIO_BASELINE_SUMMARY_UNAVAILABLE` unless this portfolio's
+   * currently-cached summary is `ok` — the same "never act on a state
+   * this Store cannot itself currently summarize" precondition
+   * `attemptHistorySnapshot` already applies (via `summary.ok`), reused
+   * here as an explicit, user-facing failure rather than a silent no-op,
+   * since this action (unlike a fire-and-forget snapshot attempt) is a
+   * deliberate, confirmable user action that must report failure.
+   *
+   * **Never creates a Portfolio History entry (§3 point 4, §13)** — the
+   * two mechanisms are deliberately independent; this action does not
+   * call `attemptHistorySnapshot`.
+   */
+  setBaseline: (id: string) => MappingResult<Portfolio>;
 }
 
 export type PortfolioStore = PortfolioStoreState & PortfolioStoreActions;
@@ -598,6 +620,19 @@ function protocolVersionMismatchApplyError(id: string): ApplicationError {
     'validation',
     'PORTFOLIO_APPLY_PROTOCOL_VERSION_MISMATCH',
     `Portfolio "${id}"'s protocol version has changed since this result was generated. Regenerate and reconfirm before applying.`,
+  );
+}
+
+/**
+ * Starting-Value Baseline §3 point 1 — a baseline can only be set for a
+ * portfolio whose summary currently calculates successfully, the same
+ * precondition `attemptHistorySnapshot` already applies via `summary.ok`.
+ */
+function baselineSummaryUnavailableError(id: string): ApplicationError {
+  return createApplicationError(
+    'validation',
+    'PORTFOLIO_BASELINE_SUMMARY_UNAVAILABLE',
+    `Portfolio "${id}" has no valid summary to set a baseline from.`,
   );
 }
 
@@ -1702,6 +1737,44 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     set((state) => ({
       v4CollateralRiskErrors: { ...state.v4CollateralRiskErrors, [id]: error },
     }));
+  },
+
+  setBaseline: (id) => {
+    set({ saveStatus: 'saving' });
+
+    const existing = get().portfolios[id];
+    if (existing === undefined) {
+      const errors = [notFoundError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    if (!existing.summary.ok) {
+      const errors = [baselineSummaryUnavailableError(id)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const now = new Date().toISOString();
+    const portfolio: Portfolio = {
+      ...existing.portfolio,
+      establishedAt: now,
+      collateralQuantity: existing.portfolio.collateral.quantity,
+      marketPriceUsd: existing.portfolio.market.btcPriceUsd,
+      updatedAt: now,
+    };
+
+    const summary = buildSummary(portfolio);
+    set((state) => ({
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
+      errors: [],
+    }));
+    schedulePortfolioSave(portfolio);
+    // Starting-Value Baseline §3 point 4 / §13 — deliberately no
+    // `attemptHistorySnapshot` call here; setting/replacing a baseline
+    // must never create a Portfolio History entry.
+
+    return { ok: true, data: portfolio };
   },
 }));
 
