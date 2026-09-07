@@ -15,6 +15,13 @@
  * Recommendation Center's own severity/filter-category display mapping
  * (`features/recommendations/utils/recommendationTaxonomy.ts`) — no
  * Engine file changes were needed for that addition, only this barrel.
+ *
+ * `calculateRecommendationActions` — v1.18.0 Batch 2, resolving Conflict
+ * #29's preference-source gap per
+ * `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §6. Exported here
+ * alongside, not in place of, `calculateTargetHealthFactorActions` —
+ * neither this batch nor its canonical spec touches the Dashboard's
+ * existing, narrower call (spec §9).
  */
 export {
   explainTargetHealthFactorActions,
@@ -24,6 +31,11 @@ export {
   type RecommendationImpact,
   type RecommendationMetricChange,
 } from './explainRecommendation';
+export {
+  calculateRecommendationActions,
+  type RecommendationActionsResult,
+  type RecommendationItemId,
+} from './recommendationActions';
 export {
   generateRecommendationSet,
   type RankedRecommendation,
