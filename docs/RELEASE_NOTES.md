@@ -13,19 +13,90 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.16.0
+## Version 1.17.0
 
-**Current release.** Promotes one batch on top of Version 1.15.0, titled
-"Settings About — Version Transparency": Settings About Section — built,
-tested, and independently re-verified (final count 4385/4385 tests
-passing) in the same batch that produced it, not a fresh
+**Current release.** Promotes two implementation batches on top of
+Version 1.16.0, together titled "Starting-Value Baseline": Batch 1, Data
+Model/Persistence/Store/Comparison, and Batch 2, Portfolio Page UI —
+built, tested, and independently re-verified in the batches that
+produced them, preceded by a dedicated specification phase, not a fresh
 Milestone-9/V1.1-style Release Candidate process with its own new manual
-exploratory pass. See `PROJECT_STATUS.md`'s "v1.16.0 Release
-Reconciliation" section and `docs/CHANGELOG.md`'s `[1.16.0]` entry for
-the full record. Everything in "Version 1.15.0" and earlier below still
-applies; this section covers only what is new since 1.15.0. **Still a
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.17.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.17.0]` entry for
+the full record. Everything in "Version 1.16.0" and earlier below still
+applies; this section covers only what is new since 1.16.0. **Still a
 self-hostable software release, not a hosted product** — see
 "Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.17.0
+
+- **The Portfolio page now has a "Performance" panel** where you can
+  mark a starting point for tracking how your position's value changes
+  over time. Click **"Set Baseline Now"** and ProfitPilot records your
+  current collateral quantity and current BTC/WBTC price as that
+  portfolio's baseline.
+- **Once set, the panel shows "Baseline value," "Current value," and
+  "Change since baseline"** (both the dollar amount and the percentage),
+  computed from that recorded starting point against your portfolio's
+  live state today.
+- **"Change since baseline" means exactly what it says — nothing more.**
+  It is a plain price-movement comparison: has your collateral's dollar
+  value gone up or down since you set the baseline, given today's price?
+  It does not account for debt, interest, fees, or anything else — see
+  "What this is not," below.
+- **If you edit your collateral quantity, apply a Loop or Exit strategy,
+  or otherwise change how much collateral you hold, you'll see a
+  "Composition changed since baseline" note.** This means the comparison
+  no longer reflects price movement alone — part of the change is now
+  from the quantity itself, not just the market. Your baseline is never
+  silently reset or blended when this happens; the note is informational,
+  and the figures stay visible.
+- **"Reset Baseline"** lets you start over at any time — one click
+  replaces the recorded baseline with your portfolio's current state, no
+  confirmation prompt required.
+- **Works the same way whether your portfolio is manually entered, Aave
+  V3, or Aave V4** — nothing about this feature depends on which.
+- **Your baseline is included in a full backup/export and restored on
+  import**, exactly like every other portfolio setting.
+
+### What this is not
+
+**This is a reference point for tracking price movement, not accounting
+software.** ProfitPilot does not know what you actually paid for your
+BTC, and this feature makes no claim about that. It is explicitly **not**
+cost basis, acquisition cost, tax accounting, profit/loss (P&L), total
+return, realized return, realized interest, or lot/transaction-history
+tracking. It also does not factor in your debt — it compares collateral
+value only, never a net-of-debt figure — and it does not represent
+interest you've paid, protocol yield earned, or execution/gas costs
+actually incurred. If you're looking for real cost-basis or profit/loss
+accounting, that remains a possible future consideration, not something
+this release delivers.
+
+### Explicitly unchanged in 1.17.0
+
+No financial formula changed, no persisted-data schema version changed,
+no migration required to use this feature, no V3/V4 semantic change.
+Portfolio History (the automatic snapshot timeline elsewhere on this same
+page) is completely unaffected — setting or resetting a baseline never
+creates a history entry, and the two remain separate, clearly labeled
+sections. Still no live wallet connection or transaction execution, still
+no cloud backup or synchronization, still no publicly operated production
+deployment.
+
+## Version 1.16.0 (previous release)
+
+Promotes one batch on top of Version 1.15.0, titled "Settings About —
+Version Transparency": Settings About Section — built, tested, and
+independently re-verified (final count 4385/4385 tests passing) in the
+same batch that produced it, not a fresh Milestone-9/V1.1-style Release
+Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.16.0]` entry for the full record. Everything in
+"Version 1.15.0" and earlier below still applies; this section covers
+only what is new since 1.15.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
 
 ### What's new in 1.16.0
 

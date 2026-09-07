@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.16.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.16.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.16** — no batch in any of the sixteen releases modified a financial formula. V1.16.0 exports this exact, already-unanimous value from `engine/shared/result.ts` for the first time (so Settings' new About section can display it) but does not change it, and touches no calculation file. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.16** — every batch across all sixteen releases persists through the existing envelope/schema, adding no new schema version and no migration. V1.16.0 persists nothing new and reads nothing new — it displays three already-existing version constants as static, read-only text. |
+| Application version           | `1.17.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.17.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.17** — no batch in any of the seventeen releases modified a financial formula. Starting-Value Baseline (`v1.17.0`) is deliberately **not** a Formula ID — its two small comparison calculations are plain Service-layer code, specified as such in `docs/STARTING_VALUE_BASELINE_SPEC.md` §12 precisely to avoid silently extending `02_Formulas.md`'s frozen, already-closed 69-item registry. |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.17** — every batch across all seventeen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.17.0` adds three new optional `Portfolio` fields (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -55,6 +55,29 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.14.0)    | 2026-09-06     | Dashboard Trend Parity, Part 2 (Batches 1–3), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4374/4374 tests passing) — see `PROJECT_STATUS.md`'s "v1.14.0 Release Reconciliation" section and the `[1.14.0]` entry below. Same promotion pattern as `1.13.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.15.0)    | 2026-09-06     | Dashboard Information Architecture — Trend/Current-State Separation (Batches 1–3), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4379/4379 tests passing) — see `PROJECT_STATUS.md`'s "v1.15.0 Release Reconciliation" section and the `[1.15.0]` entry below. Same promotion pattern as `1.14.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.16.0)    | 2026-09-07     | Settings About — Version Transparency (Batch 1), re-validated against a fresh `origin/main` checkout after patch apply (final count 4385/4385 tests passing) — see `PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section and the `[1.16.0]` entry below. Same promotion pattern as `1.15.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.17.0)    | 2026-09-07     | Starting-Value Baseline — specification phase plus Batch 1 (data model/persistence/store/comparison) and Batch 2 (Portfolio page UI), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4441/4441 tests passing) — see `PROJECT_STATUS.md`'s "v1.17.0 Release Reconciliation" section and the `[1.17.0]` entry below. Same promotion pattern as `1.16.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.17.0`, not `1.16.x` or a new
+`2.0.0`**: not a PATCH — the Portfolio page gains a new, user-facing
+Starting-Value Baseline panel: an explicit "Set Baseline Now" action that
+lets a user mark a portfolio's collateral quantity and market price at a
+chosen moment, then see "Baseline value," "Current value," and "Change
+since baseline" (absolute and percentage) computed from it, with a
+"Reset Baseline" action to replace it and a "Composition changed since
+baseline" status whenever collateral quantity has moved since — new
+user-facing capability, not a bug fix to existing capability, the same
+bar every prior MINOR bump already used. **Explicitly not cost-basis,
+acquisition-cost, P&L, profit/loss, or total-return accounting** — see
+"What this is not" in the `[1.17.0]` entry below and
+`docs/STARTING_VALUE_BASELINE_SPEC.md` §1. Not a new MAJOR either: no
+Engine calculation file changed, no Formula ID was assigned
+(`FORMULA_VERSION` stays `1.0`), `STORAGE_SCHEMA_VERSION` is untouched
+(three new fields are optional, following the same pattern every prior
+optional `Portfolio` field has used since V1.1), F-007/F-008 are
+unmodified, Portfolio History's own threshold-triggered semantics are
+untouched, and nothing about the Manual-Mode-by-default product boundary
+`01_PRD.md` reserves Version 2 for was touched. A minor version bump,
+same class as `1.1.0`'s through `1.16.0`'s own.
 
 **Why the Application/Engine version is `1.16.0`, not `1.15.x` or a new
 `2.0.0`**: not a PATCH — Settings gains a new, user-facing "About"
@@ -418,6 +441,102 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.17.0] — 2026-09-07
+
+Two implementation batches on top of Version 1.16.0, together titled
+"Starting-Value Baseline": Batch 1, Data Model/Persistence/Store/
+Comparison (`6ac49b4`), and Batch 2, Portfolio Page UI (`752c8fc`),
+preceded by a dedicated specification phase (`5945148`), plus this
+reconciliation batch itself. Full per-file, per-batch detail lives in
+`PROJECT_STATUS.md`'s "v1.17.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.17.0
+
+- **The Portfolio page now has a "Performance" panel.** With no baseline
+  set, it explains that and offers a single **"Set Baseline Now"**
+  action. Clicking it captures the portfolio's current collateral
+  quantity and current BTC/WBTC market price, together with the moment
+  it was clicked, as that portfolio's one baseline.
+- **Once a baseline is set, the panel shows**: "Performance since
+  [date]" (the baseline's own timestamp), **"Baseline value"** (the
+  captured quantity × the captured price), **"Current value"** (today's
+  quantity × today's price), and **"Change since baseline"** (the
+  absolute USD difference, with the percentage change alongside it).
+- **A zero-quantity baseline shows a well-defined `$0.00` baseline
+  value**, but its percentage change renders as unavailable ("—"),
+  never a fabricated number, `NaN`, or `Infinity` — the absolute change
+  still displays normally.
+- **If collateral quantity has changed since the baseline was set** —
+  from a manual edit, a Loop strategy applied to the portfolio, an Exit
+  strategy applied, a partial withdrawal, or additional collateral —
+  the panel shows a plain-text **"Composition changed since baseline"**
+  status next to the (still-visible, still-computed) change figures,
+  making clear the comparison is no longer driven by price movement
+  alone. The baseline itself is never reset or blended when this
+  happens.
+- **"Reset Baseline"** replaces all three recorded values with the
+  portfolio's current state at the moment it's clicked — no confirmation
+  step, no baseline history, the same one-click convention this
+  codebase's other single-value settings already use.
+- Behaves identically for manual, Aave V3, and Aave V4 portfolios — the
+  feature reads only collateral quantity and market price, neither of
+  which carries any V3/V4-specific branching.
+- The three new fields travel through a full JSON backup/export/import
+  round-trip exactly like any other optional portfolio field already
+  does.
+
+### What this is not
+
+**Starting-Value Baseline is a performance reference point, not an
+accounting feature.** It is explicitly **not**: cost basis, acquisition
+cost, tax/accounting cost basis, purchase-price tracking, P&L,
+profit/loss accounting, total return, realized return, realized
+interest, lot accounting, or a transaction history. ProfitPilot has no
+data recording what a user actually paid for their BTC in the real
+world, and this feature does not attempt to reconstruct that — it
+records a value ProfitPilot can actually know (the portfolio's own state
+at a moment the user explicitly chooses) and measures change from there,
+honestly labeled as such. It also does not account for debt — it is a
+collateral-value comparison only, never net equity or net worth — and it
+does not represent borrowing interest paid, cumulative realized
+interest, protocol supply yield, or realized execution costs; accrued
+(not realized) borrowing interest remains exactly as already implemented
+elsewhere, untouched by this feature. See
+`docs/STARTING_VALUE_BASELINE_SPEC.md` §1, §7, and §8 for the complete
+boundary, and its §15 for the explicit list of deferred, Version-2-
+candidate concepts (tax/accounting cost basis, transaction lots, realized
+collateral P&L, a debt-repayment ledger, genuine net portfolio P&L,
+accounting-grade total return, and supply-yield accounting) this feature
+does not deliver.
+
+### Explicitly unchanged in 1.17.0
+
+**No financial formula changed, and no Formula ID was assigned.** The
+feature's two small calculations (absolute and percentage change) are
+plain Service-layer code (`services/portfolio/startingValueBaseline.ts`),
+deliberately not built on `calculatePortfolioGain`/F-007 or F-008 —
+verified during the specification phase that F-007's own real call sites
+are exclusively Simulation-scoped (a scenario's own transient baseline),
+not a persisted, user-established reference point, so reusing it here
+would have silently grafted this feature's semantics onto a function
+whose every caller assumes something different. F-007 and its "Profit or
+loss" terminology are untouched; F-008 remains unimplemented, exactly as
+before. **`STORAGE_SCHEMA_VERSION` stays `1.0.0`** — the three new
+`Portfolio` fields are optional, `undefined` on every portfolio that
+existed before this release, following the identical convention every
+other optional `Portfolio` field has used since V1.1. **Portfolio
+History's own threshold-triggered snapshot mechanism is completely
+unaffected** — setting or resetting a baseline never creates, reads, or
+requires a Portfolio History entry, and the two remain semantically and
+visually distinct on the Portfolio page. No V3/V4 semantic change — this
+release introduces no protocol-version branching anywhere in the
+feature. No CSV export/import change — the existing "Portfolio
+positions" CSV export is a hand-maintained column list and does not
+include the new fields; this is unchanged by this release and was never
+required by the canonical specification. No Dashboard, Settings, engine
+calculation, or Aave-adapter file was touched.
 
 ## [1.16.0] — 2026-09-07
 

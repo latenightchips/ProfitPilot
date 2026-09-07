@@ -15833,6 +15833,215 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.17.0 Release Reconciliation — Starting-Value Baseline
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents the
+specification phase (`5945148`, "v1.17.0 Specification Phase — Starting-
+Value Baseline" above), Batch 1 (`6ac49b4`, Data Model/Persistence/Store/
+Comparison), Batch 2 (`752c8fc`, Portfolio Page UI), a read-only
+implementation-completion audit, and this reconciliation batch itself,
+applied directly on top of `v1.16.0` (`720df40`).
+
+**Current release candidate: `1.17.0`. Versions `1.0.0` through `1.16.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.16.0` still resolves to
+`720df4083f799cbb9544d8e0a8f0d6b8b4a8c5b1`, confirmed by fresh inspection
+during this batch. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.16.0` to `1.17.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.17.0`" paragraph gives. `FORMULA_VERSION` remains `1.0`,
+`STORAGE_SCHEMA_VERSION` remains `1.0.0` — this release requires
+neither: no Engine calculation file changed and no Formula ID was
+assigned (the feature's two small comparison calculations are plain,
+un-tracked Service-layer code, per `docs/STARTING_VALUE_BASELINE_SPEC.md`
+§12), and the three new `Portfolio` fields are optional, following the
+identical "optional field, `undefined` on old data" pattern every prior
+optional field has used since V1.1. **No `v1.17.0` git tag exists yet**
+— tagging is a separate, explicit step for after this patch is applied
+and synced, not taken by this batch (see this batch's own tag-readiness
+verdict below).
+
+### Batch 1 — Data Model, Persistence, Store, Derived Comparison (`6ac49b4`)
+
+- **`types/portfolio.ts`**: three new, independently optional `Portfolio`
+  fields — `establishedAt` (ISO 8601), `collateralQuantity`,
+  `marketPriceUsd` — flat and top-level, matching every V4-era optional
+  field's own established shape; no nested baseline object.
+- **`services/persistence/schemas/portfolio.schema.ts`**: the identical
+  three fields added to `persistedPortfolioPayloadSchema`, round-trip
+  only — no cross-field enforcement at the schema layer.
+- **`services/portfolio/startingValueBaseline.ts`** (new):
+  `calculateStartingValueBaselineComparison(portfolio)` — a plain,
+  untracked function (not a `ServiceResult`/Formula-ID calculation)
+  returning `null` when no baseline is set, or `{ status, establishedAt,
+baselineCollateralQuantity, baselineValueUsd, currentCollateralQuantity,
+currentValueUsd, absoluteChangeUsd, percentageChange }` otherwise.
+  `percentageChange` is `null` (never `NaN`/`Infinity`) when the baseline
+  collateral quantity was `0`. `status` is `'current'` iff the live
+  collateral quantity exactly equals the baseline's own recorded value —
+  a single `===` check, no epsilon, no rounding.
+- **`stores/portfolioStore.ts`**: a new `setBaseline(id)` action —
+  captures `new Date().toISOString()`/live `collateral.quantity`/live
+  `market.btcPriceUsd` and fully replaces all three baseline fields.
+  Requires the portfolio's cached summary to be `ok` (the same
+  precondition `attemptHistorySnapshot` already uses), failing with
+  `PORTFOLIO_BASELINE_SUMMARY_UNAVAILABLE` otherwise. Never calls
+  `attemptHistorySnapshot` — setting or resetting a baseline creates no
+  Portfolio History entry. No other Store writer (`update`,
+  `applyPortfolioState`, `setMarket`, `setProtocol`, `setAaveV4Position`,
+  `setAaveV4DebtState`, `setAaveV4CollateralRisk`) references any of the
+  three baseline fields, so each preserves them unchanged by construction
+  — verified with a dedicated byte-identical regression test per writer.
+- **Tests**: 244 new/extended tests across
+  `tests/unit/stores/portfolioStore.test.ts`,
+  `tests/unit/services/persistence/schemas/portfolio.schema.test.ts`, and
+  the new `tests/unit/services/portfolio/startingValueBaseline.test.ts`.
+- **Validation**: full suite — 4424/4424 tests passing, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 8 files, +893/-0).
+
+### Batch 2 — Portfolio Page UI (`752c8fc`)
+
+- **`app/portfolio/StartingValueBaselinePanel.tsx`** (new): consumes
+  Batch 1's `calculateStartingValueBaselineComparison` and `setBaseline`
+  directly — no financial calculation, no quantity-equality check, and
+  no persistence logic of its own. Absent-baseline state: explanatory
+  text plus a "Set Baseline Now" button. Established state: an `<h2>`
+  reading "Performance since {date}," a `<dl>`/`<dt>`/`<dd>` block
+  ("Baseline value," "Current value," "Change since baseline" — the
+  exact approved terminology, no substitutes), and a "Reset Baseline"
+  button. Composition-changed state: the same fields plus a plain-text
+  "Composition changed since baseline" status, associated to the `<dl>`
+  via `aria-describedby`. Zero-baseline-value state: percentage renders
+  as "—," absolute change still shown.
+- **`app/portfolio/PortfolioPageClient.tsx`**: the panel rendered between
+  the existing `PortfolioHistoryPanel` and `AaveTechnicalDetails` — no
+  new route, page, or modal.
+- **Tests**: 16 new component tests in
+  `tests/unit/app/portfolio/StartingValueBaselinePanel.test.tsx`
+  (no-baseline, established/current, composition-changed, zero-value,
+  reset, manual/V3/V4 parity, accessibility) plus 1 new page-level
+  integration test in `tests/unit/app/portfolio/page.test.tsx` proving
+  the panel renders on the real page alongside Portfolio History and
+  that a real click writes through the Store end to end.
+- **Validation**: full suite — 4441/4441 tests passing, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 4 files, +543/-0).
+
+### Implementation-completion audit (read-only)
+
+A dedicated read-only audit built a requirement-by-requirement
+traceability matrix against every normative clause and all 13 acceptance
+criteria in `docs/STARTING_VALUE_BASELINE_SPEC.md` §2–§16, independently
+re-derived all four comparison formulas from source, traced every other
+Store writer for baseline-field immutability, traced the shared
+Loop/Exit `applyPortfolioState` apply path, verified Portfolio History
+separation by exhaustive grep (the one incidental name-collision hit —
+`buildPortfolioHistoryEntry.ts`'s own, unrelated `marketPriceUsd`
+field — confirmed not a baseline reference), and confirmed via
+`git diff v1.16.0..v1.17.0-scope --name-only` that zero engine,
+Simulation, Dashboard, Settings, CSV-exporter, Portfolio History, or
+V3/V4-adapter file was touched anywhere across the specification phase
+or either batch. It specifically re-compared §11's exact normative
+wording on whether a "current" (non-composition-changed) status
+indicator is required — it is not; only the composition-changed state
+lists one. **Verdict: OPTION A — IMPLEMENTATION COMPLETE.** Two minor,
+non-blocking observations were recorded, neither classified as a
+canonical-spec gap: (1) the Loop/Exit-apply path has a direct
+field-preservation regression test but no test that separately
+re-invokes the comparison function afterward to assert
+`status === 'compositionChanged'` — logically guaranteed by composing
+two already-independently-tested facts, not missing behavior; (2) no E2E
+coverage exists for this feature specifically — the existing full-page
+`expectNoWcagAaViolations` axe scan already covers the panel's
+absent-baseline state incidentally, but not the established/composition-
+changed states, which currently rely on direct Testing-Library role/
+attribute assertions rather than an automated axe pass. Neither was
+judged to meet the "meaningful missing regression coverage" bar for a
+test-only batch — recommendation: GO for release reconciliation, not
+GO for a Batch 3.
+
+### What did not change, across the specification phase or either batch
+
+**No engine, Simulation, Dashboard, Settings, CSV-exporter, Portfolio
+History, or V3/V4-adapter file was touched at any point.** Confirmed by
+direct diff inspection (`git diff 720df40..752c8fc --name-only`: exactly
+14 files touched, all under `types/portfolio.ts`,
+`services/persistence/schemas/portfolio.schema.ts`,
+`services/portfolio/{index,startingValueBaseline}.ts`,
+`stores/portfolioStore.ts`, `app/portfolio/{PortfolioPageClient,
+StartingValueBaselinePanel}.tsx`, `docs/STARTING_VALUE_BASELINE_SPEC.md`,
+`PROJECT_STATUS.md`, and their corresponding test files). No Formula ID
+was assigned; F-007 (`calculatePortfolioGain`) is byte-for-byte unchanged
+and its "Profit or loss" terminology is not reinterpreted; F-008
+("Portfolio Return") remains unimplemented, exactly as before. No
+persisted-data schema version changed. No protocol-version branching was
+introduced anywhere — the feature reads only `collateral.quantity` and
+`market.btcPriceUsd`, neither of which is V3/V4-specific.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.17.0`; a new "Why the Application/
+  Engine version is `1.17.0`" paragraph and a new `[1.17.0]` entry added
+  (What's new / What this is not / Explicitly unchanged), following the
+  identical structural pattern every prior release already established.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.17.0` section added
+  with the `**Current release.**` marker, written in plain product
+  language explaining why a user would set a baseline, what "Change
+  since baseline" means, why a composition-changed note may appear, and
+  what Reset Baseline does — with an explicit "What this is not" section
+  naming every forbidden accounting term. The prior `## Version 1.16.0`
+  section is demoted to `## Version 1.16.0 (previous release)` with that
+  marker removed, the same demotion pattern used for every prior release
+  transition in this file.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.16.0`
+  to `1.17.0`, the same three constants every one of the sixteen prior
+  release-reconciliation batches bumped together. `FORMULA_VERSION`
+  (`1.0`) and `STORAGE_SCHEMA_VERSION` (`1.0.0`) are unchanged.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for
+`1.16.0`/`1.17.0`/`baseline`/`cost basis`/`performance track` and found
+to need no update: none makes a version- or Starting-Value-Baseline-
+specific claim this release could make stale, and `docs/
+VERSION_2_BACKLOG.md`'s existing item on cost-basis/P&L/total-return
+("no acquisition-price capture mechanism") remains fully accurate —
+Starting-Value Baseline delivers none of those three things (its own
+§1 says so explicitly), so that entry is deliberately left untouched
+rather than rewritten as if the deferred feature were now delivered.
+Deployment disposition is unchanged from prior releases — this remains
+a self-hostable release with no live deployment, unaffected by this
+feature.
+
+### Deferred items — not addressed this batch
+
+Per the canonical specification's own §15 and this reconciliation's own
+scope, none of the following were implemented, silently resolved, or
+otherwise touched: tax/accounting cost basis, transaction lots, realized
+collateral P&L, the debt-repayment ledger (Decision 4's own independent
+future consideration, not treated as blocked by this feature), genuine
+net portfolio P&L, accounting-grade total return, supply-yield
+accounting, C-014's remaining five unresolved fields (Interest Paid,
+Leverage Gain, Net Strategy Return, Total Return, Time Held), Health
+Factor risk-band classification (Conflict #1), the Recommendation
+Engine's three independent spec blockers, or operated production
+deployment/monitoring under Path B. No new infrastructure work was
+introduced by this reconciliation. Per the completion audit's own OPTION
+A verdict, there is no Batch 3 — v1.17.0 implementation is complete with
+the two batches already delivered.
+
 ---
 
 ## Unresolved documentation conflicts
