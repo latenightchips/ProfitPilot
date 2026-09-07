@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { ENGINE_VERSION, FORMULA_VERSION } from '@/engine/shared/result';
 import type { CsvExportKind } from '@/services/export';
 import { exportCsv, exportFullBackup, triggerDownload } from '@/services/export';
 import type { ImportFileValidationResult, ImportPreviewBundle } from '@/services/import';
@@ -10,6 +11,7 @@ import type { ImportApplyResult, MergeMode } from '@/services/import';
 import { applyValidatedImport, previewImport } from '@/services/import';
 import { buildDiagnosticEvent, logDiagnosticEvent } from '@/services/observability';
 import {
+  APP_VERSION,
   clearLocalData,
   listRecoverySnapshots,
   type PersistedRecoverySnapshot,
@@ -694,6 +696,18 @@ export function SettingsPageClient() {
             {clearError}
           </p>
         )}
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <h2 className="text-sm font-semibold text-foreground">About</h2>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <dt className="text-muted-foreground">Application Version</dt>
+          <dd className="text-foreground">{APP_VERSION}</dd>
+          <dt className="text-muted-foreground">Formula Version</dt>
+          <dd className="text-foreground">{FORMULA_VERSION}</dd>
+          <dt className="text-muted-foreground">Calculation Engine Version</dt>
+          <dd className="text-foreground">{ENGINE_VERSION}</dd>
+        </dl>
       </section>
     </div>
   );

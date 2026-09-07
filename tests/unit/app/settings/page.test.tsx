@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SettingsPage from '@/app/settings/page';
+import { ENGINE_VERSION, FORMULA_VERSION } from '@/engine/shared/result';
 import { authService } from '@/services/auth';
-import { persistenceService } from '@/services/persistence';
+import { APP_VERSION, persistenceService } from '@/services/persistence';
 import { useAuthStore } from '@/stores/authStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -447,5 +448,64 @@ describe('SettingsPage — Account (Milestone 8 Batch 5, M8-020/M8-021)', () => 
     await userEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/sign-out failed/i);
+  });
+});
+
+/**
+ * About — v1.16.0 Batch 1 ("Settings About — Version Transparency").
+ * Resolves the unblocked two-thirds of `PROJECT_STATUS.md` Conflict #39
+ * (`03_UI.md` Page 10 §7's "ABOUT" section was never built): only
+ * Application Version, Formula Version, and Calculation Engine Version
+ * are shown, since these three have no prerequisite owner decision
+ * pending. License, Data Provider, and Last Synchronization remain
+ * excluded — each still blocked on its own unresolved product decision.
+ */
+describe('SettingsPage — About (v1.16.0 Batch 1)', () => {
+  it('renders an "About" section', () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole('heading', { level: 2, name: 'About' })).toBeInTheDocument();
+  });
+
+  it('shows Application Version, reading the real APP_VERSION constant', () => {
+    render(<SettingsPage />);
+    const label = screen.getByText('Application Version');
+    expect(label.tagName).toBe('DT');
+    expect(label.nextElementSibling?.tagName).toBe('DD');
+    expect(label.nextElementSibling).toHaveTextContent(APP_VERSION);
+  });
+
+  it('shows Formula Version, reading the real FORMULA_VERSION constant', () => {
+    render(<SettingsPage />);
+    const label = screen.getByText('Formula Version');
+    expect(label.tagName).toBe('DT');
+    expect(label.nextElementSibling?.tagName).toBe('DD');
+    expect(label.nextElementSibling).toHaveTextContent(FORMULA_VERSION);
+  });
+
+  it('shows Calculation Engine Version, reading the real ENGINE_VERSION constant', () => {
+    render(<SettingsPage />);
+    const label = screen.getByText('Calculation Engine Version');
+    expect(label.tagName).toBe('DT');
+    expect(label.nextElementSibling?.tagName).toBe('DD');
+    expect(label.nextElementSibling).toHaveTextContent(ENGINE_VERSION);
+  });
+
+  it('does not show License, Data Provider, or Last Synchronization — each still blocked on an unresolved product decision', () => {
+    const { container } = render(<SettingsPage />);
+    expect(container.textContent).not.toMatch(/license/i);
+    expect(container.textContent).not.toMatch(/data provider/i);
+    expect(container.textContent).not.toMatch(/last synchronization/i);
+  });
+
+  it('leaves the existing Settings sections intact alongside the new About section', () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Export' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Import' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & Sync' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Recovery Snapshots' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Clear Local Data' })).toBeInTheDocument();
   });
 });
