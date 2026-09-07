@@ -2036,3 +2036,33 @@ describe('PortfolioPage — Debt form resyncs to a changed canonical V4 total (S
     expect(usePortfolioStore.getState().portfolios[created.id].portfolio.debt.balance).toBe(18000);
   });
 });
+
+/**
+ * v1.17.0 Batch 2 — integration proof only. `StartingValueBaselinePanel`'s
+ * own rendering/interaction behavior is covered exhaustively in
+ * `StartingValueBaselinePanel.test.tsx`; this block only proves it is
+ * actually mounted on the real page (not a standalone render), reflects
+ * a real Batch 1 store write end to end, and that `PortfolioHistoryPanel`
+ * remains independently rendered and unaffected (R).
+ */
+describe('PortfolioPage — Starting-Value Baseline panel integration (v1.17.0 Batch 2)', () => {
+  it('renders the panel alongside Portfolio History, and "Set Baseline Now" writes through the real page', async () => {
+    const user = userEvent.setup();
+    const created = createAndSelect();
+    render(<PortfolioPage />);
+
+    expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Performance' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Set Baseline Now' }));
+
+    expect(usePortfolioStore.getState().portfolios[created.id].portfolio.establishedAt).toEqual(
+      expect.any(String),
+    );
+    expect(
+      screen.getByRole('heading', { level: 2, name: /^Performance since/ }),
+    ).toBeInTheDocument();
+    // Portfolio History remains rendered, unaffected by the baseline write.
+    expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
+  });
+});

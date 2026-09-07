@@ -39,6 +39,7 @@ import { AaveProtocolVersionForm } from './AaveProtocolVersionForm';
 import { AaveTechnicalDetails } from './AaveTechnicalDetails';
 import { AaveV3ConflictConfirmation } from './AaveV3ConflictConfirmation';
 import { PortfolioHistoryPanel } from './PortfolioHistoryPanel';
+import { StartingValueBaselinePanel } from './StartingValueBaselinePanel';
 
 /**
  * Portfolio Live-State Cleanup batch — supersedes the "Manual price
@@ -1717,6 +1718,10 @@ export function PortfolioPageClient() {
           <PortfolioHistoryPanel
             portfolioId={activePortfolioId}
             portfolioUpdatedAt={record.portfolio.updatedAt}
+          />
+          <StartingValueBaselinePanel
+            portfolioId={activePortfolioId}
+            portfolio={record.portfolio}
           />
           <AaveTechnicalDetails />
         </div>
