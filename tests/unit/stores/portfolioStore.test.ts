@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildRecommendationSummary } from '@/features/dashboard';
 import {
   autoSaveCoordinator,
   calculatePortfolioSummary,
@@ -392,6 +393,52 @@ describe('usePortfolioStore.load (M4-003, Conflict B, made real in M8-008)', () 
     expect(record).toBeDefined();
     expect(record.portfolio.name).toBe('My Portfolio');
     expect(record.summary.ok).toBe(true);
+  });
+
+  /**
+   * v1.19.0 Batch 3 (Dashboard Recommendation Summary Parity, Integration
+   * Hardening) — the schema-level round trip of `settings.recommendationPreferences`
+   * (every shape: full, partial-borrow, partial-loop, invalid) is already
+   * exhaustively proven by `tests/unit/services/persistence/schemas/portfolio.schema.test.ts`'s
+   * own `persistedPortfolioPayloadSchema` suite — not duplicated here. What
+   * that suite does not cover is the Store's own `load()` boundary (does a
+   * *genuine* local-storage round trip, through this exact `usePortfolioStore`
+   * singleton, actually carry `recommendationPreferences` through?) and
+   * whether the rehydrated value then reaches `buildRecommendationSummary`
+   * (v1.19.0 Batch 1) correctly — this one focused test proves both, for
+   * one representative full preference configuration, mirroring the test
+   * immediately above's own "surviving a simulated refresh" pattern.
+   */
+  it('restores persisted Borrow/Loop recommendation preferences through a genuine local storage round trip, and they are reflected in the Dashboard recommendation summary after a simulated refresh', async () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: {
+            borrow: { userMinHealthFactor: 5, targetDebtRatio: 0.5 },
+            loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 0.01 },
+          },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    await autoSaveCoordinator.flushAll();
+
+    // Simulates a page refresh: wipe in-memory state, then hydrate purely
+    // from whatever `persistenceService`/local storage actually has.
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[created.data.id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.settings.recommendationPreferences).toEqual({
+      borrow: { userMinHealthFactor: 5, targetDebtRatio: 0.5 },
+      loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 0.01 },
+    });
+
+    const summary = buildRecommendationSummary(record.portfolio);
+    expect(summary.items).toHaveLength(4);
+    expect(summary.items.map((item) => item.priority)).toEqual([1, 2, 3, 4]);
   });
 
   it('restores the active portfolio selection alongside the portfolio list', async () => {

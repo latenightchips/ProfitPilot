@@ -2,7 +2,10 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import DashboardPage from '@/app/page';
 import RecommendationsPage from '@/app/recommendations/page';
+import { presentationTextFor } from '@/features/recommendations/utils/recommendationTaxonomy';
+import { calculateRecommendationActions } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
@@ -233,6 +236,58 @@ describe('RecommendationsPage — with an active portfolio (M7-036 recalculation
 
     expect(screen.getByText('Triggering Condition')).toBeInTheDocument();
     expect(screen.getByText('Related Strategy Tool')).toBeInTheDocument();
+  });
+});
+
+/**
+ * v1.19.0 Batch 3 (Dashboard Recommendation Summary Parity, Integration
+ * Hardening) — Dashboard ↔ Recommendation Center parity. Both routes
+ * ultimately consume the same canonical `calculateRecommendationActions`
+ * result for a given portfolio (this Recommendation Center via
+ * `stores/recommendationCenterStore.ts`, Dashboard via
+ * `buildRecommendationSummary.ts`), and both route Borrow/Loop items
+ * through the same `presentationTextFor` (v1.18.0 Batch 4) — so for a
+ * Borrow item, the two routes' displayed text is not merely similar, it
+ * is byte-identical, proving both consume the same underlying canonical
+ * availability rather than each deriving their own. This does not
+ * require (and this test does not assert) identical *page* structure —
+ * severity grouping/filters here vs. a flat priority list on Dashboard
+ * are an intentional presentation difference, not a defect.
+ */
+describe('RecommendationsPage — Dashboard/Recommendation Center parity (v1.19.0 Batch 3)', () => {
+  it('a fully configured, actionable Borrow preference produces byte-identical presentation text on both the Recommendation Center and the Dashboard', async () => {
+    const portfolio = selectActivePortfolio({
+      settings: {
+        safetyTargets: { targetHealthFactor: 8 },
+        recommendationPreferences: {
+          borrow: { userMinHealthFactor: 5, targetDebtRatio: 0.5 },
+        },
+      },
+    });
+
+    const actionsResult = calculateRecommendationActions(portfolio, 'manual');
+    expect(actionsResult.ok).toBe(true);
+    if (!actionsResult.ok) return;
+    const borrow = actionsResult.data.items.borrow;
+    expect(borrow).toBeDefined();
+    if (borrow === undefined) return;
+    const expected = presentationTextFor('borrow', borrow);
+
+    const { unmount } = render(<RecommendationsPage />);
+    expect(screen.getByText(expected.headline)).toBeInTheDocument();
+    expect(screen.getByText(expected.detail)).toBeInTheDocument();
+    unmount();
+
+    // `DashboardPageClient` (unlike this route) mounts its own
+    // `useEffect(() => { load(); }, [load])` — matches
+    // `tests/unit/app/page.test.tsx`'s own identical no-op override, so
+    // the real, now-async `load()` (M8-008) does not overwrite this
+    // test's manually seeded state with an empty skeleton before the
+    // assertions below run.
+    usePortfolioStore.setState({ load: async () => {} });
+    render(<DashboardPage />);
+    expect(screen.getByText(expected.headline)).toBeInTheDocument();
+    expect(screen.getByText(expected.detail)).toBeInTheDocument();
   });
 });
 

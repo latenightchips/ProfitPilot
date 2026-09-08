@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DashboardPage from '@/app/page';
-import { autoSaveCoordinator } from '@/services';
+import { presentationTextFor } from '@/features/recommendations/utils/recommendationTaxonomy';
+import { autoSaveCoordinator, calculateRecommendationActions } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
 import { useAaveV4LiveDataStore } from '@/stores/aaveV4LiveDataStore';
@@ -454,6 +455,193 @@ describe('DashboardPage — Recommendation Summary Section (M5-015, Batch 7; emp
 
     expect(screen.getByText('Recommendations')).toBeInTheDocument();
     expect(screen.getByText('Priority 1')).toBeInTheDocument();
+  });
+});
+
+/**
+ * v1.19.0 Batch 3 (Dashboard Recommendation Summary Parity, Integration
+ * Hardening) — proves Borrow/Loop reach the Dashboard through the real
+ * application wiring: `usePortfolioStore.create()` (the same store a real
+ * Portfolio Details save uses) → real, unmocked `calculateRecommendationActions`
+ * (v1.18.0 Batch 2) → real `buildRecommendationSummary` (v1.19.0 Batch 1) →
+ * real `RecommendationSummarySection` (v1.19.0 Batch 2), all rendered
+ * through the real `DashboardPage` component tree — nothing here is a
+ * hand-built fixture. This is the chosen integration boundary for Batch 3
+ * (see the Batch 3 report's own "chosen test boundary" section for why a
+ * Playwright/E2E spec was not additionally needed): this file already
+ * renders the full real page against the full real store with nothing
+ * mocked except the unrelated Aave live-data stores, which is a stronger,
+ * faster, more precise proof of "real application wiring" than a browser
+ * automation layer would add on top of it.
+ *
+ * Preference values reuse `recommendationTaxonomy.test.ts`'s own
+ * already-verified accept/reject math at these exact portfolio numbers
+ * (2 BTC * $50,000 * 0.8 threshold / $20,000 debt ⇒ Health Factor 4,
+ * debt ratio 0.2, available borrow $55,000).
+ */
+const ACTIONABLE_BORROW_PREFS = { userMinHealthFactor: 5, targetDebtRatio: 0.5 };
+const ACCEPTABLE_BORROW_PREFS = { userMinHealthFactor: 1, targetDebtRatio: 0.9 };
+const PARTIAL_BORROW_PREFS = { userMinHealthFactor: 5 };
+// `maxAcceptableAnnualInterestCost` must be strictly positive
+// (`calculateLoopRecommendation`'s own `validatePositive` check) — `0.01`
+// is far below the real interest cost a 0.5 `loopBorrowPercentage` at a
+// 5% `borrowApr` produces here, forcing "not loop recommended" (actionable).
+const ACTIONABLE_LOOP_PREFS = { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 0.01 };
+const PARTIAL_LOOP_PREFS = { maxAcceptableAnnualInterestCost: 0.01 };
+
+describe('DashboardPage — Recommendation Summary Section, Borrow/Loop integration (v1.19.0 Batch 3)', () => {
+  it('a fully configured, actionable Borrow preference reaches the Dashboard as a real third item', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { borrow: ACTIONABLE_BORROW_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+    expect(screen.getByText('Priority 2')).toBeInTheDocument();
+    expect(screen.getByText('Priority 3')).toBeInTheDocument();
+    expect(screen.getByText('Risk level: Improve Capital Efficiency')).toBeInTheDocument();
+  });
+
+  it('a fully configured, actionable Loop preference reaches the Dashboard as a real third item', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { loop: ACTIONABLE_LOOP_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+    expect(screen.getByText('Priority 2')).toBeInTheDocument();
+    expect(screen.getByText('Priority 3')).toBeInTheDocument();
+    expect(screen.getByText('Category: leverage')).toBeInTheDocument();
+  });
+
+  it('Borrow and Loop coexist, and all four canonical recommendations appear in canonical order when every input legitimately makes all four actionable', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: {
+            borrow: ACTIONABLE_BORROW_PREFS,
+            loop: ACTIONABLE_LOOP_PREFS,
+          },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    const list = within(screen.getByRole('region', { name: 'Recommended Actions' })).getByRole(
+      'list',
+    );
+    const priorityTexts = within(list)
+      .getAllByRole('listitem')
+      .map((li) => within(li).getByText(/^Priority \d$/).textContent);
+    expect(priorityTexts).toEqual(['Priority 1', 'Priority 2', 'Priority 3', 'Priority 4']);
+  });
+
+  it('a partial (incomplete) Borrow preference never produces a fabricated Dashboard Borrow item', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { borrow: PARTIAL_BORROW_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+    expect(screen.getByText('Priority 2')).toBeInTheDocument();
+    expect(screen.queryByText('Priority 3')).not.toBeInTheDocument();
+    expect(screen.queryByText('Risk level: Improve Capital Efficiency')).not.toBeInTheDocument();
+  });
+
+  it('a partial (incomplete) Loop preference never produces a fabricated Dashboard Loop item', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { loop: PARTIAL_LOOP_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+    expect(screen.getByText('Priority 2')).toBeInTheDocument();
+    expect(screen.queryByText('Priority 3')).not.toBeInTheDocument();
+    expect(screen.queryByText('Category: leverage')).not.toBeInTheDocument();
+  });
+
+  it('a fully configured but currently-acceptable Borrow preference (canonical Service marks it non-actionable) does not become a Dashboard item', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { borrow: ACCEPTABLE_BORROW_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText('Priority 1')).toBeInTheDocument();
+    expect(screen.getByText('Priority 2')).toBeInTheDocument();
+    expect(screen.queryByText('Priority 3')).not.toBeInTheDocument();
+  });
+
+  it('renders the exact canonical presentation-safe text for a Borrow item — no Dashboard-side reconstruction of Engine wording', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        settings: {
+          safetyTargets: { targetHealthFactor: 5 },
+          recommendationPreferences: { borrow: ACTIONABLE_BORROW_PREFS },
+        },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    const actionsResult = calculateRecommendationActions(created.data, 'manual');
+    expect(actionsResult.ok).toBe(true);
+    if (!actionsResult.ok) return;
+    const borrow = actionsResult.data.items.borrow;
+    expect(borrow).toBeDefined();
+    if (borrow === undefined) return;
+    const expected = presentationTextFor('borrow', borrow);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(expected.headline)).toBeInTheDocument();
+    expect(screen.getByText(expected.detail)).toBeInTheDocument();
+    // The raw, directive Engine suggestedAction is not what's shown in
+    // this slot — `presentationTextFor` replaced it (spec §10).
+    expect(screen.queryByText(borrow.suggestedAction)).not.toBeInTheDocument();
   });
 });
 
