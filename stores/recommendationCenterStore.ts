@@ -3,11 +3,11 @@ import { create } from 'zustand';
 import {
   type ApplicationError,
   autoSaveCoordinator,
-  calculateTargetHealthFactorActions,
+  calculateRecommendationActions,
   persistenceService,
+  type Recommendation,
   type ServiceMetadata,
   SINGLETON_RECORD_ID,
-  type TargetHealthFactorActions,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -26,40 +26,34 @@ import type { Portfolio } from '@/types/portfolio';
  * portfolio, never mutate one — see this file's own `recalculate`
  * comment).
  *
- * **Why this Store calls `calculateTargetHealthFactorActions`, not
- * `generateRecommendationSet`.** `generateRecommendationSet` (M3-012, `@/services`) is the only Service
- * that returns all four implemented recommendation categories (borrow,
- * repayment, additionalCollateral, loop), but requires a complete
- * `RecommendationRuleConfig` — `borrow.userMinHealthFactor`,
- * `borrow.targetDebtRatio`, `loop.loopBorrowPercentage`,
- * `loop.maxAcceptableAnnualInterestCost` have no portfolio-level source
- * and no documented default anywhere (PROJECT_STATUS.md conflict #29).
- * Calling it here would mean fabricating four threshold values this
- * Recommendation Center has no honest way to obtain — exactly the
- * "unsupported... cost assumptions" this batch's own instructions say
- * not to invent. `calculateTargetHealthFactorActions`
- * (`services/recommendation/targetHealthFactorActions.ts`, Milestone 5
- * Batch 4) needs only `targetHealthFactor`, which has a real source —
- * `Portfolio.settings.safetyTargets.targetHealthFactor` (M4-001) — and
- * is the same Service `features/dashboard/utils/buildRecommendationSummary.ts`
- * (M5-015) already uses for the same reason. This Recommendation Center
- * still reviews "more... than the Dashboard summary displays" (M7-031's
- * own DoD) three ways the Dashboard summary does not: (1) it always
- * shows both the repayment and additional-collateral recommendations,
- * including the real "no action needed" case the Dashboard's own
- * `buildRecommendationSummary` silently drops (`requiredRepayment > 0`
- * gate) rather than displaying; (2) it surfaces all six documented
- * filter categories, including the four genuinely unavailable ones,
- * each with a real, traceable reason instead of omitting them
- * silently — see `recommendationTaxonomy.ts`'s own
- * `UNAVAILABLE_FILTER_REASONS`; (3) it adds a full Detail Panel, Action
- * Links, and Acknowledgement, none of which the Dashboard summary has
- * at all.
+ * **v1.18.0 Batch 3** (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §6.3) — this Store now calls `calculateRecommendationActions`
+ * (Batch 2, `services/recommendation/recommendationActions.ts`) instead
+ * of `calculateTargetHealthFactorActions`. That Service resolves
+ * Conflict #29's sourcing gap itself: it always computes Repayment/
+ * Additional Collateral once a target Health Factor exists (unchanged
+ * behavior), and independently computes Borrow/Loop whenever this
+ * portfolio's own `settings.recommendationPreferences` has that rule's
+ * complete field pair (Batch 1) — never all-or-nothing, never a silent
+ * default. This Store still does not call `generateRecommendationSet`
+ * (M3-012) — that Service's `RecommendationRuleConfig` remains a single
+ * non-optional object requiring all seven fields at once, which is not
+ * what `calculateRecommendationActions` is (see that file's own header
+ * comment for why it composes the Engine rules directly instead). The
+ * Dashboard's own `buildRecommendationSummary.ts` still calls
+ * `calculateTargetHealthFactorActions` directly, unchanged by this batch
+ * (spec §9) — this Recommendation Center still reviews "more... than the
+ * Dashboard summary displays" (M7-031's own DoD) the same three ways as
+ * before, now joined by a fourth: it can also surface Borrow/Loop, which
+ * the Dashboard summary never will.
  *
  * **Recalculation (M7-036)**: this Store performs no triggering of its
- * own — `recalculate` is a plain, idempotent function of its
- * `(portfolio, targetHealthFactor)` arguments, exactly matching
- * `calculateTargetHealthFactorActions`'s own purity. `app/recommendations/page.tsx`
+ * own — `recalculate` is a plain, idempotent function of its one
+ * `portfolio` argument, exactly matching `calculateRecommendationActions`'s
+ * own purity (it reads `targetHealthFactor`/`recommendationPreferences`
+ * directly off the portfolio itself — Batch 3 no longer extracts
+ * `targetHealthFactor` here before calling the Service, since the new
+ * Service does that internally). `app/recommendations/page.tsx`
  * calls it from a `useEffect` keyed on `[activePortfolioId, portfolio.updatedAt]`
  * — `stores/portfolioStore.ts`'s own `update()` action already bumps
  * `portfolio.updatedAt` on every successful edit to collateral, debt,
@@ -88,7 +82,18 @@ import type { Portfolio } from '@/types/portfolio';
  * against "must not hide critical risk changes permanently" beyond the
  * automatic-return mechanism itself.
  */
-export type RecommendationItemId = 'repayment' | 'additionalCollateral';
+/**
+ * v1.18.0 Batch 3 — extended from `'repayment' | 'additionalCollateral'`
+ * to include `'borrow'`/`'loop'`, matching
+ * `services/recommendation/recommendationActions.ts`'s own identical
+ * union (Batch 2). Kept as its own, separately declared type here rather
+ * than imported from that Service file — the same "Store-owned selection
+ * type" precedent this type already followed before this batch, and the
+ * same layering direction `services/recommendation/recommendationActions.ts`'s
+ * own header comment documents for why it does not import `Portfolio`
+ * concepts the other way.
+ */
+export type RecommendationItemId = 'repayment' | 'additionalCollateral' | 'borrow' | 'loop';
 
 export type RecommendationCenterStatus = 'idle' | 'noTarget' | 'ready' | 'error';
 
@@ -110,11 +115,25 @@ export type AcknowledgementsByPortfolio = Record<
   Partial<Record<RecommendationItemId, Record<string, number>>>
 >;
 
+/**
+ * v1.18.0 Batch 3 — `actions` changes shape from the old
+ * `TargetHealthFactorActions` (a fixed, non-optional two-key object) to
+ * `Partial<Record<RecommendationItemId, Recommendation>>`, matching
+ * `calculateRecommendationActions`'s own `RecommendationActionsResult.items`
+ * (Batch 2): `repayment`/`additionalCollateral` are present whenever
+ * `status === 'ready'` (unchanged in practice), `borrow`/`loop` are
+ * present only when this portfolio's own preferences make them so.
+ * `unavailableReasons` is new — a real, sourced reason for every item not
+ * in `actions`, keyed the same way, so `RecommendationList`/
+ * `RecommendationDetailPanel` can explain a missing `borrow`/`loop` item
+ * without inventing a message of their own (spec §8).
+ */
 export interface RecommendationCenterState {
   status: RecommendationCenterStatus;
   portfolioId: string | null;
   targetHealthFactor: number | null;
-  actions: TargetHealthFactorActions | null;
+  actions: Partial<Record<RecommendationItemId, Recommendation>> | null;
+  unavailableReasons: Partial<Record<RecommendationItemId, string>>;
   errors: ApplicationError[];
   lastMetadata: ServiceMetadata | null;
   categoryFilter: RecommendationFilterCategory | 'all';
@@ -143,14 +162,16 @@ function scheduleAcknowledgementsSave(acknowledgements: AcknowledgementsByPortfo
 const SOURCE_STATUS = 'manual';
 
 // Written as a generic Record<string, number> comparator, but in
-// practice `a`/`b` are always `TargetHealthFactorActions[id].relevantValues`
-// for the same `id` at two different points in time — `calculateRepaymentRecommendation`
-// (F-062) and `calculateAdditionalCollateralRecommendation` (F-063) each
-// always produce the exact same fixed five-key shape (see
-// recommendationTaxonomy.test.ts's own exhaustive key-set assertions),
-// so the length mismatch this function guards against never actually
-// occurs. Kept general rather than assuming the shapes always match, the
-// same defense-in-depth precedent as this file's own `snapshot === undefined` guard below.
+// practice `a`/`b` are always the same item's `relevantValues` at two
+// different points in time — `calculateRepaymentRecommendation` (F-062),
+// `calculateAdditionalCollateralRecommendation` (F-063),
+// `calculateBorrowRecommendation` (F-061), and `calculateLoopRecommendation`
+// (F-064) each always produce the exact same fixed key shape for a given
+// item (see recommendationTaxonomy.test.ts's own exhaustive key-set
+// assertions), so the length mismatch this function guards against never
+// actually occurs. Kept general rather than assuming the shapes always
+// match, the same defense-in-depth precedent as this file's own
+// `snapshot === undefined` guard below.
 function relevantValuesEqual(a: Record<string, number>, b: Record<string, number>): boolean {
   const aKeys = Object.keys(a);
   const bKeys = Object.keys(b);
@@ -158,10 +179,19 @@ function relevantValuesEqual(a: Record<string, number>, b: Record<string, number
   return aKeys.every((key) => a[key] === b[key]);
 }
 
+/**
+ * v1.18.0 Batch 3 — `actions` is now `Partial<Record<...>>` (Borrow/Loop
+ * may be absent). An acknowledgement whose item is no longer present in
+ * `actions` (its preferences were changed or removed since acknowledging)
+ * is dropped, not preserved — there is no `relevantValues` left to
+ * compare it against, and an unavailable item is never rendered as
+ * acknowledged/unacknowledged anyway (`RecommendationList.tsx` only ever
+ * lists items present in `actions`).
+ */
 function reconcileAcknowledgements(
   acknowledgements: AcknowledgementsByPortfolio,
   portfolioId: string,
-  actions: TargetHealthFactorActions,
+  actions: Partial<Record<RecommendationItemId, Recommendation>>,
 ): AcknowledgementsByPortfolio {
   const existing = acknowledgements[portfolioId];
   if (existing === undefined) return acknowledgements;
@@ -176,7 +206,9 @@ function reconcileAcknowledgements(
     // types every access as possibly-`undefined` regardless.
     const snapshot = existing[id];
     if (snapshot === undefined) return;
-    if (relevantValuesEqual(snapshot, actions[id].relevantValues)) {
+    const recommendation = actions[id];
+    if (recommendation === undefined) return;
+    if (relevantValuesEqual(snapshot, recommendation.relevantValues)) {
       next[id] = snapshot;
     }
   });
@@ -191,6 +223,7 @@ export const useRecommendationCenterStore = create<
   portfolioId: null,
   targetHealthFactor: null,
   actions: null,
+  unavailableReasons: {},
   errors: [],
   lastMetadata: null,
   categoryFilter: 'all',
@@ -198,23 +231,8 @@ export const useRecommendationCenterStore = create<
   acknowledgements: {},
 
   recalculate: (portfolio) => {
-    const target = portfolio.settings.safetyTargets?.targetHealthFactor ?? null;
     const portfolioChanged = get().portfolioId !== portfolio.id;
-
-    if (target === null) {
-      set({
-        status: 'noTarget',
-        portfolioId: portfolio.id,
-        targetHealthFactor: null,
-        actions: null,
-        errors: [],
-        lastMetadata: null,
-        selectedItemId: portfolioChanged ? null : get().selectedItemId,
-      });
-      return;
-    }
-
-    const result = calculateTargetHealthFactorActions(portfolio, target, SOURCE_STATUS);
+    const result = calculateRecommendationActions(portfolio, SOURCE_STATUS);
 
     if (!result.ok) {
       // `actions` preserves the last valid recommendations when
@@ -226,9 +244,29 @@ export const useRecommendationCenterStore = create<
       set({
         status: 'error',
         portfolioId: portfolio.id,
-        targetHealthFactor: target,
+        targetHealthFactor: portfolioChanged ? null : get().targetHealthFactor,
         actions: portfolioChanged ? null : get().actions,
+        unavailableReasons: portfolioChanged ? {} : get().unavailableReasons,
         errors: result.errors,
+        lastMetadata: result.metadata,
+        selectedItemId: portfolioChanged ? null : get().selectedItemId,
+      });
+      return;
+    }
+
+    // Spec §6.1 step 1 — no target Health Factor configured. Matches
+    // today's exact `'noTarget'` short-circuit UI (`RecommendationList.tsx`
+    // returns early on this status before ever reading `actions`/
+    // `unavailableReasons`, so their exact values here don't affect what
+    // renders; kept structurally consistent regardless).
+    if (result.data.targetHealthFactor === null) {
+      set({
+        status: 'noTarget',
+        portfolioId: portfolio.id,
+        targetHealthFactor: null,
+        actions: null,
+        unavailableReasons: result.data.unavailableReasons,
+        errors: [],
         lastMetadata: result.metadata,
         selectedItemId: portfolioChanged ? null : get().selectedItemId,
       });
@@ -239,7 +277,7 @@ export const useRecommendationCenterStore = create<
       const reconciled = reconcileAcknowledgements(
         state.acknowledgements,
         portfolio.id,
-        result.data,
+        result.data.items,
       );
       if (reconciled !== state.acknowledgements) {
         scheduleAcknowledgementsSave(reconciled);
@@ -247,8 +285,9 @@ export const useRecommendationCenterStore = create<
       return {
         status: 'ready',
         portfolioId: portfolio.id,
-        targetHealthFactor: target,
-        actions: result.data,
+        targetHealthFactor: result.data.targetHealthFactor,
+        actions: result.data.items,
+        unavailableReasons: result.data.unavailableReasons,
         errors: [],
         lastMetadata: result.metadata,
         selectedItemId: portfolioChanged ? null : state.selectedItemId,
@@ -263,13 +302,14 @@ export const useRecommendationCenterStore = create<
 
   acknowledge: (id) => {
     const { portfolioId, actions } = get();
-    if (portfolioId === null || actions === null) return;
+    const recommendation = actions?.[id];
+    if (portfolioId === null || recommendation === undefined) return;
     set((state) => {
       const acknowledgements = {
         ...state.acknowledgements,
         [portfolioId]: {
           ...state.acknowledgements[portfolioId],
-          [id]: { ...actions[id].relevantValues },
+          [id]: { ...recommendation.relevantValues },
         },
       };
       scheduleAcknowledgementsSave(acknowledgements);

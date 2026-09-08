@@ -179,7 +179,7 @@ describe('RecommendationsPage — with an active portfolio (M7-036 recalculation
     const portfolio = selectActivePortfolio();
     render(<RecommendationsPage />);
     expect(
-      useRecommendationCenterStore.getState().actions?.repayment.relevantValues.requiredRepayment,
+      useRecommendationCenterStore.getState().actions?.repayment?.relevantValues.requiredRepayment,
     ).toBe(10000);
 
     // A real debt increase — should genuinely change the computed
@@ -191,7 +191,7 @@ describe('RecommendationsPage — with an active portfolio (M7-036 recalculation
     });
 
     expect(
-      useRecommendationCenterStore.getState().actions?.repayment.relevantValues.requiredRepayment,
+      useRecommendationCenterStore.getState().actions?.repayment?.relevantValues.requiredRepayment,
     ).toBe(15000);
   });
 

@@ -127,10 +127,14 @@ describe('RECOMMENDATION_FILTER_CATEGORIES', () => {
 });
 
 describe('UNAVAILABLE_FILTER_REASONS', () => {
-  it('covers exactly the four categories this Recommendation Center never populates', () => {
+  it('covers exactly the three categories permanently unavailable for their own independent reasons (v1.18.0 Batch 3)', () => {
     expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(
-      ['safety', 'interest', 'leverage', 'exitReadiness'].sort(),
+      ['safety', 'interest', 'exitReadiness'].sort(),
     );
+  });
+
+  it('no longer covers leverage — its availability now depends on this portfolio’s own Loop preferences (v1.18.0 Batch 3, spec §8)', () => {
+    expect(UNAVAILABLE_FILTER_REASONS.leverage).toBeUndefined();
   });
 
   it('does not cover debt or collateral — both are real, populated categories', () => {

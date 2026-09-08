@@ -28,32 +28,33 @@ import type {
  * `stores/exitPlannerStore.ts`'s `EXIT_TYPE_SUGGESTED_ADJUSTMENT` map
  * already established for Loop Builder and Exit Planner.
  *
- * **Only two of the six filter categories are ever populated with a
- * real recommendation in this Recommendation Center — see
- * `stores/recommendationCenterStore.ts`'s own header comment for why
- * `borrow`/`leverage` recommendations are not computed here at all**
- * (PROJECT_STATUS.md conflict #29: `generateRecommendationSet`'s
- * `RecommendationRuleConfig` needs four preference values —
- * `userMinHealthFactor`, `targetDebtRatio`, `loopBorrowPercentage`,
- * `maxAcceptableAnnualInterestCost` — with no portfolio-level source and
- * no documented default anywhere; inventing them would mean guessing at
- * user intent, the same reasoning that Service's own header comment
- * already gives for why `calculateTargetHealthFactorActions` exists as
- * a separate, narrower alternative). `UNAVAILABLE_FILTER_REASONS` below
- * covers the remaining four filter categories — `safety`/`interestCost`/
- * `exitReadiness` restate (not re-import) the exact same three reasons
- * `engine/recommendation/generateRecommendations.ts`'s own local
- * `UNAVAILABLE_CATEGORIES` constant already documents (that constant is
- * not exported; duplicating its three short, stable, conflict-citing
- * strings here — the same "each component owns its own small static
- * label map" precedent `FullExitResult.tsx`'s/`PartialExitResult.tsx`'s
- * own independently-declared `UNAVAILABLE_COST_LABELS` maps already
- * established — was judged lower-risk than the corresponding Engine
- * export, since the task instructions ask Engine changes to be avoided
- * unless "absolutely required," and duplicating three short strings is
- * not); `leverage` adds a fourth, Recommendation-Center-specific reason
- * of its own (Conflict #29, not an Engine-level gap — F-064 is fully
- * implemented, just not called by this route).
+ * **v1.18.0 Batch 3** (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §8) — `borrow`/`loop` are no longer permanently unpopulated. Conflict
+ * #29's sourcing gap is resolved (Batch 1/2): `stores/recommendationCenterStore.ts`
+ * now calls `calculateRecommendationActions`, which computes `borrow`/
+ * `loop` whenever this portfolio's own `recommendationPreferences` are
+ * complete for that rule. `FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY`
+ * below needed **no code change** for this — F-061 Borrow's own Engine
+ * `category` is `'debtManagement'`, identical to F-062 Repayment's, so
+ * the existing `debtManagement: 'debt'` entry already covers both; only
+ * `leverage`'s entry in `UNAVAILABLE_FILTER_REASONS` (below) is removed,
+ * since that category is no longer permanently blocked — its
+ * availability now depends on this portfolio's own configuration, a
+ * per-portfolio state `RecommendationList.tsx` reads from the Store's own
+ * `unavailableReasons.loop` (spec §8), not a static string here.
+ *
+ * **`safety`/`interest`/`exitReadiness` remain permanently unavailable,
+ * unchanged by this batch** — restate (not re-import) the exact same
+ * three reasons `engine/recommendation/generateRecommendations.ts`'s own
+ * local `UNAVAILABLE_CATEGORIES` constant already documents (that
+ * constant is not exported; duplicating its three short, stable,
+ * conflict-citing strings here — the same "each component owns its own
+ * small static label map" precedent `FullExitResult.tsx`'s/
+ * `PartialExitResult.tsx`'s own independently-declared
+ * `UNAVAILABLE_COST_LABELS` maps already established — was judged
+ * lower-risk than the corresponding Engine export, since the task
+ * instructions ask Engine changes to be avoided unless "absolutely
+ * required," and duplicating three short strings is not).
  */
 export type RecommendationSeverity = 'Critical' | 'High' | 'Medium' | 'Informational';
 
@@ -86,14 +87,51 @@ const SEVERITY_BY_DECISION_PRIORITY: Record<DecisionPriority, RecommendationSeve
  * suggestion or a "you're fine" confirmation — centralized here (not
  * duplicated per-component) so `severityFor` and the Detail Panel's
  * action-link gating can never disagree about which case they're in.
+ *
+ * **`borrow`/`loop` (v1.18.0 Batch 3, spec §8)** — unlike Repayment/
+ * Additional Collateral, F-061/F-064 are binary accept/reject
+ * recommendations with no numeric "how much" `relevantValues` key to
+ * check against zero. Spec §8's own Decision: treat "acceptable"/"loop
+ * recommended" as the non-actionable case (current state is fine,
+ * nothing to flag) and "not acceptable"/"stop looping" as the actionable
+ * one (worth a real severity tier, not `'Informational'`) — mirroring
+ * this function's own "a confirmation must never sit at the same tier as
+ * a real action" principle, applied to Borrow/Loop's binary shape.
+ * Derived by re-applying F-061's/F-064's own already-documented
+ * "Conditions" comparisons (`02_Formulas.md` page 8) directly to their
+ * already-computed `relevantValues` — not a new calculation, and not the
+ * spec's own illustrative pseudocode's `relevantValues.debtRatioOk` (no
+ * such boolean field exists on the real `relevantValues` shape,
+ * confirmed against `calculateBorrowRecommendation.ts`/
+ * `calculateLoopRecommendation.ts`'s own literal `relevantValues`
+ * objects — the pseudocode's intent, not its exact property name, is
+ * what's implemented here).
  */
 export function isActionableRecommendation(
   id: RecommendationItemId,
   recommendation: Recommendation,
 ): boolean {
-  return id === 'repayment'
-    ? recommendation.relevantValues.requiredRepayment > 0
-    : recommendation.relevantValues.requiredUsd > 0;
+  if (id === 'repayment') return recommendation.relevantValues.requiredRepayment > 0;
+  if (id === 'additionalCollateral') return recommendation.relevantValues.requiredUsd > 0;
+  if (id === 'borrow') {
+    const { healthFactor, userMinHealthFactor, availableBorrow, debtRatio, targetDebtRatio } =
+      recommendation.relevantValues;
+    const acceptable =
+      healthFactor > userMinHealthFactor && availableBorrow > 0 && debtRatio < targetDebtRatio;
+    return !acceptable;
+  }
+  const {
+    newHealthFactor,
+    targetHealthFactor,
+    availableBorrow: loopAvailableBorrow,
+    annualInterestCost,
+    maxAcceptableAnnualInterestCost,
+  } = recommendation.relevantValues;
+  const loopRecommended =
+    newHealthFactor > targetHealthFactor &&
+    loopAvailableBorrow > 0 &&
+    annualInterestCost <= maxAcceptableAnnualInterestCost;
+  return !loopRecommended;
 }
 
 /**
@@ -144,6 +182,16 @@ export function filterCategoryFor(recommendation: Recommendation): Recommendatio
   return FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY[recommendation.category];
 }
 
+/**
+ * The three categories still permanently blocked, unaffected by this
+ * batch. `leverage` is deliberately **not** listed here anymore
+ * (v1.18.0 Batch 3, spec §8) — its availability now depends on this
+ * portfolio's own `recommendationPreferences.loop`, so a static
+ * "always unavailable" string would become actively wrong the moment a
+ * user configures it. `RecommendationList.tsx` sources `leverage`'s
+ * per-portfolio-state reason from the Store's own `unavailableReasons.loop`
+ * instead (`calculateRecommendationActions`, Batch 2).
+ */
 export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCategory, string>> = {
   safety:
     'F-060 "Health Factor Recommendation" requires a risk-band scheme, and the documented bands disagree across README.md, 01_PRD.md REQ-001, 01_PRD.md REQ-005, and 02_Formulas.md F-026/F-060 themselves — see PROJECT_STATUS.md conflict #1.',
@@ -151,8 +199,23 @@ export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCate
     'F-065 "Interest Warning" requires an "Expected Annual Portfolio Growth" figure with no formula or definition anywhere in 02_Formulas.md.',
   exitReadiness:
     'No Formula ID in the Recommendation Engine chapter (F-060-F-069) maps to "Exit readiness" specifically; implementing one would mean inventing a rule not documented anywhere.',
-  leverage:
-    'F-064 "Loop Recommendation" is implemented, but requires a loop-borrow-percentage and a maximum-acceptable-annual-interest-cost preference — neither has a portfolio-level source or a documented default anywhere (PROJECT_STATUS.md conflict #29); inventing values would mean guessing at user intent.',
+};
+
+/**
+ * Which filter category each item id belongs to, addressable even when
+ * the item was never computed (v1.18.0 Batch 3) — `filterCategoryFor`
+ * above needs a real `Recommendation.category` to read, which an
+ * unavailable `borrow`/`loop` item doesn't have. Not a new taxonomy: the
+ * same category assignments `FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY`
+ * already encodes (`debtManagement`→`'debt'`, `collateralManagement`→`'collateral'`,
+ * `leverage`→`'leverage'`), restated per item id so `RecommendationList.tsx`
+ * can show an unavailable item's reason under the correct filter tab.
+ */
+export const ITEM_FILTER_CATEGORY: Record<RecommendationItemId, RecommendationFilterCategory> = {
+  repayment: 'debt',
+  additionalCollateral: 'collateral',
+  borrow: 'debt',
+  loop: 'leverage',
 };
 
 /**
@@ -180,8 +243,41 @@ export const ADDITIONAL_COLLATERAL_VALUE_LABELS: Record<string, string> = {
   equivalentBtc: 'Equivalent BTC',
 };
 
+/**
+ * F-061 Borrow's exact `relevantValues` keys (v1.18.0 Batch 3) —
+ * `calculateBorrowRecommendation.ts`'s own literal object, the same
+ * exhaustive, explicit-label-map precedent as the two maps above.
+ */
+export const BORROW_VALUE_LABELS: Record<string, string> = {
+  healthFactor: 'Health Factor',
+  userMinHealthFactor: 'Minimum Health Factor',
+  availableBorrow: 'Available Borrow',
+  debtRatio: 'Debt Ratio',
+  targetDebtRatio: 'Target Debt Ratio',
+};
+
+/**
+ * F-064 Loop's exact `relevantValues` keys (v1.18.0 Batch 3) —
+ * `calculateLoopRecommendation.ts`'s own literal object.
+ */
+export const LOOP_VALUE_LABELS: Record<string, string> = {
+  newHealthFactor: 'Health Factor After Loop',
+  targetHealthFactor: 'Target Health Factor',
+  availableBorrow: 'Available Borrow',
+  annualInterestCost: 'Annual Interest Cost',
+  maxAcceptableAnnualInterestCost: 'Maximum Acceptable Annual Interest Cost',
+};
+
 /** Keys whose value is a BTC quantity, not a currency amount or ratio — for display formatting only. */
 export const BTC_VALUE_KEYS = new Set(['estimatedBtcRequired', 'equivalentBtc']);
 
 /** Keys whose value is a Health Factor ratio, not a currency amount — for display formatting only. */
-export const HEALTH_FACTOR_VALUE_KEYS = new Set(['targetHealthFactor']);
+export const HEALTH_FACTOR_VALUE_KEYS = new Set([
+  'targetHealthFactor',
+  'healthFactor',
+  'userMinHealthFactor',
+  'newHealthFactor',
+]);
+
+/** Keys whose value is a percentage/ratio, not a currency amount — for display formatting only (v1.18.0 Batch 3). */
+export const PERCENT_VALUE_KEYS = new Set(['debtRatio', 'targetDebtRatio']);

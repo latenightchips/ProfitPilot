@@ -68,8 +68,8 @@ describe('recalculate — a real target', () => {
     expect(state.status).toBe('ready');
     expect(state.actions).not.toBeNull();
     // Target HF 8, current collateral $100,000 @ 0.8 threshold, debt $20,000.
-    expect(state.actions?.repayment.relevantValues.requiredRepayment).toBe(10000);
-    expect(state.actions?.additionalCollateral.relevantValues.requiredUsd).toBe(100000);
+    expect(state.actions?.repayment?.relevantValues.requiredRepayment).toBe(10000);
+    expect(state.actions?.additionalCollateral?.relevantValues.requiredUsd).toBe(100000);
     expect(state.lastMetadata).not.toBeNull();
     expect(state.errors).toEqual([]);
   });
@@ -81,8 +81,8 @@ describe('recalculate — a real target', () => {
 
     const state = useRecommendationCenterStore.getState();
     expect(state.status).toBe('ready');
-    expect(state.actions?.repayment.relevantValues.requiredRepayment).toBe(0);
-    expect(state.actions?.additionalCollateral.relevantValues.requiredUsd).toBe(0);
+    expect(state.actions?.repayment?.relevantValues.requiredRepayment).toBe(0);
+    expect(state.actions?.additionalCollateral?.relevantValues.requiredUsd).toBe(0);
   });
 
   it('sets status to error on a genuine Engine failure (negative collateral quantity)', () => {
@@ -126,6 +126,168 @@ describe('recalculate — a real target', () => {
     expect(state.status).toBe('error');
     expect(state.portfolioId).toBe('portfolio-2');
     expect(state.actions).toBeNull();
+  });
+});
+
+const FULL_BORROW_PREFS = { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 };
+const FULL_LOOP_PREFS = { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 };
+
+/**
+ * v1.18.0 Batch 3 — store-level wiring to `calculateRecommendationActions`
+ * (K-R). These exercise the STORE's own state transitions (does `actions`/
+ * `unavailableReasons` end up wired through correctly for each
+ * preference-completeness combination, does a portfolio switch/V3/V4
+ * shape reach the store without the Store recreating any financial
+ * dispatch logic itself) — not a re-test of Batch 2's own already-covered
+ * pure-function matrix (`recommendationActions.test.ts`), which owns the
+ * exhaustive per-field combination coverage.
+ */
+describe('recalculate — Recommendation Center store wiring to Borrow/Loop preferences (v1.18.0 Batch 3)', () => {
+  it('K: no recommendationPreferences configured — only Repayment/Additional Collateral flow through, Borrow/Loop carry a real unavailable reason', () => {
+    useRecommendationCenterStore.getState().recalculate(portfolioFixture());
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.actions?.repayment).toBeDefined();
+    expect(state.actions?.additionalCollateral).toBeDefined();
+    expect(state.actions?.borrow).toBeUndefined();
+    expect(state.actions?.loop).toBeUndefined();
+    expect(state.unavailableReasons.borrow).toBeDefined();
+    expect(state.unavailableReasons.loop).toBeDefined();
+  });
+
+  it('L: a complete Borrow preference pair makes Borrow available without affecting Loop', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: FULL_BORROW_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.actions?.borrow).toBeDefined();
+    expect(state.unavailableReasons.borrow).toBeUndefined();
+    expect(state.actions?.loop).toBeUndefined();
+    expect(state.unavailableReasons.loop).toBeDefined();
+  });
+
+  it('M: a complete Loop preference pair makes Loop available without affecting Borrow', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { loop: FULL_LOOP_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.actions?.loop).toBeDefined();
+    expect(state.unavailableReasons.loop).toBeUndefined();
+    expect(state.actions?.borrow).toBeUndefined();
+    expect(state.unavailableReasons.borrow).toBeDefined();
+  });
+
+  it('N: both pairs complete — all four recommendation items flow through the store at once', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.actions?.repayment).toBeDefined();
+    expect(state.actions?.additionalCollateral).toBeDefined();
+    expect(state.actions?.borrow).toBeDefined();
+    expect(state.actions?.loop).toBeDefined();
+    expect(state.unavailableReasons).toEqual({});
+  });
+
+  it('O: a partial Borrow pair (one field only) stays unavailable with a real reason, not silently dropped', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: { userMinHealthFactor: 1.5 } },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.actions?.borrow).toBeUndefined();
+    expect(state.unavailableReasons.borrow).toBeDefined();
+  });
+
+  it('P: a partial Loop pair (one field only) stays unavailable with a real reason, not silently dropped', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { loop: { loopBorrowPercentage: 0.5 } },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.actions?.loop).toBeUndefined();
+    expect(state.unavailableReasons.loop).toBeDefined();
+  });
+
+  it('Q: an explicit V3 portfolio reaches the store and computes all four items identically to an unset protocolVersion', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        protocolVersion: 'v3',
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.actions?.borrow).toBeDefined();
+    expect(state.actions?.loop).toBeDefined();
+  });
+
+  it('R: a V4 portfolio with synced v4DebtState/v4CollateralRisk reaches the store through the same Batch 2 dispatch, without the Store recreating any V3/V4 branching itself', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        protocolVersion: 'v4',
+        v4DebtState: { drawnDebt: 20000, premiumDebt: 0, baseDrawnApr: 0.05, riskPremium: 0 },
+        v4CollateralRisk: { collateralFactor: 0.65, dynamicConfigKey: 7 },
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('ready');
+    expect(state.actions?.borrow).toBeDefined();
+    expect(state.actions?.loop).toBeDefined();
+  });
+
+  it('R: a V4 portfolio missing synced v4DebtState surfaces a real error through the store, not a fabricated result', () => {
+    useRecommendationCenterStore.getState().recalculate(
+      portfolioFixture({
+        protocolVersion: 'v4',
+        settings: {
+          safetyTargets: { targetHealthFactor: 8 },
+          recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+        },
+      }),
+    );
+
+    const state = useRecommendationCenterStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errors.length).toBeGreaterThan(0);
   });
 });
 

@@ -141,11 +141,22 @@ export function RecommendationsPageClient() {
    */
   const explanations = useMemo(() => {
     if (record === undefined || actions === null || confidence === null) return null;
+    // v1.18.0 Batch 3 — `actions` is now `Partial<Record<...>>` (Borrow/
+    // Loop may be absent); `repayment`/`additionalCollateral` are
+    // guaranteed present whenever `status === 'ready'` (the only status
+    // under which `actions !== null`), but the type itself no longer
+    // says so. `explainTargetHealthFactorActions` (V1.1 Batch 5) is
+    // unchanged by this batch — its own scope stays repayment/
+    // additionalCollateral only (spec §8) — so this guard only narrows
+    // the type for this call, it does not skip computing an explanation
+    // that would otherwise exist.
+    const { repayment, additionalCollateral } = actions;
+    if (repayment === undefined || additionalCollateral === undefined) return null;
     return explainTargetHealthFactorActions(
       record.portfolio,
       record.portfolio.id,
       record.portfolio.updatedAt,
-      actions,
+      { repayment, additionalCollateral },
       confidence,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

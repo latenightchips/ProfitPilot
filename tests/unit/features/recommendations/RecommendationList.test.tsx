@@ -3,7 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { RecommendationList } from '@/features/recommendations';
-import type { RecommendationExplanationSet, TargetHealthFactorActions } from '@/services';
+import type {
+  Recommendation,
+  RecommendationExplanationSet,
+  TargetHealthFactorActions,
+} from '@/services';
 import { explainTargetHealthFactorActions } from '@/services';
 import {
   type RecommendationCenterState,
@@ -165,12 +169,186 @@ describe('RecommendationList — unavailable categories', () => {
     ['safety', /conflict #1/],
     ['interest', /F-065/],
     ['exitReadiness', /F-060-F-069/],
-    ['leverage', /conflict #29/],
   ] as const)('shows a real, traceable reason for the %s filter', (category, expected) => {
     setReady({ categoryFilter: category });
     render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
     expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  /**
+   * v1.18.0 Batch 3 — `leverage` is no longer a permanently-blocked
+   * category (spec §8): it moved from the old whole-category
+   * `UNAVAILABLE_FILTER_REASONS` banner to a per-item reason sourced
+   * from the Store's own `unavailableReasons.loop`, shown without the
+   * "Not available for this category" prefix (since `debt` — the other
+   * item-level-reason category — is never wholly unavailable).
+   */
+  it('shows the real, per-portfolio-state reason for Loop under the leverage filter, not the old static Conflict #29 banner', () => {
+    setReady({
+      categoryFilter: 'leverage',
+      unavailableReasons: { loop: 'Configure your Loop preferences to see this recommendation.' },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+    expect(
+      screen.getByText('Configure your Loop preferences to see this recommendation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not available for this category/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Both fixtures use the "not acceptable" / "stop looping" branch —
+ * `isActionableRecommendation` (`recommendationTaxonomy.ts`, v1.18.0
+ * Batch 3) treats that branch, not the "acceptable"/"loop recommended"
+ * one, as the actionable case (spec §8: continuing to borrow/loop safely
+ * needs no user attention; being told to stop does) — so these render at
+ * the real 'Medium' severity their `decisionPriority` maps to, not
+ * demoted to 'Informational'.
+ */
+const BORROW_RECOMMENDATION: Recommendation = {
+  category: 'debtManagement',
+  triggeringCondition:
+    'One or more of: Health Factor at or below minimum, no available borrow capacity, or Debt Ratio at or above target.',
+  relevantValues: {
+    healthFactor: 1.2,
+    userMinHealthFactor: 1.5,
+    availableBorrow: 0,
+    debtRatio: 0.6,
+    targetDebtRatio: 0.5,
+  },
+  expectedEffect:
+    'Additional borrowing would violate at least one configured safety or leverage limit.',
+  decisionPriority: 'Improve Capital Efficiency',
+  suggestedAction: 'Do not recommend additional borrowing.',
+  formulaReferences: ['F-061', 'F-022', 'F-013', 'F-006'],
+};
+
+const LOOP_RECOMMENDATION: Recommendation = {
+  category: 'leverage',
+  triggeringCondition:
+    'One or more of: resulting Health Factor at or below target, no borrow capacity available, or interest cost exceeds the acceptable maximum.',
+  relevantValues: {
+    newHealthFactor: 7,
+    targetHealthFactor: 8,
+    availableBorrow: 0,
+    annualInterestCost: 6000,
+    maxAcceptableAnnualInterestCost: 5000,
+  },
+  expectedEffect: 'One more loop step would bring Health Factor to approximately 7.',
+  decisionPriority: 'Improve Capital Efficiency',
+  suggestedAction: 'Stop Looping',
+  formulaReferences: ['F-064', 'F-014', 'F-032'],
+};
+
+/**
+ * v1.18.0 Batch 3 — Borrow/Loop become real, present List items once
+ * their own preference pair is complete (spec §8, Goal C). Scenarios
+ * S/T/U/W from the Batch 3 test plan.
+ */
+describe('RecommendationList — Borrow/Loop items (v1.18.0 Batch 3)', () => {
+  it('S: shows the Borrow recommendation, with its own real Engine relevantValues-derived copy, once configured', () => {
+    setReady({
+      actions: {
+        repayment: ACTIONS.repayment,
+        additionalCollateral: ACTIONS.additionalCollateral,
+        borrow: BORROW_RECOMMENDATION,
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(
+      screen.getByText(
+        'One or more of: Health Factor at or below minimum, no available borrow capacity, or Debt Ratio at or above target.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Do not recommend additional borrowing.')).toBeInTheDocument();
+  });
+
+  it('S: the Debt filter includes Borrow alongside Repayment', () => {
+    setReady({
+      categoryFilter: 'debt',
+      actions: {
+        repayment: ACTIONS.repayment,
+        additionalCollateral: ACTIONS.additionalCollateral,
+        borrow: BORROW_RECOMMENDATION,
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByText(/Health Factor at or below minimum/)).toBeInTheDocument();
+    expect(screen.getByText(/Current debt exceeds/)).toBeInTheDocument();
+    expect(screen.queryByText(/Current collateral is insufficient/)).not.toBeInTheDocument();
+  });
+
+  it('T: shows the Loop recommendation, with its own real Engine relevantValues-derived copy, once configured', () => {
+    setReady({
+      actions: {
+        repayment: ACTIONS.repayment,
+        additionalCollateral: ACTIONS.additionalCollateral,
+        loop: LOOP_RECOMMENDATION,
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(
+      screen.getByText(
+        'One or more of: resulting Health Factor at or below target, no borrow capacity available, or interest cost exceeds the acceptable maximum.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Stop Looping')).toBeInTheDocument();
+  });
+
+  it('T: the Leverage filter shows only Loop, never Repayment/Additional Collateral', () => {
+    setReady({
+      categoryFilter: 'leverage',
+      actions: {
+        repayment: ACTIONS.repayment,
+        additionalCollateral: ACTIONS.additionalCollateral,
+        loop: LOOP_RECOMMENDATION,
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByText(/resulting Health Factor at or below target/)).toBeInTheDocument();
+    expect(screen.queryByText(/Current debt exceeds/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Current collateral is insufficient/)).not.toBeInTheDocument();
+  });
+
+  it('U: shows the real reason Borrow is unavailable, scoped to the Debt filter, without the old whole-category banner', () => {
+    setReady({
+      categoryFilter: 'debt',
+      actions: { repayment: ACTIONS.repayment, additionalCollateral: ACTIONS.additionalCollateral },
+      unavailableReasons: {
+        borrow: 'Configure your Borrow preferences to see this recommendation.',
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(
+      screen.getByText('Configure your Borrow preferences to see this recommendation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not available for this category/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Current debt exceeds/)).toBeInTheDocument();
+  });
+
+  it('W: Repayment/Additional Collateral render unchanged alongside Borrow/Loop once every preference is configured', () => {
+    setReady({
+      actions: {
+        repayment: ACTIONS.repayment,
+        additionalCollateral: ACTIONS.additionalCollateral,
+        borrow: BORROW_RECOMMENDATION,
+        loop: LOOP_RECOMMENDATION,
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByText(/Current debt exceeds/)).toBeInTheDocument();
+    expect(screen.getByText(/Current collateral is insufficient/)).toBeInTheDocument();
+    expect(screen.getByText(/Health Factor at or below minimum/)).toBeInTheDocument();
+    expect(screen.getByText(/resulting Health Factor at or below target/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'High' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Medium' })).toBeInTheDocument();
   });
 });
 

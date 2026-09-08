@@ -633,6 +633,26 @@ function CalculationErrorBanner({
   );
 }
 
+/**
+ * v1.18.0 Batch 3 — "clearing a previously-set preference produces
+ * canonical absent state" (Requirement 5). `register(...).setValueAs`
+ * turns a cleared field into `undefined`, but a Borrow/Loop pair with
+ * one field previously set and now cleared parses through
+ * `recommendationPreferencesSchema` as `{fieldA: undefined, fieldB:
+ * undefined}` — a real object, not the fully-absent state Batch 1's own
+ * model expects once every field in a pair is empty. This collapses such
+ * an all-undefined group back to `undefined`, matching what
+ * `JSON.stringify` already does to any object holding only `undefined`
+ * values (the same shape the persistence layer would produce), rather
+ * than leaving a form-layer artifact object with no real content.
+ */
+function pruneEmptyPreferenceGroup<T extends Record<string, number | undefined>>(
+  group: T | undefined,
+): T | undefined {
+  if (group === undefined) return undefined;
+  return Object.values(group).some((value) => value !== undefined) ? group : undefined;
+}
+
 type PortfolioDetailsFormValues = z.input<typeof portfolioDetailsSchema>;
 
 /**
@@ -682,7 +702,18 @@ function PortfolioDetailsForm({
       if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         const parsed = portfolioDetailsSchema.safeParse(values);
-        if (parsed.success) update(portfolioId, parsed.data);
+        if (!parsed.success) return;
+
+        const preferences = parsed.data.settings.recommendationPreferences;
+        const borrow = pruneEmptyPreferenceGroup(preferences?.borrow);
+        const loop = pruneEmptyPreferenceGroup(preferences?.loop);
+        const recommendationPreferences =
+          borrow === undefined && loop === undefined ? undefined : { borrow, loop };
+
+        update(portfolioId, {
+          ...parsed.data,
+          settings: { ...parsed.data.settings, recommendationPreferences },
+        });
       }, AUTOSAVE_DEBOUNCE_MS);
     });
     return () => {
@@ -863,6 +894,193 @@ function PortfolioDetailsForm({
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
         </label>
+      </fieldset>
+
+      {/*
+        Recommendation preferences — v1.18.0 Batch 3
+        (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §3, §7). Sources
+        Conflict #29's four unresolved Borrow/Loop preference fields
+        (Batch 1's `RecommendationPreferences`) as explicit, per-portfolio
+        user input — no default numeric value is pre-filled or suggested
+        anywhere in this fieldset (Owner Decision 4). Each field is
+        independently optional; Borrow's two fields and Loop's two fields
+        can each be configured, left blank, or partially filled without
+        affecting the other pair (spec §5) — `calculateRecommendationActions`
+        (Batch 2) only computes a Borrow/Loop recommendation once its own
+        pair is complete.
+
+        `targetDebtRatio`/`loopBorrowPercentage` are entered as a decimal
+        fraction (e.g. 0.5 for 50%), matching the Engine's own
+        `validatePercentage` representation ([0, 1] inclusive) and this
+        exact form's own "Safety buffer (%)"/"Swap fee assumption"
+        convention above — never converted to/from a 0-100 scale.
+
+        Unlike the two fieldsets above, every field here carries a real
+        `aria-invalid`/`aria-describedby` error association (the same
+        pattern this form already uses for `name`/`baseCurrency`) — an
+        explicit accessibility requirement for this batch, going slightly
+        beyond the "Safety target settings"/"Execution cost assumptions"
+        fieldsets' own silent-no-op-on-invalid precedent (an invalid value
+        there is simply never persisted, with no visible feedback).
+      */}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="text-sm font-semibold text-foreground">
+          Recommendation preferences
+        </legend>
+        <p className="text-xs text-muted-foreground">
+          Configure these to unlock Borrow and Loop recommendations in the Recommendation Center.
+          Each pair below is independent — Repayment and Additional Collateral recommendations
+          already work from your Safety target settings above and do not need these.
+        </p>
+
+        <p className="text-xs font-medium text-foreground">Borrow</p>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Minimum Health Factor for borrowing</span>
+          <input
+            id="recommendationPreferences-userMinHealthFactor"
+            type="number"
+            step="any"
+            aria-invalid={
+              errors.settings?.recommendationPreferences?.borrow?.userMinHealthFactor
+                ? 'true'
+                : undefined
+            }
+            aria-describedby={
+              errors.settings?.recommendationPreferences?.borrow?.userMinHealthFactor
+                ? 'recommendationPreferences-userMinHealthFactor-error'
+                : undefined
+            }
+            {...register('settings.recommendationPreferences.borrow.userMinHealthFactor', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.settings?.recommendationPreferences?.borrow?.userMinHealthFactor && (
+          <span
+            id="recommendationPreferences-userMinHealthFactor-error"
+            className="text-xs text-destructive"
+          >
+            {errors.settings.recommendationPreferences.borrow.userMinHealthFactor.message}
+          </span>
+        )}
+        <p className="text-xs text-muted-foreground">
+          The lowest Health Factor you&rsquo;re willing to accept if you borrowed more. Below this,
+          an additional borrow will never be recommended.
+        </p>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Target Debt Ratio ceiling (decimal, e.g. 0.5 for 50%)</span>
+          <input
+            id="recommendationPreferences-targetDebtRatio"
+            type="number"
+            step="any"
+            min="0"
+            max="1"
+            aria-invalid={
+              errors.settings?.recommendationPreferences?.borrow?.targetDebtRatio
+                ? 'true'
+                : undefined
+            }
+            aria-describedby={
+              errors.settings?.recommendationPreferences?.borrow?.targetDebtRatio
+                ? 'recommendationPreferences-targetDebtRatio-error'
+                : undefined
+            }
+            {...register('settings.recommendationPreferences.borrow.targetDebtRatio', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.settings?.recommendationPreferences?.borrow?.targetDebtRatio && (
+          <span
+            id="recommendationPreferences-targetDebtRatio-error"
+            className="text-xs text-destructive"
+          >
+            {errors.settings.recommendationPreferences.borrow.targetDebtRatio.message}
+          </span>
+        )}
+        <p className="text-xs text-muted-foreground">
+          The Debt Ratio you don&rsquo;t want an additional borrow to reach. Expressed as a
+          percentage.
+        </p>
+
+        <p className="text-xs font-medium text-foreground">Loop</p>
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Loop borrow percentage (decimal, e.g. 0.5 for 50%)</span>
+          <input
+            id="recommendationPreferences-loopBorrowPercentage"
+            type="number"
+            step="any"
+            min="0"
+            max="1"
+            aria-invalid={
+              errors.settings?.recommendationPreferences?.loop?.loopBorrowPercentage
+                ? 'true'
+                : undefined
+            }
+            aria-describedby={
+              errors.settings?.recommendationPreferences?.loop?.loopBorrowPercentage
+                ? 'recommendationPreferences-loopBorrowPercentage-error'
+                : undefined
+            }
+            {...register('settings.recommendationPreferences.loop.loopBorrowPercentage', {
+              setValueAs: (value) => (value === '' ? undefined : Number(value)),
+            })}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.settings?.recommendationPreferences?.loop?.loopBorrowPercentage && (
+          <span
+            id="recommendationPreferences-loopBorrowPercentage-error"
+            className="text-xs text-destructive"
+          >
+            {errors.settings.recommendationPreferences.loop.loopBorrowPercentage.message}
+          </span>
+        )}
+        <p className="text-xs text-muted-foreground">
+          How much of your available borrow capacity a proposed additional loop step would use.
+          Expressed as a percentage.
+        </p>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Maximum acceptable annual interest cost (USD)</span>
+          <input
+            id="recommendationPreferences-maxAcceptableAnnualInterestCost"
+            type="number"
+            step="any"
+            aria-invalid={
+              errors.settings?.recommendationPreferences?.loop?.maxAcceptableAnnualInterestCost
+                ? 'true'
+                : undefined
+            }
+            aria-describedby={
+              errors.settings?.recommendationPreferences?.loop?.maxAcceptableAnnualInterestCost
+                ? 'recommendationPreferences-maxAcceptableAnnualInterestCost-error'
+                : undefined
+            }
+            {...register(
+              'settings.recommendationPreferences.loop.maxAcceptableAnnualInterestCost',
+              {
+                setValueAs: (value) => (value === '' ? undefined : Number(value)),
+              },
+            )}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.settings?.recommendationPreferences?.loop?.maxAcceptableAnnualInterestCost && (
+          <span
+            id="recommendationPreferences-maxAcceptableAnnualInterestCost-error"
+            className="text-xs text-destructive"
+          >
+            {errors.settings.recommendationPreferences.loop.maxAcceptableAnnualInterestCost.message}
+          </span>
+        )}
+        <p className="text-xs text-muted-foreground">
+          The most you&rsquo;re willing to pay in projected annual interest for one more loop step,
+          in USD.
+        </p>
       </fieldset>
     </form>
   );

@@ -324,6 +324,200 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
   });
 });
 
+/**
+ * Recommendation preferences form — v1.18.0 Batch 3
+ * (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §3, §7). Mirrors the
+ * "auto-save (M4-006 Requirement)" describe block just above: same fake
+ * timers / debounce pattern, since this fieldset lives in the same
+ * `PortfolioDetailsForm` and auto-saves through the same debounced
+ * `watch()` handler. Covers scenarios A-J from the Batch 3 test plan.
+ */
+describe('PortfolioPage — Recommendation preferences form (v1.18.0 Batch 3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('A: renders every field empty when no recommendationPreferences have ever been set', () => {
+    createAndSelect();
+    render(<PortfolioPage />);
+    expect(
+      screen.getByLabelText('Minimum Health Factor for borrowing', { exact: false }),
+    ).toHaveValue(null);
+    expect(screen.getByLabelText('Target Debt Ratio ceiling', { exact: false })).toHaveValue(null);
+    expect(screen.getByLabelText('Loop borrow percentage', { exact: false })).toHaveValue(null);
+    expect(
+      screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
+    ).toHaveValue(null);
+  });
+
+  it('B: entering both Borrow fields persists them to the store', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Minimum Health Factor for borrowing', { exact: false }),
+      '1.5',
+    );
+    await user.type(screen.getByLabelText('Target Debt Ratio ceiling', { exact: false }), '0.5');
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.borrow).toEqual({
+      userMinHealthFactor: 1.5,
+      targetDebtRatio: 0.5,
+    });
+  });
+
+  it('C: entering both Loop fields persists them to the store', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(screen.getByLabelText('Loop borrow percentage', { exact: false }), '0.25');
+    await user.type(
+      screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
+      '500',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.loop).toEqual({
+      loopBorrowPercentage: 0.25,
+      maxAcceptableAnnualInterestCost: 500,
+    });
+  });
+
+  it('D: entering only one Borrow field saves a partial Borrow object without inventing the other field', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Minimum Health Factor for borrowing', { exact: false }),
+      '1.5',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.borrow).toEqual({ userMinHealthFactor: 1.5 });
+  });
+
+  it('E: entering only one Loop field saves a partial Loop object without inventing the other field', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(screen.getByLabelText('Loop borrow percentage', { exact: false }), '0.25');
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.loop).toEqual({ loopBorrowPercentage: 0.25 });
+  });
+
+  it('F: clearing a previously-set preference returns it to the canonical absent state', async () => {
+    const created = createAndSelect({
+      settings: {
+        recommendationPreferences: {
+          borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+        },
+      },
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.clear(
+      screen.getByLabelText('Minimum Health Factor for borrowing', { exact: false }),
+    );
+    await user.clear(screen.getByLabelText('Target Debt Ratio ceiling', { exact: false }));
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.borrow).toBeUndefined();
+  });
+
+  it('G: rejects a non-positive minimum Health Factor and does not persist it', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    const hfInput = screen.getByLabelText('Minimum Health Factor for borrowing', {
+      exact: false,
+    });
+    await user.type(hfInput, '0');
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings
+        .recommendationPreferences,
+    ).toBeUndefined();
+    expect(
+      screen.getByText('Minimum Health Factor must be greater than zero.'),
+    ).toBeInTheDocument();
+    expect(hfInput).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('H: rejects an out-of-range Target Debt Ratio and does not persist it', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(screen.getByLabelText('Target Debt Ratio ceiling', { exact: false }), '1.5');
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings
+        .recommendationPreferences,
+    ).toBeUndefined();
+    expect(screen.getByText('Target Debt Ratio must be between 0% and 100%.')).toBeInTheDocument();
+  });
+
+  it('I: rejects a negative maximum acceptable annual interest cost and does not persist it', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
+      '-100',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings
+        .recommendationPreferences,
+    ).toBeUndefined();
+    expect(
+      screen.getByText('Maximum acceptable annual interest cost must be greater than zero.'),
+    ).toBeInTheDocument();
+  });
+
+  it('J: reloads previously-saved preferences (round trip through the store)', () => {
+    createAndSelect({
+      settings: {
+        recommendationPreferences: {
+          borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+          loop: { loopBorrowPercentage: 0.25, maxAcceptableAnnualInterestCost: 500 },
+        },
+      },
+    });
+    render(<PortfolioPage />);
+
+    expect(
+      screen.getByLabelText('Minimum Health Factor for borrowing', { exact: false }),
+    ).toHaveValue(1.5);
+    expect(screen.getByLabelText('Target Debt Ratio ceiling', { exact: false })).toHaveValue(0.5);
+    expect(screen.getByLabelText('Loop borrow percentage', { exact: false })).toHaveValue(0.25);
+    expect(
+      screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
+    ).toHaveValue(500);
+  });
+});
+
 describe('PortfolioPage — remounts on portfolio switch (M4-010 state-isolation DoD)', () => {
   it("shows the newly active portfolio's own values, not stale field state from the previous one", () => {
     const first = usePortfolioStore.getState().create(validInput({ name: 'Alpha' }));

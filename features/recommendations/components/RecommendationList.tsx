@@ -4,6 +4,7 @@ import { StrategyErrorBanner } from '@/components/strategy/StrategyErrorBanner';
 import {
   filterCategoryFor,
   isActionableRecommendation,
+  ITEM_FILTER_CATEGORY,
   type RecommendationSeverity,
   SEVERITY_ORDER,
   severityFor,
@@ -15,6 +16,22 @@ import {
   useRecommendationCenterStore,
 } from '@/stores/recommendationCenterStore';
 import type { Portfolio } from '@/types/portfolio';
+
+/**
+ * v1.18.0 Batch 3 — `RecommendationExplanationSet` (V1.1 Batch 5) only
+ * ever has `repayment`/`additionalCollateral` keys (spec §8: extending
+ * Quantified Impact to Borrow/Loop is out of scope this batch), so a
+ * `borrow`/`loop` id has no explanation to look up — this narrows before
+ * indexing rather than widening `RecommendationExplanationSet`'s own type.
+ */
+function explanationFor(
+  explanations: RecommendationExplanationSet | null,
+  id: RecommendationItemId,
+) {
+  if (explanations === null) return null;
+  if (id === 'repayment' || id === 'additionalCollateral') return explanations[id];
+  return null;
+}
 
 /**
  * Recommendation List — 06_TASKS.md M7-032 ("Implement Recommendation
@@ -52,8 +69,18 @@ import type { Portfolio } from '@/types/portfolio';
  * after switching to a different, already-broken one — both genuinely
  * possible. The error banner always explains the failure in either
  * case; the list below only renders once `actions !== null`.
+ *
+ * **v1.18.0 Batch 3** — `actions` is now `Partial<Record<...>>`
+ * (`stores/recommendationCenterStore.ts`), not a fixed two-key object:
+ * `borrow`/`loop` are present only when this portfolio's own
+ * `recommendationPreferences` make them so (spec §5). `ITEM_ORDER`
+ * extends to all four ids; an id missing from `actions` is simply
+ * skipped when building `allItems` (not shown as a disabled row), and
+ * its own `unavailableReasons[id]` renders as a compact, per-item line
+ * instead — scoped to its own filter category (`ITEM_FILTER_CATEGORY`),
+ * since `debt`/`leverage` can now be partially available (spec §8).
  */
-const ITEM_ORDER: RecommendationItemId[] = ['repayment', 'additionalCollateral'];
+const ITEM_ORDER: RecommendationItemId[] = ['repayment', 'additionalCollateral', 'borrow', 'loop'];
 
 interface ListItem {
   id: RecommendationItemId;
@@ -95,7 +122,7 @@ function RecommendationRow({
   const isAcknowledged =
     portfolioId !== null && acknowledgements[portfolioId]?.[item.id] !== undefined;
   const isSelected = selectedItemId === item.id;
-  const confidence = explanations?.[item.id].confidence ?? null;
+  const confidence = explanationFor(explanations, item.id)?.confidence ?? null;
 
   return (
     <li
@@ -141,6 +168,7 @@ export function RecommendationList({
 }) {
   const status = useRecommendationCenterStore((state) => state.status);
   const actions = useRecommendationCenterStore((state) => state.actions);
+  const unavailableReasons = useRecommendationCenterStore((state) => state.unavailableReasons);
   const errors = useRecommendationCenterStore((state) => state.errors);
   const categoryFilter = useRecommendationCenterStore((state) => state.categoryFilter);
   const acknowledgements = useRecommendationCenterStore((state) => state.acknowledgements);
@@ -163,17 +191,35 @@ export function RecommendationList({
   const isUnavailableCategory =
     categoryFilter !== 'all' && categoryFilter in UNAVAILABLE_FILTER_REASONS;
 
+  // v1.18.0 Batch 3 — only items actually present in `actions` (Borrow/
+  // Loop are absent, not disabled, when their own preferences are
+  // incomplete — spec §8's own List behavior).
   const allItems: ListItem[] =
     actions === null
       ? []
-      : ITEM_ORDER.map((id) => {
+      : ITEM_ORDER.flatMap((id) => {
           const recommendation = actions[id];
-          return { id, recommendation, severity: severityFor(id, recommendation) };
+          if (recommendation === undefined) return [];
+          return [{ id, recommendation, severity: severityFor(id, recommendation) }];
         }).filter((item) =>
           categoryFilter === 'all'
             ? true
             : filterCategoryFor(item.recommendation) === categoryFilter,
         );
+
+  // v1.18.0 Batch 3 — every unavailable item (Borrow/Loop, when their own
+  // preferences are incomplete) whose own filter category matches the
+  // current view, each with its real, sourced reason (spec §8: scoped
+  // per item, not a whole-category banner, since `debt`/`leverage` can
+  // now be partially available).
+  const unavailableItemsForCategory =
+    actions === null
+      ? []
+      : ITEM_ORDER.filter((id) => {
+          const reason = unavailableReasons[id];
+          if (reason === undefined) return false;
+          return categoryFilter === 'all' || ITEM_FILTER_CATEGORY[id] === categoryFilter;
+        });
 
   // `portfolioId !== null` is unreachable here — `recalculate` always
   // sets `portfolioId` and `status` together (every branch of that
@@ -222,17 +268,21 @@ export function RecommendationList({
 
       {!isUnavailableCategory && actions !== null && (
         <>
-          {/* Unreachable given the current, fixed two-item shape: a
-              non-unavailable `categoryFilter` is either 'all' (2 items),
-              'debt' (repayment, always present), or 'collateral'
-              (additionalCollateral, always present) — never 0. Kept as
-              defense in depth for a future category this Recommendation
-              Center might add, the same "documented, not force-tested"
-              precedent `PartialExitResult.tsx`'s own `after.liquidation
-              !== null` branch already establishes. */}
-          {allItems.length === 0 && (
+          {/* Reachable now (v1.18.0 Batch 3), unlike before: `leverage`
+              with Loop unavailable, or `debt`/`all` with every item
+              acknowledged/unavailable, can legitimately have zero
+              computed items. Suppressed when `unavailableItemsForCategory`
+              already explains why below, so the two messages never both
+              show for the same empty state. */}
+          {allItems.length === 0 && unavailableItemsForCategory.length === 0 && (
             <p className="text-sm text-muted-foreground">No recommendations in this category.</p>
           )}
+
+          {unavailableItemsForCategory.map((id) => (
+            <p key={id} className="text-sm text-muted-foreground">
+              {unavailableReasons[id]}
+            </p>
+          ))}
 
           {allHealthy && (
             <p role="status" className="text-sm text-foreground">

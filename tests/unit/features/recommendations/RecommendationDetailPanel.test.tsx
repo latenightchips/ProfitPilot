@@ -3,10 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RecommendationDetailPanel } from '@/features/recommendations';
-import type { RecommendationExplanationSet, TargetHealthFactorActions } from '@/services';
+import type {
+  Recommendation,
+  RecommendationExplanationSet,
+  TargetHealthFactorActions,
+} from '@/services';
 import { calculateTargetHealthFactorActions, explainTargetHealthFactorActions } from '@/services';
 import { useExitPlannerStore } from '@/stores/exitPlannerStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
+import type { RecommendationItemId } from '@/stores/recommendationCenterStore';
 import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore';
 import { useSimulationStore } from '@/stores/simulationStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -130,7 +135,7 @@ beforeEach(() => {
   push.mockClear();
 });
 
-function setReady(selectedItemId: 'repayment' | 'additionalCollateral' | null, overrides = {}) {
+function setReady(selectedItemId: RecommendationItemId | null, overrides = {}) {
   useRecommendationCenterStore.setState({
     ...RECOMMENDATION_CENTER_INITIAL_STATE,
     status: 'ready',
@@ -265,6 +270,100 @@ describe('RecommendationDetailPanel — additionalCollateral', () => {
     expect(
       screen.queryByRole('button', { name: 'Open Simulation Workspace with this target' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * v1.18.0 Batch 3 — both fixtures use the "not acceptable"/"stop
+ * looping" branch, the actionable one per `isActionableRecommendation`
+ * (see `RecommendationList.test.tsx`'s identical fixtures/comment for
+ * the full reasoning), so Loop's related-tool button actually renders
+ * for the action-link test below.
+ */
+const BORROW_RECOMMENDATION: Recommendation = {
+  category: 'debtManagement',
+  triggeringCondition:
+    'One or more of: Health Factor at or below minimum, no available borrow capacity, or Debt Ratio at or above target.',
+  relevantValues: {
+    healthFactor: 1.2,
+    userMinHealthFactor: 1.5,
+    availableBorrow: 0,
+    debtRatio: 0.6,
+    targetDebtRatio: 0.5,
+  },
+  expectedEffect:
+    'Additional borrowing would violate at least one configured safety or leverage limit.',
+  decisionPriority: 'Improve Capital Efficiency',
+  suggestedAction: 'Do not recommend additional borrowing.',
+  formulaReferences: ['F-061', 'F-022', 'F-013', 'F-006'],
+};
+
+const LOOP_RECOMMENDATION: Recommendation = {
+  category: 'leverage',
+  triggeringCondition:
+    'One or more of: resulting Health Factor at or below target, no borrow capacity available, or interest cost exceeds the acceptable maximum.',
+  relevantValues: {
+    newHealthFactor: 7,
+    targetHealthFactor: 8,
+    availableBorrow: 0,
+    annualInterestCost: 6000,
+    maxAcceptableAnnualInterestCost: 5000,
+  },
+  expectedEffect: 'One more loop step would bring Health Factor to approximately 7.',
+  decisionPriority: 'Improve Capital Efficiency',
+  suggestedAction: 'Stop Looping',
+  formulaReferences: ['F-064', 'F-014', 'F-032'],
+};
+
+describe('RecommendationDetailPanel — Borrow/Loop (v1.18.0 Batch 3)', () => {
+  it('X: Borrow preserves its own real relevantValues labels and Formula IDs, with no fabricated related-tool action', () => {
+    setReady('borrow', { actions: { ...ACTIONS, borrow: BORROW_RECOMMENDATION } });
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(
+      screen.getByText(
+        'One or more of: Health Factor at or below minimum, no available borrow capacity, or Debt Ratio at or above target.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Minimum Health Factor')).toBeInTheDocument();
+    expect(screen.getByText('Available Borrow')).toBeInTheDocument();
+    expect(screen.getByText('Target Debt Ratio')).toBeInTheDocument();
+    expect(screen.getByText('Do not recommend additional borrowing.')).toBeInTheDocument();
+    expect(screen.getByText('F-061, F-022, F-013, F-006')).toBeInTheDocument();
+    expect(
+      screen.getByText('No related planning tool for this recommendation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Open /i })).not.toBeInTheDocument();
+  });
+
+  it('X: Loop preserves its own real relevantValues labels and Formula IDs, and its action link navigates without a Borrow/Repayment-style prefill', () => {
+    setReady('loop', { actions: { ...ACTIONS, loop: LOOP_RECOMMENDATION } });
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(
+      screen.getByText(
+        'One or more of: resulting Health Factor at or below target, no borrow capacity available, or interest cost exceeds the acceptable maximum.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Health Factor After Loop')).toBeInTheDocument();
+    expect(screen.getByText('Annual Interest Cost')).toBeInTheDocument();
+    expect(screen.getByText('Maximum Acceptable Annual Interest Cost')).toBeInTheDocument();
+    expect(screen.getByText('Stop Looping')).toBeInTheDocument();
+    expect(screen.getByText('F-064, F-014, F-032')).toBeInTheDocument();
+
+    screen.getByRole('button', { name: 'Open Loop Builder with this target' }).click();
+
+    expect(push).toHaveBeenCalledWith('/loop-builder');
+    // Navigation only, no prefill — neither Exit Planner's nor
+    // Simulation's Store is touched by selecting Loop's action link.
+    expect(useExitPlannerStore.getState().exitType).toBeNull();
+    expect(useSimulationStore.getState().portfolioActionPreview).toBeNull();
+  });
+
+  it('references Portfolio Settings → Recommendation Preferences in the Assumptions text for Borrow and Loop', () => {
+    setReady('borrow', { actions: { ...ACTIONS, borrow: BORROW_RECOMMENDATION } });
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
+    expect(screen.getByText(/Recommendation Preferences/)).toBeInTheDocument();
   });
 });
 
