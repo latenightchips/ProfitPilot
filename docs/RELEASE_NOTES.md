@@ -13,14 +13,70 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.19.0
+## Version 1.20.0
 
-**Current release.** Promotes three implementation batches on top of
-Version 1.18.0, together titled "Dashboard Recommendation Summary
-Parity": Batch 1, Service Integration; Batch 2, UI Wiring; and Batch 3,
-Integration/E2E Hardening — built, tested, and independently re-verified
-in the batches that produced them, not a fresh Milestone-9/V1.1-style
-Release Candidate process with its own new manual exploratory pass. See
+**Current release.** Promotes two implementation batches on top of
+Version 1.19.0, together titled "Dashboard Starting-Value Baseline
+Visibility": Batch 1, Dashboard Starting-Value Baseline Section —
+Service/View Reuse + Dashboard Wiring; and Batch 2, Cross-Page
+Integration Proof + Deterministic `portfolioStore` `updatedAt` Test
+Hardening (no production defect found) — built, tested, and
+independently re-verified in the batches that produced them, not a
+fresh Milestone-9/V1.1-style Release Candidate process with its own new
+manual exploratory pass. See `PROJECT_STATUS.md`'s "v1.20.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.20.0]` entry for
+the full record. Everything in "Version 1.19.0" and earlier below still
+applies; this section covers only what is new since 1.19.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.20.0
+
+- **The Dashboard now shows your Starting-Value Baseline, if you've set
+  one on the Portfolio page.** A new "Performance since [date]" section
+  appears near the top of the Dashboard, showing the same baseline
+  value, current value, and change since baseline you already see on
+  the Portfolio page.
+- **If your BTC quantity has changed since your baseline was set**, the
+  Dashboard shows the same "Composition changed since baseline" note
+  the Portfolio page shows — the numbers stay visible, just qualified.
+- **If you haven't set a baseline yet**, the Dashboard says so plainly
+  and links you to the Portfolio page to set one.
+- **No new button on the Dashboard.** Setting or resetting a baseline
+  still happens only on the Portfolio page — the Dashboard only shows
+  what's already been set.
+- **Verified to match exactly** between the Dashboard and the Portfolio
+  page, for the same portfolio.
+
+### What this is not
+
+**This is a visibility change, not a new financial capability.** No new
+formula, no new persisted data, no new calculation. It does not add a
+way to set or reset a baseline from the Dashboard. It does not add cost
+basis, profit/loss, or total return — the Starting-Value Baseline
+remains a simple performance reference point, not an accounting record,
+exactly as it was when introduced in `v1.17.0`. It does not resolve
+Health Factor risk bands, Exit Readiness, the Interest Cost warning gap,
+or any operated production deployment.
+
+### Explicitly unchanged in 1.20.0
+
+No financial formula changed, no persisted-data schema version changed,
+no migration required, no V3/V4 semantic change. The Starting-Value
+Baseline calculation itself — and the Portfolio page's own panel — are
+completely unaffected by this release, same calculation, same wording,
+same behavior as before. Still no live wallet connection or transaction
+execution, still no cloud backup or synchronization, still no publicly
+operated production deployment.
+
+## Version 1.19.0 (previous release)
+
+Promotes three implementation batches on top of Version 1.18.0, together
+titled "Dashboard Recommendation Summary Parity": Batch 1, Service
+Integration; Batch 2, UI Wiring; and Batch 3, Integration/E2E Hardening —
+built, tested, and independently re-verified in the batches that
+produced them, not a fresh Milestone-9/V1.1-style Release Candidate
+process with its own new manual exploratory pass. See
 `PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section and
 `docs/CHANGELOG.md`'s `[1.19.0]` entry for the full record. Everything in
 "Version 1.18.0" and earlier below still applies; this section covers

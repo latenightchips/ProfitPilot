@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.19.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.19.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.19** — no batch in any of the nineteen releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). Dashboard Recommendation Summary Parity (`v1.19.0`) assigns no Formula ID either — the Dashboard summary builder now calls the same `calculateRecommendationActions` composition, adding no Engine calculation of its own (verified: `git diff v1.18.0..HEAD -- engine/` returns empty output). |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.19** — every batch across all nineteen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. `v1.19.0` introduces no new persisted field at all — it only changes which Service the Dashboard's own (already-existing, already-persisted-nothing) summary builder calls. |
+| Application version           | `1.20.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.20.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.20** — no batch in any of the twenty releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). Dashboard Recommendation Summary Parity (`v1.19.0`) assigns no Formula ID either — the Dashboard summary builder now calls the same `calculateRecommendationActions` composition, adding no Engine calculation of its own (verified: `git diff v1.18.0..HEAD -- engine/` returns empty output). Dashboard Starting-Value Baseline Visibility (`v1.20.0`) assigns no Formula ID either — the Dashboard now calls the same already-authoritative `calculateStartingValueBaselineComparison` (v1.17.0), adding no Engine calculation of its own (verified: `git diff v1.19.0..HEAD -- engine/` returns empty output). |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.20** — every batch across all twenty releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. `v1.19.0` introduces no new persisted field at all — it only changes which Service the Dashboard's own (already-existing, already-persisted-nothing) summary builder calls. `v1.20.0` introduces no new persisted field either — the Starting-Value Baseline's three persisted fields (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) were already added in `v1.17.0`; this release only surfaces their already-computed comparison on a second page. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -58,6 +58,41 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.17.0)    | 2026-09-07     | Starting-Value Baseline — specification phase plus Batch 1 (data model/persistence/store/comparison) and Batch 2 (Portfolio page UI), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4441/4441 tests passing) — see `PROJECT_STATUS.md`'s "v1.17.0 Release Reconciliation" section and the `[1.17.0]` entry below. Same promotion pattern as `1.16.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.18.0)    | 2026-09-08     | Recommendation Preferences — specification phase plus Batch 1 (schema/persistence), Batch 2 (service integration), Batch 3 (Recommendation Center wiring + Portfolio preference UI), and Batch 4 (presentation-language layer + E2E/accessibility hardening), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4521/4521 tests passing) — see `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section and the `[1.18.0]` entry below. Same promotion pattern as `1.17.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.19.0)    | 2026-09-08     | Dashboard Recommendation Summary Parity — Batch 1 (Service Integration), Batch 2 (UI Wiring), and Batch 3 (Integration/E2E Hardening — no production defect found, tests only), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4551/4551 tests passing) — see `PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section and the `[1.19.0]` entry below. Same promotion pattern as `1.18.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.20.0)    | 2026-09-08     | Dashboard Starting-Value Baseline Visibility — Batch 1 (Dashboard Starting-Value Baseline Section — Service/View Reuse + Dashboard Wiring) and Batch 2 (Cross-Page Integration Proof + Deterministic `portfolioStore` `updatedAt` Test Hardening — no production defect found), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4574/4574 tests passing) — see `PROJECT_STATUS.md`'s "v1.20.0 Release Reconciliation" section and the `[1.20.0]` entry below. Same promotion pattern as `1.19.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.20.0`, not `1.19.x` or a new
+`2.0.0`**: not a PATCH — the Dashboard now shows a "Performance since
+[date]" section (baseline value, current value, change since baseline,
+and composition-changed status) for any portfolio with a Starting-Value
+Baseline established — new user-facing visibility, not a bug fix to
+existing capability, the same bar every prior MINOR bump already used.
+**This narrowly supersedes one half of one statement in
+`docs/STARTING_VALUE_BASELINE_SPEC.md` §11** — its "Integration point:
+the Portfolio Details page… not the Dashboard" line, but only for
+*visibility* of the already-computed comparison, not for the
+*action-triggering control* that line's own rationale was actually
+protecting. Setting or resetting a baseline remains exclusively a
+Portfolio-page action; `app/portfolio/StartingValueBaselinePanel.tsx` is
+byte-for-byte unchanged by this release (verified: `git diff
+v1.19.0..HEAD -- app/portfolio/` is empty). See `PROJECT_STATUS.md`'s
+"v1.20.0 Release Reconciliation" section, "§11 historical statement —
+reconciliation," for the full reasoning. `docs/STARTING_VALUE_BASELINE_SPEC.md`
+itself is left unedited, per the same "specification documents are
+frozen artifacts once approved" convention `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+§9 and `v1.19.0`'s own reconciliation already established. Not a new
+MAJOR either: no Engine file changed at all (verified: `git diff
+v1.19.0..HEAD -- engine/` is empty), no Formula ID was assigned,
+`FORMULA_VERSION` stays `1.0`, `STORAGE_SCHEMA_VERSION` is untouched (no
+persisted field was added, changed, or removed — the three
+Starting-Value Baseline fields were already added in `v1.17.0`; this
+release only surfaces their already-computed comparison on a second
+page), no V3/V4 semantic change, and nothing about the Manual-Mode-by-
+default product boundary `01_PRD.md` reserves Version 2 for was touched.
+This release introduces no P&L, realized-return, or cost-basis semantics
+— the underlying comparison remains explicitly a performance reference
+point, not accounting, exactly as `docs/STARTING_VALUE_BASELINE_SPEC.md`
+§1/§8 already scoped it. A minor version bump, same class as `1.1.0`'s
+through `1.19.0`'s own.
 
 **Why the Application/Engine version is `1.19.0`, not `1.18.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard's own Recommendation Summary
@@ -512,6 +547,70 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.20.0] — 2026-09-08
+
+Two implementation batches on top of Version 1.19.0, together titled
+"Dashboard Starting-Value Baseline Visibility": Batch 1, Dashboard
+Starting-Value Baseline Section — Service/View Reuse + Dashboard Wiring
+(`041c7a1`), and Batch 2, Cross-Page Integration Proof + Deterministic
+`portfolioStore` `updatedAt` Test Hardening (`6c53f0f`, no production
+defect found), plus this reconciliation batch itself. Full per-file,
+per-batch detail lives in `PROJECT_STATUS.md`'s "v1.20.0 Release
+Reconciliation" section; this entry summarizes what changed for a user.
+
+### What's new in 1.20.0
+
+- **The Dashboard now shows your Starting-Value Baseline, if you've set
+  one.** A new "Performance since [date]" section appears in the
+  Overview area, directly below the top KPI grid, showing the same
+  baseline value, current value, and change since baseline you already
+  see on the Portfolio page.
+- **If composition has changed since your baseline was set** (e.g. after
+  a Loop or Exit changed your BTC quantity), the Dashboard shows the
+  same "Composition changed since baseline" note the Portfolio page
+  shows — the comparison figures stay visible, just qualified.
+- **If no baseline is set**, the Dashboard says so plainly and links to
+  the Portfolio page to set one — no placeholder numbers, no invented
+  values.
+- **The Dashboard is read-only for this feature.** There is no "Set
+  Baseline" or "Reset Baseline" button on the Dashboard; those actions
+  remain exactly where they were, on the Portfolio page.
+- **Verified to match exactly, byte for byte**, between the Dashboard
+  and the Portfolio page, for the same portfolio — both surfaces read
+  the same underlying comparison, never two independently derived
+  figures.
+
+### What this is not
+
+**This is a visibility change, not a new financial capability.** No new
+formula, no new persisted field, no new calculation. This release does
+**not**: change what a Starting-Value Baseline means or how it's
+computed; add a way to set or reset a baseline from the Dashboard; add
+cost basis, profit/loss, realized return, or any accounting-grade
+figure — the comparison remains explicitly a performance reference
+point, never an accounting record, exactly as it was in `v1.17.0`; or
+resolve Health Factor risk-band classification (Conflict #1), the Exit
+Readiness Formula ID gap (Conflict #11), the F-067 component-formula
+gap (Conflict #12), the Interest Cost category's F-065 gap, or any
+operated production deployment.
+
+### Explicitly unchanged in 1.20.0
+
+**No financial formula changed, and no Formula ID was assigned.**
+`services/portfolio/startingValueBaseline.ts`'s
+`calculateStartingValueBaselineComparison` — the sole authoritative
+source of this comparison since `v1.17.0` — is byte-for-byte unchanged
+(verified: `git diff v1.19.0..HEAD -- services/portfolio/startingValueBaseline.ts`
+returns empty output). **`STORAGE_SCHEMA_VERSION` stays `1.0.0`** — no
+persisted field was added, changed, or removed; the three baseline
+fields were already persisted as of `v1.17.0`. No V3/V4 semantic
+change — the Dashboard's builder reads the same portfolio-level fields
+regardless of protocol version, with no protocol-version branching of
+its own. Setting and resetting a baseline remain exclusively a
+Portfolio-page action — `app/portfolio/StartingValueBaselinePanel.tsx`
+is untouched. No CSV export change. No Simulation, Loop Builder, or
+Exit Planner file was touched.
 
 ## [1.19.0] — 2026-09-08
 

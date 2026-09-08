@@ -15833,6 +15833,337 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.20.0 Release Reconciliation — Dashboard Starting-Value Baseline Visibility
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents Batch 1
+(`041c7a1`, Dashboard Starting-Value Baseline Section — Service/View
+Reuse + Dashboard Wiring), Batch 2 (`6c53f0f`, Cross-Page Starting-Value
+Baseline Integration Proof + Deterministic `portfolioStore` `updatedAt`
+Test Hardening — no production defect found), and this reconciliation
+batch itself, applied directly on top of `v1.19.0`
+(`4e6db33a6b7f524ab9bdfcd4535a7c4702685540`).
+
+**Current release candidate: `1.20.0`. Versions `1.0.0` through `1.19.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.19.0` still resolves to
+`4e6db33a6b7f524ab9bdfcd4535a7c4702685540`, confirmed by fresh inspection
+during this batch (`git rev-parse v1.19.0^{commit}`). `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.19.0` to
+`1.20.0` — a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own
+"Why the Application/Engine version is `1.20.0`" paragraph gives.
+`FORMULA_VERSION` remains `1.0`, `STORAGE_SCHEMA_VERSION` remains
+`1.0.0` — this release requires neither: `git diff v1.19.0..HEAD --
+engine/` returns completely empty output (verified directly, not
+assumed) — no `engine/**` file of any kind was touched across either
+batch — and no persisted field of any kind was added, changed, or
+removed; this release surfaces already-authoritative, already-persisted
+baseline data on a second page, computing nothing new. **No `v1.20.0`
+git tag exists yet** — confirmed via `git rev-parse v1.20.0` failing with
+"unknown revision" during this batch's own baseline verification;
+tagging is a separate, explicit step for after this patch is applied and
+synced, not taken by this batch (see this batch's own tag-readiness
+verdict at the end of this section).
+
+### Full `v1.19.0..origin/main` diff audit
+
+Every file touched across both batches, verified directly via
+`git diff --stat v1.19.0..origin/main`, not assumed from batch reports
+alone:
+
+- `app/DashboardPageClient.tsx` (Batch 1 — import + one new `const` +
+  one new conditionally-rendered section, plus a header-comment
+  addition)
+- `features/dashboard/components/StartingValueBaselineSection.tsx`
+  (Batch 1, new)
+- `features/dashboard/index.ts` (Batch 1 — 3 new alphabetical barrel
+  exports + header-comment addition)
+- `features/dashboard/types/startingValueBaselineSummary.ts` (Batch 1,
+  new)
+- `features/dashboard/utils/buildStartingValueBaselineSummary.ts`
+  (Batch 1, new)
+- `tests/unit/app/page.test.tsx` (Batch 1)
+- `tests/unit/features/dashboard/StartingValueBaselineSection.test.tsx`
+  (Batch 1, new)
+- `tests/unit/features/dashboard/buildStartingValueBaselineSummary.test.ts`
+  (Batch 1, new)
+- `tests/unit/app/portfolio/page.test.tsx` (Batch 2 — 4 new cross-page
+  parity tests + 1 new scoped query helper)
+- `tests/unit/stores/portfolioStore.test.ts` (Batch 2 — deterministic
+  fake-timer fix to one pre-existing flaky assertion)
+
+**Exactly 10 files, zero of which are under `engine/`, `services/`
+(other than a read-only call the builder already makes to the existing
+`calculateStartingValueBaselineComparison`), `types/portfolio.ts`,
+`types/portfolio.schema.ts`, `services/persistence/`, or any V3/V4-
+dispatch file (`services/portfolio/mapping.ts`)** — confirmed by direct
+`git diff` against each of those paths returning empty output (see
+"Release scope audit" below). No Formula ID was assigned or touched. No
+persisted-data schema version changed. No protocol-version branching was
+introduced anywhere.
+
+### Batch 1 — Dashboard Starting-Value Baseline Section (`041c7a1`)
+
+- **`features/dashboard/utils/buildStartingValueBaselineSummary.ts`**:
+  calls the same authoritative
+  `calculateStartingValueBaselineComparison` (`services/portfolio/startingValueBaseline.ts`,
+  v1.17.0 Batch 1) `app/portfolio/StartingValueBaselinePanel.tsx` already
+  calls, and only formats its already-computed fields for direct render —
+  no arithmetic of its own. `formatSignedCurrency`/`formatSignedPercent`
+  are restated locally, matching this feature's own "each page/feature
+  owns its formatting layer" convention, using the identical sign
+  convention (`+` only for strictly-positive values) the Portfolio page's
+  own copies already use.
+- **`features/dashboard/components/StartingValueBaselineSection.tsx`**:
+  read-only by design — renders `buildStartingValueBaselineSummary`'s
+  pre-formatted output, with no "Set Baseline Now"/"Reset Baseline"
+  control of its own. The empty state links to `/portfolio`, where those
+  actions remain the only entry point, unchanged. Terminology ("Performance
+  since [date]," "Baseline value," "Current value," "Change since
+  baseline," "Composition changed since baseline") matches
+  `StartingValueBaselinePanel.tsx` exactly, per the canonical
+  specification's Decision 5.
+- **`app/DashboardPageClient.tsx`**: renders the new section inside the
+  existing "Overview" `<section>`, directly after `DashboardKpiGrid`,
+  guarded by the same `viewModel.ok === true` branch every other section
+  in that group already uses; no new top-level render condition.
+- **Tests**: builder tests (fixture-driven, hasBaseline true/false,
+  composition-changed, zero-baseline-value edge case, sign-convention
+  parity with the Portfolio-page copy), component tests (both states,
+  accessibility semantics, no mutation control present), and an
+  extension to `tests/unit/app/page.test.tsx` proving the section renders
+  inside the real Dashboard tree.
+- **Validation**: full suite passing, independently re-verified against
+  a fresh `origin/main` checkout.
+
+### Batch 2 — Cross-Page Integration Proof + Deterministic Timestamp-Test Fix (`6c53f0f`)
+
+- **`tests/unit/app/portfolio/page.test.tsx`**: new describe block
+  `'Dashboard ↔ Portfolio page Starting-Value Baseline parity (v1.20.0
+Batch 2)'`, 4 tests driving the real `usePortfolioStore` → real
+  `calculateStartingValueBaselineComparison` → real Dashboard builder →
+  real rendered UI, then comparing against the Portfolio page's own real
+  rendering of the same store state: (1) honest "no baseline" wording on
+  both surfaces; (2) byte-identical baseline/current/change figures for
+  an established baseline; (3) consistent "composition changed since
+  baseline" status on both surfaces after a collateral-quantity change;
+  (4) a real `setMarket` price change reflected identically on both
+  surfaces, correctly reconciled against the `useAaveLiveSync`
+  live-quote-overwrite hazard both routes independently mount. A new
+  `getPortfolioPageBaselineDefinitions()` helper scopes the Portfolio
+  page's `<dd>` query to the Starting-Value Baseline `<section>`
+  specifically, since `AaveTechnicalDetails.tsx` and
+  `PortfolioHistoryPanel.tsx` render their own unrelated `<dl>`/`<dd>`
+  content on the same page. No financial arithmetic was duplicated in
+  the test helper — it only extracts already-rendered DOM text for
+  comparison.
+- **`tests/unit/stores/portfolioStore.test.ts`**: the pre-existing
+  `applyPortfolioState` `'writes the proposed collateral/debt and bumps
+updatedAt'` test (identified as flaky during the v1.19.0→v1.20.0
+  roadmap audit — a same-millisecond `create()`+`applyPortfolioState()`
+  race, not a production defect) now uses the exact
+  `vi.useFakeTimers()`/`vi.setSystemTime()`/`vi.useRealTimers()` pattern
+  its sibling tests in the same file (the `setBaseline` test and the
+  `applyPortfolioState` staleness test) already use. Verified
+  deterministic via 18 total repeated full-file runs across two
+  independently-created worktrees (188/188 passing every time) —
+  `production timestamp behavior itself was not changed`, only the test's
+  own timing assumption.
+- **No production defect found.** One bug in this batch's own new test
+  code was caught and fixed before delivery (a hardcoded literal
+  `'+$0.00 (+0%)'` corrected to `'$0.00 (0%)'`, matching the shared sign
+  convention that only prefixes `+` for strictly-positive values) — the
+  cross-page equality assertion in that same test had already passed
+  independently of the mistaken literal, confirming both pages agreed.
+- **Tests**: 4 new integration tests plus the 1 hardened pre-existing
+  test.
+- **Validation**: full suite passing (4574/4574), independently
+  re-verified in two separately-created worktrees from the same
+  baseline.
+
+### Traceability audit
+
+Every v1.20.0 claim mapped directly to code/tests, not assumed:
+
+| Claim                                                        | Verified against                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard reuses the existing authoritative comparison       | `features/dashboard/utils/buildStartingValueBaselineSummary.ts` calls `calculateStartingValueBaselineComparison` — no new Engine call |
+| No new arithmetic on the Dashboard side                      | `buildStartingValueBaselineSummary.ts` reads only the comparison's already-resolved fields; formats, never computes                   |
+| Dashboard is read-only for this capability                   | `StartingValueBaselineSection.tsx` contains no `setBaseline`/`resetBaseline` call or button of any kind                               |
+| Set/Reset Baseline controls remain Portfolio-only            | `git diff v1.19.0..origin/main -- app/portfolio/` returns empty output — `StartingValueBaselinePanel.tsx` is untouched                |
+| Dashboard/Portfolio parity is integration-tested             | `tests/unit/app/portfolio/page.test.tsx`'s new v1.20.0 Batch 2 describe block (4 tests)                                               |
+| No-baseline behavior is explicit and honest on both surfaces | Parity test 1 (above) asserts the exact absent-state wording on both routes                                                           |
+| `updatedAt` test made deterministic via fake time            | `tests/unit/stores/portfolioStore.test.ts` — `vi.useFakeTimers()`/`vi.setSystemTime()`, matching sibling tests exactly                |
+| Production timestamp behavior unchanged                      | `git diff v1.19.0..origin/main -- stores/portfolioStore.ts` returns empty output — only the test file changed                         |
+| No production defect discovered in Batch 2                   | Batch 2's own report and this section's "no production defect found" note above; only a test-literal bug in new test code was found   |
+| Version metadata                                             | `package.json`, `engine/shared/result.ts`, `services/persistence/envelope.ts` — all confirmed `1.20.0`/`1.20.0` this batch            |
+
+**No claim in this release's own batch reports could not be verified
+against the actual repository.**
+
+### §11 historical statement — reconciliation
+
+`docs/STARTING_VALUE_BASELINE_SPEC.md` §11 states: **"Integration
+point: the Portfolio Details page (`/portfolio`,
+`app/portfolio/PortfolioPageClient.tsx`), not the Dashboard,"** with a
+stated rationale of avoiding "placing an action-triggering control
+inside the Dashboard's otherwise read-only trend-chart section."
+
+**This document is left completely untouched by this reconciliation** —
+following the same "specification documents are frozen artifacts once
+approved" convention `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+§9 and `v1.19.0`'s own reconciliation already established (see that
+section above). §11 was an accurate statement of the feature's original
+integration scope at the time it was written (baseline _establishment_
+and _reset_ remain exclusively on the Portfolio page, exactly as
+written), and remains so as a historical record for the action-oriented
+half of that statement; it is not rewritten, and no inline "Superseded"
+marker was added.
+
+**What v1.20.0 actually changes, precisely**: §11's own stated
+rationale was about not placing an **action-triggering control** inside
+the Dashboard — not about withholding the already-computed comparison
+from view entirely. `StartingValueBaselineSection.tsx` (Batch 1) adds no
+control of any kind; it is exactly the "passive trend visualization"
+category §11 itself contrasts baseline-setting against ("not a passive
+trend visualization like the Dashboard's 'Trends' group"). v1.20.0
+therefore extends _visibility_ of an already-authoritative comparison to
+a second page while leaving the _integration point for the mutating
+action_ — the part §11's own rationale was actually protecting — exactly
+where §11 placed it. The supersession is narrow and is recorded here, in
+`docs/CHANGELOG.md`'s `[1.20.0]` entry and "Why `1.20.0`" paragraph, and
+in `docs/RELEASE_NOTES.md`'s `## Version 1.20.0` section, cross-
+referencing back to this section and to §11 by name.
+
+**Also unaffected**: `docs/STARTING_VALUE_BASELINE_SPEC.md`'s own line 3
+header (`**Status: Approved for implementation planning. Not yet
+implemented.**`) remains unedited — it was already stale as of `v1.17.0`
+(full Portfolio-page implementation) and is left exactly as `v1.17.0`'s
+own reconciliation already found and left it, under the same frozen-spec
+convention; this release does not newly introduce that staleness or
+correct it.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.20.0`; a new "Why the Application/
+  Engine version is `1.20.0`" paragraph (naming and narrowly superseding
+  the action-vs-visibility half of §11, as above) inserted before the
+  `1.19.0` paragraph; a new `[1.20.0]` entry (What's new / What this is
+  not / Explicitly unchanged) inserted before `[1.19.0]`.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.20.0` section added
+  with the `**Current release.**` marker; `## Version 1.19.0` demoted to
+  `## Version 1.19.0 (previous release)` with that marker removed, the
+  same demotion pattern used for every prior release transition.
+- **`PROJECT_STATUS.md`**: this section.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.19.0`
+  to `1.20.0`. `FORMULA_VERSION` (`1.0`) and `STORAGE_SCHEMA_VERSION`
+  (`1.0.0`) are unchanged.
+
+**`docs/STARTING_VALUE_BASELINE_SPEC.md` itself was left untouched** —
+see "§11 historical statement — reconciliation" above for the full
+reasoning.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for `1.19.0`/`1.20.0`/
+`starting.value`/`baseline` and found to need no update: the only
+matches (`DEPLOYMENT_DISPOSITION.md`'s "Performance Baseline" document
+reference, `MAINTENANCE_SCHEDULE.md`'s "dependency-audit baseline")
+concern unrelated uses of the word "baseline," not this feature.
+`docs/VERSION_2_BACKLOG.md`'s eight numbered items do not include this
+theme — nothing to remove or mark done. Deployment disposition is
+unchanged from prior releases.
+
+### Known/deferred work audit
+
+Re-verified against current `PROJECT_STATUS.md`/spec-doc text this
+batch, not resurrected from memory — every item below remains genuinely
+open, none resolved by `v1.19.0` or `v1.20.0`:
+
+- **Health Factor risk-band classification (Conflict #1)** — still open;
+  the documented bands still disagree across README.md/`01_PRD.md`
+  REQ-001/REQ-005/`02_Formulas.md` F-026/F-060.
+- **F-065 "Interest Warning"** — still deferred; no "Expected Annual
+  Portfolio Growth" figure exists anywhere in `02_Formulas.md`.
+- **F-067 "Simple Portfolio Score"** — still deferred (Conflict #12);
+  documented weights exist, no per-component 0–100 conversion formula.
+- **Exit Readiness Formula-ID gap (Conflict #11)** — still unmapped; no
+  Formula ID in the Recommendation Engine chapter names "Exit readiness."
+- **Quantified Impact for Borrow/Loop** — still a gap, unaffected by this
+  release; explicitly out of scope for `v1.19.0` and remains out of scope
+  here.
+- **Cost basis / P&L / total return / cumulative-realized interest** —
+  still permanently deferred; no acquisition-price/transaction-lot
+  mechanism exists anywhere in this application. The Starting-Value
+  Baseline comparison this release surfaces on a second page remains
+  explicitly **not** cost basis, P&L, or realized return — spec §1/§8's
+  own scope boundary, unaffected by this release's Dashboard extension.
+- **Settings About / Conflict #39** — still unresolved; License, Data
+  Provider, and Last Synchronization remain undisplayed in Settings'
+  About section, unaffected by this release.
+- **Cloud Database / Cloud Sync** — still cancelled by explicit product
+  decision (Milestone 8), not deferred, not revisited.
+- **Operated production deployment/monitoring under Path B** — still
+  deferred; no live deployment exists, unaffected by this release.
+
+No item above was silently resolved, removed, or resurrected as newly
+discovered — each is exactly where the most recent prior reconciliation
+left it.
+
+### Release scope audit
+
+Explicitly verified across the entire `v1.19.0..origin/main` diff, not
+assumed:
+
+- **No Engine behavior/formula change** — `git diff v1.19.0..origin/main
+-- engine/` returns empty output.
+- **No V3 semantic change, no V4 semantic change, no Aave-adapter
+  change** — `git diff v1.19.0..origin/main -- services/portfolio/mapping.ts
+hooks/useAaveV4LiveSync.ts hooks/useAaveV4CollateralRiskLiveSync.ts`
+  returns empty output; `StartingValueBaselineSection.tsx` and
+  `buildStartingValueBaselineSummary.ts` contain zero references to
+  `protocolVersion`, `v4DebtState`, or `v4CollateralRisk`.
+- **No persistence-schema change** — `git diff v1.19.0..origin/main --
+services/persistence/ types/portfolio.ts types/portfolio.schema.ts`
+  returns empty output; no field of any kind was added, changed, or
+  removed.
+- **No recommendation-semantic change** — `git diff v1.19.0..origin/main
+-- services/recommendation/ features/recommendations/` returns empty
+  output.
+- **No baseline-arithmetic change** — `git diff v1.19.0..origin/main --
+services/portfolio/startingValueBaseline.ts` returns empty output; the
+  authoritative comparison function itself is byte-for-byte unchanged.
+- **No production timestamp-behavior change** — `git diff
+v1.19.0..origin/main -- stores/portfolioStore.ts` returns empty
+  output; only `tests/unit/stores/portfolioStore.test.ts` changed.
+
+**Result matches the expected shape**: v1.20.0 is principally Dashboard
+presentation and integration/test hardening around already-authoritative
+baseline semantics, exactly as scoped. Repository evidence does not
+contradict that expectation at any point in this diff.
+
+### Final release assessment
+
+**READY TO TAG v1.20.0.** All 10 changed files inspected directly; every
+batch's own claim verified against real code/tests, not assumed; full
+suite passing (4574/4574) at the reconciliation baseline (see Validation
+below for this batch's own re-run); no unresolved blocker; no historical
+artifact silently rewritten; no known/deferred item silently resolved or
+resurrected; version metadata consistent across `package.json`/
+`ENGINE_VERSION`/`APP_VERSION`.
+
+---
+
 ## v1.19.0 Release Reconciliation — Dashboard Recommendation Summary Parity
 
 **Recorded after the fact, the same convention every release-
