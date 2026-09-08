@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.17.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.17.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.17** — no batch in any of the seventeen releases modified a financial formula. Starting-Value Baseline (`v1.17.0`) is deliberately **not** a Formula ID — its two small comparison calculations are plain Service-layer code, specified as such in `docs/STARTING_VALUE_BASELINE_SPEC.md` §12 precisely to avoid silently extending `02_Formulas.md`'s frozen, already-closed 69-item registry. |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.17** — every batch across all seventeen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.17.0` adds three new optional `Portfolio` fields (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. |
+| Application version           | `1.18.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.18.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.18** — no batch in any of the eighteen releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.18** — every batch across all eighteen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -56,6 +56,37 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.15.0)    | 2026-09-06     | Dashboard Information Architecture — Trend/Current-State Separation (Batches 1–3), each batch independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4379/4379 tests passing) — see `PROJECT_STATUS.md`'s "v1.15.0 Release Reconciliation" section and the `[1.15.0]` entry below. Same promotion pattern as `1.14.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.16.0)    | 2026-09-07     | Settings About — Version Transparency (Batch 1), re-validated against a fresh `origin/main` checkout after patch apply (final count 4385/4385 tests passing) — see `PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section and the `[1.16.0]` entry below. Same promotion pattern as `1.15.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.17.0)    | 2026-09-07     | Starting-Value Baseline — specification phase plus Batch 1 (data model/persistence/store/comparison) and Batch 2 (Portfolio page UI), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4441/4441 tests passing) — see `PROJECT_STATUS.md`'s "v1.17.0 Release Reconciliation" section and the `[1.17.0]` entry below. Same promotion pattern as `1.16.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.18.0)    | 2026-09-08     | Recommendation Preferences — specification phase plus Batch 1 (schema/persistence), Batch 2 (service integration), Batch 3 (Recommendation Center wiring + Portfolio preference UI), and Batch 4 (presentation-language layer + E2E/accessibility hardening), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4521/4521 tests passing) — see `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section and the `[1.18.0]` entry below. Same promotion pattern as `1.17.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.18.0`, not `1.17.x` or a new
+`2.0.0`**: not a PATCH — Portfolio Details gains a new "Recommendation
+preferences" fieldset (four independently optional fields: Borrow's
+minimum Health Factor and target Debt Ratio ceiling, Loop's borrow
+percentage and maximum acceptable annual interest cost), and the
+Recommendation Center now computes and displays real Borrow and Loop
+recommendations once a user configures the matching pair, each with a
+non-imperative, "your configured..." presentation sentence for the
+Suggested Action slot while the raw Engine wording stays separately
+inspectable — new user-facing capability, not a bug fix to existing
+capability, the same bar every prior MINOR bump already used. This
+resolves `PROJECT_STATUS.md` Conflict #29 (`generateRecommendationSet`'s
+`RecommendationRuleConfig` having no portfolio-level source for five of
+its seven fields), open since Milestone 5 Batch 4 — see
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` for the canonical
+specification and `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation"
+section for the closure-criteria verification. Not a new MAJOR either:
+`engine/recommendation/calculateBorrowRecommendation.ts` and
+`calculateLoopRecommendation.ts` (F-061/F-064) are byte-for-byte
+unchanged (verified by direct diff against `v1.17.0`), no Formula ID was
+assigned (`FORMULA_VERSION` stays `1.0`), `STORAGE_SCHEMA_VERSION` is
+untouched (the new `recommendationPreferences` object is fully optional,
+following the same pattern every prior optional `Portfolio`/
+`PortfolioSettings` field has used since V1.1), the Dashboard's own
+recommendation summary stays scoped to Repayment/Additional Collateral
+only (unextended, per the canonical specification's own §9 decision),
+and nothing about the Manual-Mode-by-default product boundary
+`01_PRD.md` reserves Version 2 for was touched. A minor version bump,
+same class as `1.1.0`'s through `1.17.0`'s own.
 
 **Why the Application/Engine version is `1.17.0`, not `1.16.x` or a new
 `2.0.0`**: not a PATCH — the Portfolio page gains a new, user-facing
@@ -441,6 +472,108 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.18.0] — 2026-09-08
+
+Four implementation batches on top of Version 1.17.0, together titled
+"Recommendation Preferences": Batch 1, Schema and Persistence (`153e27b`),
+Batch 2, Service Integration (`02f48bc`), Batch 3, Recommendation Center
+Wiring and Portfolio Preference UI (`ec576d3`), and Batch 4,
+Presentation-Language Layer and E2E/Accessibility Hardening (`d7a5164`),
+preceded by a dedicated specification phase (`f8dc881`,
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`), plus this
+reconciliation batch itself. Full per-file, per-batch detail lives in
+`PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.18.0
+
+- **Portfolio Details now has a "Recommendation preferences" fieldset**,
+  alongside the existing Safety target settings and Execution cost
+  assumptions. Four fields, each independently optional and with no
+  pre-filled default or suggested value: **Minimum Health Factor for
+  borrowing** and **Target Debt Ratio ceiling** (the Borrow pair), and
+  **Loop borrow percentage** and **Maximum acceptable annual interest
+  cost** (the Loop pair).
+- **Once a pair is fully configured, the matching Recommendation Center
+  category becomes real.** Configuring both Borrow fields makes a real
+  Borrow recommendation appear (reusing the unmodified F-061 Engine rule);
+  configuring both Loop fields does the same for Loop (F-064). Each pair
+  is independent — configuring one never requires or affects the other.
+- **Repayment and Additional Collateral recommendations are unaffected**
+  — they continue to work exactly as before, from the portfolio's
+  existing Target Health Factor, whether or not any Recommendation
+  Preference is ever configured.
+- **A missing or partial preference pair shows a real, specific reason**
+  ("Configure your minimum Health Factor and target Debt Ratio…" /
+  "Configure your Loop borrow percentage and maximum acceptable annual
+  interest cost…") under its own filter category, instead of a generic
+  "not available" message or the previous permanently-blocked banner.
+  Clearing a previously-configured field returns that pair to this same
+  explicit unavailable state.
+- **Borrow/Loop recommendation text now reads as a description of your
+  own configured limits, not a bare command.** For example, instead of
+  the raw "Stop Looping." directive, the Recommendation Center shows "One
+  more loop step would currently exceed at least one of your configured
+  Loop limits — target Health Factor, available borrow capacity, or
+  maximum acceptable interest cost." The underlying raw Engine wording,
+  current values, and Formula IDs remain fully visible in the
+  Recommendation Detail Panel — nothing is hidden, only the primary
+  "Suggested Action" wording is reframed for Borrow/Loop.
+- Behaves identically for manual, Aave V3, and Aave V4 portfolios — the
+  four preference fields carry no protocol-version branching of their
+  own; Borrow/Loop recommendations dispatch through the same existing
+  V3/V4-aware Service path Repayment/Additional Collateral already use.
+- New deterministic end-to-end coverage of the full journey: configure
+  preferences on Portfolio Details, see Borrow/Loop unlock in the
+  Recommendation Center with the reframed presentation copy, clear a
+  field, see the item re-lock with its real reason.
+
+### What this is not
+
+**Recommendations remain deterministic, rule-based outputs of your own
+configured preferences and current portfolio inputs — not automated or
+AI-generated advice, and not a new disclaimer feature.** No "not
+financial advice" or other legal-disclaimer text was added; per the
+canonical specification, this is a tone/register change only. This
+release does **not**: extend the Dashboard's recommendation summary to
+include Borrow/Loop (it stays scoped to Repayment/Additional Collateral,
+unchanged); extend the Quantified Impact / before-after explanation
+machinery to Borrow/Loop; invent any default, preset, or "balanced" /
+"conservative" / "aggressive" preference value — every field starts and
+stays genuinely absent until a user enters it; resolve Health Factor
+risk-band classification (Conflict #1), the Exit Readiness Formula ID gap
+(Conflict #11), the F-067 component-formula gap (Conflict #12), or the
+Interest Cost category's F-065 "Expected Annual Portfolio Growth" gap —
+Safety, Exit Readiness, and Interest Cost remain unavailable filter
+categories, each for its own already-documented, independent reason. See
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §16 for the complete,
+canonical non-goals list.
+
+### Explicitly unchanged in 1.18.0
+
+**No financial formula changed, and no Formula ID was assigned.**
+`engine/recommendation/calculateBorrowRecommendation.ts` (F-061) and
+`calculateLoopRecommendation.ts` (F-064) are byte-for-byte identical to
+their `v1.17.0` versions — verified by direct diff, not assumed —
+alongside the already-unmodified F-062/F-063 Repayment/Additional
+Collateral rules. The new `calculateRecommendationActions` Service
+function (`services/recommendation/recommendationActions.ts`) composes
+these four existing Engine functions without adding any new equation of
+its own, the same no-new-Formula-ID precedent
+`calculateTargetHealthFactorActions` already established. **`STORAGE_SCHEMA_VERSION`
+stays `1.0.0`** — the new `recommendationPreferences` object is fully
+optional, `undefined` on every portfolio that existed before this
+release, following the identical convention every other optional
+`Portfolio`/`PortfolioSettings` field has used since V1.1. No V3/V4
+semantic change — Borrow/Loop recommendations reuse the same V3/V4
+dispatch (risk-capacity fraction, effective borrow rate) Repayment/
+Additional Collateral and every other recommendation already use; no new
+protocol-version branching was added in the Store or UI layer. No CSV
+export change — the existing portfolio export does not include
+`recommendationPreferences`, unchanged by this release and not required
+by the canonical specification. No Dashboard, Simulation, Loop Builder,
+or Exit Planner file was touched.
 
 ## [1.17.0] — 2026-09-07
 

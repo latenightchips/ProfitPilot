@@ -13,9 +13,82 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.17.0
+## Version 1.18.0
 
-**Current release.** Promotes two implementation batches on top of
+**Current release.** Promotes four implementation batches on top of
+Version 1.17.0, together titled "Recommendation Preferences": Batch 1,
+Schema and Persistence; Batch 2, Service Integration; Batch 3,
+Recommendation Center Wiring and Portfolio Preference UI; and Batch 4,
+Presentation-Language Layer and E2E/Accessibility Hardening — built,
+tested, and independently re-verified in the batches that produced them,
+preceded by a dedicated specification phase, not a fresh Milestone-9/
+V1.1-style Release Candidate process with its own new manual exploratory
+pass. See `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section
+and `docs/CHANGELOG.md`'s `[1.18.0]` entry for the full record.
+Everything in "Version 1.17.0" and earlier below still applies; this
+section covers only what is new since 1.17.0. **Still a self-hostable
+software release, not a hosted product** — see "Deployment" below,
+unchanged from Version 1.0.0.
+
+### What's new in 1.18.0
+
+- **The Portfolio page now has a "Recommendation preferences" section**
+  where you can optionally tell ProfitPilot the limits you'd want
+  respected if it suggested borrowing more or looping again: a minimum
+  Health Factor and a target Debt Ratio ceiling for borrowing, and a loop
+  borrow percentage and a maximum acceptable annual interest cost for
+  looping. Every field starts empty — nothing is pre-filled or suggested.
+- **Once you've filled in both fields of a pair, the matching
+  recommendation becomes real in the Recommendation Center.** Fill in
+  both Borrow fields and a real Borrow recommendation appears; fill in
+  both Loop fields and a real Loop recommendation appears. The two pairs
+  are independent — you can configure one, both, or neither.
+- **If a pair is empty or only half-filled, the Recommendation Center
+  tells you exactly what to configure**, instead of just leaving that
+  category blank or showing a generic "unavailable" message.
+- **Repayment and Additional Collateral recommendations work exactly as
+  they always have**, whether or not you ever touch these new
+  preferences.
+- **Borrow and Loop recommendations now read like a plain description of
+  your own limits, not a bare instruction.** Instead of "Stop Looping,"
+  you'll see something like "One more loop step would currently exceed
+  at least one of your configured Loop limits." Click into the
+  recommendation's detail view and the original wording, current values,
+  and Formula ID are all still there — this is a rewording of the
+  headline text only, nothing is hidden.
+- **Works the same way whether your portfolio is manually entered, Aave
+  V3, or Aave V4.**
+
+### What this is not
+
+**This does not turn ProfitPilot's recommendations into automated
+financial advice.** Every recommendation is still a deterministic
+calculation from your own configured preferences and your portfolio's
+current numbers — nothing here is AI-generated, predictive, or
+personalized beyond the exact values you enter. It does not add a "not
+financial advice" disclaimer (none existed before, and this release
+doesn't introduce the concept). It does not add Borrow/Loop
+recommendations to the Dashboard's own summary — that stays exactly as
+it was. It never suggests, pre-fills, or defaults to any specific
+Health Factor, Debt Ratio, borrow percentage, or interest-cost number —
+you decide every value, or leave it blank. It does not resolve why
+Safety, Exit Readiness, or Interest Cost recommendations remain
+unavailable — each still has its own separate, previously-documented
+reason, unrelated to this feature.
+
+### Explicitly unchanged in 1.18.0
+
+No financial formula changed, no persisted-data schema version changed,
+no migration required to use this feature, no V3/V4 semantic change.
+Repayment and Additional Collateral recommendations are completely
+unaffected — same calculations, same wording, same behavior as before
+this release. Still no live wallet connection or transaction execution,
+still no cloud backup or synchronization, still no publicly operated
+production deployment.
+
+## Version 1.17.0 (previous release)
+
+Promotes two implementation batches on top of
 Version 1.16.0, together titled "Starting-Value Baseline": Batch 1, Data
 Model/Persistence/Store/Comparison, and Batch 2, Portfolio Page UI —
 built, tested, and independently re-verified in the batches that
@@ -24,9 +97,7 @@ Milestone-9/V1.1-style Release Candidate process with its own new manual
 exploratory pass. See `PROJECT_STATUS.md`'s "v1.17.0 Release
 Reconciliation" section and `docs/CHANGELOG.md`'s `[1.17.0]` entry for
 the full record. Everything in "Version 1.16.0" and earlier below still
-applies; this section covers only what is new since 1.16.0. **Still a
-self-hostable software release, not a hosted product** — see
-"Deployment" below, unchanged from Version 1.0.0.
+applies; this section covers only what is new since 1.16.0.
 
 ### What's new in 1.17.0
 

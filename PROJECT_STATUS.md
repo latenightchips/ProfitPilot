@@ -15833,6 +15833,313 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.18.0 Release Reconciliation — Recommendation Preferences
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents the
+specification phase (`f8dc881`, `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`),
+Batch 1 (`153e27b`, Schema and Persistence), Batch 2 (`02f48bc`, Service
+Integration), Batch 3 (`ec576d3`, Recommendation Center Wiring and
+Portfolio Preference UI), Batch 4 (`d7a5164`, Presentation-Language Layer
+and E2E/Accessibility Hardening), and this reconciliation batch itself,
+applied directly on top of `v1.17.0` (`b17ccdd`).
+
+**Current release candidate: `1.18.0`. Versions `1.0.0` through `1.17.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.17.0` still resolves to
+`b17ccdd1c28334b3febf4a0afd16f462d7238f06`, confirmed by fresh inspection
+during this batch. `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.17.0` to `1.18.0` — a MINOR bump, the same
+reasoning `docs/CHANGELOG.md`'s own "Why the Application/Engine version
+is `1.18.0`" paragraph gives. `FORMULA_VERSION` remains `1.0`,
+`STORAGE_SCHEMA_VERSION` remains `1.0.0` — this release requires
+neither: `engine/recommendation/calculateBorrowRecommendation.ts` and
+`calculateLoopRecommendation.ts` (F-061/F-064) are byte-for-byte
+unchanged from `v1.17.0` (verified by `git diff v1.17.0..d7a5164 --
+engine/`, empty output — no `engine/**` file of any kind was touched
+across all four batches), no Formula ID was assigned
+(`calculateRecommendationActions` is a Service-layer composition, the
+same no-new-ID precedent `calculateTargetHealthFactorActions` already
+established, per spec §11), and the new
+`PortfolioSettings.recommendationPreferences` field is fully optional,
+following the identical "optional field, `undefined` on old data" pattern
+every prior optional field has used since V1.1. **No `v1.18.0` git tag
+exists yet** — confirmed via both `git tag -l` and `git ls-remote --tags
+origin` during this batch's baseline verification; tagging is a separate,
+explicit step for after this patch is applied and synced, not taken by
+this batch (see this batch's own tag-readiness verdict below).
+
+### Batch 1 — Schema and Persistence (`153e27b`)
+
+- **`types/portfolio.ts`**: new `RecommendationPreferences` interface —
+  `borrow?: { userMinHealthFactor?: number; targetDebtRatio?: number }`,
+  `loop?: { loopBorrowPercentage?: number; maxAcceptableAnnualInterestCost?: number }`
+  — and a new `recommendationPreferences?: RecommendationPreferences`
+  field on `PortfolioSettings`, sibling to the existing `safetyTargets`/
+  `executionCostAssumptions` objects, not folded into either.
+- **`types/portfolio.schema.ts`**: `recommendationPreferencesSchema` (Zod)
+  enforcing exactly the canonical specification's own §3 bounds —
+  `userMinHealthFactor`/`maxAcceptableAnnualInterestCost` finite and
+  strictly positive; `targetDebtRatio`/`loopBorrowPercentage` finite and
+  within `[0, 1]` inclusive — added to `portfolioSettingsSchema`.
+- **Tests**: 22 new tests across
+  `tests/unit/types/portfolio.schema.test.ts` and
+  `tests/unit/services/persistence/schemas/portfolio.schema.test.ts`
+  covering empty/partial/full configurations, every documented boundary,
+  round-trips, and coexistence with other settings.
+- **Validation**: full suite passing, independently re-verified against a
+  fresh `origin/main` checkout.
+
+### Batch 2 — Service Integration (`02f48bc`)
+
+- **`services/recommendation/recommendationActions.ts`** (new):
+  `calculateRecommendationActions(portfolio, sourceStatus)` — composes
+  F-061/F-062/F-063/F-064 directly (never `generateRecommendationSet`'s
+  all-or-nothing `RecommendationRuleConfig`, and never re-calling
+  `calculateTargetHealthFactorActions`, which would duplicate its own
+  anchor/guard sequence). Repayment/Additional Collateral compute
+  unconditionally whenever a target Health Factor exists, unchanged from
+  today; Borrow computes only when both its own preference fields are
+  present; Loop computes only when both of its own preference fields are
+  present — independently of each other, exactly per spec §5's table. A
+  single shared V4-dispatched Engine input (anchor call, guards,
+  effective-borrow-rate substitution, risk-capacity substitution) is
+  computed once and reused, reproducing the same six-step sequence
+  `services/recommendation/recommendations.ts` already established for
+  V4, not a new design.
+- **`services/recommendation/index.ts`**: exports
+  `calculateRecommendationActions`/`RecommendationActionsResult`/
+  `RecommendationItemId`.
+- **Tests**: 23 new tests in
+  `tests/unit/services/recommendation/recommendationActions.test.ts`,
+  covering every row of spec §5's partial-configuration table, the
+  no-target whole-function gate, and V3/V4 dispatch parity.
+- **Validation**: full suite passing, independently re-verified against a
+  fresh `origin/main` checkout.
+
+### Batch 3 — Recommendation Center Wiring and Portfolio Preference UI (`ec576d3`)
+
+- **`app/portfolio/PortfolioPageClient.tsx`**: new "Recommendation
+  preferences" fieldset, following the existing "Safety target settings"/
+  "Execution cost assumptions" fieldsets' auto-save pattern. All four
+  fields independently optional, no defaults or presets pre-filled or
+  suggested; ratios entered as plain `[0, 1]` decimals, matching this
+  form's own established `targetHealthFactor`/execution-cost convention.
+  A form-layer `pruneEmptyPreferenceGroup` helper collapses a
+  fully-cleared Borrow/Loop pair back to true `undefined` rather than an
+  object holding only `undefined`-valued keys, so "clearing a preference"
+  reaches the canonical fully-absent state, not a form-layer artifact.
+- **`stores/recommendationCenterStore.ts`**: `recalculate` now calls
+  `calculateRecommendationActions` instead of
+  `calculateTargetHealthFactorActions`; `actions` becomes
+  `Partial<Record<RecommendationItemId, Recommendation>>` (four possible
+  keys, not a fixed two); new `unavailableReasons` state field carries a
+  real, sourced reason for every item not currently in `actions`.
+- **`features/recommendations/utils/recommendationTaxonomy.ts`**:
+  `isActionableRecommendation` extended to Borrow/Loop (re-deriving
+  F-061's/F-064's own already-documented "Conditions" comparisons
+  directly from their real `relevantValues`, not the canonical
+  specification's own illustrative pseudocode, which references a
+  `relevantValues.debtRatioOk` field that does not exist on either
+  Engine function's real output — a discrepancy found and worked around
+  during this batch, not propagated into shipped code).
+  `UNAVAILABLE_FILTER_REASONS.leverage` removed — Loop's availability is
+  now per-portfolio-state, not permanently blocked, so a static "always
+  unavailable" string would become wrong the moment a user configures it;
+  `RecommendationList.tsx` sources the real, current reason from the
+  Store's own `unavailableReasons.loop` instead.
+- **Tests**: 194 new/extended tests across the Portfolio page, the
+  Recommendation Center store, and the List/Detail/taxonomy components,
+  covering every combination of complete/partial/absent Borrow and Loop
+  preferences, filter-category behavior, and Repayment/Additional
+  Collateral regression protection.
+- **Validation**: full suite passing, independently re-verified against a
+  fresh `origin/main` checkout.
+
+### Batch 4 — Presentation-Language Layer and E2E/Accessibility Hardening (`d7a5164`)
+
+- **`features/recommendations/utils/recommendationTaxonomy.ts`**: new
+  `presentationTextFor(id: 'borrow' | 'loop', recommendation)`, spec §10.
+  `headline` is `recommendation.triggeringCondition` passed through
+  unaltered; `detail` replaces the raw, directive `suggestedAction`
+  string with spec §10's own exact proposed sentence, attributing the
+  threshold to "your configured" preference rather than an unqualified
+  imperative. Excluded from Repayment/Additional Collateral by its own
+  parameter type — their copy is unchanged, per spec §10.
+- **`features/recommendations/components/RecommendationList.tsx`** /
+  **`RecommendationDetailPanel.tsx`**: wired for Borrow/Loop only. The
+  Detail Panel adds a small, separately labeled "Raw Engine output" line
+  alongside the presented "Suggested Action" text, so the raw directive
+  string stays inspectable rather than being replaced outright — spec
+  §10's own "ENGINE OUTPUT / TRACEABILITY... never hidden" guarantee.
+- **`tests/e2e/recommendationWorkflows.spec.ts`**: one new deterministic
+  end-to-end test covering the full journey — configure all four
+  preferences, save, see Borrow/Loop unlock with presented (not raw)
+  copy in both the List row and Detail Panel, clear one field, see the
+  item re-lock with its real reason. Uses manual-entry fixtures
+  throughout, no live Aave/network dependency.
+- **Accessibility**: the existing Recommendation Center (active + detail-
+  selected) and Portfolio edit form (healthy + validation-error) axe
+  scans and keyboard-reachability tests were re-run against a real
+  browser after this batch's changes — 6/6 pass, zero new WCAG AA
+  violations.
+- **§19 self-audit items**: both of the canonical specification's own
+  surfaced (non-blocking) judgment calls — the Borrow/Loop
+  severity-tiering mapping and the "no related tool for Borrow" decision
+  — were already resolved and implemented in Batch 3; re-confirmed, not
+  re-decided, this batch.
+- **Tests**: 24 new tests in `recommendationTaxonomy.test.ts` (the four
+  canonical presentation strings per condition, headline/numeric/
+  Engine-object/formula-reference preservation, and a real V3- and
+  V4-dispatched integration check) plus 6 assertion updates in the
+  existing List/Detail Panel component tests reflecting the presented-
+  text change.
+- **Validation**: full suite — 4521/4521 tests passing, all tooling
+  clean, independently re-verified against a fresh `origin/main`
+  checkout (exact diff-stat parity: 7 files, +416/-8).
+
+### Traceability audit against Conflict #29's own closure criteria (spec §17)
+
+Verified directly against the repository, not assumed, all seven of the
+canonical specification's own §17 closure criteria:
+
+1. `RecommendationPreferences` exists on `PortfolioSettings`
+   (`types/portfolio.ts`), with a corresponding Zod schema
+   (`types/portfolio.schema.ts`) enforcing exactly §3's bounds. **True**
+   (Batch 1).
+2. `calculateRecommendationActions` exists, is exported from
+   `services/recommendation/index.ts`, and is the function
+   `recommendationCenterStore.recalculate` calls. **True** (Batch 2,
+   wired in Batch 3).
+3. A portfolio with all four preference fields configured produces real,
+   non-null `borrow`/`loop` `Recommendation` objects, sourced from the
+   unmodified `calculateBorrowRecommendation`/`calculateLoopRecommendation`
+   Engine functions, visible in the Recommendation Center UI. **True** —
+   verified by Batch 2's own service tests, Batch 3's UI tests, and this
+   batch's own real V3/V4-dispatch integration test.
+4. A portfolio with none, or only some, of the four fields configured
+   behaves exactly per §5's table. **True** — every row of that table has
+   a dedicated test across Batches 2 and 3.
+5. `engine/recommendation/calculateBorrowRecommendation.ts` and
+   `calculateLoopRecommendation.ts` are byte-identical to their v1.17.0
+   versions. **True** — `git diff v1.17.0..d7a5164 -- engine/` returns
+   empty output.
+6. This document is referenced by name in the implementing batch's
+   `PROJECT_STATUS.md` reconciliation entry, and Conflict #29's own entry
+   is updated to point to this reconciliation. **True** — see this
+   section and the updated Conflict #29 entry below.
+7. `pnpm validate` (or the project's equivalent full gate) passes with
+   the new schema/service/store/component tests included, and the
+   existing `generateRecommendationSet`/`calculateTargetHealthFactorActions`
+   test suites pass unmodified. **True** — 4521/4521 across all four
+   batches; `generateRecommendationSet`'s and
+   `calculateTargetHealthFactorActions`'s own test suites were never
+   touched and continue to pass.
+
+**All seven criteria are satisfied — Conflict #29 is resolved by
+v1.18.0.** See the updated Conflict #29 entry (below, in "Unresolved
+documentation conflicts") for the pointer back to this section, per
+criterion 6's own instruction not to restate resolution details in-line
+a second time.
+
+### What did not change, across the specification phase or any of the four batches
+
+**No engine, Dashboard, Simulation, Loop Builder, Exit Planner, CSV-
+exporter, or V3/V4-adapter file was touched at any point.** Confirmed by
+direct diff inspection (`git diff v1.17.0..d7a5164949cd40def289bba44bf31ef7f108d778
+--stat`: exactly 21 files touched, all under
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`,
+`types/portfolio{.ts,.schema.ts}`,
+`services/recommendation/{index,recommendationActions}.ts`,
+`stores/recommendationCenterStore.ts`,
+`features/recommendations/{components,utils}/*`,
+`app/portfolio/PortfolioPageClient.tsx`,
+`tests/e2e/recommendationWorkflows.spec.ts`, and their corresponding test
+files). No Formula ID was assigned; F-061/F-062/F-063/F-064 are
+byte-for-byte unchanged. No persisted-data schema version changed. No
+protocol-version branching was introduced anywhere in the Store or UI
+layer — Borrow/Loop reuse the exact same V3/V4 dispatch Repayment/
+Additional Collateral already used. The Dashboard's own recommendation
+summary (`buildRecommendationSummary.ts`) still calls
+`calculateTargetHealthFactorActions` directly, unextended, per spec §9 —
+confirmed by direct inspection, not assumed.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.18.0`; a new "Why the Application/
+  Engine version is `1.18.0`" paragraph and a new `[1.18.0]` entry added
+  (What's new / What this is not / Explicitly unchanged), following the
+  identical structural pattern every prior release already established.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.18.0` section added
+  with the `**Current release.**` marker, written in plain product
+  language explaining what the four preference fields do, what pairing
+  independence means, and what the reworded Borrow/Loop copy is and
+  isn't — with an explicit "What this is not" section naming the
+  "automated advice"/Dashboard-extension/default-value non-goals. The
+  prior `## Version 1.17.0` section is demoted to `## Version 1.17.0
+(previous release)` with that marker removed, the same demotion
+  pattern used for every prior release transition in this file.
+- **`PROJECT_STATUS.md`**: this section, plus a resolution note added to
+  Conflict #29's own entry (below) pointing here rather than restating
+  resolution details in-line, per spec §17 criterion 6.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.17.0`
+  to `1.18.0`, the same three constants every one of the seventeen prior
+  release-reconciliation batches bumped together. `FORMULA_VERSION`
+  (`1.0`) and `STORAGE_SCHEMA_VERSION` (`1.0.0`) are unchanged.
+
+**`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` itself was left
+untouched, including its own "Status: Approved for implementation
+planning. Not yet implemented." header line** — confirmed, not assumed,
+that this matches established project convention:
+`docs/STARTING_VALUE_BASELINE_SPEC.md`'s own identical status line was
+never updated after that feature's own v1.17.0 implementation either.
+Specification documents are frozen artifacts once approved; the
+canonical record of what has actually been implemented against a spec
+lives in `PROJECT_STATUS.md`'s own release-reconciliation sections (this
+one) and `docs/CHANGELOG.md`, not in the spec document's own header.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for
+`1.17.0`/`1.18.0`/`recommendation preference`/`Recommendation
+Preferences` and found to need no update: none makes a version- or
+Recommendation-Preferences-specific claim this release could make stale.
+`docs/VERSION_2_BACKLOG.md`'s "AI insights" item is unrelated to this
+feature (rule-based, deterministic preferences, not an AI capability) and
+is left untouched. Deployment disposition is unchanged from prior
+releases — this remains a self-hostable release with no live deployment,
+unaffected by this feature.
+
+### Deferred items — not addressed this batch
+
+Per the canonical specification's own §16 and this reconciliation's own
+scope, none of the following were implemented, silently resolved, or
+otherwise touched: Health Factor risk-band classification (Conflict #1),
+the Exit Readiness Formula ID gap (Conflict #11), the F-067 component-
+formula gap (Conflict #12), the Interest Cost category's F-065 "Expected
+Annual Portfolio Growth" gap, cost basis/P&L/total return/transaction-lot
+accounting, cumulative/realized interest, Cloud Database/Cloud Sync
+(cancelled, not deferred — Milestone 8), or operated production
+deployment/monitoring under Path B. No new infrastructure work was
+introduced by this reconciliation. No preference default, preset, or
+"balanced"/"conservative"/"aggressive" value was ever invented, at any
+point across all four batches. No new recommendation category was
+unlocked beyond Borrow/Loop — Safety, Exit Readiness, and Interest Cost
+remain unavailable, each for its own already-documented, independent
+reason.
+
+---
+
 ## v1.17.0 Release Reconciliation — Starting-Value Baseline
 
 **Recorded after the fact, the same convention every release-
@@ -17024,6 +17331,18 @@ will need to resolve exactly this — either by collecting
 defining documented default values for them, or by scoping M5-015 to
 only the repayment/additionalCollateral categories this batch's new
 Service already supports).
+
+**RESOLVED in v1.18.0.** The first of the three options above was taken:
+`userMinHealthFactor`/`targetDebtRatio`/`loopBorrowPercentage`/
+`maxAcceptableAnnualInterestCost` now exist as an optional
+`recommendationPreferences` object on `PortfolioSettings`, and the
+Recommendation Center (not the Dashboard — M5-015 remains its own,
+separately scoped, still-unbuilt task) computes and displays real
+Borrow/Loop recommendations once a portfolio's own preferences make a
+pair complete. See `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` for
+the canonical specification and the "v1.18.0 Release Reconciliation —
+Recommendation Preferences" section above for the full closure-criteria
+verification against this entry's own original gap.
 
 ---
 
