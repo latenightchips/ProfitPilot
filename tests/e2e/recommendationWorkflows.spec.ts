@@ -193,3 +193,88 @@ test('Cover: Critical warning persistence (M7-043)', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Acknowledged' })).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Acknowledge' })).toHaveCount(2);
 });
+
+/**
+ * v1.18.0 golden path — Batch 4 (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * §15's own E2E requirement). Configure Recommendation Preferences on
+ * Portfolio Details, confirm Borrow/Loop unlock in the Recommendation
+ * Center with presented (not raw) copy and real traceability preserved
+ * in the Detail Panel, then clear one field and confirm the
+ * corresponding item re-locks with a real, sourced reason — the same
+ * `2 BTC @ $50,000, $20,000 debt` fixture this file's own header comment
+ * already establishes, so Repayment/Additional Collateral's real numbers
+ * ($10,000/$100,000) stay directly comparable to this file's other
+ * tests.
+ */
+test('Cover: v1.18.0 golden path — configure Recommendation Preferences, Borrow/Loop unlock with presented copy, clearing re-locks', async ({
+  page,
+}) => {
+  await page.goto('/portfolios/new', { waitUntil: 'networkidle' });
+  await fillByLabel(page, 'Portfolio name', 'v1.18.0 Golden Path Portfolio');
+  await fillByLabel(page, 'BTC quantity', '2');
+  await page.locator('label', { hasText: 'Debt asset' }).locator('select').selectOption('USDC');
+  await fillByLabel(page, 'Debt balance', '20000');
+  await fillByLabel(page, 'Current BTC price (USD)', '50000');
+  await fillByLabel(page, 'Maximum LTV (%)', '75');
+  await fillByLabel(page, 'Liquidation threshold (%)', '80');
+  await fillByLabel(page, 'Borrow APR (%)', '5');
+  await fillByLabel(page, 'Supply APR (%)', '2');
+  await fillByLabel(page, 'Target Health Factor', '8');
+  await page.getByRole('button', { name: 'Create Portfolio' }).click();
+  await page.waitForURL('**/portfolio');
+
+  // Configure all four Recommendation Preferences fields.
+  await fillByLabel(page, 'Minimum Health Factor for borrowing', '1.5');
+  await fillByLabel(page, 'Target Debt Ratio ceiling', '0.5');
+  await fillByLabel(page, 'Loop borrow percentage', '0.5');
+  await fillByLabel(page, 'Maximum acceptable annual interest cost', '5000');
+  // Autosave debounce (600ms) plus buffer.
+  await page.waitForTimeout(900);
+
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Recommendations' })
+    .click();
+  await page.waitForURL('**/recommendations');
+
+  // Borrow and Loop both now appear — real triggering conditions (raw
+  // Engine text, unaltered — `presentationTextFor`'s own `headline`),
+  // not a fabricated placeholder.
+  await expect(
+    page.getByText(/Health Factor.*borrow capacity.*Debt Ratio|Health Factor at or below minimum/),
+  ).toBeVisible();
+
+  // Detail Panel: presented copy, not the raw directive, is the primary
+  // "Suggested Action" text — and the raw Engine string stays inspectable.
+  await page
+    .getByText(/Health Factor.*borrow capacity.*Debt Ratio|Health Factor at or below minimum/)
+    .first()
+    .click();
+  const detailPanel = page.getByRole('region', { name: 'Recommendation Detail' });
+  await expect(
+    detailPanel.getByText(/your configured (minimum Health Factor|limits)/),
+  ).toBeVisible();
+  await expect(detailPanel.getByText(/Raw Engine output:/)).toBeVisible();
+  await expect(detailPanel.getByText('F-061', { exact: false })).toBeVisible();
+
+  // Clear Borrow's Target Debt Ratio field — Borrow's own pair is now
+  // incomplete, so it re-locks; Loop (independent) is unaffected.
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Portfolio', exact: true })
+    .click();
+  await page.waitForURL('**/portfolio');
+  const debtRatioInput = page
+    .locator('label', { hasText: 'Target Debt Ratio ceiling' })
+    .locator('input');
+  await debtRatioInput.fill('');
+  await page.waitForTimeout(900);
+
+  await page
+    .getByRole('navigation', { name: 'Primary' })
+    .getByRole('link', { name: 'Recommendations' })
+    .click();
+  await page.waitForURL('**/recommendations');
+  await page.getByRole('button', { name: 'Debt', exact: true }).click();
+  await expect(page.getByText(/Configure your minimum Health Factor/)).toBeVisible();
+});

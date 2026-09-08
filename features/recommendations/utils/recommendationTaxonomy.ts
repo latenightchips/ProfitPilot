@@ -281,3 +281,64 @@ export const HEALTH_FACTOR_VALUE_KEYS = new Set([
 
 /** Keys whose value is a percentage/ratio, not a currency amount — for display formatting only (v1.18.0 Batch 3). */
 export const PERCENT_VALUE_KEYS = new Set(['debtRatio', 'targetDebtRatio']);
+
+/**
+ * User-facing presentation text for Borrow/Loop — v1.18.0 Batch 4
+ * (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §10). Only
+ * `borrow`/`loop`'s "Triggering Condition"/"Suggested Action" display
+ * slots are ever routed through this function — `repayment`/
+ * `additionalCollateral` are deliberately excluded from its own
+ * parameter type, since spec §10 states their existing copy is **not
+ * changed** ("it already reads as a conditional restatement of the
+ * user's own target, not a naked directive"); `RecommendationList.tsx`/
+ * `RecommendationDetailPanel.tsx` keep reading `.triggeringCondition`/
+ * `.suggestedAction` directly for those two ids.
+ *
+ * **`headline` is `recommendation.triggeringCondition`, unaltered.** Spec
+ * §10's own "Design rule" is explicit that presentation "attributes the
+ * threshold to 'your configured' preference... without altering
+ * `triggeringCondition`'s own value" — the raw, factual condition
+ * statement ("One or more of: Health Factor at or below minimum...") is
+ * not itself a directive imperative the way `suggestedAction` is, so
+ * nothing in §10 proposes new wording for it. Sourcing it through this
+ * function (rather than reading it directly at the call site) keeps both
+ * display-slot decisions for Borrow/Loop in one place, matching spec
+ * §10's own description of the return shape, without inventing new
+ * headline copy the spec never supplied.
+ *
+ * **`detail` replaces the raw, directive `suggestedAction`** ("Stop
+ * Looping.", "Do not recommend additional borrowing.") with spec §10's
+ * own exact proposed sentence for the matching condition — reusing
+ * `isActionableRecommendation`'s already-derived boolean (inverted: the
+ * *non*-actionable case is the "acceptable"/"loop recommended" row of
+ * §10's table) rather than re-deriving F-061's/F-064's own "Conditions"
+ * comparisons a second time, so the two functions can never disagree
+ * about which case a given `Recommendation` is in.
+ *
+ * **The raw `suggestedAction` string is never hidden** — spec §10's own
+ * "ENGINE OUTPUT / TRACEABILITY" guarantee ("These remain fully
+ * inspectable... never hidden"). `RecommendationDetailPanel.tsx` renders
+ * it as a small, separately labeled line alongside this function's
+ * `detail` text, not merely replaced by it.
+ */
+export function presentationTextFor(
+  id: 'borrow' | 'loop',
+  recommendation: Recommendation,
+): { headline: string; detail: string } {
+  const headline = recommendation.triggeringCondition;
+  const conditionMet = !isActionableRecommendation(id, recommendation);
+  if (id === 'borrow') {
+    return {
+      headline,
+      detail: conditionMet
+        ? 'Based on your configured minimum Health Factor and target Debt Ratio, an additional borrow currently stays within your configured limits.'
+        : 'An additional borrow would currently exceed at least one of your configured limits — minimum Health Factor or target Debt Ratio.',
+    };
+  }
+  return {
+    headline,
+    detail: conditionMet
+      ? 'Based on your configured Loop preferences, one more loop step currently stays within your configured Health Factor, borrow-capacity, and interest-cost limits.'
+      : 'One more loop step would currently exceed at least one of your configured Loop limits — target Health Factor, available borrow capacity, or maximum acceptable interest cost.',
+  };
+}

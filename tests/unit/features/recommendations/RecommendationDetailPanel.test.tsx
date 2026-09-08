@@ -328,7 +328,18 @@ describe('RecommendationDetailPanel — Borrow/Loop (v1.18.0 Batch 3)', () => {
     expect(screen.getByText('Minimum Health Factor')).toBeInTheDocument();
     expect(screen.getByText('Available Borrow')).toBeInTheDocument();
     expect(screen.getByText('Target Debt Ratio')).toBeInTheDocument();
-    expect(screen.getByText('Do not recommend additional borrowing.')).toBeInTheDocument();
+    // v1.18.0 Batch 4 (spec §10) — the "Suggested Action" section's
+    // primary text is now the presented sentence, not the raw, directive
+    // Engine string; the raw string stays inspectable via a separate
+    // "Raw Engine output" line, never hidden.
+    expect(
+      screen.getByText(
+        'An additional borrow would currently exceed at least one of your configured limits — minimum Health Factor or target Debt Ratio.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Raw Engine output: Do not recommend additional borrowing.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('F-061, F-022, F-013, F-006')).toBeInTheDocument();
     expect(
       screen.getByText('No related planning tool for this recommendation.'),
@@ -348,7 +359,14 @@ describe('RecommendationDetailPanel — Borrow/Loop (v1.18.0 Batch 3)', () => {
     expect(screen.getByText('Health Factor After Loop')).toBeInTheDocument();
     expect(screen.getByText('Annual Interest Cost')).toBeInTheDocument();
     expect(screen.getByText('Maximum Acceptable Annual Interest Cost')).toBeInTheDocument();
-    expect(screen.getByText('Stop Looping')).toBeInTheDocument();
+    // v1.18.0 Batch 4 (spec §10) — same replacement as Borrow's own test
+    // above, for Loop's raw "Stop Looping" directive.
+    expect(
+      screen.getByText(
+        'One more loop step would currently exceed at least one of your configured Loop limits — target Health Factor, available borrow capacity, or maximum acceptable interest cost.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Raw Engine output: Stop Looping')).toBeInTheDocument();
     expect(screen.getByText('F-064, F-014, F-032')).toBeInTheDocument();
 
     screen.getByRole('button', { name: 'Open Loop Builder with this target' }).click();

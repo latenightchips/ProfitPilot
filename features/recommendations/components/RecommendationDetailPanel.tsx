@@ -18,6 +18,7 @@ import {
   isActionableRecommendation,
   LOOP_VALUE_LABELS,
   PERCENT_VALUE_KEYS,
+  presentationTextFor,
   REPAYMENT_VALUE_LABELS,
   severityFor,
 } from '@/features/recommendations/utils/recommendationTaxonomy';
@@ -93,6 +94,14 @@ import type { Portfolio } from '@/types/portfolio';
  * commit, prefill-into-planner is a lower-commitment way to explore
  * further changes (e.g. a different repayment amount) before committing
  * anything.
+ *
+ * **v1.18.0 Batch 4** (spec §10) — the "Triggering Condition"/"Suggested
+ * Action" sections below route `borrow`/`loop` items through
+ * `presentationTextFor` (`recommendationTaxonomy.ts`); `repayment`/
+ * `additionalCollateral` are unaffected. The raw Engine `suggestedAction`
+ * stays visible via a small "Raw Engine output" line rather than being
+ * replaced outright — see `presentationTextFor`'s own header comment for
+ * why.
  */
 /** No `borrow` key — Borrow has no related tool at all (see this file's own header comment). */
 const RELATED_TOOL_BY_ITEM = {
@@ -345,6 +354,13 @@ export function RecommendationDetailPanel({
   const labels = labelsFor(selectedItemId);
 
   const isActionable = isActionableRecommendation(selectedItemId, recommendation);
+  // v1.18.0 Batch 4 (spec §10) — Borrow/Loop only; see this file's own
+  // "Triggering Condition"/"Suggested Action" sections below for how
+  // `headline`/`detail` are used without hiding the raw Engine strings.
+  const presented =
+    selectedItemId === 'borrow' || selectedItemId === 'loop'
+      ? presentationTextFor(selectedItemId, recommendation)
+      : null;
 
   function runAction() {
     if (selectedItemId === 'repayment') {
@@ -372,7 +388,9 @@ export function RecommendationDetailPanel({
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Triggering Condition</span>
-        <span className="text-muted-foreground">{recommendation.triggeringCondition}</span>
+        <span className="text-muted-foreground">
+          {presented?.headline ?? recommendation.triggeringCondition}
+        </span>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -404,7 +422,19 @@ export function RecommendationDetailPanel({
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-foreground">Suggested Action</span>
-        <span className="text-muted-foreground">{recommendation.suggestedAction}</span>
+        <span className="text-muted-foreground">
+          {presented?.detail ?? recommendation.suggestedAction}
+        </span>
+        {/* v1.18.0 Batch 4 (spec §10) — the raw, directive Engine string
+            ("Stop Looping.", "Do not recommend additional borrowing.")
+            stays inspectable, not replaced outright, satisfying spec
+            §10's own "ENGINE OUTPUT / TRACEABILITY... never hidden"
+            guarantee for `suggestedAction`. */}
+        {presented !== null && (
+          <span className="text-xs text-muted-foreground">
+            Raw Engine output: {recommendation.suggestedAction}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-1">

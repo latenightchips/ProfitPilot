@@ -262,7 +262,14 @@ describe('RecommendationList — Borrow/Loop items (v1.18.0 Batch 3)', () => {
         'One or more of: Health Factor at or below minimum, no available borrow capacity, or Debt Ratio at or above target.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Do not recommend additional borrowing.')).toBeInTheDocument();
+    // v1.18.0 Batch 4 (spec §10) — the List row's second line now shows
+    // `presentationTextFor`'s presented sentence, not the raw, directive
+    // `suggestedAction` string ("Do not recommend additional borrowing.").
+    expect(
+      screen.getByText(
+        'An additional borrow would currently exceed at least one of your configured limits — minimum Health Factor or target Debt Ratio.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('S: the Debt filter includes Borrow alongside Repayment', () => {
@@ -296,7 +303,13 @@ describe('RecommendationList — Borrow/Loop items (v1.18.0 Batch 3)', () => {
         'One or more of: resulting Health Factor at or below target, no borrow capacity available, or interest cost exceeds the acceptable maximum.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Stop Looping')).toBeInTheDocument();
+    // v1.18.0 Batch 4 (spec §10) — same replacement as Borrow's own test
+    // above, for Loop's raw "Stop Looping" directive.
+    expect(
+      screen.getByText(
+        'One more loop step would currently exceed at least one of your configured Loop limits — target Health Factor, available borrow capacity, or maximum acceptable interest cost.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('T: the Leverage filter shows only Loop, never Repayment/Additional Collateral', () => {

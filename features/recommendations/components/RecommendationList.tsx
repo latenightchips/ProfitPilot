@@ -5,6 +5,7 @@ import {
   filterCategoryFor,
   isActionableRecommendation,
   ITEM_FILTER_CATEGORY,
+  presentationTextFor,
   type RecommendationSeverity,
   SEVERITY_ORDER,
   severityFor,
@@ -79,6 +80,13 @@ function explanationFor(
  * its own `unavailableReasons[id]` renders as a compact, per-item line
  * instead — scoped to its own filter category (`ITEM_FILTER_CATEGORY`),
  * since `debt`/`leverage` can now be partially available (spec §8).
+ *
+ * **v1.18.0 Batch 4** (spec §10) — each `RecommendationRow`'s headline/
+ * detail text for `borrow`/`loop` items now comes from
+ * `presentationTextFor` (`recommendationTaxonomy.ts`), not the raw
+ * Engine `triggeringCondition`/`suggestedAction` fields directly.
+ * `repayment`/`additionalCollateral` are unaffected — spec §10 keeps
+ * their existing copy unchanged.
  */
 const ITEM_ORDER: RecommendationItemId[] = ['repayment', 'additionalCollateral', 'borrow', 'loop'];
 
@@ -123,6 +131,12 @@ function RecommendationRow({
     portfolioId !== null && acknowledgements[portfolioId]?.[item.id] !== undefined;
   const isSelected = selectedItemId === item.id;
   const confidence = explanationFor(explanations, item.id)?.confidence ?? null;
+  // v1.18.0 Batch 4 (spec §10) — Borrow/Loop only; Repayment/Additional
+  // Collateral keep reading the raw Engine fields directly, unchanged.
+  const presented =
+    item.id === 'borrow' || item.id === 'loop'
+      ? presentationTextFor(item.id, item.recommendation)
+      : null;
 
   return (
     <li
@@ -142,9 +156,11 @@ function RecommendationRow({
           {confidence !== null && <span className="normal-case">· {confidence}</span>}
         </span>
         <span className="font-medium text-foreground">
-          {item.recommendation.triggeringCondition}
+          {presented?.headline ?? item.recommendation.triggeringCondition}
         </span>
-        <span className="text-muted-foreground">{item.recommendation.suggestedAction}</span>
+        <span className="text-muted-foreground">
+          {presented?.detail ?? item.recommendation.suggestedAction}
+        </span>
       </button>
       <div className="flex justify-end">
         <button
