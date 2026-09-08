@@ -12,7 +12,7 @@
  * Batch 1) so Settings' About section can display it directly, without
  * running a calculation merely to read a version string.
  */
-export const ENGINE_VERSION = '1.18.0';
+export const ENGINE_VERSION = '1.19.0';
 
 /**
  * Tracks `docs/02_Formulas.md`'s own document revision, not the

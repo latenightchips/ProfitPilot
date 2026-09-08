@@ -15833,6 +15833,399 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.19.0 Release Reconciliation — Dashboard Recommendation Summary Parity
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents Batch 1
+(`df394c8`, Service Integration), Batch 2 (`de28d5a`, UI Wiring), Batch 3
+(`46e10db`, Integration/E2E Hardening — no production defect found, tests
+only), and this reconciliation batch itself, applied directly on top of
+`v1.18.0` (`b6be3e11119ff1af70d4a45d5c8a92a929e5a096`). Preceded by a
+read-only roadmap audit (not a specification-writing phase — this
+theme required no new canonical specification; see "Spec-first
+determination" below).
+
+**Current release candidate: `1.19.0`. Versions `1.0.0` through `1.18.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.18.0` still resolves to
+`b6be3e11119ff1af70d4a45d5c8a92a929e5a096`, confirmed by fresh inspection
+during this batch (`git rev-parse v1.18.0^{commit}`). `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.18.0` to
+`1.19.0` — a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own
+"Why the Application/Engine version is `1.19.0`" paragraph gives.
+`FORMULA_VERSION` remains `1.0`, `STORAGE_SCHEMA_VERSION` remains
+`1.0.0` — this release requires neither: `git diff v1.18.0..HEAD --
+engine/` returns completely empty output (verified directly, not
+assumed) — no `engine/**` file of any kind was touched across all three
+batches — and no persisted field of any kind was added, changed, or
+removed; this release changes only which already-existing Service the
+Dashboard's summary builder calls. **No `v1.19.0` git tag exists yet** —
+confirmed via `git tag -l` and `git ls-remote --tags origin` during this
+batch's baseline verification; tagging is a separate, explicit step for
+after this patch is applied and synced, not taken by this batch (see
+this batch's own tag-readiness verdict at the end of this section).
+
+### Full `v1.18.0..HEAD` diff audit
+
+Every file touched across all three batches, verified directly via
+`git diff --stat v1.18.0..HEAD` and `git diff --name-status v1.18.0..HEAD`,
+not assumed from batch reports alone:
+
+- `features/dashboard/utils/buildRecommendationSummary.ts` (Batch 1)
+- `features/dashboard/types/recommendationSummary.ts` (Batch 1,
+  doc-comment corrections only — no field/type shape changed)
+- `features/dashboard/components/RecommendationSummarySection.tsx`
+  (Batch 2, doc-comment correction only — the render logic needed no
+  change, since it was already written generically over an
+  arbitrary-length array)
+- `tests/unit/features/dashboard/buildRecommendationSummary.test.ts`
+  (Batch 1)
+- `tests/unit/features/dashboard/RecommendationSummarySection.test.tsx`
+  (Batch 2)
+- `tests/unit/app/page.test.tsx` (Batch 3)
+- `tests/unit/app/recommendations/page.test.tsx` (Batch 3)
+- `tests/unit/stores/portfolioStore.test.ts` (Batch 3)
+
+**Exactly 8 files, zero of which are under `engine/`,
+`services/recommendation/`, `services/persistence/`, `types/portfolio.ts`,
+`types/portfolio.schema.ts`, or any V3/V4-dispatch file
+(`services/portfolio/mapping.ts`)** — confirmed by direct `git diff`
+against each of those paths returning empty output. No Formula ID was
+assigned; F-061/F-062/F-063/F-064 are byte-for-byte unchanged from
+`v1.18.0`. No persisted-data schema version changed. No protocol-version
+branching was introduced anywhere — the Dashboard consumes the same
+already-V3/V4-dispatched `Recommendation` objects the Recommendation
+Center already consumed.
+
+### Batch 1 — Service Integration (`df394c8`)
+
+- **`features/dashboard/utils/buildRecommendationSummary.ts`**: switched
+  from `calculateTargetHealthFactorActions` to
+  `calculateRecommendationActions` (the same canonical Service the
+  Recommendation Center itself calls). Repayment/Additional Collateral
+  remain unconditional once a target Health Factor exists, identical
+  behavior to before. Borrow/Loop are included only when their own
+  preference pair is complete (never a default, never a partial-group
+  substitution) **and** the resulting recommendation is actionable —
+  reusing `isActionableRecommendation`
+  (`features/recommendations/utils/recommendationTaxonomy.ts`) rather
+  than re-deriving that filtering logic, the same function already
+  deciding this for the Recommendation Center. Borrow/Loop text is
+  sourced through `presentationTextFor` (`v1.18.0` Batch 4), never the
+  raw Engine `suggestedAction`. Item order is a local `ITEM_ORDER`
+  constant (`['repayment', 'additionalCollateral', 'borrow', 'loop']`)
+  matching `RecommendationList.tsx`'s own identical constant and the
+  underlying `DECISION_PRIORITY_ORDER` tiers.
+- **Maximum item count proven to be 4, not 2** — from
+  `RecommendationActionsResult.items`'s own `RecommendationItemId` union
+  (exactly four members) and spec §5's independence guarantee, verified
+  with a dedicated test producing all four simultaneously, not assumed
+  from the roadmap audit's own suggestion.
+- **Tests**: 14 tests (10 new + 3 pre-existing retained unmodified),
+  covering existing Repayment/Additional Collateral behavior, Borrow
+  complete/partial/acceptable, Loop complete/partial, all four
+  coexisting, canonical presentation-text integration, and non-mutation
+  of the canonical `Recommendation` objects.
+- **Validation**: full suite passing (4532/4532), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Batch 2 — UI Wiring (`de28d5a`)
+
+- **`features/dashboard/components/RecommendationSummarySection.tsx`**:
+  audited and found already structurally generic —
+  `summary.items.map(...)` never assumed exactly two items and never
+  re-sorted, so it already rendered Batch 1's expanded 0–4-item set
+  correctly with **no rendering-logic change**. Only the file's own
+  stale header comment (previously "why only repayment/additional-
+  collateral recommendations are shown") was corrected.
+  - "View all" reconsidered and confirmed still unnecessary — every
+    possible item already renders in one untruncated list.
+  - Accessibility semantics (heading, list/listitem roles) confirmed
+    unaffected and scale correctly to any item count.
+- **Tests**: 12 new tests using hand-built `RecommendationSummary`
+  fixtures (0–4 items, canonical ordering, presentation-text
+  passthrough, no independent financial derivation, accessibility/list
+  semantics), plus the two pre-existing real-portfolio-driven tests
+  retained unmodified.
+- **Validation**: full suite passing (4542/4542), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Batch 3 — Integration/E2E Hardening (`46e10db`)
+
+- **Chosen boundary: RTL integration tests, not new/modified Playwright
+  E2E.** `tests/unit/app/page.test.tsx` already renders the real
+  `DashboardPage` component tree against the real `usePortfolioStore`
+  singleton with nothing mocked except unrelated Aave live-data stores —
+  a stronger, faster, more precise proof of "real application wiring"
+  than a browser-automation layer would add on top of it. No E2E file
+  was touched.
+  - `tests/unit/app/page.test.tsx`: 7 new tests proving Borrow/Loop reach
+    the Dashboard through the real store → Service → summary → page
+    chain — complete/actionable Borrow, complete/actionable Loop, both
+    coexisting with all four in canonical order, partial Borrow/partial
+    Loop correctly omitted, a fully-configured-but-"acceptable" (non-
+    actionable) Borrow correctly omitted, and exact canonical
+    presentation-text parity against a direct `calculateRecommendationActions`
+    - `presentationTextFor` call.
+  - `tests/unit/stores/portfolioStore.test.ts`: 1 new focused test
+    proving a persisted, fully-configured Borrow+Loop preference
+    configuration survives a genuine local-storage round trip through
+    the Store's own `load()` boundary (not merely the schema level,
+    already exhaustively covered by `portfolio.schema.test.ts`) and is
+    then correctly reflected in `buildRecommendationSummary`'s own
+    4-item output.
+  - `tests/unit/app/recommendations/page.test.tsx`: 1 new cross-page
+    parity test proving the Dashboard and the Recommendation Center
+    render byte-identical presentation text for the same Borrow
+    recommendation on the same portfolio — both routes consume the same
+    canonical availability, never independently derived.
+- **No production defect found; no production code changed this batch.**
+  One test-authoring correction was needed (a Dashboard-page render
+  inside the Recommendations-page test file needed the same
+  `load: async () => {}` no-op override `page.test.tsx` already
+  establishes, since `RecommendationsPage` does not itself trigger that
+  mount effect) — a test-setup fix, not a defect in Batch 1/2's shipped
+  behavior.
+- **Tests**: 9 new tests total across the three files above.
+- **Validation**: full suite passing (4551/4551), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Traceability audit
+
+Every v1.19.0 claim mapped directly to code/tests, not assumed:
+
+| Claim                                                     | Verified against                                                                                                                                                                |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard summary now uses the canonical Service          | `features/dashboard/utils/buildRecommendationSummary.ts:115` calls `calculateRecommendationActions`                                                                             |
+| Service boundary — no Dashboard-side financial derivation | `buildRecommendationSummary.ts` reads only `recommendation.category`/`.decisionPriority`/`.triggeringCondition`/`.suggestedAction`/`.expectedEffect`, computes no numeric value |
+| UI boundary — component unchanged, already generic        | `git diff v1.18.0..HEAD -- features/dashboard/components/RecommendationSummarySection.tsx` shows only a comment hunk                                                            |
+| Integration tests                                         | `tests/unit/app/page.test.tsx` (7 new), real store → real Service → real component                                                                                              |
+| Persistence test                                          | `tests/unit/stores/portfolioStore.test.ts` (1 new), real `load()` round trip                                                                                                    |
+| Cross-page parity test                                    | `tests/unit/app/recommendations/page.test.tsx` (1 new)                                                                                                                          |
+| Historical §9 supersession documented                     | This section (below) and `docs/CHANGELOG.md`'s `[1.19.0]`/"Why `1.19.0`" entries                                                                                                |
+| Version metadata                                          | `package.json`, `engine/shared/result.ts`, `services/persistence/envelope.ts` — all confirmed `1.19.0`/`1.19.0` this batch                                                      |
+
+**No claim in this release's own batch reports could not be verified
+against the actual repository.**
+
+### §9 historical decision — reconciliation
+
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §9, written during
+`v1.18.0`, states: **"Decision: v1.18.0 does NOT extend Dashboard's
+recommendation summary to include Borrow/Loop. It stays limited to the
+Recommendation Center,"** reasoning in part that "[a] user could see
+Borrow/Loop items silently appear or disappear on the Dashboard with no
+proximate explanation of why, unlike the Recommendation Center, which
+has `UNAVAILABLE_FILTER_REASONS`/`unavailableReasons` machinery built
+specifically to explain exactly that."
+
+**This document is left completely untouched by this reconciliation —
+including that exact sentence** — following the same "specification
+documents are frozen artifacts once approved" convention
+`docs/STARTING_VALUE_BASELINE_SPEC.md` and `v1.18.0`'s own reconciliation
+already established (see that section above, "What did not change").
+§9 was an accurate statement of the `v1.18.0` product decision at the
+time it was written, and remains so as a historical record; it is not
+rewritten, and no inline "Superseded" marker was added to it — no spec
+document in this repository has ever received one (verified by direct
+grep across `docs/*.md`), and this reconciliation does not introduce the
+first exception. The supersession is recorded here, in
+`docs/CHANGELOG.md`'s `[1.19.0]` entry and "Why `1.19.0`" paragraph, and
+in `docs/RELEASE_NOTES.md`'s `## Version 1.19.0` section — the same three
+places every prior release's actual, current-behavior story has always
+lived, cross-referencing back to this section and to §9 by name so a
+reader lands on the full context either way.
+
+**Current v1.19.0 behavior**: an actionable Borrow or Loop recommendation
+(preference pair complete, and the recommendation currently has
+something to say) now appears on the Dashboard, in the same canonical
+order as Repayment/Additional Collateral. An incomplete, unconfigured, or
+currently-non-actionable ("acceptable"/"loop recommended") Borrow or Loop
+item is omitted — never fabricated, never shown with an invented reason.
+
+**Why this decision was revisited**: the v1.19.0 roadmap audit (prior
+turn) identified Dashboard Recommendation Summary Parity as the highest-
+value, specification-safe candidate remaining after `v1.18.0` — reusing
+the already-built, already-tested canonical pipeline verbatim, with zero
+new financial semantics and zero V3/V4 risk, closing a gap `v1.18.0`
+itself explicitly (not accidentally) deferred rather than permanently
+ruled out ("[a] future, independently-scoped batch could extend
+`buildRecommendationSummary` to call `calculateRecommendationActions`…",
+§9's own closing sentence). The user directed this work explicitly across
+three scoped batches; this reconciliation records that decision, it does
+not make it.
+
+**Was §9's own concern — no "why is this missing" affordance — actually
+investigated, or merely overridden?** Investigated, in Batch 3, and
+explicitly not resolved by adding new UI. Two facts were confirmed
+directly against the repository, not assumed:
+
+1. The Dashboard has never explained _any_ recommendation-summary
+   omission, for any of its categories, at any point since the
+   empty-state messaging work in Batch 9 (`M5-020`, long before this
+   feature existed) — a Repayment or Additional Collateral
+   recommendation that is currently satisfied has always simply not
+   appeared, with zero stated reason, and this has never been treated as
+   a defect.
+2. Extending Borrow/Loop to the Dashboard applies this exact same,
+   already-established, already-accepted omission behavior to two more
+   categories — it does not introduce a new kind of silence the
+   Dashboard didn't already have.
+
+No demonstrated correctness or accessibility problem was found in
+Batch 3's own integration testing (the "canonical unavailable results"
+and "coexistence" test cases all pass) — per this reconciliation's own
+explicit instruction that the Dashboard "does NOT need to explain why
+every unavailable recommendation category is missing unless the current
+product behavior becomes misleading," no unavailable-reasons UI was
+added. This is recorded as a deliberate, investigated non-goal, not an
+oversight — see `docs/CHANGELOG.md`'s `[1.19.0]` "What this is not"
+section for the user-facing statement of the same finding. If a future
+batch or a real user report demonstrates this omission is actually
+confusing in practice, that would be new evidence this reconciliation
+does not have, and would warrant its own scoped design work — not
+inferred or pre-built here.
+
+**Conflict #29's own entry** (below, in "Unresolved documentation
+conflicts") has a short addendum pointing to this section, per the same
+"do not restate resolution details a second time" discipline `v1.18.0`'s
+own reconciliation established for that entry.
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.19.0`; a new "Why the Application/
+  Engine version is `1.19.0`" paragraph (explicitly naming and
+  superseding the `v1.18.0` "does not add Borrow/Loop... to the
+  Dashboard" statement and §9) inserted before the `1.18.0` paragraph; a
+  new `[1.19.0]` entry (What's new / What this is not / Explicitly
+  unchanged) inserted before `[1.18.0]`.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.19.0` section added
+  with the `**Current release.**` marker; `## Version 1.18.0` demoted to
+  `## Version 1.18.0 (previous release)` with that marker removed, the
+  same demotion pattern used for every prior release transition.
+- **`PROJECT_STATUS.md`**: this section, plus a short addendum on
+  Conflict #29's own entry pointing here.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.18.0`
+  to `1.19.0`. `FORMULA_VERSION` (`1.0`) and `STORAGE_SCHEMA_VERSION`
+  (`1.0.0`) are unchanged.
+
+**`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` itself was left
+untouched** — see "§9 historical decision — reconciliation" above for the
+full reasoning.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for `1.18.0`/`1.19.0`/
+`Dashboard.*[Rr]ecommendation`/`recommendation.*[Dd]ashboard` and found to
+need no update: none makes a version- or Dashboard-recommendation-
+specific claim this release could make stale. `docs/OPERATIONAL_RUNBOOK.md`'s
+one incidental "Recommendations" mention is a generic page-name listing,
+not a scope claim. `docs/VERSION_2_BACKLOG.md`'s eight numbered items
+(Additional protocols, Advanced simulations, Portfolio analytics, Wallet
+integrations, Live portfolio imports, Mobile application, Tax reporting,
+AI insights) do not include this theme — nothing to remove or mark done.
+Deployment disposition is unchanged from prior releases.
+
+### Known/deferred work audit
+
+Re-verified against current `PROJECT_STATUS.md`/spec-doc text this
+batch, not resurrected from memory — every item below remains genuinely
+open, none resolved by `v1.18.0` or `v1.19.0`:
+
+- **Health Factor risk-band classification (Conflict #1)** — still open;
+  the documented bands still disagree across README.md/`01_PRD.md`
+  REQ-001/REQ-005/`02_Formulas.md` F-026/F-060.
+- **F-065 "Interest Warning"** — still deferred; no "Expected Annual
+  Portfolio Growth" figure exists anywhere in `02_Formulas.md`.
+- **F-067 "Simple Portfolio Score"** — still deferred (Conflict #12);
+  documented weights exist, no per-component 0–100 conversion formula.
+- **Exit Readiness Formula-ID gap (Conflict #11)** — still unmapped; no
+  Formula ID in the Recommendation Engine chapter names "Exit readiness."
+- **Quantified Impact for Borrow/Loop** — still a gap, confirmed by
+  direct inspection of `services/recommendation/explainRecommendation.ts`
+  during the roadmap audit: Borrow has no "how much" figure to reduce to
+  a delta, Loop's multi-step shape doesn't reduce to one without
+  inventing a specific loop amount. Explicitly out of scope for `v1.19.0`
+  per this batch's own instructions, and correctly not implemented.
+- **Apply to Portfolio for Borrow/Loop** — still a gap, same underlying
+  cause as Quantified Impact above (no single delta shape to apply).
+- **Recommended borrow/loop amount semantics** — still unresolved; F-061/
+  F-064 remain binary accept/reject rules, not amount-suggesting ones.
+- **Cost basis / P&L / total return / cumulative-realized interest** —
+  still permanently deferred; no acquisition-price/transaction-lot
+  mechanism exists anywhere in this application.
+- **Settings About / Conflict #39** — still unresolved; License, Data
+  Provider, and Last Synchronization remain undisplayed in Settings'
+  About section, unaffected by this release.
+- **Cloud Database / Cloud Sync** — still cancelled by explicit product
+  decision (Milestone 8), not deferred, not revisited.
+- **Operated production deployment/monitoring under Path B** — still
+  deferred; no live deployment exists, unaffected by this release.
+
+No item above was silently resolved, removed, or resurrected as newly
+discovered — each is exactly where the most recent prior reconciliation
+left it.
+
+### V3/V4 isolation audit
+
+Explicitly verified across the entire `v1.18.0..HEAD` diff, not assumed:
+
+- **No protocol-version reinterpretation was added to Dashboard
+  recommendation UI** — `buildRecommendationSummary.ts` and
+  `RecommendationSummarySection.tsx` contain zero references to
+  `protocolVersion`, `v4DebtState`, `v4CollateralRisk`, or any V3/V4-only
+  field.
+- **Canonical Service/Engine remains the sole owner of financial
+  semantics** — the Dashboard's only new call is to
+  `calculateRecommendationActions`, the same Service the Recommendation
+  Center already called; no new Engine call, no new formula.
+- **V3/V4 dispatch isolation remains intact** — `services/portfolio/mapping.ts`
+  and every V4 guard function are byte-for-byte unchanged (`git diff
+v1.18.0..HEAD -- services/portfolio/mapping.ts` returns empty output).
+- **UI does not reconstruct financial recommendation values** — the
+  Dashboard reads the same six fixed display fields
+  (`priority`/`category`/`riskLevel`/`explanation`/`suggestedAction`/
+  `expectedEffect`) it already read before this release; no numeric
+  `relevantValues` field is ever surfaced on the Dashboard.
+- **No Engine formula was changed** — confirmed by direct diff, not
+  assumed (`git diff v1.18.0..HEAD -- engine/` empty).
+
+### What did not change, across all three batches
+
+**No engine, recommendation-service, persistence-schema, preference-
+schema, V3/V4-adapter, Simulation, Loop Builder, Exit Planner, or CSV-
+exporter file was touched at any point.** Confirmed by direct diff
+inspection (`git diff v1.18.0..HEAD --stat`: exactly 8 files touched, all
+listed in "Full `v1.18.0..HEAD` diff audit" above). No Formula ID was
+assigned. No persisted-data schema version changed — `STORAGE_SCHEMA_VERSION`
+stays `1.0.0`. No new recommendation category was unlocked — the same
+four (Repayment, Additional Collateral, Borrow, Loop) `v1.18.0` already
+made computable are the only four this release can ever surface; Safety,
+Exit Readiness, and Interest Cost remain unavailable filter categories in
+the Recommendation Center, unaffected.
+
+### Final release assessment
+
+**READY TO TAG v1.19.0.** All 8 changed files inspected directly; every
+batch's own claim verified against real code/tests, not assumed; full
+suite passing (4551/4551) at the reconciliation baseline (see Validation
+below for this batch's own re-run); no unresolved blocker; no historical
+artifact silently rewritten; no known/deferred item silently resolved or
+resurrected; version metadata consistent across `package.json`/
+`ENGINE_VERSION`/`APP_VERSION`.
+
+---
+
 ## v1.18.0 Release Reconciliation — Recommendation Preferences
 
 **Recorded after the fact, the same convention every release-
@@ -17343,6 +17736,15 @@ pair complete. See `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` for
 the canonical specification and the "v1.18.0 Release Reconciliation —
 Recommendation Preferences" section above for the full closure-criteria
 verification against this entry's own original gap.
+
+**Note (v1.19.0):** the parenthetical above ("not the Dashboard —
+M5-015 remains its own, separately scoped, still-unbuilt task") described
+the `v1.18.0` decision accurately at the time. `v1.19.0` (Dashboard
+Recommendation Summary Parity) revisited and superseded that specific
+scoping decision — see the "v1.19.0 Release Reconciliation — Dashboard
+Recommendation Summary Parity" section above for the full reconciliation,
+including the corresponding `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+§9 supersession.
 
 ---
 

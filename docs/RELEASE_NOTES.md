@@ -13,9 +13,67 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.18.0
+## Version 1.19.0
 
-**Current release.** Promotes four implementation batches on top of
+**Current release.** Promotes three implementation batches on top of
+Version 1.18.0, together titled "Dashboard Recommendation Summary
+Parity": Batch 1, Service Integration; Batch 2, UI Wiring; and Batch 3,
+Integration/E2E Hardening — built, tested, and independently re-verified
+in the batches that produced them, not a fresh Milestone-9/V1.1-style
+Release Candidate process with its own new manual exploratory pass. See
+`PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section and
+`docs/CHANGELOG.md`'s `[1.19.0]` entry for the full record. Everything in
+"Version 1.18.0" and earlier below still applies; this section covers
+only what is new since 1.18.0. **Still a self-hostable software release,
+not a hosted product** — see "Deployment" below, unchanged from Version
+1.0.0.
+
+### What's new in 1.19.0
+
+- **The Dashboard now shows Borrow and Loop recommendations, alongside
+  Repayment and Additional Collateral.** If you've configured a Borrow
+  or Loop preference pair on Portfolio Details (added in `v1.18.0`) and
+  that recommendation currently has something to say, it now appears on
+  the Dashboard too, not only in the Recommendation Center.
+- **Order is fixed and predictable**: Repayment, Additional Collateral,
+  Borrow, Loop. An item that isn't configured, or is currently fine, is
+  simply left out — never shown with a made-up value.
+- **The wording matches what you'd see in the Recommendation Center** —
+  the same reworded, "your configured limits" phrasing, not a second,
+  differently written version of the same message.
+- **Verified through the real app, not just isolated tests**: a
+  configured Borrow/Loop preference survives closing and reopening the
+  application, and still shows up correctly on the Dashboard afterward.
+
+### What this is not
+
+**This is a display change, not a new recommendation capability.** No
+new formula, no new preference field, no new category. It does not add
+Quantified Impact (before/after numbers) or an Apply-to-Portfolio button
+for Borrow/Loop on the Dashboard or the Recommendation Center — neither
+existed for Borrow/Loop before, and neither is added now. It does not
+suggest a specific amount to borrow or loop. It does not add an
+explanation for why a Borrow or Loop recommendation is missing when it's
+missing — the Dashboard has never explained an omitted "already
+satisfied" Repayment or Additional Collateral recommendation either, and
+this release extends that same, already-established behavior to
+Borrow/Loop rather than inventing a new one. It does not resolve Health
+Factor risk bands, Exit Readiness, the Interest Cost warning gap, cost
+basis, P&L, or total return — each remains open for its own previously-
+documented reason.
+
+### Explicitly unchanged in 1.19.0
+
+No financial formula changed, no persisted-data schema version changed,
+no migration required, no V3/V4 semantic change. Repayment and
+Additional Collateral are completely unaffected — same calculations,
+same wording, same behavior as before this release. Still no live wallet
+connection or transaction execution, still no cloud backup or
+synchronization, still no publicly operated production deployment.
+
+## Version 1.18.0 (previous release)
+
+Promotes four implementation batches on top of
 Version 1.17.0, together titled "Recommendation Preferences": Batch 1,
 Schema and Persistence; Batch 2, Service Integration; Batch 3,
 Recommendation Center Wiring and Portfolio Preference UI; and Batch 4,

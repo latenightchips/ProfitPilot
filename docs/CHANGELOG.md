@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.18.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.18.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.18** — no batch in any of the eighteen releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.18** — every batch across all eighteen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. |
+| Application version           | `1.19.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.19.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.19** — no batch in any of the nineteen releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). Dashboard Recommendation Summary Parity (`v1.19.0`) assigns no Formula ID either — the Dashboard summary builder now calls the same `calculateRecommendationActions` composition, adding no Engine calculation of its own (verified: `git diff v1.18.0..HEAD -- engine/` returns empty output). |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.19** — every batch across all nineteen releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. `v1.19.0` introduces no new persisted field at all — it only changes which Service the Dashboard's own (already-existing, already-persisted-nothing) summary builder calls. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -57,6 +57,46 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.16.0)    | 2026-09-07     | Settings About — Version Transparency (Batch 1), re-validated against a fresh `origin/main` checkout after patch apply (final count 4385/4385 tests passing) — see `PROJECT_STATUS.md`'s "v1.16.0 Release Reconciliation" section and the `[1.16.0]` entry below. Same promotion pattern as `1.15.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.17.0)    | 2026-09-07     | Starting-Value Baseline — specification phase plus Batch 1 (data model/persistence/store/comparison) and Batch 2 (Portfolio page UI), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4441/4441 tests passing) — see `PROJECT_STATUS.md`'s "v1.17.0 Release Reconciliation" section and the `[1.17.0]` entry below. Same promotion pattern as `1.16.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.18.0)    | 2026-09-08     | Recommendation Preferences — specification phase plus Batch 1 (schema/persistence), Batch 2 (service integration), Batch 3 (Recommendation Center wiring + Portfolio preference UI), and Batch 4 (presentation-language layer + E2E/accessibility hardening), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4521/4521 tests passing) — see `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section and the `[1.18.0]` entry below. Same promotion pattern as `1.17.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.19.0)    | 2026-09-08     | Dashboard Recommendation Summary Parity — Batch 1 (Service Integration), Batch 2 (UI Wiring), and Batch 3 (Integration/E2E Hardening — no production defect found, tests only), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4551/4551 tests passing) — see `PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section and the `[1.19.0]` entry below. Same promotion pattern as `1.18.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.19.0`, not `1.18.x` or a new
+`2.0.0`**: not a PATCH — the Dashboard's own Recommendation Summary
+Section now surfaces real Borrow and Loop recommendations, not only
+Repayment and Additional Collateral — new user-facing capability, not a
+bug fix to existing capability, the same bar every prior MINOR bump
+already used. **This explicitly supersedes one specific statement in the
+`1.18.0` entry immediately below** ("It does not add Borrow/Loop
+recommendations to the Dashboard's own summary — that stays exactly as
+it was") and the corresponding decision in
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §9 ("v1.18.0 does NOT
+extend Dashboard's recommendation summary to include Borrow/Loop. It
+stays limited to the Recommendation Center.") — both were accurate
+statements of the `v1.18.0` product decision at the time they were
+written, and are left unedited below as the historical record of that
+decision; they are no longer descriptions of current behavior as of
+`v1.19.0`. See `PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation"
+section for the full reconciliation of why this decision was revisited,
+what changed, and why §9's own "no proximate explanation of why an item
+disappears" concern was investigated and found not to constitute a
+demonstrated correctness or accessibility problem in the shipped
+behavior (unavailable/non-actionable Borrow/Loop items are omitted, the
+same way an already-satisfied Repayment/Additional Collateral
+recommendation has always been omitted, with no explanation, since
+before this feature existed). The Dashboard now surfaces up to four
+independently available categories — Repayment, Additional Collateral,
+Borrow, Loop, in that canonical order — by calling the same
+`calculateRecommendationActions` Service the Recommendation Center
+already used (`v1.18.0` Batch 2), never a new or duplicated calculation.
+Not a new MAJOR either: no Engine file changed at all (verified:
+`git diff v1.18.0..HEAD -- engine/` is empty), no Formula ID was
+assigned, `FORMULA_VERSION` stays `1.0`, `STORAGE_SCHEMA_VERSION` is
+untouched (no persisted field was added or changed — this release only
+changes which already-existing Service the Dashboard's summary builder
+calls), no V3/V4 semantic change (the Dashboard consumes the same
+already-V3/V4-dispatched `Recommendation` objects, with no protocol-
+version branching of its own), and nothing about the Manual-Mode-by-
+default product boundary `01_PRD.md` reserves Version 2 for was touched.
+A minor version bump, same class as `1.1.0`'s through `1.18.0`'s own.
 
 **Why the Application/Engine version is `1.18.0`, not `1.17.x` or a new
 `2.0.0`**: not a PATCH — Portfolio Details gains a new "Recommendation
@@ -472,6 +512,80 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.19.0] — 2026-09-08
+
+Three implementation batches on top of Version 1.18.0, together titled
+"Dashboard Recommendation Summary Parity": Batch 1, Service Integration
+(`df394c8`), Batch 2, UI Wiring (`de28d5a`), and Batch 3, Integration/E2E
+Hardening (`46e10db`), plus this reconciliation batch itself. Full
+per-file, per-batch detail lives in `PROJECT_STATUS.md`'s "v1.19.0
+Release Reconciliation" section; this entry summarizes what changed for
+a user.
+
+### What's new in 1.19.0
+
+- **The Dashboard's Recommendation Summary Section now shows up to four
+  recommendation categories, not just two.** Repayment and Additional
+  Collateral behave exactly as before; Borrow and Loop — introduced in
+  `v1.18.0` for the Recommendation Center only — now also appear here
+  once their matching Portfolio Details preference pair is complete and
+  the recommendation is currently actionable.
+- **Canonical order is fixed**: Repayment, Additional Collateral, Borrow,
+  Loop. Items never appear in a different order, and an unconfigured or
+  currently-fine Borrow/Loop item is simply omitted — never fabricated,
+  never shown with an invented value.
+- **Borrow/Loop wording on the Dashboard matches the Recommendation
+  Center's own reworded copy exactly** — both surfaces read the same
+  underlying presentation-safe text, not two independently written
+  descriptions of the same recommendation.
+- **Proven through the real application path, not only isolated
+  component tests**: a persisted Recommendation preference configuration
+  survives a simulated page refresh and is correctly reflected on the
+  Dashboard; the Dashboard and the Recommendation Center were confirmed
+  to agree on which categories are currently available for the same
+  portfolio.
+- **No new control was added.** Every recommendation this section can
+  ever compute already fits in the existing list — there is no "View
+  all" link, and none was needed.
+
+### What this is not
+
+**This is a presentation and integration change, not a new financial
+capability.** No new recommendation formula, category, or preference
+field was introduced; Borrow and Loop use the identical F-061/F-064
+Engine rules and the identical `recommendationPreferences` fields
+`v1.18.0` already shipped. This release does **not**: add Quantified
+Impact (before/after figures) for Borrow/Loop on either the Dashboard or
+the Recommendation Center; add Apply-to-Portfolio support for Borrow or
+Loop; compute or suggest a specific borrow or loop amount; prefill Loop
+Builder from a Loop recommendation; add a Dashboard "why is this
+unavailable" explanation UI (investigated — see "What this is not" in
+`PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section for why
+none was found to be needed); resolve Health Factor risk-band
+classification (Conflict #1), the Exit Readiness Formula ID gap
+(Conflict #11), the F-067 component-formula gap (Conflict #12), the
+Interest Cost category's F-065 gap, cost basis, P&L, total return, or
+cumulative/realized interest; or reflect any operated production
+deployment.
+
+### Explicitly unchanged in 1.19.0
+
+**No financial formula changed, and no Formula ID was assigned.**
+`engine/recommendation/calculateBorrowRecommendation.ts` (F-061) and
+`calculateLoopRecommendation.ts` (F-064), alongside F-062/F-063, remain
+exactly as `v1.18.0` left them — verified by direct diff (`git diff
+v1.18.0..HEAD -- engine/` returns empty output), not assumed. The
+Dashboard's summary builder (`features/dashboard/utils/buildRecommendationSummary.ts`)
+now calls `calculateRecommendationActions` instead of
+`calculateTargetHealthFactorActions`, adding no new Engine call and no
+new financial derivation of its own. **`STORAGE_SCHEMA_VERSION` stays
+`1.0.0`** — no persisted field was added, changed, or removed by this
+release. No V3/V4 semantic change — the Dashboard consumes the same
+already-V3/V4-dispatched `Recommendation` objects the Recommendation
+Center already consumed; no protocol-version branching exists in
+Dashboard code. No CSV export change. No Simulation, Loop Builder, or
+Exit Planner file was touched.
 
 ## [1.18.0] — 2026-09-08
 
