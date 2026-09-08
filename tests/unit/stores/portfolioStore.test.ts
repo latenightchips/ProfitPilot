@@ -2482,7 +2482,17 @@ describe('usePortfolioStore.applyPortfolioState (V1.1 Batch 3)', () => {
     const created = createValidPortfolio();
     const proposal = applyProposalFor(created);
 
+    // v1.20.0 Batch 2 — deterministic timestamp fix. `updatedAt` is
+    // millisecond-precision; a same-tick create+applyPortfolioState in a
+    // fast/parallel test run can otherwise land on the identical
+    // timestamp, making this assertion fail nondeterministically. Same
+    // pattern this file's own `setBaseline`/`applyPortfolioState`
+    // staleness tests already use.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(created.updatedAt) + 60_000));
     const result = usePortfolioStore.getState().applyPortfolioState(proposal);
+    vi.useRealTimers();
+
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.collateral.quantity).toBe(3);

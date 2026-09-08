@@ -2,6 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import DashboardPage from '@/app/page';
 import PortfolioPage from '@/app/portfolio/page';
 import { autoSaveCoordinator, resolveCanonicalDebtBalance } from '@/services';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
@@ -2258,5 +2259,139 @@ describe('PortfolioPage — Starting-Value Baseline panel integration (v1.17.0 B
     ).toBeInTheDocument();
     // Portfolio History remains rendered, unaffected by the baseline write.
     expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * v1.20.0 Batch 2 (Dashboard Starting-Value Baseline Visibility,
+ * Integration Proof) — Dashboard ↔ Portfolio page cross-page parity.
+ * Both routes ultimately call the same authoritative
+ * `calculateStartingValueBaselineComparison` (`services/portfolio/startingValueBaseline.ts`)
+ * for a given portfolio — the Portfolio page directly (`StartingValueBaselinePanel.tsx`),
+ * the Dashboard via `buildStartingValueBaselineSummary` (v1.20.0 Batch 1)
+ * — so for the same portfolio state, the two routes' displayed figures
+ * are not merely similar, they are byte-identical, proving both consume
+ * the same underlying authoritative comparison rather than each
+ * deriving their own. `DashboardPage` (unlike this route) mounts its
+ * own `useEffect(() => { load(); }, [load])` — the same no-op override
+ * `tests/unit/app/page.test.tsx` already establishes is applied before
+ * each Dashboard render below so the real, now-async `load()` (M8-008)
+ * never overwrites these tests' manually seeded state with an empty
+ * skeleton before assertions run.
+ *
+ * **`getPortfolioPageBaselineDefinitions` scopes its query to the
+ * Starting-Value Baseline `<section>` specifically** — `AaveTechnicalDetails.tsx`
+ * and `PortfolioHistoryPanel.tsx` also render their own, unrelated
+ * `<dl>`/`<dd>` content on this same page, so an unscoped
+ * `screen.getAllByRole('definition')` here would pick those up too.
+ * `StartingValueBaselineSection.tsx` (Dashboard) is the only Dashboard
+ * component using `<dl>`, so no such scoping is needed there.
+ */
+function getPortfolioPageBaselineDefinitions(): (string | null)[] {
+  const heading = screen.getByRole('heading', { level: 2, name: /^Performance/ });
+  const section = heading.closest('section');
+  expect(section).not.toBeNull();
+  return within(section as HTMLElement)
+    .getAllByRole('definition')
+    .map((node) => node.textContent);
+}
+
+describe('Dashboard ↔ Portfolio page Starting-Value Baseline parity (v1.20.0 Batch 2)', () => {
+  it('both surfaces honestly report "no baseline" for a freshly created portfolio', () => {
+    const created = createAndSelect();
+
+    const { unmount } = render(<PortfolioPage />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Performance' })).toBeInTheDocument();
+    expect(screen.getByText(/No baseline has been established/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set Baseline Now' })).toBeInTheDocument();
+    unmount();
+
+    usePortfolioStore.setState({ load: async () => {} });
+    render(<DashboardPage />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Performance' })).toBeInTheDocument();
+    expect(screen.getByText(/No starting-value baseline is set/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Set a baseline' })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
+    expect(screen.queryByRole('button', { name: 'Set Baseline Now' })).not.toBeInTheDocument();
+
+    void created;
+  });
+
+  it('both surfaces show byte-identical baseline/current/change figures for the same established baseline', () => {
+    const created = createAndSelect();
+    const baselined = usePortfolioStore.getState().setBaseline(created.id);
+    if (!baselined.ok) throw new Error('setup failed');
+
+    const { unmount } = render(<PortfolioPage />);
+    const portfolioDd = getPortfolioPageBaselineDefinitions();
+    unmount();
+
+    usePortfolioStore.setState({ load: async () => {} });
+    render(<DashboardPage />);
+    const dashboardDd = screen.getAllByRole('definition').map((node) => node.textContent);
+
+    expect(dashboardDd).toEqual(portfolioDd);
+    // A `0` change is not `> 0`, so the shared sign convention
+    // (`formatSignedCurrency`/`formatSignedPercent`, both pages) omits
+    // the "+" prefix here — this is not a defect, see each function's
+    // own header comment for the same reasoning restated on both pages.
+    expect(portfolioDd).toEqual(['$100,000.00', '$100,000.00', '$0.00 (0%)']);
+  });
+
+  it('both surfaces show the composition-changed status consistently after collateral quantity changes', () => {
+    const created = createAndSelect();
+    const baselined = usePortfolioStore.getState().setBaseline(created.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().update(created.id, { collateral: { asset: 'BTC', quantity: 3 } });
+
+    const { unmount } = render(<PortfolioPage />);
+    expect(screen.getByText(/composition changed since baseline/i)).toBeInTheDocument();
+    const portfolioDd = getPortfolioPageBaselineDefinitions();
+    unmount();
+
+    usePortfolioStore.setState({ load: async () => {} });
+    render(<DashboardPage />);
+    expect(screen.getByText(/composition changed since baseline/i)).toBeInTheDocument();
+    const dashboardDd = screen.getAllByRole('definition').map((node) => node.textContent);
+
+    expect(dashboardDd).toEqual(portfolioDd);
+  });
+
+  it('a market-price change made through the real Store is reflected identically on both surfaces', () => {
+    const created = createAndSelect();
+    const baselined = usePortfolioStore.getState().setBaseline(created.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    // Both routes independently mount `useAaveLiveSync`, which reconciles
+    // `portfolio.market` against the live quote whenever `marketSource
+    // === 'live'` (omitting `source` on `setMarket` below defaults to
+    // `'live'`) — the stubbed quote is moved to the same price, or the
+    // effect would silently push the portfolio's price back to this
+    // file's own unchanged 50000 default on the very next render.
+    usePortfolioStore.getState().setMarket(created.id, { btcPriceUsd: 60000 });
+    useAaveLiveDataStore.setState(
+      matchingAaveLiveState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh',
+          price: 60000,
+          origin: 'provider',
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    const { unmount } = render(<PortfolioPage />);
+    const portfolioDd = getPortfolioPageBaselineDefinitions();
+    unmount();
+
+    usePortfolioStore.setState({ load: async () => {} });
+    render(<DashboardPage />);
+    const dashboardDd = screen.getAllByRole('definition').map((node) => node.textContent);
+
+    expect(dashboardDd).toEqual(portfolioDd);
+    expect(portfolioDd).toEqual(['$100,000.00', '$120,000.00', '+$20,000.00 (+20%)']);
   });
 });
