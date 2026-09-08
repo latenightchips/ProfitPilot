@@ -365,6 +365,111 @@ describe('DashboardPage — Leverage Summary Section (M5-014, Batch 6)', () => {
   });
 });
 
+/**
+ * v1.20.0 Batch 1 (Dashboard Starting-Value Baseline Visibility) —
+ * proves the real store → `calculateStartingValueBaselineComparison` →
+ * `buildStartingValueBaselineSummary` → `StartingValueBaselineSection`
+ * chain through the real `DashboardPage` render, the same integration
+ * boundary v1.19.0 Batch 3 already established for this file.
+ */
+describe('DashboardPage — Starting-Value Baseline Section (v1.20.0 Batch 1)', () => {
+  it('explains that no baseline is set and links to the Portfolio page when none exists', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/No starting-value baseline is set/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Set a baseline' })).toHaveAttribute(
+      'href',
+      '/portfolio',
+    );
+  });
+
+  it('surfaces the authoritative baseline/current/change values once a real baseline is set through the Store', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    // `DashboardPageClient` mounts `useAaveLiveSync`, which on every
+    // render reconciles `portfolio.market` against the live quote
+    // whenever `marketSource === 'live'` (omitting `source` on
+    // `setMarket` below defaults to `'live'`, matching every other
+    // "live refresh" call site in this codebase) — so the stubbed quote
+    // must also be moved to 60000, or the effect would silently push the
+    // portfolio's price back to the stub's own unchanged 50000 default
+    // immediately after this direct `setMarket` call.
+    usePortfolioStore.getState().setMarket(created.data.id, { btcPriceUsd: 60000 });
+    useAaveLiveDataStore.setState(
+      matchingAaveLiveState({
+        marketQuote: {
+          asset: 'BTC',
+          currency: 'USD',
+          freshness: 'fresh',
+          price: 60000,
+          origin: 'provider',
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    );
+
+    render(<DashboardPage />);
+
+    expect(
+      screen.getByRole('heading', { level: 3, name: /^Performance since/ }),
+    ).toBeInTheDocument();
+    const dtNodes = screen.getAllByRole('term');
+    const ddNodes = screen.getAllByRole('definition');
+    expect(dtNodes.map((node) => node.textContent)).toEqual([
+      'Baseline value',
+      'Current value',
+      'Change since baseline',
+    ]);
+    expect(ddNodes[0].textContent).toBe('$100,000.00');
+    expect(ddNodes[1].textContent).toBe('$120,000.00');
+    expect(ddNodes[2].textContent).toBe('+$20,000.00 (+20%)');
+  });
+
+  it('shows the composition-changed status when collateral quantity has moved since the baseline was set', () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 2 },
+        market: { btcPriceUsd: 50000 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    const baselined = usePortfolioStore.getState().setBaseline(created.data.id);
+    if (!baselined.ok) throw new Error('setup failed');
+    usePortfolioStore
+      .getState()
+      .update(created.data.id, { collateral: { asset: 'BTC', quantity: 3 } });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/composition changed since baseline/i)).toBeInTheDocument();
+  });
+
+  it('never renders a Set Baseline / Reset Baseline control on the Dashboard, with or without a baseline set', () => {
+    const created = usePortfolioStore.getState().create(validInput());
+    if (!created.ok) throw new Error('setup failed');
+    usePortfolioStore.getState().select(created.data.id);
+    usePortfolioStore.getState().setBaseline(created.data.id);
+
+    render(<DashboardPage />);
+
+    expect(screen.queryByRole('button', { name: 'Set Baseline Now' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reset Baseline' })).not.toBeInTheDocument();
+  });
+});
+
 describe('DashboardPage — Data Freshness Section (M5-017, Batch 8)', () => {
   it('renders freshness indicators for both market price and protocol parameters', () => {
     const created = usePortfolioStore.getState().create(validInput());

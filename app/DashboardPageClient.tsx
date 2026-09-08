@@ -18,6 +18,7 @@ import {
   buildQuickActions,
   buildRecommendationSummary,
   buildRiskWarnings,
+  buildStartingValueBaselineSummary,
   CollateralQuantityTrendSection,
   CollateralValueTrendSection,
   DashboardErrorBanner,
@@ -44,6 +45,7 @@ import {
   QuickActionsSection,
   RecommendationSummarySection,
   RiskWarningBanner,
+  StartingValueBaselineSection,
   SupplyAprTrendSection,
 } from '@/features/dashboard';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
@@ -338,6 +340,21 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * outside these four groups — they already read as a single intro
  * block/mutually-exclusive alternative, not part of the dense stack
  * this batch groups.
+ *
+ * **`StartingValueBaselineSection` (v1.20.0 Batch 1, "Dashboard
+ * Starting-Value Baseline Visibility")** renders inside the "Overview"
+ * group, directly after `DashboardKpiGrid` — the same "current value
+ * now, then how it has changed" pairing this file already uses
+ * elsewhere (e.g. a metric panel followed by its own trend chart).
+ * Read-only: `buildStartingValueBaselineSummary` (`features/dashboard/utils/`)
+ * calls the same authoritative `calculateStartingValueBaselineComparison`
+ * `app/portfolio/StartingValueBaselinePanel.tsx` already calls and only
+ * formats its output — no new financial arithmetic, no
+ * `setBaseline`/`resetBaseline` control on the Dashboard (those remain
+ * Portfolio-page-only). Computed from `record.portfolio` alone (no
+ * `PortfolioSummary` dependency), but rendered only inside this
+ * `viewModel.ok === true` branch, matching every other section in this
+ * group rather than introducing a new render condition.
  */
 export function DashboardPageClient() {
   const load = usePortfolioStore((state) => state.load);
@@ -426,6 +443,8 @@ export function DashboardPageClient() {
         )
       : null;
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
+  const startingValueBaselineSummary =
+    record !== undefined ? buildStartingValueBaselineSummary(record.portfolio) : null;
   const dataFreshnessIndicators =
     viewModel !== null && record !== undefined
       ? buildDataFreshnessIndicators(viewModel.freshness, record.portfolio.protocolVersion)
@@ -532,6 +551,10 @@ export function DashboardPageClient() {
                   engineVersion={viewModel.engineVersion}
                   formulaVersion={viewModel.formulaVersion}
                 />
+
+                {startingValueBaselineSummary !== null && (
+                  <StartingValueBaselineSection summary={startingValueBaselineSummary} />
+                )}
               </section>
 
               <section

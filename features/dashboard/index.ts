@@ -32,6 +32,11 @@
  * Actions Section and the Portfolio Summary export (JSON/CSV); Batch 14
  * (M5-022) added the Developer Mode Toggle and wired its content into
  * the Core KPI Grid and Liquidation Risk Panel's existing `KpiCard`s.
+ * v1.20.0 Batch 1 ("Dashboard Starting-Value Baseline Visibility") added
+ * the Starting-Value Baseline Section — a read-only presentation of the
+ * already-authoritative `calculateStartingValueBaselineComparison`
+ * comparison (`services/portfolio/startingValueBaseline.ts`, v1.17.0
+ * Batch 1), previously visible only on the Portfolio page.
  */
 export * from './components/AnnualizedInterestCostTrendSection';
 export * from './components/BorrowAprTrendSection';
@@ -62,6 +67,7 @@ export * from './components/PortfolioCompositionSection';
 export * from './components/QuickActionsSection';
 export * from './components/RecommendationSummarySection';
 export * from './components/RiskWarningBanner';
+export * from './components/StartingValueBaselineSection';
 export * from './components/SupplyAprTrendSection';
 export * from './types/dataFreshnessIndicators';
 export * from './types/debtAndInterestPanel';
@@ -72,6 +78,7 @@ export * from './types/portfolioComposition';
 export * from './types/quickActions';
 export * from './types/recommendationSummary';
 export * from './types/riskWarnings';
+export * from './types/startingValueBaselineSummary';
 export * from './types/viewModel';
 export * from './utils/buildDashboardViewModel';
 export * from './utils/buildDataFreshnessIndicators';
@@ -84,5 +91,6 @@ export * from './utils/buildPortfolioComposition';
 export * from './utils/buildQuickActions';
 export * from './utils/buildRecommendationSummary';
 export * from './utils/buildRiskWarnings';
+export * from './utils/buildStartingValueBaselineSummary';
 export * from './utils/exportPortfolioSummary';
 export * from './utils/format';
