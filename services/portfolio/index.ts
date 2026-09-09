@@ -135,6 +135,12 @@ export type {
   PersistenceProtocolParameters,
 } from './models';
 export {
+  buildSafetyTargetsStatus,
+  type SafetyTargetComparison,
+  type SafetyTargetsStatus,
+  type SafetyTargetStatus,
+} from './safetyTargetsStatus';
+export {
   calculateStartingValueBaselineComparison,
   type StartingValueBaselineComparison,
 } from './startingValueBaseline';

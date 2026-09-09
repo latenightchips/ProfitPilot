@@ -39,6 +39,7 @@ import { AaveProtocolVersionForm } from './AaveProtocolVersionForm';
 import { AaveTechnicalDetails } from './AaveTechnicalDetails';
 import { AaveV3ConflictConfirmation } from './AaveV3ConflictConfirmation';
 import { PortfolioHistoryPanel } from './PortfolioHistoryPanel';
+import { SafetyTargetsStatusPanel } from './SafetyTargetsStatusPanel';
 import { StartingValueBaselinePanel } from './StartingValueBaselinePanel';
 
 /**
@@ -1918,6 +1919,7 @@ export function PortfolioPageClient() {
             summary={record.summary}
           />
           <PortfolioDetailsForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
+          <SafetyTargetsStatusPanel portfolio={record.portfolio} summary={record.summary} />
           <AaveProtocolVersionForm portfolioId={activePortfolioId} portfolio={record.portfolio} />
           <AaveV3ConflictConfirmation
             portfolioId={activePortfolioId}
