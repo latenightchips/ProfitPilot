@@ -13,16 +13,75 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.21.0
+## Version 1.22.0
 
-**Current release.** Promotes three implementation batches on top of
-Version 1.20.0, together titled "Portfolio CSV Export Field
-Completeness": Batch 1, Starting-Value Baseline CSV Columns; Batch 2,
-Recommendation Preferences CSV Columns; and Batch 3, CSV/JSON
-Cross-Export Consistency Proof (test-only, zero production diff) —
-built, tested, and independently re-verified in the batches that
-produced them, not a fresh Milestone-9/V1.1-style Release Candidate
-process with its own new manual exploratory pass. See
+**Current release.** Promotes three batches on top of Version 1.21.0,
+together titled "Portfolio CSV Export Completeness, Part 2 — Safety
+Targets + User Guide Accuracy": Batch 1, Safety Targets CSV Columns;
+Batch 2, Safety Targets CSV/JSON Cross-Export Consistency Proof
+(test-only, zero production diff); and Batch 3, User Guide Accuracy
+Pass (documentation-only) — built, tested, and independently
+re-verified in the batches that produced them, not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new
+manual exploratory pass. See `PROJECT_STATUS.md`'s "v1.22.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.22.0]` entry for
+the full record. Everything in "Version 1.21.0" and earlier below still
+applies; this section covers only what is new since 1.21.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.22.0
+
+- **The Portfolio Positions CSV export now includes your Safety
+  Targets**, if you've set them on the Portfolio page: Target Health
+  Factor, Holding Period (Days), Target BTC Price (USD), and Safety
+  Buffer (%).
+- **Anything you haven't configured shows "Not available"** — the same
+  convention this export already uses everywhere else, including a
+  genuine `0` for Holding Period (Days) or Safety Buffer (%), which is
+  never confused with a missing value.
+- **Checked against your JSON backup**, field by field, to confirm both
+  exports agree on the same underlying data.
+- **The User Guide is now accurate about the Dashboard and export
+  options.** The Dashboard section describes what's actually there
+  today — Data Freshness, your core metrics, a read-only Starting-Value
+  Baseline panel, and Recommended Actions — and is explicit that the
+  Dashboard cannot set or reset your baseline and cannot configure your
+  Recommendation Preferences; both stay on the Portfolio page. The
+  "Your data" section now explains the CSV export options (Portfolio
+  Positions, Scenario Comparisons, Loop Steps, Exit Plan Breakdowns)
+  alongside the Full Backup, and is explicit that CSV cannot be
+  imported and is not a substitute for a Full Backup.
+
+### What this is not
+
+**This is a data-export completeness change and a documentation-accuracy
+pass, not a new financial capability.** No new formula, no new persisted
+data — the Safety Targets fields this release adds to CSV were already
+saved by your portfolios (since `v1.17.0`). Safety Targets are your own
+configured targets, not a computed recommendation — nothing in this
+release evaluates them or tells you whether your position currently
+meets them. It does not change your JSON backup format at all. It does
+not resolve Health Factor risk bands, Exit Readiness, the Interest Cost
+warning gap, cost basis, P&L, or total return.
+
+### Explicitly unchanged in 1.22.0
+
+No financial formula changed, no persisted-data schema version changed,
+no migration required, no V3/V4 semantic change. The JSON backup/export
+format is completely unaffected by this release. Still no live wallet
+connection or transaction execution, still no cloud backup or
+synchronization, still no publicly operated production deployment.
+
+## Version 1.21.0 (previous release)
+
+Promotes three implementation batches on top of Version 1.20.0, together
+titled "Portfolio CSV Export Field Completeness": Batch 1, Starting-Value
+Baseline CSV Columns; Batch 2, Recommendation Preferences CSV Columns;
+and Batch 3, CSV/JSON Cross-Export Consistency Proof (test-only, zero
+production diff) — built, tested, and independently re-verified in the
+batches that produced them, not a fresh Milestone-9/V1.1-style Release
+Candidate process with its own new manual exploratory pass. See
 `PROJECT_STATUS.md`'s "v1.21.0 Release Reconciliation" section and
 `docs/CHANGELOG.md`'s `[1.21.0]` entry for the full record. Everything
 in "Version 1.20.0" and earlier below still applies; this section
