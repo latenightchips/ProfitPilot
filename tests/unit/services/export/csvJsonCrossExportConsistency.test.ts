@@ -76,6 +76,16 @@ const CSV_INDEX = {
   targetDebtRatio: 31,
   loopBorrowPercentage: 32,
   maxAcceptableAnnualInterestCost: 33,
+  // v1.22.0 Batch 1 ("Portfolio CSV Export Completeness, Part 2") —
+  // Safety Targets columns, appended after the seven v1.21.0 columns
+  // above. Same "not assumed" discipline: the header-index confirmation
+  // test at the bottom of the v1.22.0 Batch 2 describe block below
+  // verifies every one of these four names against the real header row
+  // directly.
+  targetHealthFactor: 34,
+  holdingPeriodDays: 35,
+  targetBtcPriceUsd: 36,
+  safetyBufferPercent: 37,
 } as const;
 
 interface JsonPortfolioEnvelope {
@@ -318,5 +328,181 @@ describe('CSV/JSON cross-export consistency — Starting-Value Baseline & Recomm
     expect(header[CSV_INDEX.maxAcceptableAnnualInterestCost]).toBe(
       'Maximum Acceptable Annual Interest Cost (USD)',
     );
+  });
+});
+
+/**
+ * CSV/JSON cross-export consistency proof — v1.22.0 Batch 2 ("Portfolio
+ * CSV Export Completeness, Part 2"). Extends the exact architecture
+ * above (same `exportBothRepresentations`/`csvRowFor`/`jsonPayloadFor`
+ * helpers, same `basePortfolio` fixture, same CSV_INDEX-driven by-index
+ * lookup) to prove the four Safety Targets fields v1.22.0 Batch 1 newly
+ * exposed in `buildPortfolioPositionsCsv`
+ * (`targetHealthFactor`/`holdingPeriodDays`/`targetBtcPriceUsd`/
+ * `safetyBufferPercent`) represent the same underlying persisted
+ * `Portfolio.settings.safetyTargets` values the JSON exporter already
+ * round-trips — test-only, no production file touched.
+ *
+ * **Same representation-difference discipline as the block above**: CSV
+ * textualizes every field via its own existing `null` → `'Not available'`
+ * convention; JSON's existing contract (an absent optional field is
+ * simply not present on the serialized `payload` object) is read as-is,
+ * never forced to match CSV's textual form.
+ */
+describe('CSV/JSON cross-export consistency — Safety Targets (v1.22.0 Batch 2)', () => {
+  it('A. fully configured safetyTargets: all four values correspond exactly across CSV and JSON', async () => {
+    const portfolio: Portfolio = {
+      ...basePortfolio(),
+      settings: {
+        safetyTargets: {
+          targetHealthFactor: 1.8,
+          holdingPeriodDays: 90,
+          targetBtcPriceUsd: 80000,
+          safetyBufferPercent: 15,
+        },
+      },
+    };
+
+    const { csvLines, jsonPortfolios } = await exportBothRepresentations([portfolio]);
+    const csvFields = csvRowFor(csvLines, portfolio.id);
+    const jsonPayload = jsonPayloadFor(jsonPortfolios, portfolio.id);
+    const safetyTargets = jsonPayload.settings.safetyTargets!;
+
+    expect(csvFields[CSV_INDEX.targetHealthFactor]).toBe('1.8');
+    expect(safetyTargets.targetHealthFactor).toBe(1.8);
+
+    expect(csvFields[CSV_INDEX.holdingPeriodDays]).toBe('90');
+    expect(safetyTargets.holdingPeriodDays).toBe(90);
+
+    expect(csvFields[CSV_INDEX.targetBtcPriceUsd]).toBe('80000');
+    expect(safetyTargets.targetBtcPriceUsd).toBe(80000);
+
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).toBe('15');
+    expect(safetyTargets.safetyBufferPercent).toBe(15);
+  });
+
+  it('B. completely absent safetyTargets: CSV reports "Not available", JSON omits the property entirely (its own existing contract, unchanged)', async () => {
+    const portfolio = basePortfolio();
+    const { csvLines, jsonPortfolios } = await exportBothRepresentations([portfolio]);
+    const csvFields = csvRowFor(csvLines, portfolio.id);
+    const jsonPayload = jsonPayloadFor(jsonPortfolios, portfolio.id);
+    const rawSettings = jsonPayload.settings as unknown as Record<string, unknown>;
+
+    expect(csvFields[CSV_INDEX.targetHealthFactor]).toBe('Not available');
+    expect(csvFields[CSV_INDEX.holdingPeriodDays]).toBe('Not available');
+    expect(csvFields[CSV_INDEX.targetBtcPriceUsd]).toBe('Not available');
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).toBe('Not available');
+    // JSON never invents an empty `safetyTargets` object to stand in for
+    // "none configured" — the property itself is absent.
+    expect('safetyTargets' in rawSettings).toBe(false);
+  });
+
+  it('C. partial safetyTargets: each field is independently consistent across both formats — no default/fallback appears in either', async () => {
+    const portfolio: Portfolio = {
+      ...basePortfolio(),
+      settings: {
+        safetyTargets: { targetHealthFactor: 1.5, targetBtcPriceUsd: 60000 }, // holdingPeriodDays/safetyBufferPercent deliberately absent
+      },
+    };
+
+    const { csvLines, jsonPortfolios } = await exportBothRepresentations([portfolio]);
+    const csvFields = csvRowFor(csvLines, portfolio.id);
+    const jsonPayload = jsonPayloadFor(jsonPortfolios, portfolio.id);
+    const rawSafetyTargets = jsonPayload.settings.safetyTargets as unknown as Record<
+      string,
+      unknown
+    >;
+
+    expect(csvFields[CSV_INDEX.targetHealthFactor]).toBe('1.5');
+    expect(jsonPayload.settings.safetyTargets?.targetHealthFactor).toBe(1.5);
+    expect(csvFields[CSV_INDEX.holdingPeriodDays]).toBe('Not available');
+    expect('holdingPeriodDays' in rawSafetyTargets).toBe(false);
+
+    expect(csvFields[CSV_INDEX.targetBtcPriceUsd]).toBe('60000');
+    expect(jsonPayload.settings.safetyTargets?.targetBtcPriceUsd).toBe(60000);
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).toBe('Not available');
+    expect('safetyBufferPercent' in rawSafetyTargets).toBe(false);
+  });
+
+  it('D. a valid zero (Holding Period (Days), Safety Buffer (%)) is preserved as a canonical zero in both exports, never mistaken for absence', async () => {
+    // `holdingPeriodDays`/`safetyBufferPercent` both validate
+    // `nonnegative()` (`types/portfolio.schema.ts`'s own
+    // `portfolioSafetyTargetsSchema`) — 0 is a genuinely valid configured
+    // value for both, unlike `targetHealthFactor`/`targetBtcPriceUsd`,
+    // which validate strictly positive and so have no valid zero case to
+    // test here (matching the same distinction the v1.21.0 Batch 3
+    // describe block above already draws for its own fields).
+    const portfolio: Portfolio = {
+      ...basePortfolio(),
+      settings: { safetyTargets: { holdingPeriodDays: 0, safetyBufferPercent: 0 } },
+    };
+
+    const { csvLines, jsonPortfolios } = await exportBothRepresentations([portfolio]);
+    const csvFields = csvRowFor(csvLines, portfolio.id);
+    const jsonPayload = jsonPayloadFor(jsonPortfolios, portfolio.id);
+    const safetyTargets = jsonPayload.settings.safetyTargets!;
+
+    expect(csvFields[CSV_INDEX.holdingPeriodDays]).toBe('0');
+    expect(csvFields[CSV_INDEX.holdingPeriodDays]).not.toBe('Not available');
+    expect(safetyTargets.holdingPeriodDays).toBe(0);
+
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).toBe('0');
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).not.toBe('Not available');
+    expect(safetyTargets.safetyBufferPercent).toBe(0);
+
+    // Neither field with no valid zero case is accidentally populated.
+    expect(csvFields[CSV_INDEX.targetHealthFactor]).toBe('Not available');
+    expect(csvFields[CSV_INDEX.targetBtcPriceUsd]).toBe('Not available');
+  });
+
+  it('E. multiple portfolios with differing safety-target configurations: row/record identity and field alignment are preserved, no cross-row leakage', async () => {
+    const portfolioA: Portfolio = {
+      ...basePortfolio('portfolio-a'),
+      settings: {
+        safetyTargets: { targetHealthFactor: 2.0, holdingPeriodDays: 30 },
+      },
+    };
+    const portfolioB: Portfolio = {
+      ...basePortfolio('portfolio-b'),
+      settings: {
+        safetyTargets: { targetBtcPriceUsd: 100000, safetyBufferPercent: 0 },
+      },
+    };
+
+    const { csvLines, jsonPortfolios } = await exportBothRepresentations([portfolioA, portfolioB]);
+    expect(csvLines).toHaveLength(3); // header + 2 rows
+    expect(jsonPortfolios).toHaveLength(2);
+
+    const csvA = csvRowFor(csvLines, 'portfolio-a');
+    const jsonA = jsonPayloadFor(jsonPortfolios, 'portfolio-a');
+    expect(csvA[CSV_INDEX.targetHealthFactor]).toBe('2');
+    expect(jsonA.settings.safetyTargets?.targetHealthFactor).toBe(2);
+    expect(csvA[CSV_INDEX.holdingPeriodDays]).toBe('30');
+    expect(jsonA.settings.safetyTargets?.holdingPeriodDays).toBe(30);
+    // Portfolio A has no targetBtcPriceUsd/safetyBufferPercent configured
+    // — must not pick up Portfolio B's own values in either representation.
+    expect(csvA[CSV_INDEX.targetBtcPriceUsd]).toBe('Not available');
+    expect(csvA[CSV_INDEX.safetyBufferPercent]).toBe('Not available');
+
+    const csvB = csvRowFor(csvLines, 'portfolio-b');
+    const jsonB = jsonPayloadFor(jsonPortfolios, 'portfolio-b');
+    expect(csvB[CSV_INDEX.targetBtcPriceUsd]).toBe('100000');
+    expect(jsonB.settings.safetyTargets?.targetBtcPriceUsd).toBe(100000);
+    expect(csvB[CSV_INDEX.safetyBufferPercent]).toBe('0');
+    expect(csvB[CSV_INDEX.safetyBufferPercent]).not.toBe('Not available');
+    expect(jsonB.settings.safetyTargets?.safetyBufferPercent).toBe(0);
+    // Portfolio B has no targetHealthFactor/holdingPeriodDays configured
+    // — must not pick up Portfolio A's own values in either representation.
+    expect(csvB[CSV_INDEX.targetHealthFactor]).toBe('Not available');
+    expect(csvB[CSV_INDEX.holdingPeriodDays]).toBe('Not available');
+  });
+
+  it('confirms the four Safety Targets CSV column indices this describe block depends on, directly against the real header row', () => {
+    const csv = buildPortfolioPositionsCsv([basePortfolio()]);
+    const header = csv.split('\n')[0]!.split(',');
+    expect(header[CSV_INDEX.targetHealthFactor]).toBe('Target Health Factor');
+    expect(header[CSV_INDEX.holdingPeriodDays]).toBe('Holding Period (Days)');
+    expect(header[CSV_INDEX.targetBtcPriceUsd]).toBe('Target BTC Price (USD)');
+    expect(header[CSV_INDEX.safetyBufferPercent]).toBe('Safety Buffer (%)');
   });
 });
