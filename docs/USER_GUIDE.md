@@ -92,14 +92,36 @@ delete a portfolio.)
 
 ### Dashboard
 
-Your portfolio's own key numbers at a glance: Health Factor, Loan-to-Value,
-liquidation price, net worth, and a Data Freshness section showing when
-your manually-entered price/parameters were last updated (there is no
-live feed to compare against — this is purely "how long ago did *you*
-last update this," not a live-market staleness check). If a calculation
-cannot be produced for your current numbers (e.g. an impossible input
-combination), an error banner explains what failed and confirms your
-underlying data is unchanged — see "If something goes wrong" below.
+Your portfolio's own key numbers at a glance, above a **Data Freshness**
+summary showing your BTC price and protocol parameters' source — live or
+manually entered — when each was last updated, and, for live data,
+whether it's currently Fresh or Stale. Below that, four grouped sections:
+
+- **Overview**: Health Factor, Loan-to-Value, liquidation price, net
+  worth, and other core metrics, plus a read-only **Performance** panel
+  showing your starting-value baseline — if one is set — as baseline
+  value, current value, and change since baseline. Setting or resetting
+  the baseline itself is done on the Portfolio page, not here.
+- **Health & Risk**: your Health Factor status and Liquidation Risk, each
+  with its own historical trend chart.
+- **Composition & Debt**: portfolio composition, debt and interest cost,
+  and a leverage summary.
+- **Trends**: historical charts for your core metrics, drawn from your
+  saved Portfolio History.
+
+Below the four groups, **Recommended Actions** lists up to four
+rule-based suggestions — Repayment, Additional Collateral, Borrow, Loop —
+each with its own category, risk level, explanation, and expected
+effect. If no target Health Factor is set, or your Health Factor already
+meets it, this section explains that instead of showing an empty list.
+Your target Health Factor and Recommendation Preferences (used for
+Borrow/Loop) are configured on the Portfolio page — the Dashboard only
+displays what they produce.
+
+If a calculation cannot be produced for your current numbers (e.g. an
+impossible input combination), an error banner explains what failed and
+confirms your underlying data is unchanged — see "If something goes
+wrong" below.
 
 ### Portfolio
 
@@ -187,12 +209,23 @@ only if a deployer explicitly configures it, error monitoring (see
   If you switch browsers, clear your browser data, or move to a new
   device, your portfolios do not come with you automatically.
 - **Export regularly.** `/settings` → **Export** → **Full Backup**
-  downloads everything as a single file. This is the only way to move
-  your data to another browser/device, and the only real protection
+  downloads everything as a single JSON file, preserving your data in the
+  same structured form ProfitPilot stores it in. This is the only way to
+  move your data to another browser/device, and the only real protection
   against browser data being cleared (by you, by the browser itself
   under storage pressure, or by ending a private-browsing session).
+- **CSV exports** (`/settings` → **Export**) also let you download
+  **Portfolio Positions**, **Scenario Comparisons**, **Loop Steps**, and
+  **Exit Plan Breakdowns** as separate spreadsheet-friendly files. The
+  Portfolio Positions CSV includes your portfolios' configuration
+  alongside their position data — starting-value baseline, Recommendation
+  Preferences, and Safety Targets, where set. CSV exports are a read-only
+  view of the same underlying data: they introduce no new calculation,
+  are not a substitute for a Full Backup, and cannot be imported back
+  into ProfitPilot — only a Full Backup file can be imported.
 - **Import** (`/settings` → **Import**) restores from a previously
-  exported file, or merges it into your current data — you choose how:
+  exported Full Backup file, or merges it into your current data — you
+  choose how:
   **Add as new** (every record added under a new id, even if it
   conflicts), **Merge non-conflicting** (adds records with no local
   match, skips anything conflicting), **Replace selected** (replaces
