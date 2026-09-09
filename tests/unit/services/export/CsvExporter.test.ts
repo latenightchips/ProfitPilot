@@ -643,6 +643,190 @@ describe('buildPortfolioPositionsCsv — Recommendation Preferences columns (v1.
   });
 });
 
+/**
+ * "Target Health Factor"/"Holding Period (Days)"/"Target BTC Price
+ * (USD)"/"Safety Buffer (%)" columns — v1.22.0 Batch 1 ("Portfolio CSV
+ * Export Completeness, Part 2"). Column indices 34, 35, 36, 37
+ * (appended after the four v1.21.0 Batch 2 preference columns — see
+ * `CsvExporter.ts`'s own header comment) — every existing column index
+ * before it is unaffected, so no pre-existing test in this file needed
+ * updating. Comma-free names throughout, this file's own established
+ * by-index testing convention.
+ */
+describe('buildPortfolioPositionsCsv — Safety Targets columns (v1.22.0 Batch 1)', () => {
+  it('exports all four configured safety-target values verbatim when fully configured', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          safetyTargets: {
+            targetHealthFactor: 1.8,
+            holdingPeriodDays: 90,
+            targetBtcPriceUsd: 80000,
+            safetyBufferPercent: 15,
+          },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[34]).toBe('1.8');
+    expect(fields[35]).toBe('90');
+    expect(fields[36]).toBe('80000');
+    expect(fields[37]).toBe('15');
+  });
+
+  it('exports "Not available" for all four columns when no safetyTargets is configured', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[34]).toBe('Not available');
+    expect(fields[35]).toBe('Not available');
+    expect(fields[36]).toBe('Not available');
+    expect(fields[37]).toBe('Not available');
+  });
+
+  it('exports each field independently — a partially configured safetyTargets object leaves only the unset fields "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: { safetyTargets: { targetHealthFactor: 1.5, targetBtcPriceUsd: 60000 } },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[34]).toBe('1.5');
+    expect(fields[35]).toBe('Not available');
+    expect(fields[36]).toBe('60000');
+    expect(fields[37]).toBe('Not available');
+  });
+
+  it('preserves a valid zero for Holding Period (Days) and Safety Buffer (%), never mistaking it for a missing value', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: { safetyTargets: { holdingPeriodDays: 0, safetyBufferPercent: 0 } },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[35]).toBe('0');
+    expect(fields[35]).not.toBe('Not available');
+    expect(fields[37]).toBe('0');
+    expect(fields[37]).not.toBe('Not available');
+    // targetHealthFactor/targetBtcPriceUsd both validate strictly positive
+    // (types/portfolio.schema.ts's portfolioSafetyTargetsSchema) — neither
+    // has a valid zero case, so both remain genuinely unset here.
+    expect(fields[34]).toBe('Not available');
+    expect(fields[36]).toBe('Not available');
+  });
+
+  it('keeps each portfolio row correctly aligned across a mixed fully-configured/partial/unconfigured export', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        id: 'portfolio-full',
+        name: 'Full Safety Targets',
+        settings: {
+          safetyTargets: {
+            targetHealthFactor: 2.0,
+            holdingPeriodDays: 30,
+            targetBtcPriceUsd: 100000,
+            safetyBufferPercent: 20,
+          },
+        },
+      },
+      {
+        ...samplePortfolio(),
+        id: 'portfolio-partial',
+        name: 'Partial Safety Targets',
+        settings: { safetyTargets: { holdingPeriodDays: 0 } },
+      },
+      { ...samplePortfolio(), id: 'portfolio-unconfigured', name: 'Unconfigured' },
+    ]);
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(4);
+
+    const fullFields = lines[1]!.split(',');
+    expect(fullFields[0]).toBe('portfolio-full');
+    expect(fullFields[34]).toBe('2');
+    expect(fullFields[35]).toBe('30');
+    expect(fullFields[36]).toBe('100000');
+    expect(fullFields[37]).toBe('20');
+
+    const partialFields = lines[2]!.split(',');
+    expect(partialFields[0]).toBe('portfolio-partial');
+    expect(partialFields[34]).toBe('Not available');
+    expect(partialFields[35]).toBe('0');
+    expect(partialFields[36]).toBe('Not available');
+    expect(partialFields[37]).toBe('Not available');
+
+    const unconfiguredFields = lines[3]!.split(',');
+    expect(unconfiguredFields[0]).toBe('portfolio-unconfigured');
+    expect(unconfiguredFields[34]).toBe('Not available');
+    expect(unconfiguredFields[35]).toBe('Not available');
+    expect(unconfiguredFields[36]).toBe('Not available');
+    expect(unconfiguredFields[37]).toBe('Not available');
+  });
+
+  it('names the four new safety-target columns verbatim in the CSV header row, after the v1.21.0 Batch 2 preference columns, with no existing header renamed or reordered', () => {
+    const csv = buildPortfolioPositionsCsv([samplePortfolio()]);
+    const headerFields = csv.split('\n')[0]!.split(',');
+    expect(headerFields).toHaveLength(38);
+    expect(headerFields[26]).toBe('Updated At');
+    expect(headerFields[27]).toBe('Baseline Established At');
+    expect(headerFields[28]).toBe('Baseline Collateral Quantity (BTC)');
+    expect(headerFields[29]).toBe('Baseline BTC Price (USD)');
+    expect(headerFields[30]).toBe('Minimum Health Factor for Borrowing');
+    expect(headerFields[31]).toBe('Target Debt Ratio Ceiling');
+    expect(headerFields[32]).toBe('Loop Borrow Percentage');
+    expect(headerFields[33]).toBe('Maximum Acceptable Annual Interest Cost (USD)');
+    expect(headerFields[34]).toBe('Target Health Factor');
+    expect(headerFields[35]).toBe('Holding Period (Days)');
+    expect(headerFields[36]).toBe('Target BTC Price (USD)');
+    expect(headerFields[37]).toBe('Safety Buffer (%)');
+  });
+
+  it('does not change any pre-existing column value, including every prior v1.21.0 column — full-row regression', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        establishedAt: '2026-06-01T00:00:00.000Z',
+        collateralQuantity: 1.5,
+        marketPriceUsd: 45000,
+        settings: {
+          recommendationPreferences: {
+            borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+            loop: { loopBorrowPercentage: 0.6, maxAcceptableAnnualInterestCost: 2500 },
+          },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[0]).toBe('portfolio-1');
+    expect(fields[2]).toBe('BTC');
+    expect(fields[3]).toBe('2');
+    expect(fields[4]).toBe('USDC');
+    expect(fields[6]).toBe('50000');
+    expect(fields[24]).toBe('false'); // Archived
+    expect(fields[25]).toBe('2026-01-01T00:00:00.000Z'); // Created At
+    expect(fields[26]).toBe('2026-01-01T00:00:00.000Z'); // Updated At
+    expect(fields[27]).toBe('2026-06-01T00:00:00.000Z'); // Baseline Established At
+    expect(fields[28]).toBe('1.5'); // Baseline Collateral Quantity (BTC)
+    expect(fields[29]).toBe('45000'); // Baseline BTC Price (USD)
+    expect(fields[30]).toBe('1.5'); // Minimum Health Factor for Borrowing
+    expect(fields[31]).toBe('0.5'); // Target Debt Ratio Ceiling
+    expect(fields[32]).toBe('0.6'); // Loop Borrow Percentage
+    expect(fields[33]).toBe('2500'); // Maximum Acceptable Annual Interest Cost (USD)
+    // No safetyTargets configured on this fixture — the new columns
+    // must not leak any value from the preference/baseline fields above.
+    expect(fields[34]).toBe('Not available');
+    expect(fields[35]).toBe('Not available');
+    expect(fields[36]).toBe('Not available');
+    expect(fields[37]).toBe('Not available');
+  });
+});
+
 describe('CSV formula-injection guard (M9-034)', () => {
   it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);

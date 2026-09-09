@@ -120,6 +120,37 @@
  * `safetyTargets`/`recommendationPreferences` (§4)"), and nothing beyond
  * it — `safetyTargets` itself remains out of this batch's own scope,
  * unaffected.
+ *
+ * **"Target Health Factor"/"Holding Period (Days)"/"Target BTC Price
+ * (USD)"/"Safety Buffer (%)" columns (v1.22.0 Batch 1, "Portfolio CSV
+ * Export Completeness, Part 2")** — appended after the four Batch 2
+ * preference columns, the table's prior last columns, the same
+ * append-at-current-end placement convention this function has used
+ * for every column-group addition. Read directly and verbatim from
+ * `Portfolio.settings.safetyTargets.targetHealthFactor`/
+ * `.holdingPeriodDays`/`.targetBtcPriceUsd`/`.safetyBufferPercent`
+ * (`types/portfolio.ts`'s `PortfolioSafetyTargets`) — four raw,
+ * independently-optional values, each `?? null` (this file's own
+ * `null` → `'Not available'` convention), never treated as an
+ * all-or-nothing group. Header wording follows the canonical labels
+ * already used by `app/portfolio/PortfolioPageClient.tsx`'s own "Safety
+ * target settings" fieldset ("Target Health Factor," "Holding period
+ * (days)," "Target BTC price (USD)," "Safety buffer (%)"), adapted only
+ * to this file's own established Title Case CSV-header convention. This
+ * closes exactly the other half of the gap
+ * `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §16's own explicit
+ * non-goal named ("Extend CSV portfolio export to include
+ * `safetyTargets`/`recommendationPreferences` (§4)") — `v1.21.0` closed
+ * the `recommendationPreferences` half; this batch closes the
+ * `safetyTargets` half. **No arithmetic, no default, no fallback.**
+ * `holdingPeriodDays`/`safetyBufferPercent` both validate `nonnegative()`
+ * (`types/portfolio.schema.ts`'s `portfolioSafetyTargetsSchema`) — `0`
+ * is a genuinely valid configured value for both and must render as
+ * `'0'`, never `'Not available'` (the existing `?? null` pattern
+ * already guarantees this, since `??` only substitutes on `null`/
+ * `undefined`, never on `0`). `targetHealthFactor`/`targetBtcPriceUsd`
+ * both validate `positive()` — they have no valid zero case, and none
+ * is invented here.
  */
 import {
   deriveAaveV4EffectiveBorrowRate,
@@ -344,6 +375,10 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'Target Debt Ratio Ceiling',
     'Loop Borrow Percentage',
     'Maximum Acceptable Annual Interest Cost (USD)',
+    'Target Health Factor',
+    'Holding Period (Days)',
+    'Target BTC Price (USD)',
+    'Safety Buffer (%)',
   ]);
 
   const rows = portfolios.map((portfolio) => {
@@ -383,6 +418,10 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.settings.recommendationPreferences?.borrow?.targetDebtRatio ?? null,
       portfolio.settings.recommendationPreferences?.loop?.loopBorrowPercentage ?? null,
       portfolio.settings.recommendationPreferences?.loop?.maxAcceptableAnnualInterestCost ?? null,
+      portfolio.settings.safetyTargets?.targetHealthFactor ?? null,
+      portfolio.settings.safetyTargets?.holdingPeriodDays ?? null,
+      portfolio.settings.safetyTargets?.targetBtcPriceUsd ?? null,
+      portfolio.settings.safetyTargets?.safetyBufferPercent ?? null,
     ]);
   });
 
