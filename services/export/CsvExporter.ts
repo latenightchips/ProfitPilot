@@ -87,6 +87,39 @@
  * export/import surface (CSV, etc.) is required to represent this
  * feature unless a future batch extends portfolio CSV export
  * generally"), and nothing beyond it.
+ *
+ * **"Minimum Health Factor for Borrowing"/"Target Debt Ratio Ceiling"/
+ * "Loop Borrow Percentage"/"Maximum Acceptable Annual Interest Cost
+ * (USD)" columns (v1.21.0 Batch 2, "Portfolio CSV Export Field
+ * Completeness")** — appended after the three Batch 1 baseline columns,
+ * the table's prior last columns, the same append-at-current-end
+ * placement convention this function has used for every column-group
+ * addition. Read directly and verbatim from
+ * `Portfolio.settings.recommendationPreferences.borrow.userMinHealthFactor`/
+ * `.targetDebtRatio` and `.loop.loopBorrowPercentage`/
+ * `.maxAcceptableAnnualInterestCost`
+ * (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §3/§4/§7) — four raw,
+ * independently-optional preference values (spec §5's own partial-
+ * configuration rule: `borrow`/`loop` being present does not imply both
+ * of their own leaf fields are set), `undefined` when not configured
+ * (this file's own `null` → `'Not available'` convention, via `?? null`).
+ * Header wording follows this specification's own §7 "UI label" rows
+ * verbatim (already reused unmodified by `app/portfolio/PortfolioPageClient.tsx`'s
+ * own fieldset), adapted only to this file's own established Title Case
+ * CSV-header convention and, for the one USD-denominated field, the same
+ * "(USD)" unit-suffix convention already used elsewhere in this exact
+ * header (e.g. "Debt Balance (USD)") — not the shorter, less precise
+ * wording a prior roadmap audit had only provisionally suggested.
+ * **No recommendation is evaluated here** — no actionability check, no
+ * default, no preset, no fallback to `PortfolioSafetyTargets.targetHealthFactor`
+ * (spec §3's own explicit note that `loop.targetHealthFactor` is
+ * deliberately not a field here, since F-064 reuses that already-
+ * persisted field instead). This closes exactly the gap
+ * `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §16's own explicit
+ * non-goal named and deferred ("Extend CSV portfolio export to include
+ * `safetyTargets`/`recommendationPreferences` (§4)"), and nothing beyond
+ * it — `safetyTargets` itself remains out of this batch's own scope,
+ * unaffected.
  */
 import {
   deriveAaveV4EffectiveBorrowRate,
@@ -307,6 +340,10 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'Baseline Established At',
     'Baseline Collateral Quantity (BTC)',
     'Baseline BTC Price (USD)',
+    'Minimum Health Factor for Borrowing',
+    'Target Debt Ratio Ceiling',
+    'Loop Borrow Percentage',
+    'Maximum Acceptable Annual Interest Cost (USD)',
   ]);
 
   const rows = portfolios.map((portfolio) => {
@@ -342,6 +379,10 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.establishedAt ?? null,
       portfolio.collateralQuantity ?? null,
       portfolio.marketPriceUsd ?? null,
+      portfolio.settings.recommendationPreferences?.borrow?.userMinHealthFactor ?? null,
+      portfolio.settings.recommendationPreferences?.borrow?.targetDebtRatio ?? null,
+      portfolio.settings.recommendationPreferences?.loop?.loopBorrowPercentage ?? null,
+      portfolio.settings.recommendationPreferences?.loop?.maxAcceptableAnnualInterestCost ?? null,
     ]);
   });
 

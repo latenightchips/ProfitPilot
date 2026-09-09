@@ -455,6 +455,194 @@ describe('buildPortfolioPositionsCsv — Starting-Value Baseline columns (v1.21.
   });
 });
 
+/**
+ * "Minimum Health Factor for Borrowing"/"Target Debt Ratio Ceiling"/
+ * "Loop Borrow Percentage"/"Maximum Acceptable Annual Interest Cost
+ * (USD)" columns — v1.21.0 Batch 2 ("Portfolio CSV Export Field
+ * Completeness"). Column indices 30, 31, 32, 33 (appended after the
+ * three Batch 1 baseline columns — see `CsvExporter.ts`'s own header
+ * comment) — every existing column index before it, including Batch 1's
+ * own 27/28/29, is unaffected, so no pre-existing test in this file
+ * needed updating. Comma-free names throughout, this file's own
+ * established by-index testing convention.
+ */
+describe('buildPortfolioPositionsCsv — Recommendation Preferences columns (v1.21.0 Batch 2)', () => {
+  it('exports all four configured preference values verbatim when fully configured', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          recommendationPreferences: {
+            borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+            loop: { loopBorrowPercentage: 0.6, maxAcceptableAnnualInterestCost: 2500 },
+          },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[30]).toBe('1.5');
+    expect(fields[31]).toBe('0.5');
+    expect(fields[32]).toBe('0.6');
+    expect(fields[33]).toBe('2500');
+  });
+
+  it('exports "Not available" for all four columns when no recommendationPreferences is configured', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[30]).toBe('Not available');
+    expect(fields[31]).toBe('Not available');
+    expect(fields[32]).toBe('Not available');
+    expect(fields[33]).toBe('Not available');
+  });
+
+  it('exports the Borrow pair when only Borrow is complete, leaving the Loop pair "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          recommendationPreferences: {
+            borrow: { userMinHealthFactor: 1.4, targetDebtRatio: 0.45 },
+          },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[30]).toBe('1.4');
+    expect(fields[31]).toBe('0.45');
+    expect(fields[32]).toBe('Not available');
+    expect(fields[33]).toBe('Not available');
+  });
+
+  it('exports the Loop pair when only Loop is complete, leaving the Borrow pair "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          recommendationPreferences: {
+            loop: { loopBorrowPercentage: 0.3, maxAcceptableAnnualInterestCost: 1200 },
+          },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[30]).toBe('Not available');
+    expect(fields[31]).toBe('Not available');
+    expect(fields[32]).toBe('0.3');
+    expect(fields[33]).toBe('1200');
+  });
+
+  it('exports each Borrow field independently — targetDebtRatio configured alone leaves userMinHealthFactor "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: { recommendationPreferences: { borrow: { targetDebtRatio: 0.55 } } },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[30]).toBe('Not available');
+    expect(fields[31]).toBe('0.55');
+  });
+
+  it('exports each Loop field independently — maxAcceptableAnnualInterestCost configured alone leaves loopBorrowPercentage "Not available"', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        settings: {
+          recommendationPreferences: { loop: { maxAcceptableAnnualInterestCost: 900 } },
+        },
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[32]).toBe('Not available');
+    expect(fields[33]).toBe('900');
+  });
+
+  it('keeps each portfolio row correctly aligned across a mixed fully-configured/partial/unconfigured export', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        id: 'portfolio-full',
+        name: 'Full Preferences',
+        settings: {
+          recommendationPreferences: {
+            borrow: { userMinHealthFactor: 1.6, targetDebtRatio: 0.4 },
+            loop: { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 3000 },
+          },
+        },
+      },
+      {
+        ...samplePortfolio(),
+        id: 'portfolio-partial',
+        name: 'Partial Preferences',
+        settings: { recommendationPreferences: { borrow: { userMinHealthFactor: 1.2 } } },
+      },
+      { ...samplePortfolio(), id: 'portfolio-unconfigured', name: 'Unconfigured' },
+    ]);
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(4);
+
+    const fullFields = lines[1]!.split(',');
+    expect(fullFields[0]).toBe('portfolio-full');
+    expect(fullFields[30]).toBe('1.6');
+    expect(fullFields[31]).toBe('0.4');
+    expect(fullFields[32]).toBe('0.5');
+    expect(fullFields[33]).toBe('3000');
+
+    const partialFields = lines[2]!.split(',');
+    expect(partialFields[0]).toBe('portfolio-partial');
+    expect(partialFields[30]).toBe('1.2');
+    expect(partialFields[31]).toBe('Not available');
+    expect(partialFields[32]).toBe('Not available');
+    expect(partialFields[33]).toBe('Not available');
+
+    const unconfiguredFields = lines[3]!.split(',');
+    expect(unconfiguredFields[0]).toBe('portfolio-unconfigured');
+    expect(unconfiguredFields[30]).toBe('Not available');
+    expect(unconfiguredFields[31]).toBe('Not available');
+    expect(unconfiguredFields[32]).toBe('Not available');
+    expect(unconfiguredFields[33]).toBe('Not available');
+  });
+
+  it('names the four new preference columns verbatim in the CSV header row, after the Batch 1 baseline columns', () => {
+    const csv = buildPortfolioPositionsCsv([samplePortfolio()]);
+    const headerFields = csv.split('\n')[0]!.split(',');
+    expect(headerFields[29]).toBe('Baseline BTC Price (USD)');
+    expect(headerFields[30]).toBe('Minimum Health Factor for Borrowing');
+    expect(headerFields[31]).toBe('Target Debt Ratio Ceiling');
+    expect(headerFields[32]).toBe('Loop Borrow Percentage');
+    expect(headerFields[33]).toBe('Maximum Acceptable Annual Interest Cost (USD)');
+  });
+
+  it("does not change any pre-existing column value, including Batch 1's own baseline columns — full-row regression", () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        establishedAt: '2026-06-01T00:00:00.000Z',
+        collateralQuantity: 1.5,
+        marketPriceUsd: 45000,
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[0]).toBe('portfolio-1');
+    expect(fields[2]).toBe('BTC');
+    expect(fields[3]).toBe('2');
+    expect(fields[4]).toBe('USDC');
+    expect(fields[6]).toBe('50000');
+    expect(fields[24]).toBe('false'); // Archived
+    expect(fields[25]).toBe('2026-01-01T00:00:00.000Z'); // Created At
+    expect(fields[26]).toBe('2026-01-01T00:00:00.000Z'); // Updated At
+    expect(fields[27]).toBe('2026-06-01T00:00:00.000Z'); // Baseline Established At
+    expect(fields[28]).toBe('1.5'); // Baseline Collateral Quantity (BTC)
+    expect(fields[29]).toBe('45000'); // Baseline BTC Price (USD)
+  });
+});
+
 describe('CSV formula-injection guard (M9-034)', () => {
   it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);
