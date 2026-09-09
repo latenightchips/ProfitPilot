@@ -15833,6 +15833,294 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.21.0 Release Reconciliation — Portfolio CSV Export Field Completeness
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents Batch 1
+(`13d8773`, Starting-Value Baseline CSV Columns), Batch 2 (`d3abeb4`,
+Recommendation Preferences CSV Columns), Batch 3 (`eed8083`, CSV/JSON
+Cross-Export Consistency Proof — test-only, zero production diff), and
+this reconciliation batch itself, applied directly on top of `v1.20.0`
+(`9b13b754acb0fc5081c08626760e67757630e62d`).
+
+**Current release candidate: `1.21.0`. Versions `1.0.0` through `1.20.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.20.0` still resolves to
+`9b13b754acb0fc5081c08626760e67757630e62d`, confirmed by fresh inspection
+during this batch (`git rev-parse v1.20.0^{commit}`). `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.20.0` to
+`1.21.0` — a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own
+"Why the Application/Engine version is `1.21.0`" paragraph gives.
+`FORMULA_VERSION` remains `1.0`, `STORAGE_SCHEMA_VERSION` remains
+`1.0.0` — this release requires neither: `git diff v1.20.0..HEAD --
+engine/` returns completely empty output (verified directly, not
+assumed) — no `engine/**` file of any kind was touched across any of the
+three batches — and no persisted field of any kind was added, changed,
+or removed; every one of the seven fields this release surfaces in CSV
+was already persisted, most since `v1.17.0`/`v1.18.0`. **No `v1.21.0`
+git tag exists yet** — confirmed via `git rev-parse v1.21.0` failing
+with "unknown revision" during this batch's own baseline verification;
+tagging is a separate, explicit step for after this patch is applied and
+synced, not taken by this batch (see this batch's own tag-readiness
+verdict at the end of this section).
+
+### Full `v1.20.0..origin/main` diff audit
+
+Every file touched across all three batches, verified directly via
+`git diff --stat v1.20.0..origin/main`, not assumed from batch reports
+alone:
+
+- `services/export/CsvExporter.ts` (Batch 1 +29 lines, Batch 2 +41
+  lines — 70 lines total, purely additive)
+- `tests/unit/services/export/CsvExporter.test.ts` (Batch 1 +90 lines,
+  Batch 2 +188 lines — 278 lines total, purely additive)
+- `tests/unit/services/export/csvJsonCrossExportConsistency.test.ts`
+  (Batch 3, new file, 322 lines)
+
+**Exactly 3 files, 670 insertions, 0 deletions across the entire
+release** — confirmed by direct `git diff --stat v1.20.0..origin/main`.
+Zero files under `engine/`, `services/recommendation/`,
+`services/portfolio/mapping.ts`, `services/persistence/`,
+`types/portfolio.ts`, `types/portfolio.schema.ts`, `app/`, `features/`,
+or `services/export/JsonExporter.ts` were touched anywhere in this
+release — confirmed by direct `git diff` against each of those paths
+returning empty output. No Formula ID was assigned or touched. No
+persisted-data schema version changed. No protocol-version branching was
+introduced anywhere.
+
+### Batch 1 — Starting-Value Baseline CSV Columns (`13d8773`)
+
+- **`services/export/CsvExporter.ts`**: `buildPortfolioPositionsCsv`
+  gained three new columns — `Baseline Established At`, `Baseline
+Collateral Quantity (BTC)`, `Baseline BTC Price (USD)` — appended
+  after `Updated At` (the header's then-last column), reading
+  `Portfolio.establishedAt`/`.collateralQuantity`/`.marketPriceUsd`
+  verbatim (`?? null`, routed through this file's own existing `null` →
+  `'Not available'` convention). No arithmetic, no current-value or
+  change-since-baseline computation — the derived comparison remains
+  exclusively `calculateStartingValueBaselineComparison`'s own job
+  (`services/portfolio/startingValueBaseline.ts`, v1.17.0), never
+  duplicated here. Closes the exact gap
+  `docs/STARTING_VALUE_BASELINE_SPEC.md` §16's own acceptance criterion
+  11 named and explicitly deferred ("no other export/import surface
+  (CSV, etc.) is required to represent this feature unless a future
+  batch extends portfolio CSV export generally").
+- **Tests**: 5 new tests (fully-present, fully-absent, mixed
+  multi-portfolio alignment, header-name/placement verification,
+  full-row regression against every pre-existing column).
+- **Validation**: full suite passing (4579/4579), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Batch 2 — Recommendation Preferences CSV Columns (`d3abeb4`)
+
+- **`services/export/CsvExporter.ts`**: four more columns appended
+  after Batch 1's three baseline columns — `Minimum Health Factor for
+Borrowing`, `Target Debt Ratio Ceiling`, `Loop Borrow Percentage`,
+  `Maximum Acceptable Annual Interest Cost (USD)` — reading
+  `Portfolio.settings.recommendationPreferences.borrow.userMinHealthFactor`/
+  `.targetDebtRatio` and `.loop.loopBorrowPercentage`/
+  `.maxAcceptableAnnualInterestCost` verbatim, each independently `?? null`.
+  Header wording follows `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+  §7's own canonical "UI label" rows (already reused verbatim by
+  `app/portfolio/PortfolioPageClient.tsx`'s own fieldset) — a deliberate
+  departure from an earlier roadmap audit's shorter placeholder wording,
+  adapted only to this file's own Title Case header convention. No
+  recommendation is evaluated, no default/preset/fallback to
+  `PortfolioSafetyTargets.targetHealthFactor` — spec §3's own explicit
+  note that `loop.targetHealthFactor` is deliberately not a field here.
+  Closes the exact gap `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+  §16's own explicit non-goal named and deferred ("Extend CSV portfolio
+  export to include `safetyTargets`/`recommendationPreferences` (§4)") —
+  `safetyTargets` itself remains untouched, out of this release's scope.
+- **Partial-configuration semantics preserved exactly**: a Borrow or
+  Loop group with only one of its two leaf fields configured exports
+  that one value and `'Not available'` for its sibling — never a
+  default, never a partial substitution, matching spec §5's own rule.
+- **Tests**: 9 new tests (fully configured, fully absent, Borrow-only
+  complete, Loop-only complete, partial Borrow, partial Loop, mixed
+  multi-portfolio, header-name/placement verification, full-row
+  regression including Batch 1's own baseline columns).
+- **Validation**: full suite passing (4588/4588), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Batch 3 — CSV/JSON Cross-Export Consistency Proof (`eed8083`)
+
+- **Test-only; zero production diff** — confirmed directly:
+  `git diff d3abeb4..eed8083 -- services/export/CsvExporter.ts
+services/export/JsonExporter.ts` returns empty output. No exporter's
+  behavior changed.
+- **New file**: `tests/unit/services/export/csvJsonCrossExportConsistency.test.ts`
+  (6 tests) proves the same canonical `Portfolio` fixture, exported
+  through both the real `buildPortfolioPositionsCsv` call and the real
+  `write` → `buildFullBackupFile` → `serializeExportFile` → `JSON.parse`
+  chain, yields the same underlying value for all seven fields —
+  representation-specific serialization only, never forced textual
+  equality. Confirms CSV's `'Not available'` convention and JSON's own
+  existing "absent optional field is simply not present on the
+  serialized object" contract each remain exactly as they were;
+  confirms partial preference groups stay partial in both
+  representations; confirms no cross-row leakage across a mixed
+  multi-portfolio export (matched by record ID, not array position);
+  confirms a schema-valid zero (`collateralQuantity: 0`,
+  `targetDebtRatio: 0`, `loopBorrowPercentage: 0`) is preserved in both
+  representations, never mistaken for a missing value.
+- **No production defect found.** Batch 3's own instructions were
+  explicit that a discovered production inconsistency would be reported,
+  not silently patched — none was found; both exporters already agreed
+  on every underlying value.
+- **Validation**: full suite passing (4594/4594), independently
+  re-verified against a fresh `origin/main` checkout.
+
+### Traceability audit
+
+Every v1.21.0 claim mapped directly to code/tests, not assumed:
+
+| Claim                                                           | Verified against                                                                                                                                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Exactly seven canonical fields added to CSV                     | `buildPortfolioPositionsCsv`'s header row, indices 27–33 (Batch 1: 27–29, Batch 2: 30–33)                                                                                |
+| Values are raw persisted fields, not recomputed                 | `services/export/CsvExporter.ts` reads `portfolio.establishedAt`/`.collateralQuantity`/`.marketPriceUsd`/`.settings.recommendationPreferences.*` verbatim, no arithmetic |
+| Absent value retains established CSV convention                 | `csvLine`'s existing `null` → `'Not available'` mapping, unmodified                                                                                                      |
+| Partial Borrow/Loop groups remain partial                       | Batch 2's partial-configuration tests; Batch 3's scenario C                                                                                                              |
+| No presets/defaults/fallbacks injected                          | `git diff v1.20.0..origin/main -- services/recommendation/` empty; no default value literal anywhere in the diff                                                         |
+| JSON exporter structure/semantics unchanged                     | `git diff v1.20.0..origin/main -- services/export/JsonExporter.ts` empty                                                                                                 |
+| Cross-export tests prove value consistency, not forced equality | `csvJsonCrossExportConsistency.test.ts`'s own header comment and scenario B (CSV textualizes, JSON omits — never forced to match)                                        |
+| Batch 3 changed no production behavior                          | `git diff d3abeb4..eed8083 -- services/export/` empty                                                                                                                    |
+| Version metadata                                                | `package.json`, `engine/shared/result.ts`, `services/persistence/envelope.ts` — all confirmed `1.21.0`/`1.21.0` this batch                                               |
+
+**No claim in this release's own batch reports could not be verified
+against the actual repository.**
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.21.0`; a new "Why the Application/
+  Engine version is `1.21.0`" paragraph inserted before the `1.20.0`
+  paragraph; a new `[1.21.0]` entry (What's new / What this is not /
+  Explicitly unchanged) inserted before `[1.20.0]`.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.21.0` section added
+  with the `**Current release.**` marker; `## Version 1.20.0` demoted to
+  `## Version 1.20.0 (previous release)` with that marker removed, the
+  same demotion pattern used for every prior release transition.
+- **`PROJECT_STATUS.md`**: this section.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.20.0`
+  to `1.21.0`. `FORMULA_VERSION` (`1.0`) and `STORAGE_SCHEMA_VERSION`
+  (`1.0.0`) are unchanged.
+
+`docs/STARTING_VALUE_BASELINE_SPEC.md` and
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` are both left
+completely untouched — this release closes each spec's own already-named
+deferred CSV gap (§16 acceptance criterion 11 and §16 explicit non-goal,
+respectively) without editing either frozen document, the same
+"specification documents are frozen artifacts once approved" convention
+every prior reconciliation has already established.
+
+The remaining documents named in this batch's own inspection list —
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, `docs/VERSION_2_BACKLOG.md`
+— were freshly re-checked via direct grep for `1.20.0`/`1.21.0`/"CSV
+export"/"portfolio.*csv" and found to need no update: none makes a
+version- or CSV-export-specific claim this release could make stale.
+`docs/USER_GUIDE.md` was also checked directly and contains no CSV
+export mention to update. No dedicated export/backup specification
+document exists in this repository — CSV export's own contract has
+always lived only in `services/export/CsvExporter.ts`'s own header
+comment and its test file, both updated by the implementation batches
+themselves.
+
+### Known/deferred work audit
+
+Re-verified against current `PROJECT_STATUS.md`/spec-doc text this
+batch, not resurrected from memory — every item below remains genuinely
+open, none resolved by `v1.20.0` or `v1.21.0`:
+
+- **Health Factor risk-band classification (Conflict #1)** — still open;
+  the documented bands still disagree across README.md/`01_PRD.md`
+  REQ-001/REQ-005/`02_Formulas.md` F-026/F-060.
+- **F-065 "Interest Warning"** — still deferred; no "Expected Annual
+  Portfolio Growth" figure exists anywhere in `02_Formulas.md`.
+- **F-067 "Simple Portfolio Score"** — still deferred (Conflict #12);
+  documented weights exist, no per-component 0–100 conversion formula.
+- **Exit Readiness Formula-ID gap (Conflict #11)** — still unmapped; no
+  Formula ID in the Recommendation Engine chapter names "Exit readiness."
+- **Quantified Impact for Borrow/Loop** — still a gap, unaffected by
+  this release; this release exports raw configured preference values,
+  it does not compute or surface any before/after impact figure for
+  Borrow or Loop, and does not attempt to.
+- **Apply to Portfolio for Borrow/Loop** — still a gap, same underlying
+  cause (no single delta shape to apply), unaffected by this release.
+- **Cost basis / P&L / total return / cumulative-realized interest** —
+  still permanently deferred; no acquisition-price/transaction-lot
+  mechanism exists anywhere in this application, unaffected by this
+  release's export-completeness scope.
+- **Settings About / Conflict #39** — still unresolved; License, Data
+  Provider, and Last Synchronization remain undisplayed in Settings'
+  About section, unaffected by this release.
+- **Cloud Database / Cloud Sync** — still cancelled by explicit product
+  decision (Milestone 8), not deferred, not revisited.
+- **Operated production deployment/monitoring under Path B** — still
+  deferred; no live deployment exists, unaffected by this release.
+
+No item above was silently resolved, removed, or resurrected as newly
+discovered — each is exactly where the most recent prior reconciliation
+left it. This release resolves none of the unresolved Recommendation
+Engine formula/spec blockers listed above — it surfaces already-
+configured preference _inputs_ in CSV, never a computed recommendation
+_output_.
+
+### Release scope audit
+
+Explicitly verified across the entire `v1.20.0..origin/main` diff, not
+assumed:
+
+- **No Engine behavior/formula change** — `git diff v1.20.0..origin/main
+-- engine/` returns empty output.
+- **No V3 semantic change, no V4 semantic change, no Aave-adapter
+  change** — `git diff v1.20.0..origin/main -- services/portfolio/mapping.ts
+hooks/useAaveV4LiveSync.ts hooks/useAaveV4CollateralRiskLiveSync.ts`
+  returns empty output; `CsvExporter.ts`'s new columns contain zero
+  references to `protocolVersion`, `v4DebtState`, or
+  `v4CollateralRisk`.
+- **No persistence-schema change** — `git diff v1.20.0..origin/main --
+services/persistence/ types/portfolio.ts types/portfolio.schema.ts`
+  returns empty output; every field this release surfaces was already
+  persisted before this release.
+- **No recommendation-semantic change** — `git diff v1.20.0..origin/main
+-- services/recommendation/ features/recommendations/` returns empty
+  output; no recommendation is evaluated by the CSV export.
+- **No JSON exporter change** — `git diff v1.20.0..origin/main --
+services/export/JsonExporter.ts` returns empty output; JSON's own
+  optional-field semantics are exactly as they were.
+- **No baseline-arithmetic change** — `git diff v1.20.0..origin/main --
+services/portfolio/startingValueBaseline.ts` returns empty output;
+  the authoritative comparison function itself is byte-for-byte
+  unchanged, and CSV surfaces only its raw input facts, never its
+  derived output.
+
+**Result matches the expected shape**: v1.21.0 is principally CSV
+export field completeness and cross-export verification, exactly as
+scoped. Repository evidence does not contradict that expectation at any
+point in this diff.
+
+### Final release assessment
+
+**READY TO TAG v1.21.0.** All 3 changed files inspected directly; every
+batch's own claim verified against real code/tests, not assumed; full
+suite passing (4594/4594) at the reconciliation baseline (see Validation
+below for this batch's own re-run); no unresolved blocker; no historical
+artifact silently rewritten; no known/deferred item silently resolved or
+resurrected; version metadata consistent across `package.json`/
+`ENGINE_VERSION`/`APP_VERSION`.
+
+---
+
 ## v1.20.0 Release Reconciliation — Dashboard Starting-Value Baseline Visibility
 
 **Recorded after the fact, the same convention every release-

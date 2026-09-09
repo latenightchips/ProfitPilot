@@ -32,10 +32,10 @@ each axis follows going forward, not just its current value.
 
 | Axis                        | Current value | Source                                                        |
 | ---------------------------- | -------------- | -------------------------------------------------------------- |
-| Application version           | `1.20.0`       | `package.json` `"version"`                                    |
-| Engine version                 | `1.20.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
-| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.20** — no batch in any of the twenty releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). Dashboard Recommendation Summary Parity (`v1.19.0`) assigns no Formula ID either — the Dashboard summary builder now calls the same `calculateRecommendationActions` composition, adding no Engine calculation of its own (verified: `git diff v1.18.0..HEAD -- engine/` returns empty output). Dashboard Starting-Value Baseline Visibility (`v1.20.0`) assigns no Formula ID either — the Dashboard now calls the same already-authoritative `calculateStartingValueBaselineComparison` (v1.17.0), adding no Engine calculation of its own (verified: `git diff v1.19.0..HEAD -- engine/` returns empty output). |
-| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.20** — every batch across all twenty releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. `v1.19.0` introduces no new persisted field at all — it only changes which Service the Dashboard's own (already-existing, already-persisted-nothing) summary builder calls. `v1.20.0` introduces no new persisted field either — the Starting-Value Baseline's three persisted fields (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) were already added in `v1.17.0`; this release only surfaces their already-computed comparison on a second page. |
+| Application version           | `1.21.0`       | `package.json` `"version"`                                    |
+| Engine version                 | `1.21.0`       | `ENGINE_VERSION` (`engine/shared/result.ts`)                   |
+| Formula version                | `1.0`          | `FORMULA_VERSION`, identical across every `engine/**` calculation file — tracks `docs/02_Formulas.md`'s own document revision, not the application release. **Unchanged by V1.1 through V1.21** — no batch in any of the twenty-one releases modified a financial formula. Recommendation Preferences (`v1.18.0`) is deliberately **not** a new Formula ID — `calculateRecommendationActions` (`services/recommendation/recommendationActions.ts`) is a Service-layer orchestrator composing the already-existing F-061/F-062/F-063/F-064 Engine functions unmodified, the same no-new-ID precedent `calculateTargetHealthFactorActions` already established (see `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §11). Dashboard Recommendation Summary Parity (`v1.19.0`) assigns no Formula ID either — the Dashboard summary builder now calls the same `calculateRecommendationActions` composition, adding no Engine calculation of its own (verified: `git diff v1.18.0..HEAD -- engine/` returns empty output). Dashboard Starting-Value Baseline Visibility (`v1.20.0`) assigns no Formula ID either — the Dashboard now calls the same already-authoritative `calculateStartingValueBaselineComparison` (v1.17.0), adding no Engine calculation of its own (verified: `git diff v1.19.0..HEAD -- engine/` returns empty output). Portfolio CSV Export Field Completeness (`v1.21.0`) assigns no Formula ID either — CSV export now surfaces seven already-persisted raw fields verbatim, computing nothing (verified: `git diff v1.20.0..HEAD -- engine/` returns empty output). |
+| Storage schema version         | `1.0.0`        | `STORAGE_SCHEMA_VERSION` (`services/persistence/envelope.ts`). **Unchanged by V1.1 through V1.21** — every batch across all twenty-one releases persists through the existing envelope/schema, adding no new schema version and no migration. `v1.18.0` adds one new, fully optional `PortfolioSettings.recommendationPreferences` object (`{ borrow?: {...}, loop?: {...} }`, four independently optional leaf fields) using the identical "optional field, `undefined` on old data, never backfilled" pattern every prior optional field since V1.1 has already used — no schema version bump required. `v1.19.0` introduces no new persisted field at all — it only changes which Service the Dashboard's own (already-existing, already-persisted-nothing) summary builder calls. `v1.20.0` introduces no new persisted field either — the Starting-Value Baseline's three persisted fields (`establishedAt`/`collateralQuantity`/`marketPriceUsd`) were already added in `v1.17.0`; this release only surfaces their already-computed comparison on a second page. `v1.21.0` introduces no new persisted field either — all seven fields it newly exports in CSV (three Starting-Value Baseline fields, `v1.17.0`; four Recommendation Preferences fields, `v1.18.0`) were already persisted; this release only extends a serialization format. |
 | Database migration version     | N/A            | Cloud Database was cancelled by product decision (see "Persistence and local-first scope" in `CONTRIBUTING.md`) — there is no cloud database to version. The one migration-versioned system that exists is local storage, already covered by "Storage schema version" above; `REGISTERED_MIGRATIONS` (`services/persistence/migrations/migrate.ts`) is currently empty because schema `1.0.0` is the only version this application has ever shipped. |
 | Documentation version          | Inconsistent — see below | Each specification document declares its own `Version` field, independent of the application version (`docs/06_TASKS.md` M10-003 finding, Milestone 10 Batch 1). `02_Formulas.md` through `06_TASKS.md` all declare `1.0`; `README.md` and `01_PRD.md`'s own header both still declare `0.1.0`, while `01_PRD.md`'s own footer declares `1.0` — an inconsistency within that single document, not just across documents. Recorded as `PROJECT_STATUS.md` Conflict #38, not silently corrected — these are frozen, protected specification documents this project's convention does not edit as part of ordinary work. |
 | Sign-off completed (1.0.0)     | 2026-08-08     | Milestone 9 Batch 11 (M9-057–M9-064) — see `docs/DEFECT_CLASSIFICATION.md` §6 and `PROJECT_STATUS.md`'s Batch 11 write-up. Not a deployment date — see above. |
@@ -59,6 +59,35 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.18.0)    | 2026-09-08     | Recommendation Preferences — specification phase plus Batch 1 (schema/persistence), Batch 2 (service integration), Batch 3 (Recommendation Center wiring + Portfolio preference UI), and Batch 4 (presentation-language layer + E2E/accessibility hardening), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4521/4521 tests passing) — see `PROJECT_STATUS.md`'s "v1.18.0 Release Reconciliation" section and the `[1.18.0]` entry below. Same promotion pattern as `1.17.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.19.0)    | 2026-09-08     | Dashboard Recommendation Summary Parity — Batch 1 (Service Integration), Batch 2 (UI Wiring), and Batch 3 (Integration/E2E Hardening — no production defect found, tests only), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4551/4551 tests passing) — see `PROJECT_STATUS.md`'s "v1.19.0 Release Reconciliation" section and the `[1.19.0]` entry below. Same promotion pattern as `1.18.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.20.0)    | 2026-09-08     | Dashboard Starting-Value Baseline Visibility — Batch 1 (Dashboard Starting-Value Baseline Section — Service/View Reuse + Dashboard Wiring) and Batch 2 (Cross-Page Integration Proof + Deterministic `portfolioStore` `updatedAt` Test Hardening — no production defect found), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4574/4574 tests passing) — see `PROJECT_STATUS.md`'s "v1.20.0 Release Reconciliation" section and the `[1.20.0]` entry below. Same promotion pattern as `1.19.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.21.0)    | 2026-09-09     | Portfolio CSV Export Field Completeness — Batch 1 (Starting-Value Baseline CSV Columns), Batch 2 (Recommendation Preferences CSV Columns), and Batch 3 (CSV/JSON Cross-Export Consistency Proof — test-only, zero production diff), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4594/4594 tests passing) — see `PROJECT_STATUS.md`'s "v1.21.0 Release Reconciliation" section and the `[1.21.0]` entry below. Same promotion pattern as `1.20.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.21.0`, not `1.20.x` or a new
+`2.0.0`**: not a PATCH — the Portfolio Positions CSV export gains seven
+new columns (Starting-Value Baseline's `establishedAt`/
+`collateralQuantity`/`marketPriceUsd`; Recommendation Preferences'
+`userMinHealthFactor`/`targetDebtRatio`/`loopBorrowPercentage`/
+`maxAcceptableAnnualInterestCost`) it did not export before — new
+user-facing capability (anyone doing spreadsheet analysis or backup
+verification outside the app can now see these fields), not a bug fix
+to existing capability, the same bar every prior MINOR bump already
+used. Not a new MAJOR either: no Engine file changed at all (verified:
+`git diff v1.20.0..HEAD -- engine/` is empty), no Formula ID was
+assigned, `FORMULA_VERSION` stays `1.0`, `STORAGE_SCHEMA_VERSION` is
+untouched (every field this release exports was already persisted, most
+since `v1.17.0`/`v1.18.0` — this release only extends a serialization
+format, adding no persisted field of any kind), no V3/V4 semantic
+change, and the JSON exporter (`services/export/JsonExporter.ts`) is
+byte-for-byte unchanged. This release introduces no new financial
+semantics whatsoever — CSV surfaces raw configured/persisted values
+only, never a recommendation calculation, never a default, preset, or
+fallback, and never the Starting-Value Baseline's own derived comparison
+(current value, change since baseline), which remains exclusively
+`calculateStartingValueBaselineComparison`'s job. See
+`PROJECT_STATUS.md`'s "v1.21.0 Release Reconciliation" section for the
+full batch-by-batch record, including Batch 3's proof that CSV and JSON
+agree on the same underlying persisted values while each keeps its own
+existing serialization contract. A minor version bump, same class as
+`1.1.0`'s through `1.20.0`'s own.
 
 **Why the Application/Engine version is `1.20.0`, not `1.19.x` or a new
 `2.0.0`**: not a PATCH — the Dashboard now shows a "Performance since
@@ -547,6 +576,72 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.21.0] — 2026-09-09
+
+Three implementation batches on top of Version 1.20.0, together titled
+"Portfolio CSV Export Field Completeness": Batch 1, Starting-Value
+Baseline CSV Columns (`13d8773`), Batch 2, Recommendation Preferences
+CSV Columns (`d3abeb4`), and Batch 3, CSV/JSON Cross-Export Consistency
+Proof (`eed8083`, test-only, zero production diff), plus this
+reconciliation batch itself. Full per-file, per-batch detail lives in
+`PROJECT_STATUS.md`'s "v1.21.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.21.0
+
+- **The Portfolio Positions CSV export now includes your Starting-Value
+  Baseline facts, if you've set one.** Three new columns — Baseline
+  Established At, Baseline Collateral Quantity (BTC), Baseline BTC
+  Price (USD) — show the same raw values you already see on the
+  Portfolio page's baseline panel.
+- **The CSV export now also includes your configured Recommendation
+  Preferences.** Four new columns — Minimum Health Factor for
+  Borrowing, Target Debt Ratio Ceiling, Loop Borrow Percentage, Maximum
+  Acceptable Annual Interest Cost (USD) — show whatever you've
+  configured on Portfolio Details.
+- **Every value not configured shows "Not available"**, the CSV
+  export's existing convention — never a blank cell, never a guessed
+  value, never a default standing in for something you haven't set. A
+  partially configured Borrow or Loop preference (only one of its two
+  fields set) shows exactly that one value, with its sibling correctly
+  reported unavailable.
+- **Verified to represent the same underlying values as your JSON
+  backup**, for all seven fields, across present, absent, partial, and
+  multi-portfolio exports — proven directly, not merely assumed.
+
+### What this is not
+
+**This is a data-export completeness change, not a new financial
+capability.** No new formula, no new persisted field — all seven fields
+this release exports were already saved by your portfolios (three since
+`v1.17.0`'s Starting-Value Baseline, four since `v1.18.0`'s
+Recommendation Preferences); this release only makes the CSV export
+include them. It does **not**: compute or show your baseline's current
+value or change since baseline in CSV (that comparison remains only on
+the Dashboard and Portfolio page, computed the same way it always was);
+evaluate whether your configured preferences currently produce a Borrow
+or Loop recommendation; add Quantified Impact or Apply-to-Portfolio
+support for Borrow/Loop; change anything about the JSON backup/export
+format; or resolve Health Factor risk-band classification (Conflict
+#1), the Exit Readiness Formula ID gap (Conflict #11), the F-067
+component-formula gap (Conflict #12), the Interest Cost category's
+F-065 gap, cost basis, P&L, total return, or any operated production
+deployment.
+
+### Explicitly unchanged in 1.21.0
+
+**No financial formula changed, and no Formula ID was assigned.**
+`services/portfolio/startingValueBaseline.ts`'s
+`calculateStartingValueBaselineComparison` and every Recommendation
+Engine function are byte-for-byte unchanged (verified: `git diff
+v1.20.0..HEAD -- engine/` returns empty output). **`STORAGE_SCHEMA_VERSION`
+stays `1.0.0`** — no persisted field was added, changed, or removed; every
+field this release exports in CSV was already persisted before this
+release. **`services/export/JsonExporter.ts` is untouched** — the JSON
+backup/export format and its own optional-field semantics are exactly
+as they were. No V3/V4 semantic change. No Simulation, Loop Builder, or
+Exit Planner file was touched.
 
 ## [1.20.0] — 2026-09-08
 
