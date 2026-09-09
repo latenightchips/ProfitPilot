@@ -365,6 +365,96 @@ describe('buildPortfolioPositionsCsv — export provenance (P2-1)', () => {
   });
 });
 
+/**
+ * "Baseline Established At"/"Baseline Collateral Quantity (BTC)"/
+ * "Baseline BTC Price (USD)" columns — v1.21.0 Batch 1 ("Portfolio CSV
+ * Export Field Completeness"). Column indices 27, 28, 29 (appended after
+ * "Updated At", the table's prior last column — see `CsvExporter.ts`'s
+ * own header comment) — every existing column index before it is
+ * unaffected, so no pre-existing test in this file needed updating.
+ * Comma-free names throughout, the same reasoning the "execution-cost
+ * assumptions"/"export provenance" describe blocks above already
+ * document for this file's own by-index testing convention.
+ */
+describe('buildPortfolioPositionsCsv — Starting-Value Baseline columns (v1.21.0 Batch 1)', () => {
+  it('exports the real established baseline facts verbatim when a baseline is set', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        name: 'V3 Portfolio',
+        establishedAt: '2026-06-01T00:00:00.000Z',
+        collateralQuantity: 1.5,
+        marketPriceUsd: 45000,
+      },
+    ]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[27]).toBe('2026-06-01T00:00:00.000Z');
+    expect(fields[28]).toBe('1.5');
+    expect(fields[29]).toBe('45000');
+  });
+
+  it('exports "Not available" for all three baseline columns when no baseline is set', () => {
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[27]).toBe('Not available');
+    expect(fields[28]).toBe('Not available');
+    expect(fields[29]).toBe('Not available');
+  });
+
+  it('keeps each portfolio row correctly aligned across a mixed baseline-set/baseline-absent export', () => {
+    const csv = buildPortfolioPositionsCsv([
+      {
+        ...samplePortfolio(),
+        id: 'portfolio-with-baseline',
+        name: 'With Baseline',
+        establishedAt: '2026-03-15T12:00:00.000Z',
+        collateralQuantity: 2.25,
+        marketPriceUsd: 60000,
+      },
+      { ...samplePortfolio(), id: 'portfolio-without-baseline', name: 'Without Baseline' },
+    ]);
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(3);
+
+    const withBaselineFields = lines[1]!.split(',');
+    expect(withBaselineFields[0]).toBe('portfolio-with-baseline');
+    expect(withBaselineFields[27]).toBe('2026-03-15T12:00:00.000Z');
+    expect(withBaselineFields[28]).toBe('2.25');
+    expect(withBaselineFields[29]).toBe('60000');
+
+    const withoutBaselineFields = lines[2]!.split(',');
+    expect(withoutBaselineFields[0]).toBe('portfolio-without-baseline');
+    expect(withoutBaselineFields[27]).toBe('Not available');
+    expect(withoutBaselineFields[28]).toBe('Not available');
+    expect(withoutBaselineFields[29]).toBe('Not available');
+  });
+
+  it('names the three new baseline columns verbatim in the CSV header row, after "Updated At"', () => {
+    const csv = buildPortfolioPositionsCsv([samplePortfolio()]);
+    const headerFields = csv.split('\n')[0]!.split(',');
+    expect(headerFields[26]).toBe('Updated At');
+    expect(headerFields[27]).toBe('Baseline Established At');
+    expect(headerFields[28]).toBe('Baseline Collateral Quantity (BTC)');
+    expect(headerFields[29]).toBe('Baseline BTC Price (USD)');
+  });
+
+  it('does not change any pre-existing column value — full-row regression against the unset-baseline fixture', () => {
+    // Comma-free name — see this file's own established by-index
+    // testing convention, documented on the "execution-cost
+    // assumptions"/"export provenance" describe blocks above.
+    const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: 'V3 Portfolio' }]);
+    const fields = csv.split('\n')[1]!.split(',');
+    expect(fields[0]).toBe('portfolio-1');
+    expect(fields[2]).toBe('BTC');
+    expect(fields[3]).toBe('2');
+    expect(fields[4]).toBe('USDC');
+    expect(fields[6]).toBe('50000');
+    expect(fields[24]).toBe('false'); // Archived
+    expect(fields[25]).toBe('2026-01-01T00:00:00.000Z'); // Created At
+    expect(fields[26]).toBe('2026-01-01T00:00:00.000Z'); // Updated At
+  });
+});
+
 describe('CSV formula-injection guard (M9-034)', () => {
   it('prefixes a portfolio name beginning with "=" so spreadsheet software does not treat it as a formula', () => {
     const csv = buildPortfolioPositionsCsv([{ ...samplePortfolio(), name: '=cmd|"/c calc"!A1' }]);

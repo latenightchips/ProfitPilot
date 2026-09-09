@@ -64,6 +64,29 @@
  * (V3 and V4 rows together), the three columns coexist, each
  * `'Not available'` for whichever protocol version a given row doesn't
  * apply to. V3 rows' own two columns are populated exactly as before.
+ *
+ * **"Baseline Established At"/"Baseline Collateral Quantity (BTC)"/
+ * "Baseline BTC Price (USD)" columns (v1.21.0 Batch 1, "Portfolio CSV
+ * Export Field Completeness")** — appended after "Updated At", the
+ * table's prior last column, the same placement convention every earlier
+ * column-group addition to this function already used (P1-6 appended
+ * after what was then the last column, "Supply APR"; P2-1 appended after
+ * what was then the last column, "Gas Cost Assumption"). Read directly
+ * and verbatim from `Portfolio.establishedAt`/`.collateralQuantity`/
+ * `.marketPriceUsd` (`docs/STARTING_VALUE_BASELINE_SPEC.md` §2) — the
+ * three raw, independently-optional baseline facts a portfolio may or
+ * may not have, `undefined` on any portfolio with no baseline set (this
+ * file's own existing `null` → `'Not available'` convention, via `?? null`).
+ * **No comparison is computed here** — no current value, no change since
+ * baseline, no percentage change. Those are derived, read-time-only
+ * figures owned exclusively by `calculateStartingValueBaselineComparison`
+ * (`services/portfolio/startingValueBaseline.ts`, v1.17.0), never
+ * persisted and out of scope for a raw-field export like this one; this
+ * closes exactly the gap `docs/STARTING_VALUE_BASELINE_SPEC.md` §16's own
+ * acceptance criterion 11 named and explicitly deferred ("no other
+ * export/import surface (CSV, etc.) is required to represent this
+ * feature unless a future batch extends portfolio CSV export
+ * generally"), and nothing beyond it.
  */
 import {
   deriveAaveV4EffectiveBorrowRate,
@@ -281,6 +304,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
     'Archived',
     'Created At',
     'Updated At',
+    'Baseline Established At',
+    'Baseline Collateral Quantity (BTC)',
+    'Baseline BTC Price (USD)',
   ]);
 
   const rows = portfolios.map((portfolio) => {
@@ -313,6 +339,9 @@ export function buildPortfolioPositionsCsv(portfolios: Portfolio[]): string {
       portfolio.archivedAt !== null,
       portfolio.createdAt,
       portfolio.updatedAt,
+      portfolio.establishedAt ?? null,
+      portfolio.collateralQuantity ?? null,
+      portfolio.marketPriceUsd ?? null,
     ]);
   });
 
