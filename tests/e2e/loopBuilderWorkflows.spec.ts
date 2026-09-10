@@ -87,7 +87,11 @@ test('Cover: Unsafe strategy (M7-041)', async ({ page }) => {
   await fillByLabel(page, 'Minimum Health Factor', '1');
   await page.waitForTimeout(300);
 
-  await expect(page.getByText('Safety check "MINIMUM_HEALTH_FACTOR" failed.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'The configured minimum Health Factor must be greater than 1.0 (the liquidation boundary).',
+    ),
+  ).toBeVisible();
   await expect(
     page.getByText('Configure a viable strategy to see its individual steps.'),
   ).toBeVisible();
@@ -104,7 +108,9 @@ test('Cover: Borrowing-capacity limit (M7-041)', async ({ page }) => {
   await fillByLabel(page, 'How much to borrow each loop', '60');
   await page.waitForTimeout(300);
 
-  await expect(page.getByText('Safety check "BORROWING_CAPACITY" raised a warning.')).toBeVisible();
+  await expect(
+    page.getByText('No borrowing capacity is available; the strategy cannot execute any loops.'),
+  ).toBeVisible();
   await expect(page.getByText('No further borrowing capacity available').first()).toBeVisible();
 });
 

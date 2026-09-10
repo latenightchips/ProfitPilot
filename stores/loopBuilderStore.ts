@@ -8,6 +8,7 @@ import {
   createApplicationError,
   loopIntroducesAmbiguousV4Borrow,
   type LoopSafetyCheck,
+  type LoopSafetyFinding,
   type LoopStrategyPreview,
   type LoopStrategySettings,
   persistenceService,
@@ -46,6 +47,26 @@ import type { StrategyWarning, StrategyWarningCategory } from '@/types/strategy'
  * own "never let genuinely available data sit unused" discipline (the
  * same reasoning `ScenarioSummary.tsx`'s own Batch 9 "Warnings" section
  * already applied for Simulation).
+ *
+ * **`cause` reuses `LoopSafetyFinding.message` verbatim (post-v1.23.0
+ * cleanup) — it no longer embeds the raw `LoopSafetyCheck` identifier.**
+ * `toStrategyWarning` previously built `cause` as `Safety check
+ * "${finding.check}" failed.`/`"...raised a warning."`, surfacing the
+ * internal ALL_CAPS enum value (e.g. `"MINIMUM_HEALTH_FACTOR"`) directly
+ * to users — `StrategyWarning.cause`'s own doc comment (`types/strategy.ts`)
+ * requires human-readable text, and `components/strategy/StrategyWarnings.tsx`
+ * renders it as the warning card's primary line. `validateLoopStrategySafety.ts`
+ * already computes a real, complete, human-readable sentence for every
+ * finding it raises (`LoopSafetyFinding.message` — e.g. "No borrowing
+ * capacity is available; the strategy cannot execute any loops.") that
+ * this function was simply discarding by narrowing its own parameter
+ * type to `{ check, severity }` before this fix. No new wording is
+ * invented here: `finding.message` is the Engine's own single source of
+ * truth for "what is wrong," reused verbatim rather than duplicated or
+ * re-described a second way. `suggestedResponse`
+ * (`CHECK_SUGGESTED_RESPONSE`) is unaffected — it already described what
+ * to do, in human language, and remains a distinct field ("cause" vs.
+ * "suggested response," per this type's own M7-005 requirement).
  *
  * Milestone 7 Batch 3 adds `runSensitivityScenario` (M7-015) and
  * `saveStrategy`/`loadStrategy`/`duplicateStrategy`/`deleteStrategy`
@@ -124,17 +145,24 @@ function suggestedResponseFor(
   return CHECK_SUGGESTED_RESPONSE[check];
 }
 
-function toStrategyWarning(
-  finding: {
-    check: LoopSafetyCheck;
-    severity: 'error' | 'warning';
-  },
+/**
+ * Exported (post-v1.23.0 cleanup) so every `LoopSafetyCheck` value's own
+ * warning mapping can be tested directly and exhaustively — two of the
+ * six checks (`MAXIMUM_LTV`/`MAXIMUM_LOOP_COUNT`) are `validateLoopStrategySafety.ts`'s
+ * own defense-in-depth re-verifications, documented there as unable to
+ * actually fire for a correct implementation, so no realistic portfolio/
+ * settings combination can reach them through `runLoopStrategy` alone. A
+ * pure, side-effect-free mapping function — exporting it is a
+ * presentation-layer change only, not a new calculation or Store action.
+ */
+export function toStrategyWarning(
+  finding: LoopSafetyFinding,
   protocolVersion: 'v3' | 'v4' | undefined,
 ): StrategyWarning {
   return {
     category: CHECK_CATEGORY[finding.check],
     severity: finding.severity,
-    cause: `Safety check "${finding.check}" ${finding.severity === 'error' ? 'failed' : 'raised a warning'}.`,
+    cause: finding.message,
     suggestedResponse: suggestedResponseFor(finding.check, protocolVersion),
   };
 }

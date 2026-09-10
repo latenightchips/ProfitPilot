@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { type ApplicationPortfolio, autoSaveCoordinator, persistenceService } from '@/services';
+import {
+  type ApplicationPortfolio,
+  autoSaveCoordinator,
+  type LoopSafetyCheck,
+  persistenceService,
+} from '@/services';
 import type { LoopStrategySettings } from '@/services/loop/strategy';
 import type { SavedLoopStrategy } from '@/stores/loopBuilderStore';
-import { useLoopBuilderStore } from '@/stores/loopBuilderStore';
+import { toStrategyWarning, useLoopBuilderStore } from '@/stores/loopBuilderStore';
 
 /**
  * Loop Builder Store — 06_TASKS.md M7-007 ("Implement Loop Builder
@@ -141,9 +146,12 @@ describe('runLoopStrategy', () => {
     useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
     useLoopBuilderStore.getState().runLoopStrategy(invalidV3Portfolio);
 
-    const finding = useLoopBuilderStore
-      .getState()
-      .warnings.find((warning) => warning.cause.includes('VALID_PROTOCOL_PARAMETERS'));
+    // VALID_PROTOCOL_PARAMETERS is checked first and returns immediately on
+    // failure (`validateLoopStrategySafety.ts`), so exactly one finding/
+    // warning exists here — no raw check-code text to filter on post-fix.
+    const { warnings } = useLoopBuilderStore.getState();
+    expect(warnings).toHaveLength(1);
+    const finding = warnings[0];
     expect(finding?.suggestedResponse).toBe(
       'Correct the Maximum LTV/Borrow-Rate Assumption so they describe a valid protocol configuration.',
     );
@@ -162,9 +170,12 @@ describe('runLoopStrategy', () => {
     useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
     useLoopBuilderStore.getState().runLoopStrategy(invalidV4Portfolio);
 
-    const finding = useLoopBuilderStore
-      .getState()
-      .warnings.find((warning) => warning.cause.includes('VALID_PROTOCOL_PARAMETERS'));
+    // VALID_PROTOCOL_PARAMETERS is checked first and returns immediately on
+    // failure (`validateLoopStrategySafety.ts`), so exactly one finding/
+    // warning exists here — no raw check-code text to filter on post-fix.
+    const { warnings } = useLoopBuilderStore.getState();
+    expect(warnings).toHaveLength(1);
+    const finding = warnings[0];
     expect(finding?.suggestedResponse).toBe(
       'Correct the Collateral Factor/Borrow-Rate Assumption so they describe a valid protocol configuration.',
     );
@@ -185,11 +196,127 @@ describe('runLoopStrategy', () => {
     const finding = state.warnings.find((warning) => warning.category === 'borrowingCapacity');
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('warning');
-    expect(finding?.cause).toBe('Safety check "BORROWING_CAPACITY" raised a warning.');
+    expect(finding?.cause).toBe(
+      'No borrowing capacity is available; the strategy cannot execute any loops.',
+    );
+    expect(finding?.cause).not.toMatch(/BORROWING_CAPACITY|Safety check/);
     expect(finding?.suggestedResponse).toBe(
       'Reduce the target borrow percentage — no further borrowing capacity remains.',
     );
     expect(state.currentResult?.strategy?.steps).toEqual([]);
+  });
+
+  /**
+   * Confirms a real LIQUIDATION_PROXIMITY finding (starting position
+   * already at Health Factor <= 1.0) maps to its own real, human-readable
+   * `cause` — not the raw check code (M7-041-class regression, post-v1.23.0
+   * warning-text cleanup).
+   */
+  it('maps a real LIQUIDATION_PROXIMITY finding into a warning with a human-readable, non-raw cause', () => {
+    // 1 BTC @ $50,000 collateral, $50,000 debt, 0.8 liquidation threshold
+    // -> Health Factor = 50000 * 0.8 / 50000 = 0.8, a real
+    // LIQUIDATION_PROXIMITY failure, not hand-crafted.
+    const atLiquidationPortfolio = validPortfolio({ debt: { asset: 'USDC', balance: 50000 } });
+    useLoopBuilderStore.getState().setSettings(VALID_SETTINGS);
+    useLoopBuilderStore.getState().runLoopStrategy(atLiquidationPortfolio);
+
+    const { warnings } = useLoopBuilderStore.getState();
+    const finding = warnings.find((warning) => warning.category === 'liquidation');
+    expect(finding).toBeDefined();
+    expect(finding?.cause).toBe(
+      'The starting position is already at or below Health Factor 1.0 (liquidation).',
+    );
+    expect(finding?.cause).not.toMatch(/LIQUIDATION_PROXIMITY|Safety check/);
+  });
+
+  /**
+   * v1.23.0 validation pass follow-up — confirmed root cause:
+   * `toStrategyWarning` previously built `cause` as `Safety check
+   * "${finding.check}" failed/raised a warning.`, leaking the raw
+   * `LoopSafetyCheck` enum value (e.g. `"MINIMUM_HEALTH_FACTOR"`)
+   * directly into the primary line of every warning card
+   * (`components/strategy/StrategyWarnings.tsx`) and into the CSV export
+   * (`features/loop-builder/utils/exportLoopStrategy.ts`). `cause` now
+   * reuses `LoopSafetyFinding.message` verbatim — the Engine's own
+   * already-computed, human-readable explanation for every check
+   * (`validateLoopStrategySafety.ts`) — reused directly rather than
+   * duplicated with new wording. This exhaustively tests all 6
+   * `LoopSafetyCheck` values via `toStrategyWarning` directly (exported
+   * for exactly this purpose): two of them (`MAXIMUM_LTV`/
+   * `MAXIMUM_LOOP_COUNT`) are defense-in-depth checks the Engine itself
+   * documents as unreachable through any real strategy execution, so
+   * they cannot be covered by driving `runLoopStrategy` with a real
+   * portfolio the way the other four checks are above.
+   */
+  describe('toStrategyWarning — every LoopSafetyCheck maps to a human-readable cause, never the raw check code', () => {
+    const FINDINGS: {
+      check: LoopSafetyCheck;
+      severity: 'error' | 'warning';
+      message: string;
+    }[] = [
+      {
+        check: 'VALID_PROTOCOL_PARAMETERS',
+        severity: 'error',
+        message: 'maxLoanToValue must not exceed liquidationThreshold.',
+      },
+      {
+        check: 'LIQUIDATION_PROXIMITY',
+        severity: 'error',
+        message: 'The starting position is already at or below Health Factor 1.0 (liquidation).',
+      },
+      {
+        check: 'MINIMUM_HEALTH_FACTOR',
+        severity: 'error',
+        message:
+          'The configured minimum Health Factor must be greater than 1.0 (the liquidation boundary).',
+      },
+      {
+        check: 'BORROWING_CAPACITY',
+        severity: 'warning',
+        message: 'No borrowing capacity is available; the strategy cannot execute any loops.',
+      },
+      {
+        check: 'MAXIMUM_LTV',
+        severity: 'error',
+        message: 'The resulting Loan-to-Value exceeds the configured maximum LTV.',
+      },
+      {
+        check: 'MAXIMUM_LOOP_COUNT',
+        severity: 'error',
+        message: 'The strategy took more steps than the configured maximum loop count.',
+      },
+    ];
+
+    it.each(FINDINGS)(
+      '$check: cause is the real finding message verbatim, never the raw check code',
+      ({ check, severity, message }) => {
+        const warning = toStrategyWarning({ check, severity, message }, 'v3');
+        expect(warning.cause).toBe(message);
+        expect(warning.cause).not.toBe(check);
+        expect(warning.cause).not.toContain(check);
+        expect(warning.cause).not.toMatch(/^[A-Z_]+$/);
+        expect(warning.cause).not.toMatch(/Safety check ".*"/);
+      },
+    );
+
+    it('never renders any of the 6 raw LoopSafetyCheck codes as warning copy, for either protocol version', () => {
+      const rawCodes: LoopSafetyCheck[] = [
+        'VALID_PROTOCOL_PARAMETERS',
+        'LIQUIDATION_PROXIMITY',
+        'MINIMUM_HEALTH_FACTOR',
+        'BORROWING_CAPACITY',
+        'MAXIMUM_LTV',
+        'MAXIMUM_LOOP_COUNT',
+      ];
+      for (const protocolVersion of ['v3', 'v4'] as const) {
+        for (const { check, severity, message } of FINDINGS) {
+          const warning = toStrategyWarning({ check, severity, message }, protocolVersion);
+          for (const rawCode of rawCodes) {
+            expect(warning.cause).not.toContain(rawCode);
+          }
+        }
+      }
+    });
   });
 
   it('sets status/errors on a genuine Engine failure, with no prior result to preserve', () => {
