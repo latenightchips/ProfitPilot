@@ -13,9 +13,97 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.22.0
+## Version 1.23.0
 
-**Current release.** Promotes three batches on top of Version 1.21.0,
+**Current release.** Promotes Safety Targets Status Batches 1–3 plus a
+pre-release Aave V4 correctness/clarity bugfix on top of Version 1.22.0:
+Batch 1, Portfolio Page Safety Targets Status Panel
+(`edae4d578b88cea34a03efae61b84a90e2b153ab`); Batch 2, Dashboard Safety
+Targets Status Integration (`95c2e4ec2f98693cc02396da9ce73f5d62fcf026`);
+Batch 3, Safety Targets Cross-Surface Consistency Proof (test-only, zero
+production diff, `87cd0306d8d3d2d1cbd2536280939ebf125e04cc`); and the
+pre-release bugfix, Aave V4 Technical Details & Unsaved Manual-State
+Clarity (`26f7936a123019b0bb43dae3f2aa337fede4d504`) — built, tested, and
+independently re-verified in the batches that produced them, not a fresh
+Milestone-9/V1.1-style Release Candidate process with its own new manual
+exploratory pass. See `PROJECT_STATUS.md`'s "v1.23.0 Release
+Reconciliation" section and `docs/CHANGELOG.md`'s `[1.23.0]` entry for
+the full record. Everything in "Version 1.22.0" and earlier below still
+applies; this section covers only what is new since 1.22.0. **Still a
+self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.23.0
+
+- **The Portfolio page now shows a read-only "Safety Targets Status"
+  panel.** For each of your four configured Safety Targets (Target
+  Health Factor, Holding Period, Target BTC Price, Safety Buffer %), it
+  shows your current value alongside your configured target and whether
+  it's Met, Not met, Not configured, or Not available — computed
+  independently per field, never as one all-or-nothing state.
+- **The Dashboard now shows a compact Safety Targets Status summary**
+  in its Overview group, presenting the exact same status as the
+  Portfolio page's own panel — proven, not just asserted, to derive from
+  the same single calculation rather than a second, independently
+  recalculated one — with a link to the Portfolio page for full detail.
+- **Verified consistent with your CSV export**, for target values and,
+  where applicable, current values, across fully configured, fully
+  absent, partial, valid-zero, and multi-portfolio scenarios — proven
+  directly, not merely assumed. No CSV/export code changed.
+- **Aave V4 Technical Details (Developer Mode) no longer shows Aave V3
+  data for a portfolio configured for Aave V4.** Before this release, a
+  V4-configured portfolio's Technical Details could still display the
+  last Aave V3 live fetch's protocol/network/block information — data
+  that describes nothing about that portfolio's real (V4) position. It
+  now shows an honest "Not applicable for Aave V4" message instead, and
+  never fabricates a V4 equivalent that doesn't exist yet.
+- **The manual Aave V4 debt-assumptions form now says whether what
+  you're looking at is saved.** Before this release, an entirely
+  unsaved form (showing default `0` values) looked identical to a
+  genuinely saved all-zero debt assumption. It now shows "Not saved
+  yet" until you press Save, and "Showing your saved Aave V4 debt
+  assumptions" once you have — a real, persisted `0` is still exactly
+  as valid as before and is never treated as missing.
+
+### What this is not
+
+**This is a status-visibility feature and an Aave V4 correctness/clarity
+fix, not a new financial capability.** No new formula, no new persisted
+field, no Engine change (verified: `git diff v1.22.0..HEAD -- engine/`
+returns empty output). Safety Targets themselves — setting your own
+Target Health Factor, Holding Period, Target BTC Price, and Safety
+Buffer % — were already configurable on the Portfolio page before this
+release (since before `v1.22.0`); this release only adds the ability to
+see how your current position compares to what you've already
+configured. It does not evaluate your targets into a recommendation,
+does not add Quantified Impact or Apply-to-Portfolio support for them,
+and does not add any live Aave V4 network/block/method verification
+data that doesn't already exist — the Technical Details fix states that
+absence honestly rather than inventing one. It does **not**: change your
+CSV or JSON export in any way; change what an address is required for
+(none, for manual V4 assumptions, exactly as before); or resolve Health
+Factor risk-band classification (Conflict #1), the Exit Readiness
+Formula ID gap (Conflict #11), the F-067 component-formula gap (Conflict
+#12), the Interest Cost category's F-065 gap, cost basis, P&L, total
+return, or any operated production deployment.
+
+### Explicitly unchanged in 1.23.0
+
+**No financial formula changed, and no Formula ID was assigned.** Every
+Engine function is byte-for-byte unchanged. **`STORAGE_SCHEMA_VERSION`
+stays `1.0.0`** — no persisted field was added, changed, or removed.
+**No V3/V4 semantic change** — `services/portfolio/mapping.ts`,
+`hooks/useAaveV4LiveSync.ts`, and `hooks/useAaveV4CollateralRiskLiveSync.ts`
+are all untouched; V4 zero values remain valid, never "missing"; missing
+required V4 state remains fail-closed; manual V4 assumptions still
+require no wallet/address. `services/export/CsvExporter.ts` and
+`services/export/JsonExporter.ts` are both untouched. No Simulation,
+Loop Builder, or Exit Planner file was touched. No recommendation-engine
+file was touched.
+
+## Version 1.22.0 (previous release)
+
+Promotes three batches on top of Version 1.21.0,
 together titled "Portfolio CSV Export Completeness, Part 2 — Safety
 Targets + User Guide Accuracy": Batch 1, Safety Targets CSV Columns;
 Batch 2, Safety Targets CSV/JSON Cross-Export Consistency Proof

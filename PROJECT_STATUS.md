@@ -15833,6 +15833,414 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.23.0 Release Reconciliation — Safety Targets Status Visibility + Aave V4 Correctness Fixes
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — this section documents Batch 1
+(`edae4d578b88cea34a03efae61b84a90e2b153ab`, Portfolio Page Safety
+Targets Status Panel), Batch 2 (`95c2e4ec2f98693cc02396da9ce73f5d62fcf026`,
+Dashboard Safety Targets Status Integration), Batch 3
+(`87cd0306d8d3d2d1cbd2536280939ebf125e04cc`, Safety Targets Cross-Surface
+Consistency Proof — test-only, zero production diff), a pre-release
+bugfix (`26f7936a123019b0bb43dae3f2aa337fede4d504`, Aave V4 Technical
+Details & Unsaved Manual-State Clarity), and this reconciliation batch
+itself, applied directly on top of `v1.22.0`
+(`d14ee32aef047b26e2092cc8232d0c6899a1c79a`).
+
+**Current release candidate: `1.23.0`. Versions `1.0.0` through `1.22.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.22.0` still resolves to
+`d14ee32aef047b26e2092cc8232d0c6899a1c79a`, confirmed by fresh inspection
+during this batch (`git rev-parse v1.22.0^{commit}`). `APP_VERSION`/
+`ENGINE_VERSION`/`package.json` `"version"` move from `1.22.0` to
+`1.23.0` — a MINOR bump, the same reasoning `docs/CHANGELOG.md`'s own
+"Why the Application/Engine version is `1.23.0`" paragraph gives.
+`FORMULA_VERSION` remains `1.0`, `STORAGE_SCHEMA_VERSION` remains
+`1.0.0` — this release requires neither: `git diff v1.22.0..HEAD --
+engine/` returns completely empty output (verified directly, not
+assumed) — no `engine/**` file of any kind was touched across any of the
+three batches or the bugfix — and no persisted field of any kind was
+added, changed, or removed; every Safety Targets value the new panels
+present was already persisted (`portfolio.settings.safetyTargets`, since
+before `v1.22.0`), and the Aave V4 fixes are purely presentational. **No
+`v1.23.0` git tag exists yet** — confirmed via `git rev-parse v1.23.0`
+failing with "unknown revision" during this batch's own baseline
+verification; tagging is a separate, explicit step for after this patch
+is applied and synced, not taken by this batch (see this batch's own
+tag-readiness verdict at the end of this section).
+
+### Full `v1.22.0..origin/main` diff audit
+
+Every file touched across all three batches and the bugfix, verified
+directly via `git diff --stat v1.22.0..origin/main`, not assumed from
+batch reports alone:
+
+- `app/DashboardPageClient.tsx` (Batch 2, +8 lines)
+- `app/portfolio/AaveTechnicalDetails.tsx` (bugfix, +42/-0 lines net;
+  most lines are the new header comment and the V4 honest-state branch)
+- `app/portfolio/ManualAaveV4StateForm.tsx` (bugfix, +25 lines)
+- `app/portfolio/PortfolioPageClient.tsx` (Batch 1 +2, bugfix +1/-1 —
+  the `SafetyTargetsStatusPanel` mount and the `AaveTechnicalDetails`
+  `protocolVersion` prop)
+- `app/portfolio/SafetyTargetsStatusPanel.tsx` (Batch 1, new, +165 lines)
+- `features/dashboard/components/SafetyTargetsStatusSection.tsx`
+  (Batch 2, new, +57 lines)
+- `features/dashboard/index.ts` (Batch 2, +3 lines)
+- `features/dashboard/types/safetyTargetsStatusSummary.ts` (Batch 2,
+  new, +40 lines)
+- `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts`
+  (Batch 2, new, +147 lines)
+- `services/portfolio/index.ts` (Batch 1, +6 lines)
+- `services/portfolio/safetyTargetsStatus.ts` (Batch 1, new, +164 lines)
+- `tests/unit/app/portfolio/AaveTechnicalDetails.test.tsx` (bugfix,
+  +92 lines)
+- `tests/unit/app/portfolio/ManualAaveV4StateForm.test.tsx` (bugfix,
+  +97 lines)
+- `tests/unit/app/portfolio/SafetyTargetsStatusPanel.test.tsx` (Batch 1,
+  new, +258 lines)
+- `tests/unit/features/dashboard/SafetyTargetsStatusSection.test.tsx`
+  (Batch 2, new, +129 lines)
+- `tests/unit/features/dashboard/buildSafetyTargetsStatusSummary.test.ts`
+  (Batch 2, new, +262 lines)
+- `tests/unit/services/portfolio/safetyTargetsCrossSurfaceConsistency.test.ts`
+  (Batch 3, new, +401 lines)
+- `tests/unit/services/portfolio/safetyTargetsStatus.test.ts` (Batch 1,
+  new, +311 lines)
+
+**Exactly 18 files, 2,201 insertions, 10 deletions across the entire
+release** — confirmed by direct `git diff --stat v1.22.0..origin/main`
+(906 insertions from Batch 1, 646 from Batch 2, 401 from Batch 3,
+248/-10 from the bugfix). Zero files under `engine/`,
+`services/recommendation/`, `services/persistence/`, `types/portfolio.ts`,
+`types/portfolio.schema.ts`, `services/export/`,
+`services/portfolio/mapping.ts`, `hooks/useAaveV4LiveSync.ts`, or
+`hooks/useAaveV4CollateralRiskLiveSync.ts` were touched anywhere in this
+release — confirmed by direct inspection of the complete `git diff
+--name-status v1.22.0..origin/main` file list (exactly the eighteen
+files above). No Formula ID was assigned or touched. No persisted-data
+schema version changed. No protocol-version-branching _behavior_ was
+introduced anywhere — only a `protocolVersion` _display_ prop on
+`AaveTechnicalDetails`, which changes what is rendered, never what is
+calculated.
+
+### Batch 1 — Portfolio Page Safety Targets Status Panel (`edae4d5`)
+
+- **`services/portfolio/safetyTargetsStatus.ts`** (new): the canonical
+  `buildSafetyTargetsStatus` comparison — one Service function, reused
+  unmodified by every later consumer (Batch 2's Dashboard summary, this
+  batch's own Portfolio panel). `compareAtLeast`: `met` iff `current >=
+target` (inclusive), for all four fields — Target Health Factor,
+  Target BTC Price, Safety Buffer %, Holding Period — evidenced against
+  `docs/03_UI.md`'s own component specs (C-007/C-008/C-012/C-013) and
+  the Auto Loop Engine section, not invented. `'not_configured'` iff the
+  target itself is unset; `'unavailable'` iff a target is configured but
+  the current value cannot be computed (a failed `PortfolioSummary`, or
+  — Safety Buffer % only — a zero-debt portfolio with no liquidation
+  risk to measure a buffer against). Reads `portfolio.market.btcPriceUsd`
+  for the real current BTC price (corrected during this batch from an
+  earlier roadmap-audit error that had named the Starting-Value
+  Baseline's own frozen snapshot field, `portfolio.marketPriceUsd`, as
+  "current price" — reported transparently in that batch's own report,
+  not silently forced).
+- **`app/portfolio/SafetyTargetsStatusPanel.tsx`** (new): read-only
+  `<dl>` panel mounted on the Portfolio page directly after
+  `PortfolioDetailsForm`. No Set/Reset/edit control — configuring Safety
+  Targets remains exclusively the pre-existing "Safety target settings"
+  fieldset.
+- **`services/portfolio/index.ts`**: barrel-exports the new function and
+  types.
+- **Tests**: 17 tests for `buildSafetyTargetsStatus` (all-configured,
+  all-absent, partial, valid-zero preservation for `holdingPeriodDays`/
+  `safetyBufferPercent`, `establishedAt`-vs-`createdAt` holding-period
+  baseline, exact-boundary/one-unit-below behavior, zero-debt Infinity
+  HF, zero-debt buffer `'unavailable'`, failed-summary isolation), 12
+  component-rendering tests for the panel.
+- **Validation**: full suite passing at the time of this batch,
+  independently re-verified against a fresh `origin/main` checkout.
+
+### Batch 2 — Dashboard Safety Targets Status Integration (`95c2e4e`)
+
+- **`features/dashboard/utils/buildSafetyTargetsStatusSummary.ts`** and
+  **`features/dashboard/types/safetyTargetsStatusSummary.ts`** (both
+  new): a thin Dashboard-side formatter calling `buildSafetyTargetsStatus`
+  directly — zero recalculation, reusing the Dashboard's own existing
+  `formatCurrency`/`formatHealthFactor`/`formatPercentagePoints`
+  (`features/dashboard/utils/format.ts`).
+- **`features/dashboard/components/SafetyTargetsStatusSection.tsx`**
+  (new): compact read-only section, mounted in `app/DashboardPageClient.tsx`'s
+  Overview group directly after `StartingValueBaselineSection`, with a
+  link to the Portfolio page for full detail.
+- **`features/dashboard/index.ts`**: barrel-exports the new
+  component/type/util.
+- **Explicit "no divergent recalculation" evidence test** (the batch's
+  own required deliverable, not merely asserted): 6 configuration
+  scenarios × 4 fields, asserting the Dashboard summary's own `.status`
+  is byte-identical to `buildSafetyTargetsStatus`'s own output for the
+  same input.
+- **Tests**: 11 tests for the summary builder (including the evidence
+  test above), 6 component tests for the section.
+- **Validation**: full suite passing at the time of this batch,
+  independently re-verified against a fresh `origin/main` checkout.
+
+### Batch 3 — Safety Targets Cross-Surface Consistency Proof (`87cd030`)
+
+- **Test-only; zero production diff** — confirmed directly: this
+  batch's own diff touches exactly one file,
+  `tests/unit/services/portfolio/safetyTargetsCrossSurfaceConsistency.test.ts`
+  (new, 401 lines).
+- **Proves three surfaces agree on the same `portfolio.settings.safetyTargets`
+  values**: the canonical Batch 1 service (also the Portfolio panel's
+  own presentation path, since the panel performs formatting only), the
+  Batch 2 Dashboard summary, and the existing CSV export
+  (`buildPortfolioPositionsCsv`, unmodified, its four Safety Targets
+  columns added in `v1.22.0` Batch 1). Target-value agreement is proven
+  for all four fields; current-value agreement is proven only for
+  `targetBtcPriceUsd` — CSV has no "current" column at all for the
+  other three fields by `CsvExporter.ts`'s own deliberate raw-fields-only
+  design, documented in this test file's own header comment rather than
+  worked around with a fabricated comparison.
+- **No discrepancy found** — every scenario in the file (A–F: fully
+  configured, fully absent, partial, valid-zero, multi-portfolio
+  no-leakage, target-stability under zero-debt/failed-summary) is
+  confirmatory, not a repair; explicitly stated in the file's own
+  header comment.
+- **Does not duplicate `tests/unit/services/export/csvJsonCrossExportConsistency.test.ts`**
+  (`v1.21.0` Batch 3 / `v1.22.0` Batch 2) — that file proves CSV and
+  JSON agree on raw persisted fields and never touches
+  `buildSafetyTargetsStatus`, the Portfolio panel, or the Dashboard
+  summary; this file proves the newer Portfolio-panel/Dashboard/CSV
+  relationship instead, reusing that file's own scenario-lettering
+  convention where coherent, not its assertions.
+- **Validation**: full suite passing (338/338 test files) at the time of
+  this batch, independently re-verified against a fresh `origin/main`
+  checkout.
+
+### Pre-release bugfix — Aave V4 Technical Details & Unsaved Manual-State Clarity (`26f7936`)
+
+Diagnosed by a dedicated read-only diagnostic pass (this session, prior
+to this batch) that traced a manual-testing report of a V4-configured
+portfolio still showing "Aave V3 · Live" Technical Details and a
+misleadingly full-looking, actually-unsaved manual debt-assumptions
+form. Two confirmed defects, both display-only — neither affected any
+calculation, persisted field, or V3/V4 isolation boundary:
+
+- **`app/portfolio/AaveTechnicalDetails.tsx`**: previously read
+  exclusively from the global, portfolio-agnostic `useAaveLiveDataStore`
+  (V3-only) with no `protocolVersion` awareness at all, so a
+  V4-configured portfolio's Technical Details could show a stale/
+  unrelated V3 live fetch's protocol/network/block data. Now takes a
+  required `protocolVersion: 'v3' | 'v4' | undefined` prop
+  (`app/portfolio/PortfolioPageClient.tsx` passes
+  `record.portfolio.protocolVersion` at its one mount site); for
+  `'v4'`, renders an honest "Not applicable for Aave V4" message instead
+  — no V4-equivalent metadata was fabricated, since
+  `stores/aaveV4LiveDataStore.ts`'s own `AaveV4LiveDataState` genuinely
+  has no network/block/method fields to draw from (confirmed by direct
+  inspection before the fix). `'v3'`/`undefined` behavior is
+  byte-for-byte unchanged.
+- **`app/portfolio/ManualAaveV4StateForm.tsx`**: `ManualDebtStateForm`'s
+  `defaultValues` fell back to `?? 0` for `drawnDebt`/`premiumDebt`/
+  `riskPremium` whenever `portfolio.v4DebtState` was `undefined`, and
+  `baseDrawnApr` separately pre-filled from a real live, address-free
+  fetch — together making a completely unsaved form visually
+  indistinguishable from a genuinely persisted all-zero assumption, even
+  though `calculatePortfolioSummary`'s own `checkAaveV4DebtStateAvailable`
+  guard correctly still reported the data unavailable. Now renders a
+  `role="status"` line derived from `portfolio.v4DebtState === undefined`
+  — the exact same object-presence condition the guard itself checks —
+  reading "Not saved yet..." when absent, "Showing your saved Aave V4
+  debt assumptions" when persisted (including a genuinely saved
+  all-zero object). Purely additive display logic; no schema,
+  validation, Store action, or guard was touched.
+- **Diagnosis explicitly ruled out** any production correctness defect,
+  V3/V4 fallback, V3/V4 calculation mixing, zero-value mishandling,
+  address requirement, or fail-closed-behavior regression — confirmed
+  directly against `services/portfolio/mapping.ts`'s
+  `checkAaveV4DebtStateAvailable`/`checkAaveV4CollateralRiskAvailable`/
+  `resolveCanonicalDebtBalance` (all object-presence checks, never
+  truthiness; all strictly `protocolVersion`-branched; none touched by
+  this bugfix) before any fix was implemented.
+- **Tests**: `AaveTechnicalDetails.test.tsx` gained 8 new tests
+  (Dev-Mode-off-for-V4; `protocolVersion: undefined` reads as V3; never
+  renders V3 identity/metadata for V4; explicit honest not-applicable
+  state; a V3→V4 rerender, no remount, cannot leave stale V3 details
+  visible). `ManualAaveV4StateForm.test.tsx` gained 4 new tests
+  (absent-vs-saved-zero distinguishability; the calculation guard
+  genuinely disagrees while unsaved and agrees once saved, with explicit
+  `v4Position` assertions proving no address involvement; saving
+  all-zero values produces the exact expected persisted object and
+  flips the UI to "saved").
+- **Validation**: full suite passing (338 files / 4,670 tests) at the
+  time of this batch, independently re-verified against a fresh
+  `origin/main` checkout.
+
+### Traceability audit
+
+Every v1.23.0 claim mapped directly to code/docs/tests, not assumed:
+
+| Claim                                                             | Verified against                                                                                                                                                             |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Comparison direction (`current >= target`) is not invented        | `services/portfolio/safetyTargetsStatus.ts`'s own header comment, citing `docs/03_UI.md` C-007/C-008/C-012/C-013 and the Auto Loop Engine section                            |
+| Dashboard status is never independently recalculated              | `buildSafetyTargetsStatusSummary.test.ts`'s own 6-scenario × 4-field byte-identity evidence test                                                                             |
+| Cross-surface proof finds zero discrepancies                      | `safetyTargetsCrossSurfaceConsistency.test.ts`'s own header comment ("every scenario below is confirmatory, not a repair") and its 8 passing tests                           |
+| Batch 3 changed no production file                                | `git diff 95c2e4e..87cd030 --name-status` shows exactly one (test) file                                                                                                      |
+| Technical Details never shows V3 data for a V4 portfolio          | `AaveTechnicalDetails.test.tsx`'s "never renders V3 protocol identity or live metadata for a V4-configured portfolio" and V3→V4 rerender tests                               |
+| No V4-equivalent metadata was fabricated                          | `AaveTechnicalDetails.tsx`'s own header comment; direct inspection of `stores/aaveV4LiveDataStore.ts`'s `AaveV4LiveDataState` (no network/block/method fields)               |
+| Unsaved vs. saved V4 debt state is visibly distinguishable        | `ManualAaveV4StateForm.test.tsx`'s "shows an explicit 'not saved yet' status" / "shows a 'saved' status for a genuinely persisted all-zero" tests                            |
+| Zero remains valid, never "missing," in both the guard and the UI | `checkAaveV4DebtStateAvailable`/`checkAaveV4CollateralRiskAvailable` (`!== undefined`, not truthiness) unchanged; the same object-presence condition drives the UI indicator |
+| No address required for manual V4 save                            | `ManualAaveV4StateForm.test.tsx`'s explicit `v4Position` assertions across all new tests; `setAaveV4DebtState` has no address dependency                                     |
+| No V3/V4 fallback or calculation mixing introduced                | `git diff v1.22.0..origin/main -- services/portfolio/mapping.ts hooks/useAaveV4LiveSync.ts hooks/useAaveV4CollateralRiskLiveSync.ts` empty                                   |
+| No CSV/export change                                              | `git diff v1.22.0..origin/main -- services/export/` empty                                                                                                                    |
+| No schema/persistence change                                      | `git diff v1.22.0..origin/main -- services/persistence/ types/portfolio.ts types/portfolio.schema.ts` empty                                                                  |
+| No recommendation-engine change                                   | `git diff v1.22.0..origin/main -- services/recommendation/ features/recommendations/` empty                                                                                  |
+| Version metadata                                                  | `package.json`, `engine/shared/result.ts`, `services/persistence/envelope.ts` — all confirmed `1.23.0` this batch                                                            |
+
+**No claim in this release's own batch reports could not be verified
+against the actual repository.**
+
+### Documentation reconciled this batch
+
+Following the same "change a document only when the release materially
+changes what it should say" discipline every prior reconciliation batch
+used:
+
+- **`docs/CHANGELOG.md`**: "Version metadata" table's Application/Engine
+  version rows, Formula/Storage-schema-version descriptions, and
+  Sign-off-date rows updated to `1.23.0`; a new "Why the Application/
+  Engine version is `1.23.0`" paragraph inserted before the `1.22.0`
+  paragraph; a new `[1.23.0]` entry (What's new / What this is not /
+  Explicitly unchanged) inserted before `[1.22.0]`.
+- **`docs/RELEASE_NOTES.md`**: a new `## Version 1.23.0` section added
+  with the `**Current release.**` marker; `## Version 1.22.0` demoted to
+  `## Version 1.22.0 (previous release)` with that marker removed, the
+  same demotion pattern used for every prior release transition.
+- **`PROJECT_STATUS.md`**: this section.
+- **`package.json` `"version"`, `ENGINE_VERSION`
+  (`engine/shared/result.ts`), and `APP_VERSION`
+  (`services/persistence/envelope.ts`)**: all three moved from `1.22.0`
+  to `1.23.0`. `FORMULA_VERSION` (`1.0`) and `STORAGE_SCHEMA_VERSION`
+  (`1.0.0`) are unchanged.
+
+`docs/USER_GUIDE.md` was freshly re-checked this batch (its one existing
+"Safety Targets" mention, in the CSV-exports bullet, remains accurate
+and unaffected by this release) and found to need no update — describing
+the new Safety Targets Status panels is additive documentation, not a
+correction of something this release makes stale, and per this
+project's own precedent (`v1.22.0` Batch 3 was its own separate,
+explicitly-scoped User Guide batch, never folded into a reconciliation
+batch itself), a User Guide addition for this feature — if wanted — is
+left for a future, separately-scoped batch, not invented here.
+`docs/STARTING_VALUE_BASELINE_SPEC.md`,
+`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`, and every other frozen
+specification document are all left completely untouched — nothing in
+this release supersedes or contradicts any of them.
+
+`docs/KNOWN_ISSUES.md`, `docs/PRODUCTION_READINESS.md`,
+`docs/DEPLOYMENT_DISPOSITION.md`, `docs/MAINTENANCE_SCHEDULE.md`,
+`docs/OPERATIONAL_RUNBOOK.md`, `README.md`, and `docs/VERSION_2_BACKLOG.md`
+were freshly re-checked via direct grep for `1.22.0`/`1.23.0` this batch
+and found to need no update: zero matches for either literal in any of
+the seven files, so none makes a version-specific claim this release
+could make stale.
+
+### Known/deferred work audit
+
+Re-verified against current `PROJECT_STATUS.md`/spec-doc text this
+batch, not resurrected from memory — every item below remains genuinely
+open, none resolved by `v1.23.0`:
+
+- **Health Factor risk-band classification (Conflict #1)** — still open;
+  the documented bands still disagree across README.md/`01_PRD.md`
+  REQ-001/REQ-005/`02_Formulas.md` F-026/F-060.
+- **F-065 "Interest Warning"** — still deferred; no "Expected Annual
+  Portfolio Growth" figure exists anywhere in `02_Formulas.md`.
+- **F-067 "Simple Portfolio Score"** — still deferred (Conflict #12);
+  documented weights exist, no per-component 0–100 conversion formula.
+- **Exit Readiness Formula-ID gap (Conflict #11)** — still unmapped; no
+  Formula ID in the Recommendation Engine chapter names "Exit
+  readiness."
+- **Quantified Impact for Safety Targets / Borrow / Loop** — still a
+  gap, unaffected by this release; Safety Targets remain configured
+  inputs, now with a status comparison, but still never evaluated into
+  a before/after impact figure or a recommendation.
+- **Apply to Portfolio for Safety Targets / Borrow / Loop** — still a
+  gap, same underlying cause, unaffected by this release.
+- **Cost basis / P&L / total return / cumulative-realized interest** —
+  still permanently deferred; no acquisition-price/transaction-lot
+  mechanism exists anywhere in this application, unaffected by this
+  release.
+- **Settings About / Conflict #39** — still unresolved; License, Data
+  Provider, and Last Synchronization remain undisplayed in Settings'
+  About section, unaffected by this release.
+- **Cloud Database / Cloud Sync** — still cancelled by explicit product
+  decision (Milestone 8), not deferred, not revisited.
+- **Operated production deployment/monitoring under Path B** — still
+  deferred; no live deployment exists, unaffected by this release.
+- **Aave V4 live network/block/method verification data** — genuinely
+  does not exist yet (no boundary in this codebase produces it); this
+  release's Technical Details fix states that absence honestly rather
+  than closing the gap.
+
+No item above was silently resolved, removed, or resurrected as newly
+discovered — each is exactly where the most recent prior reconciliation
+left it. This release resolves none of the unresolved Recommendation
+Engine formula/spec blockers listed above — Safety Targets gain a status
+comparison, never an evaluated recommendation.
+
+### Release scope audit
+
+Explicitly verified across the entire `v1.22.0..origin/main` diff, not
+assumed:
+
+- **No Engine behavior/formula change** — `git diff v1.22.0..origin/main
+-- engine/` returns empty output.
+- **No V3 semantic change, no V4 semantic change, no Aave-adapter
+  change** — `git diff v1.22.0..origin/main -- services/portfolio/mapping.ts
+hooks/useAaveV4LiveSync.ts hooks/useAaveV4CollateralRiskLiveSync.ts`
+  returns empty output; the Technical Details fix adds a display prop
+  only, never a new calculation path.
+- **No persistence-schema change** — `git diff v1.22.0..origin/main --
+services/persistence/ types/portfolio.ts types/portfolio.schema.ts`
+  returns empty output; every Safety Targets value this release presents
+  was already persisted before this release, and the Aave V4 fixes
+  persist nothing.
+- **No recommendation-semantic change** — `git diff v1.22.0..origin/main
+-- services/recommendation/ features/recommendations/` returns empty
+  output; Safety Targets are compared, never evaluated, by this release.
+- **No CSV/JSON exporter change** — `git diff v1.22.0..origin/main --
+services/export/` returns empty output; the cross-surface proof reads
+  the existing exporter, never modifies it.
+- **Historical V3 snapshots remain correctly distinguishable from
+  current V4 state** — `app/portfolio/PortfolioHistoryPanel.tsx` (its
+  own `v1.13.0` "Protocol-Version Provenance Badge" design: each entry
+  carries its own persisted `entry.protocolVersion`, never inferred from
+  the portfolio's current setting) is untouched by this release; not
+  itself part of the diff, confirmed unaffected by direct inspection
+  during the pre-release diagnostic pass.
+- **Cloud/deployment status unchanged** — `docs/PRODUCTION_READINESS.md`,
+  `docs/DEPLOYMENT_DISPOSITION.md`, and `docs/MAINTENANCE_SCHEDULE.md`
+  are all untouched by this release (confirmed above).
+
+**Result matches the expected shape**: v1.23.0 is principally Safety
+Targets status visibility (Portfolio panel, Dashboard summary,
+cross-surface consistency proof) plus two display-only Aave V4
+correctness/clarity fixes, exactly as scoped. Repository evidence does
+not contradict that expectation at any point in this diff.
+
+### Final release assessment
+
+**READY TO TAG v1.23.0.** All 18 changed files inspected directly; every
+batch's own claim verified against real code/tests/docs, not assumed;
+full suite passing (338 files / 4,670 tests — re-verified fresh in this
+reconciliation batch, see Validation below) at the reconciliation
+baseline; no unresolved blocker; no historical artifact silently
+rewritten; no known/deferred item silently resolved or resurrected;
+version metadata consistent across `package.json`/`ENGINE_VERSION`/
+`APP_VERSION`. No known non-blocking limitation beyond the
+already-documented, unaffected deferred items above.
+
+---
+
 ## v1.22.0 Release Reconciliation — Portfolio CSV Export Completeness, Part 2 — Safety Targets + User Guide Accuracy
 
 **Recorded after the fact, the same convention every release-
