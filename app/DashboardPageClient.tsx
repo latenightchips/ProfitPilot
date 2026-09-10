@@ -18,6 +18,7 @@ import {
   buildQuickActions,
   buildRecommendationSummary,
   buildRiskWarnings,
+  buildSafetyTargetsStatusSummary,
   buildStartingValueBaselineSummary,
   CollateralQuantityTrendSection,
   CollateralValueTrendSection,
@@ -45,6 +46,7 @@ import {
   QuickActionsSection,
   RecommendationSummarySection,
   RiskWarningBanner,
+  SafetyTargetsStatusSection,
   StartingValueBaselineSection,
   SupplyAprTrendSection,
 } from '@/features/dashboard';
@@ -445,6 +447,8 @@ export function DashboardPageClient() {
   const leverageSummary = summary !== null ? buildLeverageSummary(summary) : null;
   const startingValueBaselineSummary =
     record !== undefined ? buildStartingValueBaselineSummary(record.portfolio) : null;
+  const safetyTargetsStatusSummary =
+    record !== undefined ? buildSafetyTargetsStatusSummary(record.portfolio, record.summary) : null;
   const dataFreshnessIndicators =
     viewModel !== null && record !== undefined
       ? buildDataFreshnessIndicators(viewModel.freshness, record.portfolio.protocolVersion)
@@ -554,6 +558,10 @@ export function DashboardPageClient() {
 
                 {startingValueBaselineSummary !== null && (
                   <StartingValueBaselineSection summary={startingValueBaselineSummary} />
+                )}
+
+                {safetyTargetsStatusSummary !== null && (
+                  <SafetyTargetsStatusSection summary={safetyTargetsStatusSummary} />
                 )}
               </section>
 
