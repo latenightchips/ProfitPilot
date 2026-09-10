@@ -53,14 +53,14 @@ describe('LoopSafetyAnalysis — empty state', () => {
 });
 
 describe('LoopSafetyAnalysis — a healthy, viable strategy', () => {
-  it('shows No for both Minimum Health Factor Reached and Maximum LTV Reached', () => {
+  it('shows No for both Minimum Health Factor Too Low and Maximum LTV Reached', () => {
     useLoopBuilderStore
       .getState()
       .setSettings({ targetBorrowPercentage: 0.5, maxLoops: 3, minHealthFactor: 1.1 });
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopSafetyAnalysis portfolio={validPortfolio()} />);
-    expect(screen.getByText('Minimum Health Factor Reached').nextElementSibling?.textContent).toBe(
+    expect(screen.getByText('Minimum Health Factor Too Low').nextElementSibling?.textContent).toBe(
       'No',
     );
     expect(screen.getByText('Maximum LTV Reached').nextElementSibling?.textContent).toBe('No');
@@ -132,7 +132,7 @@ describe('LoopSafetyAnalysis — a healthy, viable strategy', () => {
 });
 
 describe('LoopSafetyAnalysis — a triggered safety finding', () => {
-  it('shows Yes for Minimum Health Factor Reached when a real finding is triggered', () => {
+  it('shows Yes for Minimum Health Factor Too Low when a real finding is triggered', () => {
     useLoopBuilderStore.getState().setSettings({
       targetBorrowPercentage: 0.5,
       maxLoops: 3,
@@ -141,9 +141,71 @@ describe('LoopSafetyAnalysis — a triggered safety finding', () => {
     useLoopBuilderStore.getState().runLoopStrategy(validPortfolio());
 
     render(<LoopSafetyAnalysis portfolio={validPortfolio()} />);
-    expect(screen.getByText('Minimum Health Factor Reached').nextElementSibling?.textContent).toBe(
+    expect(screen.getByText('Minimum Health Factor Too Low').nextElementSibling?.textContent).toBe(
       'Yes',
     );
+  });
+});
+
+/**
+ * v1.23.0 validation pass — reported UI semantic inconsistency: a viable
+ * Aggressive-preset strategy (70% borrow/loop, 5 max loops, 1.50 minimum
+ * Health Factor, 80% collateral factor/liquidation threshold) executes 2
+ * loops and stops with a resulting Health Factor of ~1.57 because a THIRD
+ * loop's prospective Health Factor would have breached 1.50 —
+ * `calculateLoopStrategy.ts`'s own documented "stops (without committing
+ * the breaching step)" behavior, confirmed mathematically correct and
+ * unchanged by this fix (verified directly against the real Engine
+ * function before writing this test — see this batch's own report).
+ * "Stop Reason: Minimum Health Factor reached" (the OLD wording) sat
+ * directly next to "Minimum Health Factor Reached: No" (the OLD wording)
+ * — both individually accurate but reading as a contradiction, since
+ * `MINIMUM_HEALTH_FACTOR` (this row) and `MIN_HEALTH_FACTOR_REACHED`
+ * (Stop Condition) describe two unrelated things: whether the
+ * *configured* floor is itself unsafe (this row), versus whether
+ * execution stopped because the *next* loop would have breached it (Stop
+ * Condition). This test proves the fixed wording states both facts
+ * without appearing to conflict, for exactly this real reported scenario.
+ */
+describe('LoopSafetyAnalysis — reported boundary case: viable 2-step strategy stopped by a valid, safely-configured minimum (v1.23.0 validation pass)', () => {
+  it('shows "No" for Minimum Health Factor Too Low alongside a Stop Condition that names the NEXT loop, never the word "reached" for both at once', () => {
+    useLoopBuilderStore.getState().setSettings({
+      targetBorrowPercentage: 0.7,
+      maxLoops: 5,
+      minHealthFactor: 1.5,
+    });
+    const portfolio = validPortfolio({
+      protocol: {
+        maxLoanToValue: 0.8,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+    useLoopBuilderStore.getState().runLoopStrategy(portfolio);
+
+    const strategy = useLoopBuilderStore.getState().currentResult?.strategy;
+    // Confirms the mathematical premise this UI-wording fix depends on,
+    // reproducing the exact report: 2 committed loops, stopped before a
+    // 3rd, resulting Health Factor safely above the configured minimum.
+    expect(strategy?.steps).toHaveLength(2);
+    expect(strategy?.stopReason).toBe('MIN_HEALTH_FACTOR_REACHED');
+    expect(strategy?.finalHealthFactor).toBeGreaterThan(1.5);
+    expect(strategy?.finalHealthFactor).toBeCloseTo(1.568, 3);
+
+    render(<LoopSafetyAnalysis portfolio={portfolio} />);
+
+    // The configured minimum (1.5) is itself a valid, safe floor — this
+    // row must read "No", regardless of why execution stopped.
+    expect(screen.getByText('Minimum Health Factor Too Low').nextElementSibling?.textContent).toBe(
+      'No',
+    );
+
+    // The Stop Condition must name the NEXT loop, never claim the
+    // resulting/current Health Factor itself "reached" anything.
+    const stopConditionText = screen.getByText('Stop Condition').nextElementSibling?.textContent;
+    expect(stopConditionText).toBe('Next loop would breach Minimum Health Factor');
+    expect(stopConditionText).not.toMatch(/reached/i);
   });
 });
 

@@ -118,7 +118,9 @@ test('Cover: Minimum Health Factor stop (M7-041)', async ({ page }) => {
   await fillByLabel(page, 'Maximum Number of Loops', '10');
   await page.waitForTimeout(300);
 
-  await expect(page.getByText('Minimum Health Factor reached').first()).toBeVisible();
+  await expect(
+    page.getByText('Next loop would breach Minimum Health Factor').first(),
+  ).toBeVisible();
 });
 
 test('Cover: Cost calculations (M7-041)', async ({ page }) => {

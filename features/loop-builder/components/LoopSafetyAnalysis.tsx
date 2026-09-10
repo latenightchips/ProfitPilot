@@ -25,7 +25,9 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  *
  * **6 of the 7 named Display items map directly to already-real,
  * already-computed data — zero new Formula Engine logic.**
- * "Minimum Health Factor reached"/"Maximum LTV reached" read directly
+ * "Minimum Health Factor reached" (rendered below as "Minimum Health
+ * Factor Too Low" — see this component's own wording note further
+ * down)/"Maximum LTV reached" read directly
  * from `currentResult.findings` (`LoopSafetyFinding[]`,
  * `validateLoopStrategySafety`, M2-018) for the matching `check` value —
  * the same array `stores/loopBuilderStore.ts`'s own `toStrategyWarning`
@@ -75,10 +77,33 @@ import { stopReasonLabel } from '../utils/stopReasonLabel';
  * `V4_LOOP_BORROW_RISK_PREMIUM_UNKNOWN_MESSAGE` instead of a bare "—"
  * for a real new V4 borrow**, since `buildFinalLoopPortfolio` now omits
  * `v4DebtState` for that case (see its own header comment). "Minimum
- * Health Factor Reached"/"Maximum LTV Reached" are unaffected — both
+ * Health Factor Too Low"/"Maximum LTV Reached" are unaffected — both
  * come from `currentResult.findings`, computed by the Engine's own
  * per-step strategy simulation, never by re-summarizing the final
  * portfolio a second time the way "Distance to Liquidation" does.
+ *
+ * **"Minimum Health Factor Too Low" wording (v1.23.0 validation pass;
+ * renamed from "Minimum Health Factor Reached").** The `MINIMUM_HEALTH_FACTOR`
+ * check (`validateLoopStrategySafety.ts`) verifies only whether the
+ * *configured* `minHealthFactor` input is itself `<= 1.0` — the same
+ * liquidation-boundary input-validity check `LIQUIDATION_PROXIMITY`
+ * performs for the starting position, never a re-check of what the
+ * strategy's execution actually did. It is unrelated to whether any
+ * step's resulting Health Factor ever approached that floor, and
+ * unrelated to `LoopStrategyResult.stopReason`'s own
+ * `MIN_HEALTH_FACTOR_REACHED` (a genuinely different, execution-outcome
+ * concept: "a prospective next step would have breached the floor, so
+ * it was never committed" — see `stopReasonLabel.ts`'s own header
+ * comment). The previous "Minimum Health Factor Reached" label shared
+ * the word "reached" with that unrelated Stop Reason/Stop Condition
+ * display, which read as though both described the same fact — a
+ * confirmed source of confusion (a viable strategy that stopped because
+ * its next loop would have breached a perfectly valid, safely-configured
+ * minimum showed "Stop Reason: Minimum Health Factor reached" right next
+ * to "Minimum Health Factor Reached: No", both accurate on their own
+ * terms but reading as a contradiction). Renamed to describe the actual
+ * check: is the number you configured itself too low to be a safe
+ * floor.
  */
 function findingActive(
   findings: { check: string }[],
@@ -112,7 +137,7 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
     }
   }
 
-  const minHealthFactorReached = findingActive(currentResult.findings, 'MINIMUM_HEALTH_FACTOR');
+  const minHealthFactorTooLow = findingActive(currentResult.findings, 'MINIMUM_HEALTH_FACTOR');
   const maximumLtvReached = findingActive(currentResult.findings, 'MAXIMUM_LTV');
   // V4 semantic audit, Batch 2 (A1) — `finding.check === 'MAXIMUM_LTV'` is
   // an internal Engine check name (unchanged; not a display string), but
@@ -123,11 +148,11 @@ export function LoopSafetyAnalysis({ portfolio }: { portfolio: ApplicationPortfo
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex items-center justify-between">
-        <span className="text-muted-foreground">Minimum Health Factor Reached</span>
+        <span className="text-muted-foreground">Minimum Health Factor Too Low</span>
         <span
-          className={`font-medium ${minHealthFactorReached ? 'text-destructive' : 'text-foreground'}`}
+          className={`font-medium ${minHealthFactorTooLow ? 'text-destructive' : 'text-foreground'}`}
         >
-          {minHealthFactorReached ? 'Yes' : 'No'}
+          {minHealthFactorTooLow ? 'Yes' : 'No'}
         </span>
       </div>
       <div className="flex items-center justify-between">
