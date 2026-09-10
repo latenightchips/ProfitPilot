@@ -114,6 +114,24 @@ import { aaveV4CollateralRiskConfigSchema, aaveV4DebtStateSchema } from '@/types
  * from. The field-level hint text next to `baseDrawnApr` alone
  * distinguishes "still the live market rate" from "you've edited it,"
  * without claiming the group as a whole is anything other than manual.
+ *
+ * **"Not saved yet" indicator (v1.23.0 pre-release bugfix).** Confirmed
+ * diagnosis: `defaultValues` above falls back to `?? 0` for `drawnDebt`/
+ * `premiumDebt`/`riskPremium` whenever `portfolio.v4DebtState` is
+ * `undefined`, and `baseDrawnApr` separately pre-fills from a real live
+ * fetch — together these make a completely empty, never-saved form look
+ * exactly like a genuinely persisted all-zero `v4DebtState`, even though
+ * `calculatePortfolioSummary`'s own `checkAaveV4DebtStateAvailable`
+ * guard (`services/portfolio/mapping.ts`) correctly still reports the
+ * data as unavailable. `ManualDebtStateForm` now renders a `role="status"`
+ * line derived directly from `portfolio.v4DebtState === undefined` —
+ * the exact same object-presence condition that guard itself checks, so
+ * this indicator can never disagree with the calculation's own fail-closed
+ * behavior. This is display-only: it reads no new field, writes nothing,
+ * and does not change what counts as "missing" for any guard, schema, or
+ * calculation — a genuinely saved `{ drawnDebt: 0, premiumDebt: 0,
+ * riskPremium: 0, ... }` is unaffected and reported as saved, exactly as
+ * before this fix.
  */
 function fromPercentInput(percent: number): number {
   return percent / 100;
@@ -281,9 +299,16 @@ function ManualDebtStateForm({
     }
   });
 
+  const isUnsaved = portfolio.v4DebtState === undefined;
+
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-2">
       <p className="text-xs font-medium text-foreground">Debt assumptions</p>
+      <p role="status" className="text-xs text-muted-foreground">
+        {isUnsaved
+          ? 'Not saved yet — the values below are unsaved defaults, not your portfolio’s data. Fill them in and press Save to persist an assumption (including all-zero).'
+          : 'Showing your saved Aave V4 debt assumptions.'}
+      </p>
       <label className="flex flex-col gap-1 text-sm">
         <span>
           Drawn debt <RequiredMark />

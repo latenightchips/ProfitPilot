@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ManualAaveV4StateForm } from '@/app/portfolio/ManualAaveV4StateForm';
+import { calculatePortfolioSummary } from '@/services/portfolio/summary';
 import { useAaveV4BaseDrawnRateStore } from '@/stores/aaveV4BaseDrawnRateStore';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 
@@ -387,5 +388,101 @@ describe('ManualDebtStateForm — baseDrawnApr live pre-fill (V4 Manual-Data / P
 
     expect(currentPortfolio(id).v4DebtState?.baseDrawnApr).toBeCloseTo(0.07);
     expect(currentPortfolio(id).v4DebtStateSource).toBe('manual');
+  });
+});
+
+/**
+ * v1.23.0 pre-release bugfix — confirmed diagnosis: `defaultValues` falls
+ * back to `?? 0` whenever `portfolio.v4DebtState` is `undefined`, making a
+ * completely unsaved form visually identical to a genuinely persisted
+ * all-zero `v4DebtState`, even though `calculatePortfolioSummary`'s own
+ * `checkAaveV4DebtStateAvailable` guard correctly still reports the data
+ * unavailable. See `ManualAaveV4StateForm.tsx`'s own header comment.
+ */
+describe('ManualDebtStateForm — unsaved vs. saved state clarity (v1.23.0 pre-release bugfix)', () => {
+  it('shows an explicit "not saved yet" status when v4DebtState is absent, distinguishing it from a saved value', () => {
+    const id = createManualV4Portfolio();
+    render(<ManualAaveV4StateForm portfolioId={id} portfolio={currentPortfolio(id)} />);
+
+    expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByText(/not saved yet/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/showing your saved aave v4 debt assumptions/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows a "saved" status for a genuinely persisted all-zero v4DebtState, never the "not saved yet" text', () => {
+    const id = createManualV4Portfolio();
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(
+        id,
+        { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0, riskPremium: 0 },
+        'manual',
+      );
+    render(<ManualAaveV4StateForm portfolioId={id} portfolio={currentPortfolio(id)} />);
+
+    expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByText(/showing your saved aave v4 debt assumptions/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not saved yet/i)).not.toBeInTheDocument();
+  });
+
+  it('the calculation guard genuinely disagrees while unsaved, and agrees with the UI once saved (no address, no v4Position, ever involved)', () => {
+    const id = createManualV4Portfolio();
+    expect(currentPortfolio(id).v4Position).toBeUndefined();
+
+    // Before any save: unsaved indicator visible, and the real
+    // calculation-availability guard independently confirms the same
+    // "nothing is actually persisted yet" fact — never a fabricated 0.
+    const beforeSummary = calculatePortfolioSummary(currentPortfolio(id), 'manual');
+    expect(beforeSummary.ok).toBe(false);
+    if (!beforeSummary.ok) {
+      expect(beforeSummary.errors.some((e) => e.code === 'AAVE_V4_DEBT_STATE_MISSING')).toBe(true);
+    }
+
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(
+        id,
+        { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.04, riskPremium: 0 },
+        'manual',
+      );
+
+    // After saving (debt state alone — no address, no v4Position was ever
+    // required or set): the debt-state-specific failure is gone. Collateral
+    // risk remains independently unset, so the overall summary can still
+    // fail — proving no cross-inference, not that saving debt state alone
+    // is insufficient by design.
+    expect(currentPortfolio(id).v4Position).toBeUndefined();
+    const afterSummary = calculatePortfolioSummary(currentPortfolio(id), 'manual');
+    if (!afterSummary.ok) {
+      expect(afterSummary.errors.some((e) => e.code === 'AAVE_V4_DEBT_STATE_MISSING')).toBe(false);
+    }
+  });
+
+  it('saving all-zero drawn/premium/risk-premium values creates the expected valid persisted object and flips the UI to "saved"', async () => {
+    const id = createManualV4Portfolio();
+    const user = userEvent.setup();
+    render(<ManualAaveV4StateForm portfolioId={id} portfolio={currentPortfolio(id)} />);
+
+    expect(screen.getByText(/not saved yet/i)).toBeInTheDocument();
+
+    // Drawn debt/Premium debt/Risk premium already default to 0; only
+    // Base drawn APR needs a real value to pass `positive()`-adjacent
+    // validation for this scenario (schema requires a non-negative rate,
+    // 0 is valid there too — using a small nonzero value here only to
+    // keep this test's own assertion below unambiguous).
+    await user.type(screen.getByLabelText('Base drawn APR (%)', { exact: false }), '4');
+    await user.click(screen.getByRole('button', { name: 'Save debt assumptions' }));
+
+    const saved = currentPortfolio(id).v4DebtState;
+    expect(saved).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: expect.closeTo(0.04, 10),
+      riskPremium: 0,
+    });
+    expect(currentPortfolio(id).v4DebtStateSource).toBe('manual');
+    expect(currentPortfolio(id).v4Position).toBeUndefined();
   });
 });

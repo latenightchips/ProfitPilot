@@ -1943,7 +1943,7 @@ export function PortfolioPageClient() {
             portfolioId={activePortfolioId}
             portfolio={record.portfolio}
           />
-          <AaveTechnicalDetails />
+          <AaveTechnicalDetails protocolVersion={record.portfolio.protocolVersion} />
         </div>
       )}
     </div>
