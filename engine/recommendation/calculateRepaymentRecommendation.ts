@@ -92,7 +92,9 @@ export function calculateRepaymentRecommendation(
         requiredRepayment: repaymentResult.value,
         estimatedBtcRequired: btcRequiredResult.value,
       },
-      expectedEffect: `Repaying ${repaymentResult.value} would bring Health Factor to approximately ${targetHealthFactor}.`,
+      expectedEffect: noRepaymentNeeded
+        ? 'No repayment is needed — the portfolio already satisfies the target Health Factor.'
+        : `Repaying ${repaymentResult.value} would bring Health Factor to approximately ${targetHealthFactor}.`,
       decisionPriority: 'Maintain Target Health Factor',
       suggestedAction: noRepaymentNeeded
         ? 'No repayment needed.'

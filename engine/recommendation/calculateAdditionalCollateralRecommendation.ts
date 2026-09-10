@@ -113,7 +113,9 @@ export function calculateAdditionalCollateralRecommendation(
         requiredUsd: toOutputNumber(requiredUsd),
         equivalentBtc: toOutputNumber(equivalentBtc),
       },
-      expectedEffect: `Adding ${toOutputNumber(requiredUsd)} in collateral would bring Health Factor to approximately ${expectedHealthFactor}.`,
+      expectedEffect: noAdditionalCollateralNeeded
+        ? 'No additional collateral is needed — the portfolio already satisfies the target Health Factor.'
+        : `Adding ${toOutputNumber(requiredUsd)} in collateral would bring Health Factor to approximately ${expectedHealthFactor}.`,
       decisionPriority: 'Maintain Target Health Factor',
       suggestedAction: noAdditionalCollateralNeeded
         ? 'No additional collateral needed.'

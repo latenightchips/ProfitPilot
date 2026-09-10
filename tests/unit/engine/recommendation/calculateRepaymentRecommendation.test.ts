@@ -41,6 +41,11 @@ describe('calculateRepaymentRecommendation (M2-025, F-062)', () => {
     expect(result.value.relevantValues.requiredRepayment).toBe(12000);
     expect(result.value.relevantValues.estimatedBtcRequired).toBeCloseTo(0.2, 8);
     expect(result.value.formulaReferences).toEqual(['F-062', 'F-040', 'F-041', 'F-042']);
+    // Actionable case — expectedEffect wording is unchanged by the
+    // no-action-needed wording fix below.
+    expect(result.value.expectedEffect).toBe(
+      'Repaying 12000 would bring Health Factor to approximately 2.',
+    );
   });
 
   it('reports no repayment needed when already above the target', () => {
@@ -50,6 +55,13 @@ describe('calculateRepaymentRecommendation (M2-025, F-062)', () => {
 
     expect(result.value.relevantValues.requiredRepayment).toBe(0);
     expect(result.value.suggestedAction).toBe('No repayment needed.');
+    // expectedEffect must semantically agree with suggestedAction — never
+    // claim that repaying $0 would improve or reach the target Health
+    // Factor (the presentation-only bug this test guards against).
+    expect(result.value.expectedEffect).toBe(
+      'No repayment is needed — the portfolio already satisfies the target Health Factor.',
+    );
+    expect(result.value.expectedEffect).not.toMatch(/would bring|approximately/);
   });
 
   it('propagates a failure from a non-positive target Health Factor', () => {

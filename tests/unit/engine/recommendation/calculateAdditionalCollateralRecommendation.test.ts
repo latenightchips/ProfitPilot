@@ -41,6 +41,11 @@ describe('calculateAdditionalCollateralRecommendation (M2-025, F-063)', () => {
     expect(result.value.relevantValues.requiredUsd).toBe(15000);
     expect(result.value.relevantValues.equivalentBtc).toBeCloseTo(0.25, 8);
     expect(result.value.formulaReferences).toEqual(['F-063', 'F-022']);
+    // Actionable case — expectedEffect wording is unchanged by the
+    // no-action-needed wording fix below.
+    expect(result.value.expectedEffect).toBe(
+      'Adding 15000 in collateral would bring Health Factor to approximately 1.',
+    );
   });
 
   it('reports no additional collateral needed when already above the target', () => {
@@ -52,6 +57,13 @@ describe('calculateAdditionalCollateralRecommendation (M2-025, F-063)', () => {
 
     expect(result.value.relevantValues.requiredUsd).toBe(0);
     expect(result.value.suggestedAction).toBe('No additional collateral needed.');
+    // expectedEffect must semantically agree with suggestedAction — never
+    // claim that adding $0 collateral would improve or reach the target
+    // Health Factor (the presentation-only bug this test guards against).
+    expect(result.value.expectedEffect).toBe(
+      'No additional collateral is needed — the portfolio already satisfies the target Health Factor.',
+    );
+    expect(result.value.expectedEffect).not.toMatch(/would bring|approximately/);
   });
 
   it('propagates a failure from a non-positive target Health Factor', () => {
