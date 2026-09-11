@@ -62,6 +62,46 @@ each axis follows going forward, not just its current value.
 | Sign-off completed (1.21.0)    | 2026-09-09     | Portfolio CSV Export Field Completeness — Batch 1 (Starting-Value Baseline CSV Columns), Batch 2 (Recommendation Preferences CSV Columns), and Batch 3 (CSV/JSON Cross-Export Consistency Proof — test-only, zero production diff), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4594/4594 tests passing) — see `PROJECT_STATUS.md`'s "v1.21.0 Release Reconciliation" section and the `[1.21.0]` entry below. Same promotion pattern as `1.20.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.22.0)    | 2026-09-09     | Portfolio CSV Export Completeness, Part 2 — Safety Targets + User Guide Accuracy — Batch 1 (Safety Targets CSV Columns), Batch 2 (Safety Targets CSV/JSON Cross-Export Consistency Proof — test-only, zero production diff), and Batch 3 (User Guide Accuracy Pass — documentation-only), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4607/4607 tests passing) — see `PROJECT_STATUS.md`'s "v1.22.0 Release Reconciliation" section and the `[1.22.0]` entry below. Same promotion pattern as `1.21.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
 | Sign-off completed (1.23.0)    | 2026-09-10     | Safety Targets Status Visibility + Aave V4 Correctness Fixes — Batch 1 (Portfolio Page Safety Targets Status Panel), Batch 2 (Dashboard Safety Targets Status Integration), Batch 3 (Safety Targets Cross-Surface Consistency Proof — test-only, zero production diff), and a pre-release bugfix (Aave V4 Technical Details & Unsaved Manual-State Clarity), each independently re-validated against a fresh `origin/main` checkout after patch apply (final count 4670/4670 tests passing at the bugfix batch; see this reconciliation's own re-run below) — see `PROJECT_STATUS.md`'s "v1.23.0 Release Reconciliation" section and the `[1.23.0]` entry below. Same promotion pattern as `1.22.0`'s own row above, not a fresh manual exploratory RC pass. Also not a deployment date. |
+| Sign-off completed (1.24.0)    | 2026-09-11     | Post-`v1.23.0` Release Reconciliation — eight independent fix/hardening/cleanup commits applied directly to `main` (Loop Builder minimum-HF wording fix, Loop Builder raw warning-identifier cleanup, Recommendations `expectedEffect` wording fix, Portfolio History protocol-switch snapshot fix, Portfolio Creation V4 provenance fix, Portfolio Creation V4 phantom-history-entry fix, consolidated Aave V4 regression hardening — test-only, zero production diff, and Dashboard/Portfolio History Trends removal), re-validated against a fresh `origin/main` checkout in this reconciliation batch itself (325 files / 4,479 tests passing) — see `PROJECT_STATUS.md`'s "v1.24.0 Release Reconciliation" section and the `[1.24.0]` entry below. Not a fresh Milestone-9/V1.1-style Release Candidate process — a reconciliation of already-applied, already-independently-tested commits into a version boundary, the same promotion pattern every row above already uses. Also not a deployment date. |
+
+**Why the Application/Engine version is `1.24.0`, not `1.23.x` or a new
+`2.0.0`**: not a PATCH — while six of the eight commits are, individually,
+exactly the kind of "genuine defect found... fixed with a regression
+test" this project's PATCH definition names (`docs/VERSIONING_STRATEGY.md`),
+the Trends removal commit is not: it deletes an entire, previously
+user-visible presentation layer (14 Dashboard `*TrendSection` components,
+the Dashboard's five-group-to-four-group Information Architecture change
+v1.15.0 itself introduced, and Portfolio History's own multi-metric chart
+selector) — a deliberate, user-facing product decision, not a "genuine
+defect... documentation correction... dependency/security patch," and
+PATCH's own definition explicitly excludes "UI redesign." Bundling that
+decision with six real fixes and one test-only hardening batch keeps the
+whole release above PATCH, on the same "new user-facing capability and
+correctness fixes, not merely internal cleanup" bar every prior MINOR
+bump already used — here, a user-facing *removal* rather than an
+*addition*, the first of either kind since sign-off, but a deliberate
+product-level presentation change either way. Not a new MAJOR either, on
+the same concrete checklist every prior "why not MAJOR" paragraph in this
+table's own history below actually applies (not merely the *idea* of
+"was anything removed," a criterion no prior release ever had occasion to
+apply because nothing had ever been removed before this one):
+`STORAGE_SCHEMA_VERSION` stays `1.0.0` (Portfolio History's recording,
+persistence, materiality/dedup rules, table/card views, deltas, and
+protocol/data-source badges are all byte-for-byte behaviorally unchanged
+— only the supplementary chart above them is gone), `FORMULA_VERSION`
+stays `1.0` (no Formula ID touched — the `engine/recommendation/` wording
+fix changes a string template only, never a computed value; verified:
+every affected function's own `FORMULA_VERSION` constant is untouched in
+the diff), no V3/V4 semantic change (`services/portfolio/mapping.ts`,
+`hooks/useAaveV4LiveSync.ts`, `hooks/useAaveV4CollateralRiskLiveSync.ts`
+all byte-for-byte unchanged), and `services/export/CsvExporter.ts`/
+`JsonExporter.ts` are both byte-for-byte unchanged. The removed
+visualization layer never had its own persisted data or exported
+column — every value any Trend chart ever plotted remains fully readable
+today, in the table/card view it was always duplicated from. See
+`PROJECT_STATUS.md`'s "v1.24.0 Release Reconciliation" section for the
+full batch-by-batch record, including this reconciliation's own explicit
+resolution of the PATCH/MINOR/MAJOR classification question above.
 
 **Why the Application/Engine version is `1.23.0`, not `1.22.x` or a new
 `2.0.0`**: not a PATCH — the Portfolio page gains a new, read-only Safety
@@ -631,6 +671,111 @@ See `docs/USER_GUIDE.md` for the full user-facing list; summarized here:
 - **1 `pnpm audit --prod` finding remains (`sharp`, confirmed unused,
   tracked)**, down from the original full-tree count. See "Post-M10
   hardening (R1/R2)" below.
+
+## [1.24.0] — 2026-09-11
+
+Eight independent commits applied directly to `main` on top of Version
+1.23.0, together reconciled as "Post-v1.23.0 Release Reconciliation":
+Loop Builder minimum-HF wording fix (`10f0c501e80ee2a07e60c2231a5bfd808d3991e4`),
+Loop Builder raw warning-identifier cleanup (`74eabb148fb5ce922c15857839259871991c3b70`),
+Recommendations `expectedEffect` wording fix (`8b426ac9f951868e709710d9a777fd066f45e50e`),
+Portfolio History protocol-switch snapshot fix (`1254b6e7b78b504403474f5c9f53ccd6c8016d79`),
+Portfolio Creation V4 provenance fix (`fb09f38882da030ea721513d76f255d2264de663`),
+Portfolio Creation V4 phantom-history-entry fix (`7e6f877fa73e3bcb617f4547d68215dc2663c371`),
+consolidated Aave V4 regression hardening (`57e15fd8f4eec6fd09017c1ffbc1e03281e6cb70`,
+test-only, zero production diff), and Dashboard/Portfolio History Trends
+removal (`d729a49ed0d0f4f54d290da97c6e19d615e8946e`), plus this
+reconciliation batch itself. Full per-file, per-commit detail lives in
+`PROJECT_STATUS.md`'s "v1.24.0 Release Reconciliation" section; this
+entry summarizes what changed for a user.
+
+### What's new in 1.24.0
+
+**No new feature.** This release is entirely correctness fixes,
+regression-test hardening, and a UI simplification — see "What this is
+not" below.
+
+- **Loop Builder's minimum-Health-Factor wording no longer misstates
+  what stopped the loop.** The safety-analysis copy and the raw
+  `stopReason` identifier surfaced to users are now consistent with each
+  other and with what the loop actually did.
+- **Recommendations no longer show a fabricated numeric outcome when no
+  action is needed.** Previously, the Additional Collateral and
+  Repayment recommendations' own `expectedEffect` text always stated a
+  specific dollar amount and resulting Health Factor, even when the
+  portfolio already met its target and zero collateral/repayment was
+  actually required. It now says plainly "No additional collateral is
+  needed — the portfolio already satisfies the target Health Factor" (or
+  the equivalent for repayment) in that case.
+- **Switching a portfolio's protocol version now reliably records a
+  Portfolio History snapshot.** `setProtocolVersion` and
+  `setAaveV4Position` previously could leave a genuine, material change
+  unrecorded; both now call the same snapshot-attempt path every other
+  portfolio mutation already uses.
+- **Creating a new Aave V4 portfolio no longer mislabels manually-entered
+  debt data as "live."** The V4 creation form's wallet-position and
+  base-drawn-APR provenance are now each judged only by whether *that*
+  field's own live value was actually used, never by whether some other,
+  unrelated field on the same form happened to be untouched.
+- **Creating a new Aave V4 portfolio no longer writes a phantom V3-shaped
+  Portfolio History entry before the real V4 state has synced.** The
+  first genuine snapshot for a new V4 portfolio is now recorded once its
+  real debt/collateral-risk state is known, not from a meaningless
+  interim zero-debt V3 guess.
+- **The Dashboard's "Trends" group and Portfolio History's own
+  multi-metric trend chart are gone.** Every number either ever plotted
+  remains fully visible — in the Dashboard's existing current-value
+  panels, and in Portfolio History's own table and mobile-card views,
+  including every before→after delta, protocol badge, and data-source
+  badge, all unchanged. See "What this is not" below for why this was
+  removed rather than redesigned.
+
+### What this is not
+
+**This is a correctness/hardening/cleanup release, not a new Aave V4
+capability.** No new formula, no new persisted field, no new user
+workflow. It does **not**: add any new financial calculation, add any
+new Portfolio, Loop Builder, Exit Planner, or Simulation input the user
+didn't already have, change what data Aave V4 creation collects or
+requires, or resolve Health Factor risk-band classification
+(Conflict #1), the Exit Readiness Formula ID gap (Conflict #11), the
+F-067 component-formula gap (Conflict #12), the Interest Cost category's
+F-065 gap, cost basis, P&L, total return, or any operated production
+deployment.
+
+**The Trends removal is a deliberate UX simplification, not a data-loss
+change.** A read-only UX audit found every Trend chart metric already
+duplicated a current value already shown elsewhere on the same page,
+with no time axis, tooltip, or current-value emphasis of its own, and
+that Portfolio History's own materiality-gated snapshot model
+(`isMaterialPortfolioHistoryChange`) structurally cannot accumulate
+enough points for most of those charts to show a real trend most of the
+time. Nothing about how history is recorded, persisted, deduplicated, or
+displayed in table/card form changed — only this decorative
+visualization layer, and the now-dead formatters/exports/barrel-re-exports
+that existed solely to feed it, were removed. `recharts` remains a
+dependency: `features/simulation/components/ScenarioCharts.tsx` and
+`ScenarioTimeline.tsx` (Simulation's own What-If comparison charts) are
+genuine, unrelated, unaffected consumers, confirmed by a fresh
+repository-wide search in this reconciliation.
+
+### Explicitly unchanged in 1.24.0
+
+**No financial formula changed, and no Formula ID was assigned.** Every
+`engine/**` file's own `FORMULA_VERSION` constant is untouched; the two
+`engine/recommendation/` files this release touches change only an
+`expectedEffect` string template for the already-existing zero-action
+case, never a computed value. **`STORAGE_SCHEMA_VERSION` stays `1.0.0`**
+— no persisted field was added, changed, or removed anywhere in this
+release (verified: `git diff v1.23.0..HEAD -- services/persistence/
+types/portfolio.ts types/portfolio.schema.ts` returns empty output).
+**No V3/V4 semantic change** — `services/portfolio/mapping.ts`,
+`hooks/useAaveV4LiveSync.ts`, and `hooks/useAaveV4CollateralRiskLiveSync.ts`
+are all byte-for-byte unchanged. **`services/export/CsvExporter.ts` and
+`services/export/JsonExporter.ts` are both byte-for-byte unchanged** —
+the Trends removal never had its own export column to begin with. No
+Simulation, Loop Builder store-level warning *logic*, or Exit Planner
+calculation file was touched — only display text and a test suite.
 
 ## [1.23.0] — 2026-09-10
 

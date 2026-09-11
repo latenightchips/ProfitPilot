@@ -95,21 +95,18 @@ delete a portfolio.)
 Your portfolio's own key numbers at a glance, above a **Data Freshness**
 summary showing your BTC price and protocol parameters' source — live or
 manually entered — when each was last updated, and, for live data,
-whether it's currently Fresh or Stale. Below that, four grouped sections:
+whether it's currently Fresh or Stale. Below that, three grouped sections:
 
 - **Overview**: Health Factor, Loan-to-Value, liquidation price, net
   worth, and other core metrics, plus a read-only **Performance** panel
   showing your starting-value baseline — if one is set — as baseline
   value, current value, and change since baseline. Setting or resetting
   the baseline itself is done on the Portfolio page, not here.
-- **Health & Risk**: your Health Factor status and Liquidation Risk, each
-  with its own historical trend chart.
+- **Health & Risk**: your Health Factor status and Liquidation Risk.
 - **Composition & Debt**: portfolio composition, debt and interest cost,
   and a leverage summary.
-- **Trends**: historical charts for your core metrics, drawn from your
-  saved Portfolio History.
 
-Below the four groups, **Recommended Actions** lists up to four
+Below the three groups, **Recommended Actions** lists up to four
 rule-based suggestions — Repayment, Additional Collateral, Borrow, Loop —
 each with its own category, risk level, explanation, and expected
 effect. If no target Health Factor is set, or your Health Factor already

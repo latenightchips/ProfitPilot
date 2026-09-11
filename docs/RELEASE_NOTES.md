@@ -13,9 +13,101 @@ someone deciding whether and how to run it. See `docs/USER_GUIDE.md` for
 full usage instructions and `docs/CHANGELOG.md` for the complete build
 history and version-metadata record.
 
-## Version 1.23.0
+## Version 1.24.0
 
-**Current release.** Promotes Safety Targets Status Batches 1–3 plus a
+**Current release.** Post-`v1.23.0` Release Reconciliation — eight
+independent commits applied directly to `main`: Loop Builder minimum-HF
+wording fix (`10f0c50`), Loop Builder raw warning-identifier cleanup
+(`74eabb1`), Recommendations `expectedEffect` wording fix (`8b426ac`),
+Portfolio History protocol-switch snapshot fix (`1254b6e`), Portfolio
+Creation V4 provenance fix (`fb09f38`), Portfolio Creation V4
+phantom-history-entry fix (`7e6f877`), consolidated Aave V4 regression
+hardening (`57e15fd`, test-only, zero production diff), and
+Dashboard/Portfolio History Trends removal (`d729a49`) — each built,
+tested, and independently re-verified in the commit that produced it,
+not a fresh Milestone-9/V1.1-style Release Candidate process with its
+own new manual exploratory pass. See `PROJECT_STATUS.md`'s "v1.24.0
+Release Reconciliation" section and `docs/CHANGELOG.md`'s `[1.24.0]`
+entry for the full record. Everything in "Version 1.23.0" and earlier
+below still applies; this section covers only what is new since 1.23.0.
+**Still a self-hostable software release, not a hosted product** — see
+"Deployment" below, unchanged from Version 1.0.0.
+
+### What's new in 1.24.0
+
+**No new feature.** This release is entirely correctness fixes,
+regression-test hardening, and a UI simplification.
+
+- **Loop Builder's minimum-Health-Factor safety-stop wording is now
+  consistent** between its own analysis copy and the raw reason
+  identifier surfaced to users.
+- **Recommendations no longer show a fabricated dollar figure and
+  resulting Health Factor when no action is actually needed.** The
+  Additional Collateral and Repayment recommendations now say plainly
+  that no action is needed in that case, instead of always stating a
+  specific (and, in that case, meaningless) numeric outcome.
+- **Switching a portfolio's protocol version now reliably shows up in
+  Portfolio History.** A genuine, material change from switching
+  protocol version or updating your Aave V4 position could previously
+  go unrecorded; it's now captured the same way every other portfolio
+  change already is.
+- **Creating a new Aave V4 portfolio no longer mislabels manually-typed
+  debt data as "live."** Your wallet-position and base-drawn-APR
+  provenance are now each judged only by what you actually did for that
+  specific field.
+- **Creating a new Aave V4 portfolio no longer writes a meaningless
+  placeholder entry to Portfolio History before your real V4 data has
+  synced.** The first real snapshot for a new V4 portfolio now reflects
+  your actual debt/collateral-risk state, not an interim zero-debt
+  guess.
+- **The Dashboard's "Trends" section and Portfolio History's own trend
+  chart are gone.** A read-only UX audit found every chart metric
+  already duplicated a value shown elsewhere on the same page, with no
+  time axis, tooltip, or current-value emphasis of its own — and that
+  Portfolio History only records a new snapshot on a materially
+  different change, so most of those charts could rarely show a real
+  trend in the first place. Every number is still there: the Dashboard's
+  existing current-value panels are unchanged, and Portfolio History's
+  table and mobile-card views — including every before→after delta,
+  protocol badge, and data-source badge — are exactly as they were.
+
+### What this is not
+
+**This is a correctness/hardening/cleanup release, not a new Aave V4
+capability.** No new formula, no new persisted field, no new user
+workflow, no Engine change (verified: `git diff v1.23.0..HEAD --
+engine/` touches only two files' own output-text template, never a
+computed value or a `FORMULA_VERSION`). It does **not**: add any new
+financial calculation; add any new Portfolio, Loop Builder, Exit
+Planner, or Simulation input you didn't already have; change what data
+Aave V4 creation collects or requires; or resolve Health Factor
+risk-band classification (Conflict #1), the Exit Readiness Formula ID
+gap (Conflict #11), the F-067 component-formula gap (Conflict #12), the
+Interest Cost category's F-065 gap, cost basis, P&L, total return, or
+any operated production deployment.
+
+**Your Portfolio History data is completely unaffected by the Trends
+removal.** Nothing about how history is recorded, persisted,
+deduplicated, or displayed in table/card form changed — only the
+decorative chart layer on top of it is gone. If you exported or relied
+on any value a Trend chart ever showed, it remains exactly as visible
+today in the table/card view it always duplicated.
+
+### Explicitly unchanged in 1.24.0
+
+**No financial formula changed, and no Formula ID was assigned.** Every
+Engine function computes exactly what it did before. **`STORAGE_SCHEMA_VERSION`
+stays `1.0.0`** — no persisted field was added, changed, or removed.
+**No V3/V4 semantic change** — `services/portfolio/mapping.ts`,
+`hooks/useAaveV4LiveSync.ts`, and `hooks/useAaveV4CollateralRiskLiveSync.ts`
+are all untouched. `services/export/CsvExporter.ts` and
+`services/export/JsonExporter.ts` are both untouched — the Trends
+removal never had its own export column to begin with. No Simulation or
+Exit Planner calculation file was touched.
+
+## Version 1.23.0 (previous release)
+
+Promotes Safety Targets Status Batches 1–3 plus a
 pre-release Aave V4 correctness/clarity bugfix on top of Version 1.22.0:
 Batch 1, Portfolio Page Safety Targets Status Panel
 (`edae4d578b88cea34a03efae61b84a90e2b153ab`); Batch 2, Dashboard Safety

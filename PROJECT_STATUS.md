@@ -15833,6 +15833,371 @@ GO for implementation _planning_ (not implementation) — see
 `docs/STARTING_VALUE_BASELINE_SPEC.md` §16 for the acceptance criteria a
 future implementation batch should build against.
 
+## v1.24.0 Release Reconciliation — Post-v1.23.0 Correctness, Hardening & Trends Removal
+
+**Recorded after the fact, the same convention every release-
+reconciliation section above uses** — unlike every prior reconciliation
+in this document, the eight commits this section reconciles were not
+produced as sequenced "Batch 1/2/3" work inside a single planned
+release; each was authorized, implemented, and independently delivered
+as its own patch across several separate working sessions, then applied
+directly to `main` by the human maintainer as each was approved. This
+section is the first point at which they are reconciled together into
+one version boundary — Loop Builder Minimum-HF Wording Fix
+(`10f0c501e80ee2a07e60c2231a5bfd808d3991e4`), Loop Builder Raw
+Warning-Identifier Cleanup (`74eabb148fb5ce922c15857839259871991c3b70`),
+Recommendations `expectedEffect` Wording Fix
+(`8b426ac9f951868e709710d9a777fd066f45e50e`), Portfolio History
+Protocol-Switch Snapshot Fix (`1254b6e7b78b504403474f5c9f53ccd6c8016d79`),
+Portfolio Creation V4 Provenance Fix
+(`fb09f38882da030ea721513d76f255d2264de663`), Portfolio Creation V4
+Phantom-History-Entry Fix (`7e6f877fa73e3bcb617f4547d68215dc2663c371`),
+consolidated Aave V4 Regression Hardening
+(`57e15fd8f4eec6fd09017c1ffbc1e03281e6cb70`, test-only, zero production
+diff), Dashboard/Portfolio History Trends Removal
+(`d729a49ed0d0f4f54d290da97c6e19d615e8946e`), and this reconciliation
+batch itself, applied directly on top of `v1.23.0`
+(`59081d032c338bd6d5c0dc5ff79cda8c1eb9a50c`).
+
+**Current release candidate: `1.24.0`. Versions `1.0.0` through `1.23.0`
+remain the immutable previous releases** — no existing tag is touched by
+this promotion; `v1.23.0` still resolves to
+`59081d032c338bd6d5c0dc5ff79cda8c1eb9a50c` (an annotated tag object,
+`d4c09bbfda5b4b4756639322f8fa1a49e0d652d8`, resolving to that commit —
+confirmed by fresh inspection during this batch via `git rev-parse
+v1.23.0^{commit}`). `APP_VERSION`/`ENGINE_VERSION`/`package.json`
+`"version"` move from `1.23.0` to `1.24.0` — a MINOR bump; see "Version
+classification" below for the full reasoning, including the one genuine
+ambiguity this batch found in `docs/VERSIONING_STRATEGY.md`'s own text
+and how it was resolved. `FORMULA_VERSION` remains `1.0`,
+`STORAGE_SCHEMA_VERSION` remains `1.0.0` — this release requires
+neither (see "Release scope audit" below). **No `v1.24.0` git tag
+exists yet** — confirmed via `git rev-parse v1.24.0` failing with
+"unknown revision" during this batch's own baseline verification;
+tagging is a separate, explicit step for after this patch is applied
+and synced, not taken by this batch.
+
+### Full `v1.23.0..origin/main` diff audit
+
+Every file touched across all eight commits, verified directly via
+`git diff --stat v1.23.0..origin/main` and per-commit `git show
+--stat`/`--name-only`, not assumed from any prior session's own summary:
+
+**Loop Builder Minimum-HF Wording Fix (`10f0c50`, +164/-13, 5 files)**
+
+- `features/loop-builder/components/LoopSafetyAnalysis.tsx` (production)
+- `features/loop-builder/utils/stopReasonLabel.ts` (production)
+- `tests/e2e/loopBuilderWorkflows.spec.ts`,
+  `tests/unit/features/loop-builder/LoopSafetyAnalysis.test.tsx`,
+  `tests/unit/features/loop-builder/stopReasonLabel.test.ts` (tests)
+
+**Loop Builder Raw Warning-Identifier Cleanup (`74eabb1`, +178/-17, 3 files)**
+
+- `stores/loopBuilderStore.ts` (production)
+- `tests/e2e/loopBuilderWorkflows.spec.ts`,
+  `tests/unit/stores/loopBuilderStore.test.ts` (tests)
+
+**Recommendations `expectedEffect` Wording Fix (`8b426ac`, +30/-2, 4 files)**
+
+- `engine/recommendation/calculateAdditionalCollateralRecommendation.ts`,
+  `engine/recommendation/calculateRepaymentRecommendation.ts`
+  (production — string-template change only; each file's own
+  `FORMULA_VERSION` constant is untouched in the diff, confirmed by
+  direct inspection)
+- `tests/unit/engine/recommendation/calculateAdditionalCollateralRecommendation.test.ts`,
+  `tests/unit/engine/recommendation/calculateRepaymentRecommendation.test.ts`
+  (tests)
+
+**Portfolio History Protocol-Switch Snapshot Fix (`1254b6e`, +167/-2, 2 files)**
+
+- `stores/portfolioStore.ts` (production)
+- `tests/unit/stores/portfolioStore.test.ts` (tests)
+
+**Portfolio Creation V4 Provenance Fix (`fb09f38`, +128/-10, 2 files)**
+
+- `app/portfolios/new/NewPortfolioV4Fields.tsx` (production)
+- `tests/unit/app/portfolios/new/NewPortfolioPageClient.v4Creation.test.tsx`
+  (tests)
+
+**Portfolio Creation V4 Phantom-History-Entry Fix (`7e6f877`, +284/-3, 4 files)**
+
+- `app/portfolios/new/NewPortfolioPageClient.tsx`, `stores/portfolioStore.ts`
+  (production)
+- `tests/unit/app/portfolios/new/NewPortfolioPageClient.v4Creation.test.tsx`,
+  `tests/unit/stores/portfolioStore.test.ts` (tests)
+
+**Aave V4 Regression Hardening (`57e15fd`, +503/-0, 9 files, 100% test-only)**
+
+- `tests/unit/features/dashboard/buildDashboardViewModel.test.ts`,
+  `buildDebtAndInterestPanel.test.ts`, `buildLiquidationRiskPanel.test.ts`,
+  `buildRecommendationSummary.test.ts`
+- `tests/unit/services/exit/plan.test.ts`,
+  `tests/unit/services/loop/finalPortfolio.test.ts`,
+  `tests/unit/services/portfolioHistory/buildPortfolioHistoryEntry.test.ts`,
+  `tests/unit/services/simulation/portfolioAction.test.ts`
+- `tests/unit/stores/portfolioStore.test.ts`
+- Zero production files — confirmed by `git show --stat 57e15fd`
+  containing no path outside `tests/`.
+
+**Dashboard/Portfolio History Trends Removal (`d729a49`, +150/-10465, 36 files)**
+
+- `app/DashboardPageClient.tsx`, `app/portfolio/PortfolioHistoryPanel.tsx`,
+  `app/portfolio/SafetyTargetsStatusPanel.tsx`,
+  `features/dashboard/index.ts`,
+  `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts`,
+  `services/portfolio/safetyTargetsStatus.ts` (production, modified)
+- 14 `features/dashboard/components/*TrendSection.tsx` files (deleted)
+- `tests/unit/app/page.test.tsx`,
+  `tests/unit/app/portfolio/PortfolioHistoryPanel.test.tsx` (tests,
+  modified) + 14 `tests/unit/features/dashboard/*TrendSection.test.tsx`
+  files (deleted)
+
+**This reconciliation batch (version metadata + documentation only)**
+
+- `package.json`, `engine/shared/result.ts`,
+  `services/persistence/envelope.ts` (version constants)
+- `docs/CHANGELOG.md`, `docs/RELEASE_NOTES.md`, `PROJECT_STATUS.md`
+  (this section), `docs/USER_GUIDE.md` (Dashboard section corrected:
+  "four grouped sections" → "three grouped sections," the now-removed
+  "Trends" bullet and the Health & Risk group's stale "each with its own
+  historical trend chart" clause both deleted — the same
+  currently-current-functionality documentation `docs/03_UI.md`/
+  `01_PRD.md`/`06_TASKS.md` are explicitly exempt from correcting, being
+  frozen specification documents per `CONTRIBUTING.md`'s own
+  "Specification documents" section, unlike `USER_GUIDE.md`)
+
+**Zero files under `engine/` (beyond the two wording-only files named
+above), `services/persistence/`, `types/portfolio.ts`,
+`types/portfolio.schema.ts`, `services/export/`,
+`services/portfolio/mapping.ts`, `hooks/useAaveV4LiveSync.ts`, or
+`hooks/useAaveV4CollateralRiskLiveSync.ts` were touched anywhere in this
+release** — confirmed by direct `git diff v1.23.0..origin/main --
+services/persistence/ types/portfolio.ts types/portfolio.schema.ts
+services/export/ services/portfolio/mapping.ts
+hooks/useAaveV4LiveSync.ts hooks/useAaveV4CollateralRiskLiveSync.ts`
+returning completely empty output. No Formula ID was assigned or
+touched — both engine files this release touches keep their own
+`FORMULA_VERSION` constant unchanged.
+
+### Version classification — why `1.24.0`, not `1.23.1` or `2.0.0`
+
+**This batch found a genuine, previously-untested ambiguity in
+`docs/VERSIONING_STRATEGY.md`'s own text, surfaced it to the human
+maintainer before touching any version file, and proceeded only after
+an explicit decision.** `docs/VERSIONING_STRATEGY.md`'s MAJOR bullet
+reads, unqualified: "a breaking change to how a user's existing local
+data is read, **a removed feature**, or... a deliberate new-version
+decision." Read completely literally, Trends removal — a real,
+user-visible deletion of 14 Dashboard components and Portfolio History's
+own chart selector — could satisfy "a removed feature" on its own,
+independent of any data/schema/financial-semantics breakage. No prior
+release in this project's 23-version history ever removed anything, so
+no prior "why not MAJOR" reasoning paragraph in `docs/CHANGELOG.md`
+(each reproduced identically for every version from `1.2.0` through
+`1.23.0`) had occasion to apply that specific clause — every one of them
+instead checks a concrete, practiced list: Engine file changes, Formula
+ID assignment, `STORAGE_SCHEMA_VERSION`, V3/V4 semantic files, and the
+CSV/JSON exporters. Against that practiced checklist, Trends removal
+changes none of the five — the removed visualization layer never
+persisted, computed, or exported anything of its own; it only plotted
+values the table/card view beside it already showed. The literal MAJOR
+bullet and the practiced MAJOR checklist therefore disagree on this one
+case, for the first time in this project's history.
+
+**Presented to the human maintainer as a three-way choice — `1.23.1`
+(PATCH), `1.24.0` (MINOR), or `2.0.0` (MAJOR) — with a recommendation
+for MINOR and the reasoning for each option laid out plainly. The human
+maintainer selected `1.24.0` (MINOR).** This section records that
+decision as the authoritative resolution, not a unilateral
+determination by this batch. Consistent with that choice: not a PATCH —
+PATCH's own definition (`docs/VERSIONING_STRATEGY.md`) explicitly
+excludes "UI redesign," and while six of the eight commits are
+individually exactly the "genuine defect... fixed with a regression
+test" PATCH describes, the Trends removal is a deliberate, user-facing
+product decision to delete an entire presentation layer, not a defect
+fix — bundling it with the six real fixes and the one test-only
+hardening batch keeps the whole release above PATCH scope. Not a MAJOR
+— confirmed by the practiced checklist above, applied fresh in this
+batch, not merely inherited from precedent: every axis clean. A MINOR
+bump, on the same "new user-facing capability and correctness fixes,
+not merely internal cleanup" bar every prior MINOR bump used — here, a
+user-facing _removal_ rather than an _addition_, but a deliberate
+product-level presentation change of the same weight class either way.
+
+### Reconciliation checks (10 required by this batch's own task)
+
+1. **All intended post-`v1.23.0` fixes are actually in `origin/main`.**
+   Confirmed: `git log --oneline 59081d0..origin/main` returns exactly
+   the eight commits named above, in the order listed, with no gap and
+   no extra commit.
+2. **No uncommitted production changes are missing from `main`.** The
+   primary working directory (`/home/user/ProfitPilot`) was not used for
+   this reconciliation — a fresh disposable worktree was checked out
+   directly from `origin/main` at `d729a49`, so nothing in this section
+   depends on any local, potentially-uncommitted state.
+3. **No patch from any prior task was accidentally omitted.** Each of
+   the eight commits' own diff was independently re-inspected in this
+   batch (see "Full diff audit" above) against what its own delivery
+   session's report claimed — file-for-file match in every case.
+4. **Trends removal is fully integrated.** Fresh `grep -rn
+"TrendSection"` across `app/`, `features/`, `services/` in this
+   worktree returns zero matches. Fresh `grep -rln "recharts"` across
+   the repository returns exactly `package.json`,
+   `app/portfolio/PortfolioHistoryPanel.tsx` (a doc-comment reference to
+   the _removed_ chart, in its own removal-rationale paragraph — not a
+   library import), `features/simulation/components/ScenarioCharts.tsx`/
+   `ScenarioTimeline.tsx` (genuine, unrelated, unaffected Simulation
+   consumers), `app/error.tsx` (a pre-existing, unrelated hypothetical
+   example in a doc comment), and `tests/e2e/responsiveLayout.spec.ts`
+   (a pre-existing, unrelated reference to the same Simulation charts).
+   `tsc --noEmit` passes clean. `docs/USER_GUIDE.md`'s Dashboard section
+   — the one non-frozen, user-facing document that described Trends as
+   current functionality — is corrected as part of this batch (see
+   "Full diff audit" above); `docs/03_UI.md`/`01_PRD.md`/`06_TASKS.md`
+   are left untouched, being frozen specification documents per
+   established convention, and `docs/CHANGELOG.md`/`docs/RELEASE_NOTES.md`/
+   `PROJECT_STATUS.md`/`docs/STARTING_VALUE_BASELINE_SPEC.md`/
+   `docs/VERSION_2_BACKLOG.md` references to Trends are all historical
+   build-record entries describing what was true _at the time_, left
+   unedited per this project's own append-only-history convention for
+   those specific documents.
+5. **Aave V4 regression hardening is present and test-only.** Confirmed:
+   `git show --stat 57e15fd` names 9 files, all under `tests/unit/`,
+   +503/-0.
+6. **No schema/migration change was introduced after `v1.23.0` unless
+   explicitly intended.** None was — confirmed: `git diff
+v1.23.0..origin/main -- services/persistence/` returns completely
+   empty output; `STORAGE_SCHEMA_VERSION` stays `1.0.0`;
+   `REGISTERED_MIGRATIONS` is untouched.
+7. **No persisted-data backfill is required.** None — no persisted field
+   of any kind was added, changed, or removed by any of the eight
+   commits.
+8. **No release-blocking TODO/FIXME was introduced by these patches.**
+   Confirmed: `git diff v1.23.0..origin/main | grep -E "^\+.*\b(TODO|
+FIXME|XXX|HACK)\b"` returns no output.
+9. **Release notes accurately distinguish correctness fixes,
+   history/provenance fixes, regression test hardening, and UI
+   simplification.** `docs/CHANGELOG.md`'s and `docs/RELEASE_NOTES.md`'s
+   own `[1.24.0]`/"Version 1.24.0" entries group the eight commits under
+   exactly those four categories in their "What's new" sections, with an
+   explicit "What this is not" section for each stating this is not a
+   new Aave V4 capability release.
+10. **No feature is claimed that was not added.** Both documents' "What's
+    new" sections state plainly, as their first line, "No new feature.
+    This release is entirely correctness fixes, regression-test
+    hardening, and a UI simplification."
+
+### Known/deferred items — unaffected, unresolved, none silently touched
+
+Every item `PROJECT_STATUS.md`'s prior reconciliation sections have
+tracked as open remains exactly where the `v1.23.0` reconciliation left
+it — this release resolves none of them:
+
+- Health Factor risk-band classification (Conflict #1) — still open.
+- F-065 "Interest Warning" — still deferred.
+- F-067 "Simple Portfolio Score" (Conflict #12) — still deferred.
+- Exit Readiness Formula-ID gap (Conflict #11) — still unmapped.
+- Quantified Impact / Apply to Portfolio for Safety Targets, Borrow,
+  Loop — still gaps, unaffected by this release.
+- Cost basis / P&L / total return / cumulative-realized interest — still
+  permanently deferred.
+- Settings About / Conflict #39 — still unresolved.
+- Cloud Database / Cloud Sync — still cancelled by explicit product
+  decision, not revisited.
+- Operated production deployment/monitoring under Path B — still
+  deferred.
+- Aave V4 live network/block/method verification data — genuinely still
+  does not exist.
+
+No item above was silently resolved, removed, or resurrected as newly
+discovered — each is exactly where the `v1.23.0` reconciliation left it.
+
+### Release scope audit
+
+Explicitly verified across the entire `v1.23.0..origin/main` diff, not
+assumed:
+
+- **No Engine calculation/formula change** — the only two `engine/`
+  files touched (`calculateAdditionalCollateralRecommendation.ts`,
+  `calculateRepaymentRecommendation.ts`) change an `expectedEffect`
+  string template for the already-existing zero-action case only; every
+  numeric field on the returned object, and both files' own
+  `FORMULA_VERSION` constants, are unchanged in the diff.
+- **No V3/V4 semantic change** — `git diff v1.23.0..origin/main --
+services/portfolio/mapping.ts hooks/useAaveV4LiveSync.ts
+hooks/useAaveV4CollateralRiskLiveSync.ts` returns empty output.
+- **No persistence-schema change** — `git diff v1.23.0..origin/main --
+services/persistence/ types/portfolio.ts types/portfolio.schema.ts`
+  returns empty output. The Portfolio Creation V4 fixes and the
+  Portfolio History snapshot-trigger fix all reuse the existing
+  envelope/schema and the existing `attemptHistorySnapshot`/`create()`
+  machinery — no new persisted shape.
+- **No CSV/JSON exporter change** — `git diff v1.23.0..origin/main --
+services/export/` returns empty output.
+- **Historical Portfolio History data remains fully intact and fully
+  displayed** — the table, mobile-card view, before→after deltas, and
+  protocol/data-source badges in `app/portfolio/PortfolioHistoryPanel.tsx`
+  are unchanged by the Trends removal; only the supplementary chart
+  above them, and the now-dead chart-only formatters/config objects that
+  existed solely to feed it, were removed.
+- **`recharts` remains a real, justified dependency** —
+  `features/simulation/components/ScenarioCharts.tsx` and
+  `ScenarioTimeline.tsx` are confirmed, by a fresh repository-wide
+  search in this batch, to be its only remaining consumers, both
+  genuinely unrelated to Portfolio History.
+
+**Result matches the expected shape**: `v1.24.0` is exactly six
+correctness/hardening fixes, one test-only regression-hardening batch,
+and one UI-simplification removal, with zero financial-semantics or
+persisted-data impact — exactly as the task that produced this
+reconciliation scoped it. Repository evidence does not contradict that
+expectation at any point in this diff.
+
+### Validation (this reconciliation batch)
+
+Run fresh, in a disposable worktree checked out directly from
+`origin/main` at `d729a49` (not the primary working directory, which
+carries unrelated local state):
+
+- **Typecheck**: `tsc --noEmit` — clean, zero errors.
+- **Full suite**: `vitest run` — **325 files / 4,479 tests passing**,
+  zero failures (the one pre-existing jsdom `"Not implemented:
+navigation to another Document"` console warning is unrelated,
+  pre-existing, and not a test failure).
+- **Lint**: `eslint .` — zero errors; one pre-existing, unrelated
+  warning (`tests/unit/app/api/aave/v4-reserve-price/route.test.ts`,
+  unused `request` parameter, predates this batch).
+- **Format**: `prettier --check .` — clean, all matched files pass
+  (`docs/` and `README.md` are prettier-ignored by established
+  convention; the `docs/USER_GUIDE.md` edit in this batch is
+  unaffected).
+- **Production build**: `next build` — clean; the `require-in-the-middle`
+  `serverExternalPackages` warnings are pre-existing OpenTelemetry
+  instrumentation noise, unrelated to this batch, and do not fail the
+  build. Dashboard route (`/`) First Load JS dropped as expected with 14
+  fewer components bundled.
+- **`git diff --check`** (whitespace) over the full `v1.23.0..HEAD`
+  range — clean, zero errors.
+- **Version-consistency test**: `tests/unit/engine/shared/result.test.ts`'s
+  "keeps its hardcoded `ENGINE_VERSION` in sync with `package.json`"
+  test — passes at the post-bump state (both `1.24.0`).
+
+### Final release assessment
+
+**READY TO TAG v1.24.0.** All 60 changed files across the eight commits
+plus this reconciliation batch inspected directly; every commit's own
+claim re-verified against real code/tests, not assumed; full suite
+passing (325 files / 4,479 tests) at the reconciliation baseline; no
+unresolved blocker; no historical artifact silently rewritten; no
+known/deferred item silently resolved or resurrected; version metadata
+consistent across `package.json`/`ENGINE_VERSION`/`APP_VERSION`; the one
+genuine version-classification ambiguity this batch found was surfaced
+to, and resolved by, the human maintainer before any version file was
+touched. No known non-blocking limitation beyond the already-documented,
+unaffected deferred items above.
+
+---
+
 ## v1.23.0 Release Reconciliation — Safety Targets Status Visibility + Aave V4 Correctness Fixes
 
 **Recorded after the fact, the same convention every release-
