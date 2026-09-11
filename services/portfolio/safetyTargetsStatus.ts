@@ -36,8 +36,8 @@
  * `safetyBufferPercent` comparisons read already-computed values
  * (`PortfolioSummary.healthFactor`, `portfolio.market.btcPriceUsd`, and
  * `calculateLiquidationBufferPercent` — the same portfolioHistory
- * service helper `LiquidationBufferTrendSection.tsx` already uses for
- * the identical distance-to-liquidation concept) verbatim.
+ * service helper `PortfolioHistoryPanel.tsx` already uses for the
+ * identical distance-to-liquidation concept) verbatim.
  * `holdingPeriodDays`'s "current" value is plain calendar arithmetic
  * (elapsed whole days), the same class of computation
  * `features/dashboard/utils/buildDataFreshnessIndicators.ts` already

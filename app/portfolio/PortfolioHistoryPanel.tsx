@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
 import type { PersistedPortfolioHistoryEntry } from '@/services/persistence';
 import { listPortfolioHistoryForPortfolio } from '@/services/persistence';
@@ -24,14 +23,6 @@ import {
  * `PortfolioPageClient`'s own effects already key on to notice "this
  * portfolio's own record was written again."
  *
- * **Table is the primary, accessible source; the chart is a
- * supplementary visual only** — every number the chart plots is already
- * in the table above it, matching `ScenarioCharts.tsx`'s own established
- * "Accessible alternatives... without replacing numerical data"
- * discipline (`role="img"` + a text `aria-label` summarizing the plotted
- * values, `ResponsiveContainer` for layout, `isAnimationActive={false}`
- * per this codebase's own M9-027 motion-stability rule).
- *
  * **Before/after deltas state a change, never a cause** — each row's
  * delta (vs. the next-older entry) is a plain "X → Y" fact, using
  * `comparePortfolioHistoryEntries`'s own deliberately non-causal output;
@@ -51,18 +42,6 @@ import {
  * `format*`/`formatDelta*` helpers below — no separate data path, only a
  * separate layout, one hidden via `sm:hidden` and the other via `hidden
  * sm:block`.
- *
- * **Multi-metric trend chart (V1.3.0 Batch 1, "Portfolio Analytics —
- * Trend Visibility")**: the chart above can now plot Health Factor
- * (unchanged default), Net Worth, Loan-to-Value, or Leverage, switched
- * via a compact `<select>` rather than stacking four permanent charts —
- * see `PORTFOLIO_HISTORY_METRICS` below. The table/card views, their
- * values, and every existing accessibility/motion behavior are
- * unchanged; only the supplementary chart gained a selector. Net Worth
- * is `docs/02_Formulas.md`'s own already-specified "Portfolio Value −
- * Debt" equation applied to a stored snapshot's own `collateral.valueUsd`/
- * `debt.valueUsd` — no new formula. LTV/Leverage read the already-
- * persisted `loanToValue`/`leverage` fields directly, never recomputed.
  *
  * **V1.12.0 Batch 4 ("Portfolio History Data-Source Provenance")** adds a
  * small "Manual"/"Live" badge next to each row's own timestamp, in both
@@ -108,25 +87,18 @@ import {
  * placed immediately before it — categorical, not a chart metric or
  * table column, for the same reason the data-source badge isn't one.
  *
- * **V1.13.0 Batch 2 ("Supply APR Portfolio History Chart Metric")** adds
- * Supply APR, the fourteenth chart-selector metric — the already-persisted
- * `entry.supplyApr` field read directly (no new formula, no
- * recomputation), positioned directly after Borrow APR, the same
- * "adjacent rate metrics" grouping this file's own selector order already
- * follows elsewhere. `entry.supplyApr` is `undefined` for every V4 entry
- * unconditionally — not "not yet synced" the way `borrowApr` can be for a
- * V4 portfolio, but permanently absent, since no V4-facing form or live
- * boundary in this codebase ever produces a V3-shaped supply rate for V4
- * (`resolveSupplyAprDisplay`'s own `'not-applicable'` case,
- * `services/portfolio/mapping.ts`). `formatSupplyApr` renders this as
- * **"Not applicable,"** deliberately distinct from `formatBorrowApr`'s
- * "Not available" — the same distinction
- * `components/strategy/StrategyAssumptionsPanel.tsx` already draws in its
- * own comment for the current-value display of this same field. Like
- * Collateral Quantity and Debt Quantity (v1.12.0 Batches 2–3), this
- * metric is chart-selector only — it does not add a new table column or
- * mobile-card row, matching that same established precedent that not
- * every selectable metric duplicates into the table/card views.
+ * **Trends removal (Dashboard/Portfolio History Trends Removal batch).**
+ * This panel previously rendered a supplementary trend chart above the
+ * table/card views — a 14-metric `<select>`-driven `recharts` `LineChart`
+ * plotting one already-persisted or already-derived field per snapshot.
+ * Removed outright, not redesigned: a read-only UX audit found every
+ * chart metric duplicated a value already visible in the table/cards
+ * below it, with no time axis, tooltip, or current-value emphasis of its
+ * own, and the underlying Portfolio History data model — snapshots
+ * recorded only on deliberate, materially-different changes — structurally
+ * cannot accumulate enough points for a real trend most of the time. The
+ * table/card views, before/after deltas, protocol/data-source badges, and
+ * every other non-chart behavior documented above are unchanged.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -206,325 +178,6 @@ function formatLiquidationBufferPercent(value: number | null): string {
   if (value === null) return 'No liquidation risk';
   return formatPercent(value);
 }
-
-/**
- * Collateral BTC quantity — up to 8 fraction digits, matching BTC's own
- * on-chain precision (the same convention
- * `features/dashboard/utils/format.ts`'s own `formatQuantity` already
- * establishes for this project's Dashboard; defined locally here rather
- * than imported, per this file's own established "each page/feature owns
- * its thin formatting layer" convention — see every other `format*`
- * helper above). A literal `" BTC"` suffix disambiguates this metric from
- * every other value on this chart, which are all USD-denominated —
- * required so a quantity is never mistaken for a dollar value.
- */
-function formatCollateralQuantity(value: number): string {
-  if (!Number.isFinite(value)) return '—';
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value)} BTC`;
-}
-
-/**
- * Debt native quantity — same 8-fraction-digit convention
- * `formatCollateralQuantity` uses (this project's general asset-quantity
- * precision, not BTC-specific — see `features/dashboard/utils/format.ts`'s
- * own `formatQuantity`). Unlike collateral, the debt asset is not a fixed
- * symbol (`PersistedPortfolioHistoryEntry.debt.asset` is a free `string`,
- * not a literal type) — the repository's own persisted contract does not
- * guarantee it stays "USDC" or any other single symbol, so the unit
- * suffix is read from the entry that produced the value, never
- * hard-coded. `assetSymbol` is optional only so this function type-checks
- * against `PortfolioHistoryMetricConfig.formatValue`'s shared signature
- * (every other metric's own formatter ignores the second parameter); a
- * real call site always has an entry to read it from.
- */
-function formatDebtQuantity(value: number, assetSymbol?: string): string {
-  if (!Number.isFinite(value)) return '—';
-  const formatted = new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 }).format(value);
-  return assetSymbol ? `${formatted} ${assetSymbol}` : formatted;
-}
-
-/**
- * `null` here stands in for `entry.borrowApr === undefined` — "not
- * available" (a V4 portfolio with no synced debt state yet), a distinct
- * concept from "no liquidation risk." Never a fabricated `0%`, never
- * interpolated, never inferred from another field. Matches the exact
- * "Not available" wording this file's own table/card `borrowApr` row
- * already uses.
- */
-function formatBorrowApr(value: number | null): string {
-  if (value === null) return 'Not available';
-  return formatPercent(value);
-}
-
-/**
- * `null` here stands in for `entry.supplyApr === undefined`, which is
- * `undefined` for every V4 entry unconditionally
- * (`services/persistence/types/models.ts`'s own doc comment on
- * `supplyApr`, mirroring `resolveSupplyAprDisplay`'s own `'not-applicable'`
- * case) — deliberately **"Not applicable," not "Not available."**
- * `app/portfolio/AaveProtocolVersionForm.tsx`'s sibling,
- * `components/strategy/StrategyAssumptionsPanel.tsx`, already draws this
- * exact distinction explicitly in its own comment: V4 Supply APR "is not
- * a value that could become available later" (unlike a V4 portfolio's
- * Borrow APR before its debt state syncs, which genuinely can), so
- * reusing `formatBorrowApr`'s "Not available" wording here would imply a
- * pending state that does not exist. No V3/V4 semantics are invented by
- * this text — it only gives a user-facing rendering to the same
- * `'not-applicable'` discriminant `SupplyAprDisplay` already names
- * internally. Never a fabricated `0%`, never interpolated, never
- * inferred from `borrowApr` or any other field.
- */
-function formatSupplyApr(value: number | null): string {
-  if (value === null) return 'Not applicable';
-  return formatPercent(value);
-}
-
-/**
- * V1.3.0 Batch 1 ("Portfolio Analytics — Trend Visibility") plus V1.4.0
- * Batch 1 ("Annualized Interest Cost Visibility"). Lets the trend chart
- * below plot one of five metrics without permanently stacking five
- * charts — a compact selector switches which of these
- * `getValue`/`formatValue` pairs feeds the same single `LineChart`.
- *
- * **Net Worth is exactly `docs/02_Formulas.md`'s own "Net Worth =
- * Portfolio Value − Debt" equation** (Assets minus Debt), applied to one
- * already-persisted snapshot's own `collateral.valueUsd`/`debt.valueUsd`
- * — no new formula, no Engine involvement, not an alternative
- * definition. Loan-to-Value, Leverage, and Interest Cost (annualized)
- * read the already-persisted `loanToValue`/`leverage`/
- * `annualizedInterestCost` fields directly, the same values the table
- * above already renders — never recomputed here.
- *
- * **"Interest Cost (annualized)" is a point-in-time projection, not a
- * running total.** `entry.annualizedInterestCost` is the projected
- * annual borrowing cost implied by *that one snapshot's own* debt
- * balance and rate — never interest already paid, cumulative interest,
- * realized borrowing cost, or interest paid since inception. Plotting
- * it across snapshots shows how that projection moved over time (e.g. a
- * rate change even with debt held constant); it does not, and must
- * never be read to, sum to a total amount actually paid — the "trend"
- * language `PORTFOLIO_HISTORY_METRICS.label` values feed into the
- * chart's own aria-label summary is the same non-causal, non-cumulative
- * framing this file's own top comment already establishes for every
- * other delta.
- *
- * **V1.5.0 Batch 1 ("Portfolio Analytics — Price & Liquidation Trend
- * Visibility")** adds Market Price and Liquidation Price, bringing the
- * selector to seven metrics. Both read already-persisted fields
- * (`marketPriceUsd`, `liquidationPriceUsd`) directly — no new formula.
- * Liquidation Price reuses `formatLiquidationPrice`'s own "No liquidation
- * risk" convention for a `null` snapshot (zero-debt) rather than the
- * Health-Factor-specific "∞" glyph, or any fabricated numeric price —
- * Recharts skips a `null` data point in the line (the same gap-not-zero
- * behavior Health Factor's own `null` entries already produce), so no
- * interpolation or substitution occurs here either.
- *
- * **V1.6.0 Batch 1 ("Liquidation Buffer Visibility")** adds Liquidation
- * Buffer, an eighth metric that is DISPLAY/SERVICE-LAYER DERIVED, not a
- * new Engine formula or Formula ID: `calculateLiquidationBufferPercent`
- * (`services/portfolioHistory/`) computes `(marketPriceUsd −
- * liquidationPriceUsd) / marketPriceUsd` from the two already-persisted,
- * already-rendered fields v1.5.0 exposed — nothing new is persisted, no
- * Aave adapter is touched, and no Health Factor risk band is implied.
- * `null` (zero-debt / no liquidation risk, or an unavailable denominator)
- * renders as "No liquidation risk," the same text `formatLiquidationPrice`
- * already uses — never a fabricated `0%`. A negative buffer (market at or
- * below the liquidation price) is shown as-is, not clamped.
- *
- * **V1.11.0 Batch 1 ("Borrow APR Trend Completion")** adds Borrow APR, a
- * ninth metric reading the already-persisted `entry.borrowApr` field
- * directly (no new formula, no recomputation) — the same value the table
- * above already renders via its own `entry.borrowApr !== undefined ?
- * formatPercent(entry.borrowApr) : 'Not available'` row. **`undefined`
- * means "not available," a distinct concept from Liquidation
- * Price/Buffer's own `null` ("no liquidation risk")** — `entry.borrowApr`
- * is `undefined` only for a V4 portfolio with no synced debt state yet
- * (`services/persistence/types/models.ts`'s own doc comment), never a
- * fabricated `0%`, never interpolated across surrounding entries, and
- * never inferred from another field. Converted to `null` here only to
- * satisfy `PortfolioHistoryMetricConfig.getValue`'s existing `number |
- * null` return type (the same nullable-chart-point plumbing Liquidation
- * Price/Buffer already use — Recharts skips a `null` point, leaving a
- * gap rather than a fabricated line segment) — `formatValue` renders it
- * as **"Not available,"** not "No liquidation risk," so the distinct
- * reason is never conflated with the liquidation-risk convention.
- *
- * **V1.12.0 Batch 1 ("Collateral Value & Debt Value Portfolio History
- * Chart Parity")** adds Collateral Value and Debt Value, the tenth and
- * eleventh metrics — the same two already-persisted, already-rendered
- * (table/card) fields Net Worth's own `entry.collateral.valueUsd -
- * entry.debt.valueUsd` derivation already reads, now independently
- * selectable rather than only visible as their difference. No new
- * formula, no recomputation from quantity times current price, no
- * live-data or current-market-price substitution — each snapshot's own
- * stored `valueUsd` is plotted exactly as persisted, at record time,
- * identically for V3 and V4 (this file never reads
- * `entry.protocolVersion` for any metric, and these two are no
- * exception). Positioned directly beside `netWorth` in the selector
- * order, the same "raw inputs next to their derived difference"
- * grouping this file's own table already establishes (Collateral Value
- * and Debt Value are adjacent table columns, immediately after Health
- * Factor).
- *
- * **V1.12.0 Batch 2 ("Collateral Quantity Portfolio History Chart
- * Metric")** adds Collateral Quantity, the twelfth metric — the raw
- * `entry.collateral.quantity` (BTC held) each snapshot's own Collateral
- * Value is itself derived from, but never persisted or recomputed here:
- * this metric plots exactly the stored quantity, never `valueUsd`
- * divided by a price, never today's live/current quantity or market
- * data. Positioned directly before `collateralValue` — quantity change
- * (deposit/withdrawal) and value change (price movement) are distinct
- * signals a user may want to tell apart, which is only possible with
- * both plotted independently. `formatCollateralQuantity`'s own `" BTC"`
- * suffix keeps this metric's chart/tooltip/aria-label text unambiguous
- * against every other, USD-denominated metric on the same selector.
- * Identical for V3 and V4 — collateral quantity/value never diverge by
- * protocol version the way debt quantity/value can (see
- * `services/persistence/types/models.ts`'s own doc comment on
- * `collateral`/`debt`), so this metric introduces no protocol-version
- * branching, the same discipline every metric above already follows.
- *
- * **V1.12.0 Batch 3 ("Debt Quantity Portfolio History Chart Metric")**
- * adds Debt Quantity, the thirteenth metric — `entry.debt.quantity`, the
- * single canonical, always-populated field
- * `services/portfolioHistory/buildPortfolioHistoryEntry.ts` already
- * resolves once per protocol version at record time (V3:
- * `portfolio.debt.balance`; V4: `v4DebtState.drawnDebt +
- * v4DebtState.premiumDebt`, or the legacy `0` balance when no V4 debt
- * state has ever synced — never a fabricated non-zero value). This
- * component reads that one already-resolved number directly and
- * introduces no protocol-version branching of its own — the producer,
- * not this presentation layer, is where V3/V4 isolation is already
- * enforced (see that file's own header comment). Unlike Collateral
- * Quantity, the debt asset symbol is not a fixed literal
- * (`PersistedPortfolioHistoryEntry.debt.asset` is a free `string`), so
- * `formatDebtQuantity` reads each point's own `entry.debt.asset` rather
- * than hard-coding one — `PortfolioHistoryMetricConfig.formatValue` gains
- * an optional second `entry` parameter for exactly this (every other
- * metric's own formatter ignores it, unchanged). Positioned directly
- * before `debtValue`, the same "quantity beside its own value" grouping
- * `collateralQuantity`/`collateralValue` already established.
- */
-type PortfolioHistoryMetricKey =
-  | 'healthFactor'
-  | 'collateralQuantity'
-  | 'collateralValue'
-  | 'debtQuantity'
-  | 'debtValue'
-  | 'netWorth'
-  | 'loanToValue'
-  | 'leverage'
-  | 'borrowApr'
-  | 'supplyApr'
-  | 'annualizedInterestCost'
-  | 'marketPrice'
-  | 'liquidationPrice'
-  | 'liquidationBufferPercent';
-
-interface PortfolioHistoryMetricConfig {
-  label: string;
-  getValue: (entry: PersistedPortfolioHistoryEntry) => number | null;
-  /**
-   * `entry` is optional and unused by every metric except Debt Quantity
-   * (v1.12.0 Batch 3), which needs it to read that point's own
-   * `debt.asset` symbol — a backward-compatible signature widening, not a
-   * behavior change for any existing metric.
-   */
-  formatValue: (value: number | null, entry?: PersistedPortfolioHistoryEntry) => string;
-}
-
-const PORTFOLIO_HISTORY_METRICS: Record<PortfolioHistoryMetricKey, PortfolioHistoryMetricConfig> = {
-  healthFactor: {
-    label: 'Health Factor',
-    getValue: (entry) => entry.healthFactor,
-    formatValue: (value) => formatHealthFactor(value),
-  },
-  collateralQuantity: {
-    label: 'Collateral Quantity',
-    getValue: (entry) => entry.collateral.quantity,
-    formatValue: (value) => (value === null ? '—' : formatCollateralQuantity(value)),
-  },
-  collateralValue: {
-    label: 'Collateral Value',
-    getValue: (entry) => entry.collateral.valueUsd,
-    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
-  },
-  debtQuantity: {
-    label: 'Debt Quantity',
-    getValue: (entry) => entry.debt.quantity,
-    formatValue: (value, entry) =>
-      value === null ? '—' : formatDebtQuantity(value, entry?.debt.asset),
-  },
-  debtValue: {
-    label: 'Debt Value',
-    getValue: (entry) => entry.debt.valueUsd,
-    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
-  },
-  netWorth: {
-    label: 'Net Worth',
-    getValue: (entry) => entry.collateral.valueUsd - entry.debt.valueUsd,
-    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
-  },
-  loanToValue: {
-    label: 'Loan-to-Value',
-    getValue: (entry) => entry.loanToValue,
-    formatValue: (value) => (value === null ? '—' : formatPercent(value)),
-  },
-  leverage: {
-    label: 'Leverage',
-    getValue: (entry) => entry.leverage,
-    formatValue: (value) => (value === null ? '—' : `${formatHealthFactor(value)}x`),
-  },
-  borrowApr: {
-    label: 'Borrow APR',
-    getValue: (entry) => entry.borrowApr ?? null,
-    formatValue: (value) => formatBorrowApr(value),
-  },
-  supplyApr: {
-    label: 'Supply APR',
-    getValue: (entry) => entry.supplyApr ?? null,
-    formatValue: (value) => formatSupplyApr(value),
-  },
-  annualizedInterestCost: {
-    label: 'Interest Cost (annualized)',
-    getValue: (entry) => entry.annualizedInterestCost,
-    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
-  },
-  marketPrice: {
-    label: 'Market Price',
-    getValue: (entry) => entry.marketPriceUsd,
-    formatValue: (value) => (value === null ? '—' : formatCurrency(value)),
-  },
-  liquidationPrice: {
-    label: 'Liquidation Price',
-    getValue: (entry) => entry.liquidationPriceUsd,
-    formatValue: (value) => formatLiquidationPrice(value),
-  },
-  liquidationBufferPercent: {
-    label: 'Liquidation Buffer',
-    getValue: (entry) =>
-      calculateLiquidationBufferPercent(entry.marketPriceUsd, entry.liquidationPriceUsd),
-    formatValue: (value) => formatLiquidationBufferPercent(value),
-  },
-};
-
-/** Selector order, matching the order the task's own required list names them. */
-const PORTFOLIO_HISTORY_METRIC_ORDER: PortfolioHistoryMetricKey[] = [
-  'healthFactor',
-  'collateralQuantity',
-  'collateralValue',
-  'debtQuantity',
-  'debtValue',
-  'netWorth',
-  'loanToValue',
-  'leverage',
-  'borrowApr',
-  'supplyApr',
-  'annualizedInterestCost',
-  'marketPrice',
-  'liquidationPrice',
-  'liquidationBufferPercent',
-];
 
 /**
  * Concise, user-facing disambiguation for `title` attributes on the
@@ -723,7 +376,6 @@ export function PortfolioHistoryPanel({
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [entries, setEntries] = useState<PersistedPortfolioHistoryEntry[]>([]);
-  const [selectedMetric, setSelectedMetric] = useState<PortfolioHistoryMetricKey>('healthFactor');
 
   useEffect(() => {
     let cancelled = false;
@@ -736,8 +388,7 @@ export function PortfolioHistoryPanel({
         return;
       }
       // `listPortfolioHistoryForPortfolio` returns most-recent-first —
-      // kept as-is for the table (a changelog reads newest-on-top);
-      // the chart below reverses it for a left-to-right chronological line.
+      // a changelog reads newest-on-top.
       setEntries(result.data.map((envelope) => envelope.payload));
       setStatus('ready');
     });
@@ -790,94 +441,11 @@ export function PortfolioHistoryPanel({
     );
   }
 
-  const selectedMetricConfig = PORTFOLIO_HISTORY_METRICS[selectedMetric];
-  const chartData = [...entries].reverse().map((entry) => ({
-    timestamp: formatTimestamp(entry.createdAt),
-    value: selectedMetricConfig.getValue(entry),
-    entry,
-  }));
-  const chartSummary = `${selectedMetricConfig.label} trend: ${chartData
-    .map(
-      (point) => `${point.timestamp} ${selectedMetricConfig.formatValue(point.value, point.entry)}`,
-    )
-    .join(', ')}`;
-
   return (
     <section aria-labelledby="portfolio-history-heading" className="flex flex-col gap-4">
       <h2 id="portfolio-history-heading" className="text-sm font-semibold text-foreground">
         History
       </h2>
-
-      {entries.length >= 2 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-end gap-2">
-            <label
-              htmlFor="portfolio-history-metric-select"
-              className="text-xs text-muted-foreground"
-            >
-              Chart metric
-            </label>
-            <select
-              id="portfolio-history-metric-select"
-              value={selectedMetric}
-              onChange={(event) =>
-                setSelectedMetric(event.target.value as PortfolioHistoryMetricKey)
-              }
-              className="rounded-md border border-border bg-transparent px-2 py-1 text-xs text-foreground"
-            >
-              {PORTFOLIO_HISTORY_METRIC_ORDER.map((key) => (
-                <option key={key} value={key}>
-                  {PORTFOLIO_HISTORY_METRICS[key].label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div
-            role="img"
-            aria-label={chartSummary}
-            className="h-40 w-full rounded-md border border-border p-2"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="timestamp" hide />
-                <YAxis
-                  width={
-                    selectedMetric === 'collateralQuantity' || selectedMetric === 'debtQuantity'
-                      ? 72
-                      : selectedMetric === 'collateralValue' ||
-                          selectedMetric === 'debtValue' ||
-                          selectedMetric === 'netWorth' ||
-                          selectedMetric === 'annualizedInterestCost' ||
-                          selectedMetric === 'marketPrice' ||
-                          selectedMetric === 'liquidationPrice'
-                        ? 56
-                        : 32
-                  }
-                  tick={{ fontSize: 10 }}
-                  tickFormatter={(value: number) =>
-                    // Recharts hands the axis formatter only the raw tick
-                    // value, never the originating entry — a single
-                    // representative entry (the most recent) is used only
-                    // for this compact scale label; the fully accurate,
-                    // per-point debt asset symbol is what the accessible
-                    // `chartSummary` aria-label above actually states.
-                    selectedMetricConfig.formatValue(value, entries[0])
-                  }
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="var(--color-foreground, currentColor)"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       <ul className="flex flex-col gap-3 sm:hidden">
         {entries.map((entry, index) => {

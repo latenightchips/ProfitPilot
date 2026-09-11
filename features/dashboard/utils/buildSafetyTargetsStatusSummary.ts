@@ -32,8 +32,8 @@
  * exactly** ("Met" / "Not met" / "Not configured" / "Not available" /,
  * for Safety Buffer % on a zero-debt portfolio only, "No liquidation
  * risk to compare against" — the same established text
- * `LiquidationPriceTrendSection.tsx`/`PortfolioHistoryPanel.tsx` already
- * use for that exact fact). Restated here, not imported, matching this
+ * `PortfolioHistoryPanel.tsx` already uses for that exact fact).
+ * Restated here, not imported, matching this
  * codebase's own "each page/feature owns its formatting layer"
  * convention (`./format.ts`'s own header comment) — the underlying
  * `status` value driving the text is always the canonical Service's own,

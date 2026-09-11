@@ -62,10 +62,9 @@ function formatDays(value: number): string {
  * that depends on it) vs. Safety Buffer % specifically on a zero-debt
  * portfolio, which has no liquidation risk to measure a buffer against
  * — the same established "No liquidation risk" text
- * `LiquidationPriceTrendSection.tsx`/`PortfolioHistoryPanel.tsx` already
- * use for that exact fact, never a fabricated "0%" or a generic "Not
- * available" that would blur a real zero with an inapplicable
- * comparison.
+ * `PortfolioHistoryPanel.tsx` already uses for that exact fact, never a
+ * fabricated "0%" or a generic "Not available" that would blur a real
+ * zero with an inapplicable comparison.
  */
 function statusText(comparison: SafetyTargetComparison, unavailableText: string): string {
   switch (comparison.status) {

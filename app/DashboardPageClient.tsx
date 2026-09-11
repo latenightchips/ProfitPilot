@@ -6,8 +6,6 @@ import { useEffect } from 'react';
 import { AaveV4LiveErrorNotice } from '@/components/aave/AaveV4LiveErrorNotice';
 import { V4ProvenanceDetail } from '@/components/aave/V4ProvenanceDetail';
 import {
-  AnnualizedInterestCostTrendSection,
-  BorrowAprTrendSection,
   buildDashboardViewModel,
   buildDataFreshnessIndicators,
   buildDebtAndInterestPanel,
@@ -20,27 +18,16 @@ import {
   buildRiskWarnings,
   buildSafetyTargetsStatusSummary,
   buildStartingValueBaselineSummary,
-  CollateralQuantityTrendSection,
-  CollateralValueTrendSection,
   DashboardErrorBanner,
   DashboardKpiGrid,
   DashboardSkeleton,
   DashboardSummaryHeader,
   DataFreshnessSection,
   DebtAndInterestPanel,
-  DebtQuantityTrendSection,
-  DebtValueTrendSection,
   DeveloperModeToggle,
   HealthFactorStatusSection,
-  HealthFactorTrendSection,
   LeverageSummarySection,
-  LeverageTrendSection,
-  LiquidationBufferTrendSection,
-  LiquidationPriceTrendSection,
   LiquidationRiskPanel,
-  LoanToValueTrendSection,
-  MarketPriceTrendSection,
-  NetWorthTrendSection,
   NoDebtNotice,
   PortfolioCompositionSection,
   QuickActionsSection,
@@ -48,7 +35,6 @@ import {
   RiskWarningBanner,
   SafetyTargetsStatusSection,
   StartingValueBaselineSection,
-  SupplyAprTrendSection,
 } from '@/features/dashboard';
 import { useAaveLiveSync } from '@/hooks/useAaveLiveSync';
 import { useAaveV4Sync } from '@/hooks/useAaveV4Sync';
@@ -183,155 +169,32 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  * (Health Factor risk-band thresholds disagree across four documents);
  * see `features/dashboard/types/viewModel.ts` for the full reasoning.
  *
- * **`HealthFactorTrendSection` (v1.7.0 Batch 1, "Dashboard Health Factor
- * Trend Visibility")** renders directly after `HealthFactorStatusSection`
- * — a compact historical trend chart reading the same already-persisted
- * Portfolio History entries `PortfolioHistoryPanel.tsx`
- * (`app/portfolio/`) already charts, through the identical
- * `listPortfolioHistoryForPortfolio` service call. Presentation/read-layer
- * only: no new Engine formula, no new persisted field, no risk-band
- * classification (see that component's own header comment for the full
- * reasoning). Gated the same way `HealthFactorStatusSection` already is
- * (only in the `viewModel.ok === true` branch), not because it requires a
- * successfully-computed summary itself, but to keep this batch's scope
- * minimal and consistent with its neighboring section.
- *
- * **`LiquidationBufferTrendSection` (v1.8.0 Batch 1, "Dashboard
- * Liquidation Buffer Trend Visibility")** renders directly after
- * `LiquidationRiskPanel` — the same historical-trend pairing pattern
- * `HealthFactorTrendSection` established for `HealthFactorStatusSection`,
- * now completing the Dashboard's risk-trend story with the second metric.
- * Reads the same already-persisted Portfolio History entries through the
- * identical `listPortfolioHistoryForPortfolio` service call, deriving
- * each point via the v1.6.0 `calculateLiquidationBufferPercent` helper
- * (`services/portfolioHistory/`) applied to that entry's own
- * `marketPriceUsd`/`liquidationPriceUsd` — never the Engine's separate,
- * live-computed F-025 value `LiquidationRiskPanel` itself renders. No new
- * Engine formula, no new persisted field, no risk-band classification
- * (see that component's own header comment for the full reasoning).
- * Gated the same way its neighboring sections already are (only in the
- * `viewModel.ok === true` branch).
- *
- * **`AnnualizedInterestCostTrendSection` (v1.9.0 Batch 1, "Dashboard
- * Annualized Interest Cost Trend")** renders directly after
- * `DebtAndInterestPanel` — the same "current-value panel, then its own
- * trend chart" pairing `HealthFactorTrendSection` and
- * `LiquidationBufferTrendSection` already established, completing the
- * Dashboard's trend-chart set. Reads the same already-persisted Portfolio
- * History entries through the identical `listPortfolioHistoryForPortfolio`
- * service call, plotting `entry.annualizedInterestCost` directly (no
- * derived helper, unlike Liquidation Buffer) — the same point-in-time
- * projection value `PortfolioHistoryPanel.tsx`'s own table and card view
- * already render, never interest already paid, cumulative, realized, or
- * paid since inception (see that component's own header comment for the
- * full reasoning). No new Engine formula, no new persisted field, no
- * risk-band classification. Rendered unconditionally (unlike
- * `DebtAndInterestPanel` itself, which is gated on its own build
- * succeeding) — the same "always render the trend section" precedent
- * both sibling trend sections already set, since Portfolio History
- * lookups do not depend on the current snapshot's own build succeeding.
- *
- * **`NetWorthTrendSection` and `LoanToValueTrendSection` (v1.10.0 Batch
- * 1, "Dashboard Trend Parity")** render directly after `DashboardKpiGrid`
- * — the KPI grid is the only existing "current value" display for
- * either metric (unlike Health Factor, Liquidation Risk, and Interest
- * Cost, none of these two have their own dedicated panel), so their
- * trend charts pair with the grid itself rather than a metric-specific
- * section. Both extend the Dashboard's trend-chart set to metrics
- * Portfolio History has offered in its own chart selector since v1.3.0
- * but the Dashboard never surfaced — Net Worth via the same "Net Worth =
- * Portfolio Value − Debt" derivation `PortfolioHistoryPanel.tsx`'s own
- * `netWorth` metric config already uses (`entry.collateral.valueUsd -
- * entry.debt.valueUsd`, no new formula, no Engine involvement), and
- * Loan-to-Value via a direct read of `entry.loanToValue`. Both fields
- * are required, non-nullable numbers on every persisted entry regardless
- * of protocol version, so neither component has a null branch or reads
- * `entry.protocolVersion`. No new Engine formula, no new persisted
- * field, no risk-band classification (see each component's own header
- * comment for the full reasoning). Gated the same way their neighboring
- * sections already are (only in the `viewModel.ok === true` branch).
- *
- * **`MarketPriceTrendSection` and `LeverageTrendSection` (v1.10.0 Batch
- * 2, "Dashboard Trend Parity")** continue the same metric-parity work
- * Batch 1 started. `MarketPriceTrendSection` renders directly after
- * `LiquidationBufferTrendSection` — grouped with the liquidation-risk
- * trend charts since Market Price is the direct input both
- * `LiquidationRiskPanel`'s own current-value card and the Liquidation
- * Buffer trend already depend on, not because this component itself
- * derives anything from it (it reads `entry.marketPriceUsd` directly,
- * historical visualization only, never a live oracle lookup of its
- * own). `LeverageTrendSection` renders directly after
- * `LeverageSummarySection` — the same "current-value panel, then its
- * own trend chart" pairing `HealthFactorStatusSection`/
- * `LiquidationRiskPanel`/`DebtAndInterestPanel` already established,
- * reading `entry.leverage` directly with no reinterpretation of the
- * already-persisted semantics. Both extend the Dashboard's trend-chart
- * set to metrics Portfolio History has offered in its own chart
- * selector since v1.3.0 (Leverage) and v1.5.0 (Market Price) but the
- * Dashboard never surfaced. Both fields are required, non-nullable
- * numbers on every persisted entry regardless of protocol version, so
- * neither component has a null branch or reads
- * `entry.protocolVersion`. No new Engine formula, no new persisted
- * field, no risk-band classification (see each component's own header
- * comment for the full reasoning). Gated the same way their neighboring
- * sections already are (only in the `viewModel.ok === true` branch).
- *
- * **`LiquidationPriceTrendSection` (v1.10.0 Batch 3, "Dashboard Trend
- * Parity")** renders directly after `MarketPriceTrendSection`, completing
- * the liquidation-risk trend grouping (`LiquidationRiskPanel` →
- * `LiquidationBufferTrendSection` → `MarketPriceTrendSection` →
- * `LiquidationPriceTrendSection`) and completing the Dashboard's full
- * mirror of every metric Portfolio History's own chart selector offers.
- * Reads `entry.liquidationPriceUsd` directly — the canonical persisted
- * field `buildPortfolioHistoryEntry.ts` populates once, at record time,
- * from that snapshot's own Engine-computed liquidation price; never
- * recalculated from today's portfolio state, never a live oracle or
- * current market-price lookup for a historical point. `null` (zero-debt)
- * renders "No liquidation risk," the same established text
- * `PortfolioHistoryPanel.tsx`'s own `formatLiquidationPrice` and
- * `LiquidationBufferTrendSection`'s own null case already use — never a
- * fabricated `0`. No new Engine formula, no new persisted field, no
- * risk-band classification, no V3/V4 branching (see that component's
- * own header comment for the full reasoning). Gated the same way its
- * neighboring sections already are (only in the `viewModel.ok === true`
- * branch).
- *
- * **`BorrowAprTrendSection` (v1.11.0 Batch 2, "Borrow APR Trend
- * Completion")** renders directly after `AnnualizedInterestCostTrendSection`
- * — grouped with the Dashboard's debt/interest analytics
- * (`DebtAndInterestPanel` → `AnnualizedInterestCostTrendSection` →
- * `BorrowAprTrendSection`), since Borrow APR is the same rate
- * `DebtAndInterestPanel`'s own current-value card already shows,
- * completing that pairing with a historical trend the same way
- * `AnnualizedInterestCostTrendSection` already does for interest cost.
- * Reads `entry.borrowApr` directly — the same field
- * `PortfolioHistoryPanel.tsx`'s own `borrowApr` metric config already
- * reads (v1.11.0 Batch 1) — never recalculated from today's portfolio
- * state. `undefined` (a V4 portfolio with no synced debt state yet)
- * renders "Not available," never a fabricated `0%`, distinct from
- * `LiquidationPriceTrendSection`'s own "No liquidation risk" `null`
- * case; a chart requires at least two *usable* (non-`undefined`)
- * observations, not merely two persisted entries. No new Engine
- * formula, no new persisted field, no risk-band classification, no
- * V3/V4 branching (see that component's own header comment for the
- * full reasoning). Rendered unconditionally, the same "always render
- * the trend section" precedent `AnnualizedInterestCostTrendSection`
- * already set.
+ * **Trends removal (Dashboard/Portfolio History Trends Removal batch).**
+ * The Dashboard previously rendered a dedicated "Trends" group of 14
+ * historical mini line-charts (one per metric, mirroring Portfolio
+ * History's own chart selector) between "Composition & Debt" and
+ * "Recommendations." Removed outright, not redesigned: a read-only UX
+ * audit found the underlying Portfolio History data model — snapshots
+ * recorded only on deliberate, materially-different changes
+ * (`isMaterialPortfolioHistoryChange`) — structurally cannot accumulate
+ * enough points for a real trend most of the time, and every chart
+ * duplicated a clearer current-value panel already on this same page,
+ * with no time axis, tooltip, or current-value emphasis of its own. No
+ * historical data, recording, persistence, or the Portfolio History
+ * page's own table/card view were touched — only this Dashboard
+ * visualization layer.
  *
  * **v1.13.0 Batch 4 ("Dashboard Section Grouping")** wraps the
- * `viewModel.ok === true` branch's own ~19-section flat stack into four
- * labeled `<section aria-labelledby>` groups — Overview, Health & Risk,
+ * `viewModel.ok === true` branch's own flat stack into labeled
+ * `<section aria-labelledby>` groups — Overview, Health & Risk,
  * Composition & Debt, Recommendations — each with its own `<h2>`
  * heading. **Purely additive presentation, no reordering**: every child
  * component, prop, and conditional-render guard above is unchanged and
  * appears in this file in exactly the same sequence it always has; only
- * grouping wrappers were added around already-contiguous runs, so no
- * "current value panel, then its own trend chart" pairing documented
- * above (e.g. `LiquidationRiskPanel` → `LiquidationBufferTrendSection`
- * → `MarketPriceTrendSection` → `LiquidationPriceTrendSection`) was
- * split across a group boundary. The four group names are this batch's
- * own grouping labels, not a new IA/navigation system — no tabs, no
- * collapsing, nothing hidden. `<h2>` headings sit between the existing
+ * grouping wrappers were added around already-contiguous runs. The group
+ * names are this batch's own grouping labels, not a new IA/navigation
+ * system — no tabs, no collapsing, nothing hidden. `<h2>` headings sit
+ * between the existing
  * `<h1>Dashboard</h1>` and every child section's own existing `<h3>`
  * (unchanged), completing rather than disrupting the page's heading
  * hierarchy — previously `<h1>` skipped directly to many sibling
@@ -345,10 +208,9 @@ import { deriveProtocolStatus, formatProtocolStatus } from '@/utils/protocolStat
  *
  * **`StartingValueBaselineSection` (v1.20.0 Batch 1, "Dashboard
  * Starting-Value Baseline Visibility")** renders inside the "Overview"
- * group, directly after `DashboardKpiGrid` — the same "current value
- * now, then how it has changed" pairing this file already uses
- * elsewhere (e.g. a metric panel followed by its own trend chart).
- * Read-only: `buildStartingValueBaselineSummary` (`features/dashboard/utils/`)
+ * group, directly after `DashboardKpiGrid` — a "current value now, then
+ * how it has changed since the starting baseline" pairing. Read-only:
+ * `buildStartingValueBaselineSummary` (`features/dashboard/utils/`)
  * calls the same authoritative `calculateStartingValueBaselineComparison`
  * `app/portfolio/StartingValueBaselinePanel.tsx` already calls and only
  * formats its output — no new financial arithmetic, no
@@ -610,88 +472,6 @@ export function DashboardPageClient() {
                 )}
 
                 {leverageSummary !== null && <LeverageSummarySection summary={leverageSummary} />}
-              </section>
-
-              <section
-                aria-labelledby="dashboard-group-trends-heading"
-                className="flex flex-col gap-4"
-              >
-                <h2
-                  id="dashboard-group-trends-heading"
-                  className="text-base font-semibold text-foreground"
-                >
-                  Trends
-                </h2>
-
-                <NetWorthTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LoanToValueTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <HealthFactorTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LiquidationBufferTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <MarketPriceTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LiquidationPriceTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <CollateralQuantityTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <CollateralValueTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <DebtQuantityTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <DebtValueTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <AnnualizedInterestCostTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <BorrowAprTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <SupplyAprTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
-
-                <LeverageTrendSection
-                  portfolioId={activePortfolioId}
-                  portfolioUpdatedAt={record.portfolio.updatedAt}
-                />
               </section>
 
               <section
