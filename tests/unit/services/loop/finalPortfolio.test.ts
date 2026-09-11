@@ -258,3 +258,67 @@ describe('buildFinalLoopPortfolio — USD-consistent comparison with a non-$1 de
     expect(finalPortfolio.v4DebtState).toBeUndefined();
   });
 });
+
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt STARTING state (distinct from the tests above, which all
+ * start at a nonzero 20000/20500 debt). Confirms a genuinely zero-debt
+ * starting position is accepted and a real loop step from it does not
+ * break the math.
+ */
+describe('buildFinalLoopPortfolio — canonical manual V4 zero-debt starting state (V4 regression hardening)', () => {
+  function canonicalZeroDebtV4Portfolio(): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+      market: { btcPriceUsd: 64000 },
+      protocol: {
+        maxLoanToValue: 0.5,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      v4DebtStateSource: 'manual',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: 'manual',
+    };
+  }
+
+  it('a zero-loop result from a canonical zero-debt starting state is never flagged ambiguous and carries the real (zero) v4DebtState through unchanged', () => {
+    const portfolio = canonicalZeroDebtV4Portfolio();
+    const zeroLoopSettings: LoopStrategySettings = {
+      targetBorrowPercentage: 0.5,
+      maxLoops: 0,
+      minHealthFactor: 1.1,
+    };
+    const result = planLoopStrategy(portfolio, zeroLoopSettings, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+    expect(result.data.strategy.finalDebt).toBe(0);
+    expect(loopIntroducesAmbiguousV4Borrow(portfolio, result.data.strategy)).toBe(false);
+
+    const finalPortfolio = buildFinalLoopPortfolio(portfolio, result.data.strategy);
+    expect(finalPortfolio.protocolVersion).toBe('v4');
+    expect(finalPortfolio.v4DebtState).toEqual(portfolio.v4DebtState);
+    expect(finalPortfolio.debt.balance).toBe(0);
+  });
+
+  it('a real loop step from a genuinely zero-debt starting state is correctly flagged an ambiguous new borrow — post-borrow risk premium is not fabricated', () => {
+    const portfolio = canonicalZeroDebtV4Portfolio();
+    const result = planLoopStrategy(portfolio, healthySettings(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.strategy === null) return;
+
+    expect(result.data.strategy.finalDebt).toBeGreaterThan(0);
+    expect(loopIntroducesAmbiguousV4Borrow(portfolio, result.data.strategy)).toBe(true);
+
+    const finalPortfolio = buildFinalLoopPortfolio(portfolio, result.data.strategy);
+    // Never carries the pre-borrow (0) v4DebtState forward as if it were
+    // still accurate post-borrow — the fail-closed "ambiguous" contract.
+    expect(finalPortfolio.v4DebtState).toBeUndefined();
+    expect(finalPortfolio.protocolVersion).toBe('v4');
+    expect(finalPortfolio.debt.balance).toBe(result.data.strategy.finalDebt);
+  });
+});

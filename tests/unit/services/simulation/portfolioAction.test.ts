@@ -300,6 +300,58 @@ describe('simulatePortfolioAction — V4 debt-delta state (Stage 11, resolved fo
 });
 
 /**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt STARTING state (distinct from the "repayment reaches zero"
+ * tests above, which start non-zero and end at zero). Confirms the
+ * simulation loads and computes cleanly from a genuinely zero-debt
+ * starting point, a pure price-only scenario produces no
+ * division-by-zero, and liquidation stays null throughout.
+ */
+describe('simulatePortfolioAction — canonical manual V4 zero-debt starting state (V4 regression hardening)', () => {
+  function canonicalZeroDebtV4Portfolio(
+    overrides: Partial<ApplicationPortfolio> = {},
+  ): ApplicationPortfolio {
+    return basePortfolio({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 0 },
+      ...overrides,
+    });
+  }
+
+  it('loads successfully and a pure BTC-price-only scenario (simulatePortfolioTransition) produces no division-by-zero, with liquidation staying null', () => {
+    const before = canonicalZeroDebtV4Portfolio();
+    const after = canonicalZeroDebtV4Portfolio({ market: { btcPriceUsd: 70000 } });
+    const result = simulatePortfolioTransition(before, after, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.before.debtValue).toBe(0);
+    expect(result.data.before.healthFactor).toBe(Infinity);
+    expect(result.data.before.liquidation).toBeNull();
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.healthFactor).toBe(Infinity);
+    expect(result.data.after.liquidation).toBeNull();
+    expect(Number.isNaN(result.data.after.loanToValue)).toBe(false);
+    expect(result.data.after.loanToValue).toBe(0);
+  });
+
+  it('adding collateral alone from a zero-debt V4 starting state stays a clean no-debt state — no fabricated post-borrow metrics', () => {
+    const result = simulatePortfolioAction(
+      canonicalZeroDebtV4Portfolio(),
+      { collateralDelta: 0.5, debtDelta: 0 },
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.after.debtValue).toBe(0);
+    expect(result.data.after.liquidation).toBeNull();
+    expect(result.data.after.healthFactor).toBe(Infinity);
+  });
+});
+
+/**
  * Manual/live provenance parity — V4 Readiness Audit §12 Stage 25C.
  * Closes the Stage 25C audit's own central finding: `v4DebtStateSource`/
  * `v4CollateralRiskSource` are never read anywhere in this Service (or

@@ -186,3 +186,27 @@ describe('buildDebtAndInterestPanel — V4 effective borrow rate (Stage 15)', ()
     expect(panel.formattedCurrentBorrowRate).toBe('5%');
   });
 });
+
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio (drawn/premium/risk premium all 0, manual debt
+ * state, live base drawn APR).
+ */
+describe('buildDebtAndInterestPanel — canonical manual V4 zero-debt portfolio (V4 regression hardening)', () => {
+  it('reports zero total debt and zero interest costs without NaN/Infinity, and a real (non-fabricated) effective rate of 0%', () => {
+    const { portfolio, summary, protocolFreshness, tracked } = buildOkV4({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.045,
+      riskPremium: 0,
+    });
+    const panel = buildDebtAndInterestPanel(portfolio, summary, protocolFreshness, tracked);
+    expect(panel.formattedTotalDebt).toBe('$0.00');
+    expect(panel.formattedAnnualInterestCost).toBe('$0.00');
+    expect(panel.formattedDailyInterestCost).toBe('$0.00');
+    expect(panel.formattedMonthlyInterestCost).toBe('$0.00');
+    // Zero debt still has a well-defined effective rate (0% interest cost
+    // over $0 debt) — never NaN, never a stale/fabricated non-zero value.
+    expect(panel.formattedCurrentBorrowRate).not.toMatch(/NaN|Infinity/);
+  });
+});

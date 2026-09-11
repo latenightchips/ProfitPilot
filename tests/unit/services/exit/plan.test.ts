@@ -654,3 +654,104 @@ describe('planExit — execution-cost assumption wiring (P1-6)', () => {
     }
   });
 });
+
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio (1 BTC, drawn/premium/risk premium all 0, manual
+ * debt state, 80% collateral factor manual).
+ */
+describe('planExit — canonical manual V4 zero-debt portfolio (V4 regression hardening)', () => {
+  function canonicalZeroDebtV4Portfolio(
+    overrides: Partial<ApplicationPortfolio> = {},
+  ): ApplicationPortfolio {
+    return {
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+      market: { btcPriceUsd: 64000 },
+      protocol: {
+        maxLoanToValue: 0.75,
+        liquidationThreshold: 0.8,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+      protocolVersion: 'v4',
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      v4DebtStateSource: 'manual',
+      v4CollateralRisk: { collateralFactor: 0.8, dynamicConfigKey: 0 },
+      v4CollateralRiskSource: 'manual',
+      ...overrides,
+    };
+  }
+
+  it('a full exit (targetDebt: 0) from an already-zero-debt position is a valid, feasible no-op — zero repayment, zero BTC sold', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(canonicalZeroDebtV4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.transaction?.repayment).toBe(0);
+    expect(result.data.transaction?.btcSold).toBe(0);
+    expect(result.data.transaction?.btcRetained).toBe(1);
+  });
+
+  it('a targetDebt below zero (repayment beyond what is owed) is reported as an honest infeasible result, never a fabricated negative repayment', () => {
+    // Infeasibility here is a valid SUCCESS outcome (`ok: true,
+    // data.feasible: false`) — the same contract every other infeasible
+    // case in this Service already uses (see the `retainedBtc` and
+    // `healthFactor <= liquidationThreshold` cases above); `ok: false`
+    // is reserved for genuine calculation errors, not invalid targets.
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: -1000 };
+    const result = planExit(canonicalZeroDebtV4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(false);
+    expect(result.data.infeasibleReason).toMatch(/cannot be negative/i);
+    expect(result.data.transaction).toBeNull();
+  });
+
+  it('a target Health Factor lower than the current infinite one — which would require adding debt, not repaying — is reported as an honest infeasible result, never a fabricated negative repayment', () => {
+    // Current Health Factor is Infinity (zero debt); any finite target
+    // implies borrowing INTO debt, which an exit (repay-only) plan can
+    // never do. `resolveTargetDebt`'s closed-form solve here resolves a
+    // target debt ABOVE the current $0 — the caller-level
+    // `resolvedTargetDebt > portfolio.debt.balance` check catches this
+    // and reports it as infeasible, the same success-with-feasible-false
+    // contract as above.
+    const target: ExitTarget = { type: 'healthFactor', targetHealthFactor: 2 };
+    const result = planExit(canonicalZeroDebtV4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(false);
+    expect(result.data.infeasibleReason).toMatch(/more debt than the portfolio currently holds/i);
+    expect(result.data.transaction).toBeNull();
+  });
+
+  it('zero debt is never treated as missing/unavailable debt data — the plan succeeds using the real, present v4DebtState, not AAVE_V4_DEBT_STATE_MISSING', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(canonicalZeroDebtV4Portfolio(), target, 'live');
+    expect(result.ok).toBe(true);
+  });
+
+  it('provenance is unaffected by zero debt — a live-sourced canonical zero-debt V4 portfolio produces the identical feasible no-op', () => {
+    const target: ExitTarget = { type: 'debtBalance', targetDebt: 0 };
+    const result = planExit(
+      canonicalZeroDebtV4Portfolio({
+        v4DebtStateSource: 'live',
+        v4CollateralRiskSource: 'live',
+        v4DebtState: {
+          drawnDebt: 0,
+          premiumDebt: 0,
+          baseDrawnApr: 0.045,
+          riskPremium: 0,
+          debtAssetPriceUsd: 1,
+        },
+      }),
+      target,
+      'live',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.feasible).toBe(true);
+    expect(result.data.transaction?.repayment).toBe(0);
+  });
+});

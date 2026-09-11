@@ -396,6 +396,64 @@ describe('usePortfolioStore.load (M4-003, Conflict B, made real in M8-008)', () 
   });
 
   /**
+   * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+   * zero-debt portfolio, a genuine local-storage round trip (not just an
+   * in-memory `set()`). Covers every field the audit called out: zero
+   * debt/risk premium preserved as real zeros (not dropped as falsy),
+   * 80% collateral factor preserved as `0.8`, manual debt/collateral-risk
+   * provenance preserved, live base-drawn-APR provenance preserved, and
+   * `protocolVersion` surviving as `'v4'`.
+   */
+  it('restores a canonical manual V4 zero-debt portfolio through a genuine local storage round trip, with every V4 field and provenance flag intact', async () => {
+    const created = usePortfolioStore.getState().create(
+      validInput({
+        collateral: { asset: 'BTC', quantity: 1 },
+        debt: { asset: 'USDC', balance: 0 },
+      }),
+    );
+    if (!created.ok) throw new Error('setup failed');
+    const id = created.data.id;
+    usePortfolioStore.getState().setProtocolVersion(id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(
+        id,
+        { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+        'manual',
+        'live',
+      );
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(id, { collateralFactor: 0.8, dynamicConfigKey: 0 }, 'manual');
+    await autoSaveCoordinator.flushAll();
+
+    // Simulates a page refresh.
+    usePortfolioStore.setState(INITIAL_STATE);
+    await usePortfolioStore.getState().load();
+
+    const record = usePortfolioStore.getState().portfolios[id];
+    expect(record).toBeDefined();
+    expect(record.portfolio.protocolVersion).toBe('v4');
+    expect(record.portfolio.v4DebtState).toEqual({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      baseDrawnApr: 0.045,
+      riskPremium: 0,
+    });
+    expect(record.portfolio.v4DebtStateSource).toBe('manual');
+    expect(record.portfolio.v4BaseDrawnAprSource).toBe('live');
+    expect(record.portfolio.v4CollateralRisk).toEqual({
+      collateralFactor: 0.8,
+      dynamicConfigKey: 0,
+    });
+    expect(record.portfolio.v4CollateralRiskSource).toBe('manual');
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+    expect(record.summary.data.debtValue).toBe(0);
+    expect(record.summary.data.healthFactor).toBe(Infinity);
+  });
+
+  /**
    * v1.19.0 Batch 3 (Dashboard Recommendation Summary Parity, Integration
    * Hardening) — the schema-level round trip of `settings.recommendationPreferences`
    * (every shape: full, partial-borrow, partial-loop, invalid) is already

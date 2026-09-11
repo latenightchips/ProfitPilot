@@ -175,6 +175,45 @@ describe('buildPortfolioHistoryEntry — V4 isolation', () => {
     expect(entry.debt.quantity).toBe(20000);
     expect(entry.borrowApr).toBe(0.05);
   });
+
+  /**
+   * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+   * zero-debt portfolio. Distinct from the "no synced debt state" test
+   * above: here `v4DebtState` IS present (a deliberate, real zero-debt
+   * position), not absent/undefined — `debt.quantity` must still be a
+   * real `0`, never treated as "missing data."
+   */
+  it('a canonical manual V4 zero-debt portfolio (v4DebtState present, all values zero) persists a real zero quantity, null Health Factor, and manual dataSource despite a live base drawn APR', () => {
+    const portfolio = v4Portfolio({
+      debt: { asset: 'USDC', balance: 0 },
+      v4DebtState: { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      v4DebtStateSource: 'manual',
+      v4BaseDrawnAprSource: 'live',
+      v4CollateralRiskSource: 'manual',
+    });
+    const summary = {
+      collateralValue: 64000,
+      debtValue: 0,
+      netEquity: 64000,
+      loanToValue: 0,
+      leverage: 1,
+      healthFactor: Infinity,
+      liquidation: null,
+      interestCost: 0,
+    };
+    const entry = buildPortfolioHistoryEntry('portfolio-1', portfolio, summary);
+    expect(entry.protocolVersion).toBe('v4');
+    expect(entry.debt.quantity).toBe(0);
+    expect(entry.debt.valueUsd).toBe(0);
+    // JSON cannot represent `Infinity` — normalized to `null`, the same
+    // "no liquidation risk" convention `liquidationPriceUsd` already uses.
+    expect(entry.healthFactor).toBeNull();
+    expect(entry.liquidationPriceUsd).toBeNull();
+    // AND-based composite: 'live' only when every V4 dimension is live —
+    // debt state and collateral risk are manual here, so the composite
+    // is honestly 'manual' even though base drawn APR alone is live.
+    expect(entry.dataSource).toBe('manual');
+  });
 });
 
 /**

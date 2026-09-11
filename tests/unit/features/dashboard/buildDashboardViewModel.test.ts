@@ -49,6 +49,40 @@ function createPortfolio(overrides: Record<string, unknown> = {}): Portfolio {
   return result.data;
 }
 
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio (1 BTC, drawn/premium/risk premium all 0, manual
+ * debt state, 80% collateral factor manual, live base drawn APR, no
+ * wallet address). Mirrors `buildDebtAndInterestPanel.test.ts`'s own
+ * `buildOkV4` — real Store actions (`setProtocolVersion`/
+ * `setAaveV4DebtState`/`setAaveV4CollateralRisk`), never a hand-built
+ * `Portfolio` object, so this exercises the same `summary.ok` gate the
+ * real Dashboard route relies on.
+ */
+function createCanonicalV4ZeroDebtPortfolio(): Portfolio {
+  const result = usePortfolioStore.getState().create(
+    validInput({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+    }),
+  );
+  if (!result.ok) throw new Error('setup failed');
+  const id = result.data.id;
+  usePortfolioStore.getState().setProtocolVersion(id, 'v4');
+  usePortfolioStore
+    .getState()
+    .setAaveV4DebtState(
+      id,
+      { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      'manual',
+      'live',
+    );
+  usePortfolioStore
+    .getState()
+    .setAaveV4CollateralRisk(id, { collateralFactor: 0.8, dynamicConfigKey: 0 }, 'manual');
+  return usePortfolioStore.getState().portfolios[id].portfolio;
+}
+
 describe('buildDashboardViewModel — valid portfolio (M5-003)', () => {
   it('converts a Portfolio Summary Service result into UI-ready metrics without mutating it', () => {
     const portfolio = createPortfolio();
@@ -379,5 +413,45 @@ describe('buildDashboardViewModel — V4 protocol freshness (V4 Mixed-Provenance
 
     expect(viewModel.freshness.protocol).not.toBeNull();
     expect(viewModel.freshness.protocol?.origin).toBe('manual');
+  });
+});
+
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio, end to end through the real Dashboard view model.
+ */
+describe('buildDashboardViewModel — canonical manual V4 zero-debt portfolio (V4 regression hardening)', () => {
+  it('reports zero debt, zero LTV, 1.00x leverage, an infinite Health Factor, N/A liquidation metrics, and zero interest cost — no V3 fallback', () => {
+    const portfolio = createCanonicalV4ZeroDebtPortfolio();
+    const record = usePortfolioStore.getState().portfolios[portfolio.id];
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+
+    const viewModel = buildDashboardViewModel(portfolio, record.summary);
+    expect(viewModel.ok).toBe(true);
+    if (!viewModel.ok) return;
+
+    expect(viewModel.metrics.totalDebt.rawValue).toBe(0);
+    expect(viewModel.metrics.totalDebt.formattedValue).toBe('$0.00');
+    expect(viewModel.metrics.loanToValue.rawValue).toBe(0);
+    expect(viewModel.metrics.loanToValue.formattedValue).toBe('0%');
+    expect(viewModel.metrics.leverage.rawValue).toBe(1);
+    expect(viewModel.metrics.leverage.formattedValue).toBe('1x');
+    expect(viewModel.metrics.healthFactor.rawValue).toBe(Infinity);
+    expect(viewModel.metrics.healthFactor.formattedValue).toBe('∞');
+    // Zero debt — liquidation is genuinely inapplicable, not a fabricated
+    // number and not silently omitted.
+    expect(viewModel.metrics.liquidationPrice.rawValue).toBeNull();
+    expect(viewModel.metrics.liquidationPrice.formattedValue).toBe('N/A (no debt)');
+    expect(viewModel.metrics.liquidationDistance.rawValue).toBeNull();
+    expect(viewModel.metrics.liquidationDistance.formattedValue).toBe('N/A (no debt)');
+    expect(viewModel.metrics.liquidationBuffer.rawValue).toBeNull();
+    expect(viewModel.metrics.liquidationBuffer.formattedValue).toBe('N/A (no debt)');
+    expect(viewModel.metrics.annualInterestCost.rawValue).toBe(0);
+    expect(viewModel.metrics.annualInterestCost.formattedValue).toBe('$0.00');
+    // V4 Mixed-Provenance UX batch — the legacy V3 protocol-freshness row
+    // is hidden entirely for V4, never showing a leftover V3 placeholder
+    // value as if it described this V4 position.
+    expect(viewModel.freshness.protocol).toBeNull();
   });
 });

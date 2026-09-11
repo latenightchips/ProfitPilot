@@ -44,6 +44,38 @@ function buildOkViewModel(overrides: Record<string, unknown> = {}) {
   return { portfolio: record.portfolio, viewModel };
 }
 
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio. Mirrors `buildDebtAndInterestPanel.test.ts`'s own
+ * `buildOkV4` local helper.
+ */
+function buildOkV4ZeroDebtViewModel() {
+  const created = usePortfolioStore.getState().create(
+    validInput({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+    }),
+  );
+  if (!created.ok) throw new Error('setup failed');
+  const id = created.data.id;
+  usePortfolioStore.getState().setProtocolVersion(id, 'v4');
+  usePortfolioStore
+    .getState()
+    .setAaveV4DebtState(
+      id,
+      { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+      'manual',
+      'live',
+    );
+  usePortfolioStore
+    .getState()
+    .setAaveV4CollateralRisk(id, { collateralFactor: 0.8, dynamicConfigKey: 0 }, 'manual');
+  const record = usePortfolioStore.getState().portfolios[id];
+  const viewModel = buildDashboardViewModel(record.portfolio, record.summary);
+  if (!viewModel.ok) throw new Error('expected a successful view model');
+  return { portfolio: record.portfolio, viewModel };
+}
+
 describe('buildLiquidationRiskPanel — reuses already-computed metrics', () => {
   it('reuses the liquidation trio from DashboardMetrics rather than recomputing them', () => {
     const { portfolio, viewModel } = buildOkViewModel();
@@ -109,5 +141,28 @@ describe('buildLiquidationRiskPanel — zero-debt portfolio (Conflict #20)', () 
     );
     expect(panel.estimatedLiquidationPrice.status).toBe('unavailable');
     expect(panel.estimatedLiquidationPrice.formattedValue).toBe('N/A (no debt)');
+  });
+});
+
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio.
+ */
+describe('buildLiquidationRiskPanel — canonical manual V4 zero-debt portfolio (V4 regression hardening)', () => {
+  it('marks liquidation metrics unavailable and uses the V4 collateral-factor assumptions copy, never the V3 borrow/supply-APR wording', () => {
+    const { portfolio, viewModel } = buildOkV4ZeroDebtViewModel();
+    const panel = buildLiquidationRiskPanel(
+      portfolio,
+      viewModel.metrics,
+      viewModel.freshness.market,
+    );
+    expect(panel.estimatedLiquidationPrice.status).toBe('unavailable');
+    expect(panel.estimatedLiquidationPrice.formattedValue).toBe('N/A (no debt)');
+    expect(panel.liquidationDistance.formattedValue).toBe('N/A (no debt)');
+    expect(panel.percentageDeclineToLiquidation.formattedValue).toBe('N/A (no debt)');
+    expect(panel.assumptions).toContain('Aave V4 collateral factor');
+    expect(panel.assumptions).not.toMatch(
+      /borrow APR|supply APR|maximum LTV|liquidation threshold/,
+    );
   });
 });

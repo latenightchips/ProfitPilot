@@ -66,6 +66,42 @@ describe('buildRecommendationSummary — no target configured', () => {
   });
 });
 
+/**
+ * Consolidated V4 regression-hardening batch — canonical manual Aave V4
+ * zero-debt portfolio (1 BTC, drawn/premium/risk premium all 0, manual
+ * debt state, 80% collateral factor manual, live base drawn APR, no
+ * safety target configured).
+ */
+describe('buildRecommendationSummary — canonical manual V4 zero-debt portfolio, no target configured (V4 regression hardening)', () => {
+  it('returns an empty list with emptyReason "no_target" — no repayment, no additional-collateral, and no fake liquidation warning for a zero-debt V4 portfolio', () => {
+    const created = createPortfolio({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 0 },
+    });
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4DebtState(
+        created.id,
+        { drawnDebt: 0, premiumDebt: 0, baseDrawnApr: 0.045, riskPremium: 0 },
+        'manual',
+        'live',
+      );
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(
+        created.id,
+        { collateralFactor: 0.8, dynamicConfigKey: 0 },
+        'manual',
+      );
+    const portfolio = usePortfolioStore.getState().portfolios[created.id].portfolio;
+
+    const summary = buildRecommendationSummary(portfolio);
+    expect(summary.items).toEqual([]);
+    expect(summary.emptyReason).toBe('no_target');
+  });
+});
+
 describe('buildRecommendationSummary — target already met', () => {
   it('returns an empty list with emptyReason "target_met" rather than "no action needed" entries (M5-020, Batch 9)', () => {
     // Current HF = 4; target of 1 is already exceeded.
