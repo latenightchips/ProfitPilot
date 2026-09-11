@@ -71,7 +71,7 @@ describe('SafetyTargetsStatusPanel — heading and structure (accessibility)', (
 });
 
 describe('SafetyTargetsStatusPanel — all targets configured', () => {
-  it('shows Target/Current/Met for every field when current values clear their targets', () => {
+  it('shows Target/Current/status for every field when current values clear their targets', () => {
     const portfolio = basePortfolio({
       settings: {
         safetyTargets: {
@@ -91,7 +91,8 @@ describe('SafetyTargetsStatusPanel — all targets configured', () => {
 
     expect(row('Target BTC price (USD)').textContent).toContain('$40,000');
     expect(row('Target BTC price (USD)').textContent).toContain('$50,000');
-    expect(row('Target BTC price (USD)').textContent).toContain('Met');
+    expect(row('Target BTC price (USD)').textContent).toContain('Target reached');
+    expect(row('Target BTC price (USD)').textContent).not.toContain('Met');
   });
 
   it('shows "Not met" when a current value falls short of its target', () => {
@@ -126,7 +127,7 @@ describe('SafetyTargetsStatusPanel — partial configuration', () => {
     const summary = calculatePortfolioSummary(portfolio, 'manual');
     render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
 
-    expect(row('Target BTC price (USD)').textContent).toContain('Met');
+    expect(row('Target BTC price (USD)').textContent).toContain('Target reached');
     expect(row('Target Health Factor').textContent).toContain('Not configured');
     expect(row('Holding period (days)').textContent).toContain('Not configured');
     expect(row('Safety buffer (%)').textContent).toContain('Not configured');
@@ -134,7 +135,7 @@ describe('SafetyTargetsStatusPanel — partial configuration', () => {
 });
 
 describe('SafetyTargetsStatusPanel — valid zero preservation', () => {
-  it('holding period target of 0 renders "0 days" and "Met", never "Not configured"', () => {
+  it('holding period target of 0 renders "0 days" and "Target reached", never "Not configured"', () => {
     const portfolio = basePortfolio({
       settings: { safetyTargets: { holdingPeriodDays: 0 } },
     });
@@ -144,10 +145,10 @@ describe('SafetyTargetsStatusPanel — valid zero preservation', () => {
     const text = row('Holding period (days)').textContent ?? '';
     expect(text).toContain('Target: 0 days');
     expect(text).not.toContain('Not configured');
-    expect(text).toContain('Met');
+    expect(text).toContain('Target reached');
   });
 
-  it('safety buffer target of 0 renders "0%" and "Met", never "Not configured"', () => {
+  it('safety buffer target of 0 renders "0%" and "On target", never "Not configured"', () => {
     const portfolio = basePortfolio({
       settings: { safetyTargets: { safetyBufferPercent: 0 } },
     });
@@ -157,7 +158,7 @@ describe('SafetyTargetsStatusPanel — valid zero preservation', () => {
     const text = row('Safety buffer (%)').textContent ?? '';
     expect(text).toContain('Target: 0%');
     expect(text).not.toContain('Not configured');
-    expect(text).toContain('Met');
+    expect(text).toContain('On target');
   });
 });
 
@@ -174,11 +175,12 @@ describe('SafetyTargetsStatusPanel — Holding Period reference timestamp', () =
     // Real elapsed days vary with wall-clock "now", so only assert the
     // reference is establishedAt-based, not the exact figure: with
     // establishedAt in the past and no baseline change, this must be
-    // "Met" (elapsed comfortably exceeds a 1-day target either way) —
-    // the distinguishing assertion is in the Service-layer test file,
-    // which pins `now`. This component test only proves the panel
-    // renders without error and reaches a determinate status.
-    expect(row('Holding period (days)').textContent).toMatch(/Met|Not met/);
+    // "Target reached" (elapsed comfortably exceeds a 1-day target
+    // either way) — the distinguishing assertion is in the
+    // Service-layer test file, which pins `now`. This component test
+    // only proves the panel renders without error and reaches a
+    // determinate status.
+    expect(row('Holding period (days)').textContent).toMatch(/Target reached|In progress/);
   });
 
   it('falls back to createdAt when no baseline is established', () => {
@@ -189,19 +191,19 @@ describe('SafetyTargetsStatusPanel — Holding Period reference timestamp', () =
     const summary = calculatePortfolioSummary(portfolio, 'manual');
     render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
 
-    expect(row('Holding period (days)').textContent).toMatch(/Met|Not met/);
+    expect(row('Holding period (days)').textContent).toMatch(/Target reached|In progress/);
   });
 });
 
 describe('SafetyTargetsStatusPanel — exact boundary behavior', () => {
-  it('current exactly equal to target renders "Met" (inclusive)', () => {
+  it('current exactly equal to target renders "Target reached" (inclusive)', () => {
     const portfolio = basePortfolio({
       settings: { safetyTargets: { targetBtcPriceUsd: 50000 } }, // equals market.btcPriceUsd exactly
     });
     const summary = calculatePortfolioSummary(portfolio, 'manual');
     render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
 
-    expect(row('Target BTC price (USD)').textContent).toContain('Met');
+    expect(row('Target BTC price (USD)').textContent).toContain('Target reached');
   });
 });
 
@@ -252,7 +254,87 @@ describe('SafetyTargetsStatusPanel — failed PortfolioSummary', () => {
 
     expect(row('Target Health Factor').textContent).toContain('Not available');
     expect(row('Safety buffer (%)').textContent).toContain('Not available');
-    expect(row('Target BTC price (USD)').textContent).toContain('Met');
-    expect(row('Holding period (days)').textContent).toMatch(/Met|Not met/);
+    expect(row('Target BTC price (USD)').textContent).toContain('Target reached');
+    expect(row('Holding period (days)').textContent).toMatch(/Target reached|In progress/);
+  });
+});
+
+/**
+ * Target-specific status language (Safety Targets Semantic/Status
+ * Cleanup batch) — proves each target family's own "not met" label, and
+ * that the generic "Met"/"Not met" text this panel used before this
+ * batch never leaks onto the two informational-milestone targets or
+ * Safety Buffer.
+ */
+describe('SafetyTargetsStatusPanel — target-specific status language', () => {
+  it('Safety Buffer % below its target renders "Below target", not "Not met"', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 99 } }, // far above the real ~75% buffer here
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    const text = row('Safety buffer (%)').textContent ?? '';
+    expect(text).toContain('Below target');
+    expect(text).not.toContain('Not met');
+    expect(text).not.toContain('Met');
+  });
+
+  it('Target BTC Price below its target renders "Below target", not "Not met"', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { targetBtcPriceUsd: 60000 } }, // above market.btcPriceUsd (50000)
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    const text = row('Target BTC price (USD)').textContent ?? '';
+    expect(text).toContain('Below target');
+    expect(text).not.toContain('Not met');
+    expect(text).not.toContain('Met');
+  });
+
+  it('Holding Period not yet elapsed renders "In progress", not "Not met"', () => {
+    const portfolio = basePortfolio({
+      createdAt: new Date().toISOString(),
+      settings: { safetyTargets: { holdingPeriodDays: 9999 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    const text = row('Holding period (days)').textContent ?? '';
+    expect(text).toContain('In progress');
+    expect(text).not.toContain('Not met');
+    expect(text).not.toContain('Met');
+  });
+
+  it('Target Health Factor keeps "Met"/"Not met" — the one target with an associated Recommendation', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { targetHealthFactor: 2, targetBtcPriceUsd: 40000 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    expect(row('Target Health Factor').textContent).toContain('Met');
+    // Confirms "Met" is target-specific, not a generic substring leak —
+    // BTC Price (also satisfied here) must say "Target reached", not "Met".
+    expect(row('Target BTC price (USD)').textContent).not.toContain('Met');
+  });
+
+  it('no CTA/link/button exists anywhere in the panel for any target', () => {
+    const portfolio = basePortfolio({
+      settings: {
+        safetyTargets: {
+          targetHealthFactor: 2,
+          targetBtcPriceUsd: 40000,
+          safetyBufferPercent: 50,
+          holdingPeriodDays: 30,
+        },
+      },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });

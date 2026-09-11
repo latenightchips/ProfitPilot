@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSafetyTargetsStatus } from '@/services/portfolio/safetyTargetsStatus';
+import {
+  buildSafetyTargetsStatus,
+  formatSafetyTargetStatusLabel,
+  type SafetyTargetComparison,
+} from '@/services/portfolio/safetyTargetsStatus';
 import { calculatePortfolioSummary } from '@/services/portfolio/summary';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -307,5 +311,86 @@ describe('buildSafetyTargetsStatus — failed PortfolioSummary', () => {
     // Unaffected — computed directly from `portfolio`, never from `summary`.
     expect(status.targetBtcPriceUsd).toEqual({ status: 'met', target: 40000, current: 50000 });
     expect(status.holdingPeriodDays).toEqual({ status: 'met', target: 30, current: 100 });
+  });
+});
+
+/**
+ * `formatSafetyTargetStatusLabel` — the canonical, target-family-specific
+ * presentation mapping (Safety Targets Semantic/Status Cleanup batch)
+ * both `app/portfolio/SafetyTargetsStatusPanel.tsx` and
+ * `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts` call.
+ * Pure unit coverage, independent of any portfolio/summary fixture —
+ * the numeric comparator (`compareAtLeast`, exercised throughout this
+ * file above) is unchanged by this batch; only the label text a given
+ * `status` maps to differs per target.
+ */
+describe('formatSafetyTargetStatusLabel', () => {
+  const met: SafetyTargetComparison = { status: 'met', target: 1, current: 1 };
+  const notMet: SafetyTargetComparison = { status: 'not_met', target: 2, current: 1 };
+  const notConfigured: SafetyTargetComparison = {
+    status: 'not_configured',
+    target: null,
+    current: 1,
+  };
+  const unavailable: SafetyTargetComparison = { status: 'unavailable', target: 1, current: null };
+
+  it('Target Health Factor: "Met" / "Not met"', () => {
+    expect(formatSafetyTargetStatusLabel('targetHealthFactor', met, 'Not available')).toBe('Met');
+    expect(formatSafetyTargetStatusLabel('targetHealthFactor', notMet, 'Not available')).toBe(
+      'Not met',
+    );
+  });
+
+  it('Target BTC Price: "Target reached" / "Below target", never "Met"/"Not met"', () => {
+    expect(formatSafetyTargetStatusLabel('targetBtcPriceUsd', met, 'Not available')).toBe(
+      'Target reached',
+    );
+    expect(formatSafetyTargetStatusLabel('targetBtcPriceUsd', notMet, 'Not available')).toBe(
+      'Below target',
+    );
+  });
+
+  it('Holding Period: "Target reached" / "In progress", never "Met"/"Not met"', () => {
+    expect(formatSafetyTargetStatusLabel('holdingPeriodDays', met, 'Not available')).toBe(
+      'Target reached',
+    );
+    expect(formatSafetyTargetStatusLabel('holdingPeriodDays', notMet, 'Not available')).toBe(
+      'In progress',
+    );
+  });
+
+  it('Safety Buffer: "On target" / "Below target", never "Met"/"Not met"', () => {
+    expect(formatSafetyTargetStatusLabel('safetyBufferPercent', met, 'Not available')).toBe(
+      'On target',
+    );
+    expect(formatSafetyTargetStatusLabel('safetyBufferPercent', notMet, 'Not available')).toBe(
+      'Below target',
+    );
+  });
+
+  it('"Not configured" is identical across all four targets', () => {
+    for (const key of [
+      'targetHealthFactor',
+      'targetBtcPriceUsd',
+      'safetyBufferPercent',
+      'holdingPeriodDays',
+    ] as const) {
+      expect(formatSafetyTargetStatusLabel(key, notConfigured, 'Not available')).toBe(
+        'Not configured',
+      );
+    }
+  });
+
+  it('"unavailable" always returns the caller-supplied text verbatim, for every target', () => {
+    expect(formatSafetyTargetStatusLabel('targetHealthFactor', unavailable, 'Not available')).toBe(
+      'Not available',
+    );
+    expect(
+      formatSafetyTargetStatusLabel(
+        'safetyBufferPercent',
+        unavailable,
+        'No liquidation risk to compare against',
+      ),
+    ).toBe('No liquidation risk to compare against');
   });
 });

@@ -136,7 +136,9 @@ export type {
 } from './models';
 export {
   buildSafetyTargetsStatus,
+  formatSafetyTargetStatusLabel,
   type SafetyTargetComparison,
+  type SafetyTargetKey,
   type SafetyTargetsStatus,
   type SafetyTargetStatus,
 } from './safetyTargetsStatus';

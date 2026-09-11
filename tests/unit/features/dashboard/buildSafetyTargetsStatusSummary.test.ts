@@ -260,3 +260,93 @@ describe('buildSafetyTargetsStatusSummary — failed PortfolioSummary', () => {
     expect(rowFor(summary, 'holdingPeriodDays').status).toBe('met');
   });
 });
+
+/**
+ * Target-specific status language (Safety Targets Semantic/Status
+ * Cleanup batch) — the exact `statusLabel` text per target family,
+ * proving the generic "Met"/"Not met" text never leaks onto Target BTC
+ * Price, Holding Period, or Safety Buffer, and that Target Health
+ * Factor's own "Met"/"Not met" is unchanged.
+ */
+describe('buildSafetyTargetsStatusSummary — target-specific status labels', () => {
+  it('Target Health Factor: "Met"/"Not met"', () => {
+    const met = buildSafetyTargetsStatusSummary(
+      basePortfolio({ settings: { safetyTargets: { targetHealthFactor: 2 } } }),
+      calculatePortfolioSummary(
+        basePortfolio({ settings: { safetyTargets: { targetHealthFactor: 2 } } }),
+        'manual',
+      ),
+    );
+    expect(rowFor(met, 'targetHealthFactor').statusLabel).toBe('Met');
+
+    const notMetPortfolio = basePortfolio({
+      settings: { safetyTargets: { targetHealthFactor: 10 } },
+    });
+    const notMet = buildSafetyTargetsStatusSummary(
+      notMetPortfolio,
+      calculatePortfolioSummary(notMetPortfolio, 'manual'),
+    );
+    expect(rowFor(notMet, 'targetHealthFactor').statusLabel).toBe('Not met');
+  });
+
+  it('Target BTC Price: "Target reached"/"Below target", never "Met"/"Not met"', () => {
+    const reachedPortfolio = basePortfolio({
+      settings: { safetyTargets: { targetBtcPriceUsd: 40000 } }, // below market.btcPriceUsd (50000)
+    });
+    const reached = buildSafetyTargetsStatusSummary(
+      reachedPortfolio,
+      calculatePortfolioSummary(reachedPortfolio, 'manual'),
+    );
+    expect(rowFor(reached, 'targetBtcPriceUsd').statusLabel).toBe('Target reached');
+
+    const belowPortfolio = basePortfolio({
+      settings: { safetyTargets: { targetBtcPriceUsd: 60000 } }, // above market.btcPriceUsd (50000)
+    });
+    const below = buildSafetyTargetsStatusSummary(
+      belowPortfolio,
+      calculatePortfolioSummary(belowPortfolio, 'manual'),
+    );
+    expect(rowFor(below, 'targetBtcPriceUsd').statusLabel).toBe('Below target');
+  });
+
+  it('Holding Period: "Target reached"/"In progress", never "Met"/"Not met"', () => {
+    const reachedPortfolio = basePortfolio({
+      settings: { safetyTargets: { holdingPeriodDays: 0 } },
+    });
+    const reached = buildSafetyTargetsStatusSummary(
+      reachedPortfolio,
+      calculatePortfolioSummary(reachedPortfolio, 'manual'),
+    );
+    expect(rowFor(reached, 'holdingPeriodDays').statusLabel).toBe('Target reached');
+
+    const inProgressPortfolio = basePortfolio({
+      createdAt: new Date().toISOString(),
+      settings: { safetyTargets: { holdingPeriodDays: 9999 } },
+    });
+    const inProgress = buildSafetyTargetsStatusSummary(
+      inProgressPortfolio,
+      calculatePortfolioSummary(inProgressPortfolio, 'manual'),
+    );
+    expect(rowFor(inProgress, 'holdingPeriodDays').statusLabel).toBe('In progress');
+  });
+
+  it('Safety Buffer: "On target"/"Below target", never "Met"/"Not met"', () => {
+    const onTargetPortfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 50 } }, // below the real ~75% buffer here
+    });
+    const onTarget = buildSafetyTargetsStatusSummary(
+      onTargetPortfolio,
+      calculatePortfolioSummary(onTargetPortfolio, 'manual'),
+    );
+    expect(rowFor(onTarget, 'safetyBufferPercent').statusLabel).toBe('On target');
+
+    const belowPortfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 99 } }, // above the real ~75% buffer here
+    });
+    const below = buildSafetyTargetsStatusSummary(
+      belowPortfolio,
+      calculatePortfolioSummary(belowPortfolio, 'manual'),
+    );
+    expect(rowFor(below, 'safetyBufferPercent').statusLabel).toBe('Below target');
+  });
+});

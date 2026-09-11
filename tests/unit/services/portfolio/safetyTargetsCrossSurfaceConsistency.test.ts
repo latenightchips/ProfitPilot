@@ -7,7 +7,10 @@ import {
   formatPercentagePoints,
 } from '@/features/dashboard/utils/format';
 import { buildPortfolioPositionsCsv } from '@/services/export/CsvExporter';
-import { buildSafetyTargetsStatus } from '@/services/portfolio/safetyTargetsStatus';
+import {
+  buildSafetyTargetsStatus,
+  formatSafetyTargetStatusLabel,
+} from '@/services/portfolio/safetyTargetsStatus';
 import { calculatePortfolioSummary } from '@/services/portfolio/summary';
 import type { Portfolio } from '@/types/portfolio';
 
@@ -397,5 +400,63 @@ describe('safety targets cross-surface consistency — F. target values are stab
     expect(csvFields[CSV_INDEX.targetBtcPriceUsd]).toBe('40000');
     expect(canonical.holdingPeriodDays.target).toBe(30);
     expect(csvFields[CSV_INDEX.holdingPeriodDays]).toBe('30');
+  });
+});
+
+/**
+ * Status-label text agreement (Safety Targets Semantic/Status Cleanup
+ * batch) — the Portfolio panel and the Dashboard summary both call the
+ * same `formatSafetyTargetStatusLabel` (`services/portfolio/safetyTargetsStatus.ts`),
+ * so this proves the same target/state always produces the identical
+ * status text on both surfaces, not merely the same `status` enum value.
+ */
+describe('Safety Targets Cross-Surface Consistency — status-label text agreement', () => {
+  it('every target/state combination produces identical statusLabel text via the canonical helper and the Dashboard summary', () => {
+    const scenarios: Partial<Portfolio>[] = [
+      {
+        settings: {
+          safetyTargets: {
+            targetHealthFactor: 2,
+            targetBtcPriceUsd: 40000,
+            safetyBufferPercent: 50,
+            holdingPeriodDays: 0,
+          },
+        },
+      },
+      {
+        settings: {
+          safetyTargets: {
+            targetHealthFactor: 10,
+            targetBtcPriceUsd: 90000,
+            safetyBufferPercent: 99,
+            holdingPeriodDays: 9999,
+          },
+        },
+      },
+      { settings: {} },
+    ];
+
+    for (const overrides of scenarios) {
+      const portfolio = basePortfolio(overrides);
+      const portfolioSummary = calculatePortfolioSummary(portfolio, 'manual');
+      const canonical = buildSafetyTargetsStatus(portfolio, portfolioSummary);
+      const dashboard = buildSafetyTargetsStatusSummary(portfolio, portfolioSummary);
+
+      for (const key of [
+        'targetHealthFactor',
+        'targetBtcPriceUsd',
+        'safetyBufferPercent',
+        'holdingPeriodDays',
+      ] as const) {
+        const unavailableText =
+          key === 'safetyBufferPercent'
+            ? portfolioSummary.ok
+              ? 'No liquidation risk to compare against'
+              : 'Not available'
+            : 'Not available';
+        const expectedLabel = formatSafetyTargetStatusLabel(key, canonical[key], unavailableText);
+        expect(dashboardRowFor(dashboard, key).statusLabel).toBe(expectedLabel);
+      }
+    }
   });
 });

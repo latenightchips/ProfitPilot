@@ -27,22 +27,29 @@
  * no calendar arithmetic of its own — `buildSafetyTargetsStatus` has
  * already computed the elapsed-day integer.
  *
- * **Status label text matches
- * `app/portfolio/SafetyTargetsStatusPanel.tsx`'s own `statusText`
- * exactly** ("Met" / "Not met" / "Not configured" / "Not available" /,
- * for Safety Buffer % on a zero-debt portfolio only, "No liquidation
- * risk to compare against" — the same established text
- * `PortfolioHistoryPanel.tsx` already uses for that exact fact).
- * Restated here, not imported, matching this
- * codebase's own "each page/feature owns its formatting layer"
- * convention (`./format.ts`'s own header comment) — the underlying
- * `status` value driving the text is always the canonical Service's own,
- * never a second interpretation of it.
+ * **Status label text (Safety Targets Semantic/Status Cleanup batch)
+ * comes from `formatSafetyTargetStatusLabel`
+ * (`services/portfolio/safetyTargetsStatus.ts`), the single canonical
+ * mapping this file and `app/portfolio/SafetyTargetsStatusPanel.tsx`
+ * both call** — no longer each surface's own independent, identical
+ * copy of the same switch (the pre-v1.25 "each page/feature owns its
+ * formatting layer" convention this file previously followed here),
+ * since the target-family-specific vocabulary this batch introduces
+ * (e.g. Target BTC Price's "Target reached" vs. Target Health Factor's
+ * "Met") is exactly the kind of shared meaning two independently
+ * hand-maintained copies could silently drift apart on. `unavailableText`
+ * stays resolved here (it needs `summary.ok`, not part of
+ * `SafetyTargetComparison`) and passed in — "Not available" everywhere
+ * except Safety Buffer % on a zero-debt portfolio, "No liquidation risk
+ * to compare against" (the same established text `PortfolioHistoryPanel.tsx`
+ * already uses for that exact fact). The underlying `status` value
+ * driving the text is always the canonical Service's own, never a
+ * second interpretation of it.
  */
 import {
   buildSafetyTargetsStatus,
+  formatSafetyTargetStatusLabel,
   type PortfolioSummary,
-  type SafetyTargetComparison,
   type ServiceResult,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
@@ -56,19 +63,6 @@ import { formatCurrency, formatHealthFactor, formatPercentagePoints } from './fo
 function formatDays(value: number): string {
   if (!Number.isFinite(value)) return '—';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
-}
-
-function statusLabel(comparison: SafetyTargetComparison, unavailableText: string): string {
-  switch (comparison.status) {
-    case 'met':
-      return 'Met';
-    case 'not_met':
-      return 'Not met';
-    case 'not_configured':
-      return 'Not configured';
-    case 'unavailable':
-      return unavailableText;
-  }
 }
 
 export function buildSafetyTargetsStatusSummary(
@@ -91,7 +85,11 @@ export function buildSafetyTargetsStatusSummary(
           ? '—'
           : formatHealthFactor(status.targetHealthFactor.current)
       }`,
-      statusLabel: statusLabel(status.targetHealthFactor, 'Not available'),
+      statusLabel: formatSafetyTargetStatusLabel(
+        'targetHealthFactor',
+        status.targetHealthFactor,
+        'Not available',
+      ),
     },
     {
       key: 'holdingPeriodDays',
@@ -106,7 +104,11 @@ export function buildSafetyTargetsStatusSummary(
           ? '—'
           : `${formatDays(status.holdingPeriodDays.current)} days elapsed`
       }`,
-      statusLabel: statusLabel(status.holdingPeriodDays, 'Not available'),
+      statusLabel: formatSafetyTargetStatusLabel(
+        'holdingPeriodDays',
+        status.holdingPeriodDays,
+        'Not available',
+      ),
     },
     {
       key: 'targetBtcPriceUsd',
@@ -121,7 +123,11 @@ export function buildSafetyTargetsStatusSummary(
           ? '—'
           : formatCurrency(status.targetBtcPriceUsd.current)
       }`,
-      statusLabel: statusLabel(status.targetBtcPriceUsd, 'Not available'),
+      statusLabel: formatSafetyTargetStatusLabel(
+        'targetBtcPriceUsd',
+        status.targetBtcPriceUsd,
+        'Not available',
+      ),
     },
     {
       key: 'safetyBufferPercent',
@@ -136,7 +142,8 @@ export function buildSafetyTargetsStatusSummary(
           ? '—'
           : formatPercentagePoints(status.safetyBufferPercent.current)
       }`,
-      statusLabel: statusLabel(
+      statusLabel: formatSafetyTargetStatusLabel(
+        'safetyBufferPercent',
         status.safetyBufferPercent,
         summary.ok ? 'No liquidation risk to compare against' : 'Not available',
       ),

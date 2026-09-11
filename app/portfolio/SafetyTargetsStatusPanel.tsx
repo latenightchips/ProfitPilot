@@ -4,8 +4,8 @@ import { Fragment } from 'react';
 
 import {
   buildSafetyTargetsStatus,
+  formatSafetyTargetStatusLabel,
   type PortfolioSummary,
-  type SafetyTargetComparison,
   type ServiceResult,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
@@ -32,6 +32,17 @@ import type { Portfolio } from '@/types/portfolio';
  * two fields that depend on it (Target Health Factor, Safety Buffer %)
  * — Target BTC Price and Holding Period are always computable directly
  * from `portfolio` and render normally regardless.
+ *
+ * **Target-specific status labels (Safety Targets Semantic/Status Cleanup
+ * batch), from `formatSafetyTargetStatusLabel`** — the same canonical
+ * mapping `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts`
+ * calls, so both surfaces can never drift apart. Target Health Factor
+ * keeps "Met"/"Not met" (it is the only target with an associated
+ * Recommendation). Target BTC Price and Holding Period — permanent
+ * informational milestones, never implying an action — use "Target
+ * reached"/"Below target"/"In progress" instead, never "Met"/"Not met".
+ * Safety Buffer uses "On target"/"Below target" — informational in this
+ * release; see that function's own header comment for why.
  */
 function formatCurrency(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -56,29 +67,6 @@ function formatDays(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
-/**
- * `unavailableText` distinguishes the two real causes behind
- * `status: 'unavailable'`: a failed `PortfolioSummary` (any comparison
- * that depends on it) vs. Safety Buffer % specifically on a zero-debt
- * portfolio, which has no liquidation risk to measure a buffer against
- * — the same established "No liquidation risk" text
- * `PortfolioHistoryPanel.tsx` already uses for that exact fact, never a
- * fabricated "0%" or a generic "Not available" that would blur a real
- * zero with an inapplicable comparison.
- */
-function statusText(comparison: SafetyTargetComparison, unavailableText: string): string {
-  switch (comparison.status) {
-    case 'met':
-      return 'Met';
-    case 'not_met':
-      return 'Not met';
-    case 'not_configured':
-      return 'Not configured';
-    case 'unavailable':
-      return unavailableText;
-  }
-}
-
 interface StatusRow {
   key: string;
   label: string;
@@ -101,7 +89,7 @@ function buildRows(portfolio: Portfolio, summary: ServiceResult<PortfolioSummary
         healthFactor.target === null ? '—' : formatHealthFactor(healthFactor.target)
       } · Current: ${
         healthFactor.current === null ? '—' : formatHealthFactor(healthFactor.current)
-      } · ${statusText(healthFactor, 'Not available')}`,
+      } · ${formatSafetyTargetStatusLabel('targetHealthFactor', healthFactor, 'Not available')}`,
     },
     {
       key: 'holdingPeriodDays',
@@ -110,7 +98,7 @@ function buildRows(portfolio: Portfolio, summary: ServiceResult<PortfolioSummary
         holdingPeriod.target === null ? '—' : `${formatDays(holdingPeriod.target)} days`
       } · Current: ${
         holdingPeriod.current === null ? '—' : `${formatDays(holdingPeriod.current)} days elapsed`
-      } · ${statusText(holdingPeriod, 'Not available')}`,
+      } · ${formatSafetyTargetStatusLabel('holdingPeriodDays', holdingPeriod, 'Not available')}`,
     },
     {
       key: 'targetBtcPriceUsd',
@@ -119,7 +107,7 @@ function buildRows(portfolio: Portfolio, summary: ServiceResult<PortfolioSummary
         btcPrice.target === null ? '—' : formatCurrency(btcPrice.target)
       } · Current: ${
         btcPrice.current === null ? '—' : formatCurrency(btcPrice.current)
-      } · ${statusText(btcPrice, 'Not available')}`,
+      } · ${formatSafetyTargetStatusLabel('targetBtcPriceUsd', btcPrice, 'Not available')}`,
     },
     {
       key: 'safetyBufferPercent',
@@ -128,7 +116,11 @@ function buildRows(portfolio: Portfolio, summary: ServiceResult<PortfolioSummary
         buffer.target === null ? '—' : formatPercentagePoints(buffer.target)
       } · Current: ${
         buffer.current === null ? '—' : formatPercentagePoints(buffer.current)
-      } · ${statusText(buffer, summary.ok ? 'No liquidation risk to compare against' : 'Not available')}`,
+      } · ${formatSafetyTargetStatusLabel(
+        'safetyBufferPercent',
+        buffer,
+        summary.ok ? 'No liquidation risk to compare against' : 'Not available',
+      )}`,
     },
   ];
 }

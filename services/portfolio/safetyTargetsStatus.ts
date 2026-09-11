@@ -73,6 +73,33 @@
  * `portfolio.createdAt` (always present) — both already-persisted
  * timestamps, no new field. Which already-real date counts as "day
  * zero" is a presentation decision, not a financial interpretation.
+ *
+ * **Actionable vs. informational (Safety Targets Semantic/Status Cleanup
+ * batch).** The numeric comparator above (`current >= target`) is
+ * unchanged and shared by all four fields — this section is about status
+ * *label wording* only, via `formatSafetyTargetStatusLabel` below.
+ * **Target Health Factor is the only target with an associated
+ * Recommendation today** (`services/recommendation/recommendationActions.ts`
+ * reads `portfolio.settings.safetyTargets.targetHealthFactor` directly);
+ * its "Met"/"Not met" language is unchanged. **Target BTC Price and
+ * Holding Period are permanent informational milestones** — reaching
+ * either never implies an action (buy/sell/repay/borrow/loop/exit), and
+ * neither has, or is intended to gain, an associated Recommendation;
+ * `docs/03_UI.md` C-012 "Milestone Card" groups Target BTC Price with
+ * "Portfolio Goal"/"Millionaire Target," an upward milestone, never
+ * C-013 "Emergency Alert Card" — their labels ("Target reached"/"Below
+ * target"/"In progress") reflect that, never "Met"/"Not met". **Safety
+ * Buffer is informational in this release, deliberately, not for lack of
+ * a deterministic relationship**: `Buffer = 1 − 1/HealthFactor` is an
+ * exact algebraic identity between F-022 and F-024 (both already read
+ * the same collateral/debt/risk-capacity inputs — see
+ * `services/portfolio/summary.ts`'s shared `riskCapacityFraction`), so a
+ * target Buffer could in principle drive the same Additional-Collateral/
+ * Repayment recommendation Target Health Factor already does. That
+ * wiring is intentionally deferred to a separate, explicitly reviewed
+ * future batch — this release only changes Buffer's status label
+ * ("On target"/"Below target"), not its recommendation behavior, which
+ * stays absent.
  */
 import { calculateLiquidationBufferPercent } from '@/services/portfolioHistory';
 import type { Portfolio } from '@/types/portfolio';
@@ -105,6 +132,53 @@ export interface SafetyTargetsStatus {
   targetBtcPriceUsd: SafetyTargetComparison;
   safetyBufferPercent: SafetyTargetComparison;
   holdingPeriodDays: SafetyTargetComparison;
+}
+
+export type SafetyTargetKey =
+  'targetHealthFactor' | 'targetBtcPriceUsd' | 'safetyBufferPercent' | 'holdingPeriodDays';
+
+const MET_LABEL: Record<SafetyTargetKey, string> = {
+  targetHealthFactor: 'Met',
+  safetyBufferPercent: 'On target',
+  targetBtcPriceUsd: 'Target reached',
+  holdingPeriodDays: 'Target reached',
+};
+
+const NOT_MET_LABEL: Record<SafetyTargetKey, string> = {
+  targetHealthFactor: 'Not met',
+  safetyBufferPercent: 'Below target',
+  targetBtcPriceUsd: 'Below target',
+  holdingPeriodDays: 'In progress',
+};
+
+/**
+ * Canonical status-label text for one Safety Target — the single mapping
+ * both `app/portfolio/SafetyTargetsStatusPanel.tsx` and
+ * `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts` call,
+ * replacing each surface's own previously-independent, identical copy of
+ * this same switch. Formats `comparison.status` only — the numeric
+ * `current >= target` decision itself is entirely `buildSafetyTargetsStatus`'s,
+ * unchanged. `unavailableText` stays caller-supplied (never hardcoded
+ * here): it depends on `summary.ok`, which is not part of
+ * `SafetyTargetComparison`, and already differs correctly by caller
+ * (plain "Not available" everywhere except Safety Buffer's zero-debt
+ * "No liquidation risk to compare against" case).
+ */
+export function formatSafetyTargetStatusLabel(
+  target: SafetyTargetKey,
+  comparison: SafetyTargetComparison,
+  unavailableText: string,
+): string {
+  switch (comparison.status) {
+    case 'met':
+      return MET_LABEL[target];
+    case 'not_met':
+      return NOT_MET_LABEL[target];
+    case 'not_configured':
+      return 'Not configured';
+    case 'unavailable':
+      return unavailableText;
+  }
 }
 
 function compareAtLeast(target: number | null, current: number | null): SafetyTargetComparison {

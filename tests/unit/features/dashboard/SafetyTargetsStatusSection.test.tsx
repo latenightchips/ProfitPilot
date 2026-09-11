@@ -26,14 +26,14 @@ const ALL_CONFIGURED: SafetyTargetsStatusSummary = {
       label: 'Holding Period',
       status: 'not_met',
       detailFormatted: 'Target: 365 days · Current: 30 days elapsed',
-      statusLabel: 'Not met',
+      statusLabel: 'In progress',
     },
     {
       key: 'targetBtcPriceUsd',
       label: 'Target BTC Price',
       status: 'met',
       detailFormatted: 'Target: $40,000.00 · Current: $50,000.00',
-      statusLabel: 'Met',
+      statusLabel: 'Target reached',
     },
     {
       key: 'safetyBufferPercent',
@@ -97,12 +97,24 @@ describe('SafetyTargetsStatusSection — heading and structure', () => {
   });
 });
 
-describe('SafetyTargetsStatusSection — Met / Not met / Not configured / Not available distinction', () => {
-  it('renders "Met" and "Not met" as plain text for configured fields', () => {
+describe('SafetyTargetsStatusSection — target-specific status text, Not configured / Not available distinction', () => {
+  it('renders "Met" only for Target Health Factor — the one target with an associated Recommendation', () => {
     render(<SafetyTargetsStatusSection summary={ALL_CONFIGURED} />);
 
-    expect(screen.getAllByText('Met')).toHaveLength(2); // Target Health Factor + Target BTC Price
-    expect(screen.getByText('Not met')).toBeInTheDocument();
+    expect(screen.getAllByText('Met')).toHaveLength(1); // Target Health Factor only
+  });
+
+  it('renders "Target reached" for Target BTC Price, never "Met" (informational milestone)', () => {
+    render(<SafetyTargetsStatusSection summary={ALL_CONFIGURED} />);
+
+    expect(screen.getByText('Target reached')).toBeInTheDocument();
+  });
+
+  it('renders "In progress" for an unmet Holding Period, never "Not met" (informational milestone)', () => {
+    render(<SafetyTargetsStatusSection summary={ALL_CONFIGURED} />);
+
+    expect(screen.getByText('In progress')).toBeInTheDocument();
+    expect(screen.queryByText('Not met')).not.toBeInTheDocument();
   });
 
   it('renders "Not configured" for every field when nothing is configured', () => {
@@ -116,6 +128,12 @@ describe('SafetyTargetsStatusSection — Met / Not met / Not configured / Not av
 
     expect(screen.getByText('No liquidation risk to compare against')).toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('no CTA/button exists for any target', () => {
+    render(<SafetyTargetsStatusSection summary={ALL_CONFIGURED} />);
+
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });
 
