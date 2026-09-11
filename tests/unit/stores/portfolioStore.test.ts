@@ -2583,6 +2583,83 @@ describe('usePortfolioStore — setProtocolVersion / setAaveV4Position history w
 });
 
 /**
+ * Portfolio Creation Defect 2 fix — `create()`'s own
+ * `skipInitialHistorySnapshot` option (`sourceOverrides`). V3 creation
+ * never passes it (default unset/`false`), so it must behave identically
+ * to before; the V4 creation flow (`NewPortfolioPageClient.tsx`) is its
+ * only real caller, exercised end-to-end in
+ * `tests/unit/app/portfolios/new/NewPortfolioPageClient.v4Creation.test.tsx`
+ * — these tests isolate the Store-level mechanism itself.
+ */
+describe('usePortfolioStore.create — skipInitialHistorySnapshot (Portfolio Creation Defect 2)', () => {
+  it('omitting the option (V3 creation) behaves exactly as before — an immediate snapshot', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+  });
+
+  it('skipInitialHistorySnapshot: true still validates, constructs the portfolio, computes the summary, and schedules a save — it suppresses ONLY the history attempt', async () => {
+    const result = usePortfolioStore
+      .getState()
+      .create(validInput(), { skipInitialHistorySnapshot: true });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const record = usePortfolioStore.getState().portfolios[result.data.id];
+    expect(record).toBeDefined();
+    expect(record.summary.ok).toBe(true);
+    if (!record.summary.ok) return;
+    expect(record.summary.data.netEquity).toBe(80000);
+
+    await autoSaveCoordinator.flushAll();
+    expect(usePortfolioStore.getState().saveStatus).toBe('saved');
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(result.data.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(0);
+  });
+
+  it('a V4-intended creation with skipInitialHistorySnapshot: true and no computable V4 state yet produces ZERO initial history entries — no phantom V3 row, and no fabricated V4 row from incomplete data', async () => {
+    const result = usePortfolioStore
+      .getState()
+      .create(
+        { ...validInput(), debt: { asset: 'USDC', balance: 0 } },
+        { skipInitialHistorySnapshot: true },
+      );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const id = result.data.id;
+
+    usePortfolioStore.getState().setProtocolVersion(id, 'v4');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const beforeComplete = await listPortfolioHistoryForPortfolio(id);
+    expect(beforeComplete.ok && beforeComplete.data).toHaveLength(0);
+
+    // Complete the V4 state through the same existing setters the real
+    // creation flow calls after `create()` — the first genuinely
+    // computable summary is what records the first (and only) entry.
+    usePortfolioStore.getState().setAaveV4CollateralRisk(id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(id, 1);
+
+    const listed = await listPortfolioHistoryForPortfolio(id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data[0]?.payload.protocolVersion).toBe('v4');
+  });
+
+  it('failed schema validation never reaches the history attempt, flag or no flag — no portfolio, no history', () => {
+    const invalid = { ...validInput(), name: '' };
+    const result = usePortfolioStore
+      .getState()
+      .create(invalid, { skipInitialHistorySnapshot: true });
+    expect(result.ok).toBe(false);
+    expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
+  });
+});
+
+/**
  * V1.1 Batch 3 ("Apply to Portfolio") — `applyPortfolioState`. Proposals
  * are constructed directly here (a plain `PortfolioApplyProposal`
  * object, using the real `calculatePortfolioSummary` for `before`/

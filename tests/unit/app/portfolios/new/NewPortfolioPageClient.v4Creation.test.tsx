@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewPortfolioPageClient } from '@/app/portfolios/new/NewPortfolioPageClient';
+import { listPortfolioHistoryForPortfolio } from '@/services/persistence/portfolioHistory';
 import { useAaveLiveDataStore } from '@/stores/aaveLiveDataStore';
 import { useAaveV4BaseDrawnRateStore } from '@/stores/aaveV4BaseDrawnRateStore';
 import { useAaveV4CollateralRiskLiveDataStore } from '@/stores/aaveV4CollateralRiskLiveDataStore';
@@ -577,6 +578,18 @@ describe('NewPortfolioPageClient — V4 fail-closed preservation for untouched s
     // has no canonical total, so the computed debt balance is 0, never a
     // stale/default legacy value.
     expect(portfolio.debt.balance).toBe(0);
+
+    // Portfolio Creation Defect 2 fix — no summary is ever computable for
+    // this portfolio (V4 with neither `v4DebtState` nor
+    // `v4CollateralRisk` set), so zero history entries is the correct
+    // outcome — never a phantom V3 row from `create()`'s own now-deferred
+    // attempt, and never a fabricated V4 row manufactured from incomplete
+    // data merely to guarantee every portfolio has one.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(0);
   });
 
   it('only the debt-state section touched — v4DebtState is set, v4CollateralRisk stays undefined independently', async () => {
@@ -690,6 +703,11 @@ describe('NewPortfolioPageClient — V3<->V4 toggle does not leak stale values',
     await user.type(screen.getByLabelText('On-chain address (optional)'), '0xnotanaddress');
     await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
 
+    // Portfolio Creation Defect 2 fix — `create()` is never reached at
+    // all when pre-validation fails, so no portfolio id exists that any
+    // history attempt (`attemptHistorySnapshot`, keyed by portfolio id)
+    // could possibly have been made for — zero portfolios is itself the
+    // complete proof no history was written for this action.
     expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
     expect(push).not.toHaveBeenCalled();
   });
@@ -982,5 +1000,133 @@ describe('NewPortfolioPageClient — V4 wallet-independent base drawn APR (V4 Ma
     expect(portfolio.v4BaseDrawnAprSource).toBe('live');
     expect(portfolio.v4DebtState?.baseDrawnApr).toBeCloseTo(0.04);
     expect(portfolio.v4DebtState?.drawnDebt).toBe(13000);
+  });
+});
+
+/**
+ * Portfolio Creation Defect 2 fix — no phantom V3 history entry during V4
+ * creation. `create()`'s own `skipInitialHistorySnapshot` option
+ * (`stores/portfolioStore.ts`) is exercised through the real form here;
+ * the option's own mechanics (default-off, suppresses only the history
+ * attempt) are unit-tested directly in
+ * `tests/unit/stores/portfolioStore.test.ts`.
+ */
+describe('NewPortfolioPageClient — Portfolio Creation Defect 2 (no phantom V3 history entry)', () => {
+  it('a complete manual V4 creation records exactly ONE history entry — protocolVersion v4, no v3 row', async () => {
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    await selectV4(user);
+    await fillSharedFields(user);
+    await fillManualV4Fields(user);
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    expect(portfolios).toHaveLength(1);
+    const portfolio = portfolios[0].portfolio;
+
+    await waitFor(async () => {
+      const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) return;
+      expect(listed.data).toHaveLength(1);
+    });
+    const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data[0]?.payload.protocolVersion).toBe('v4');
+    // No V3-shaped row ever existed alongside it.
+    expect(listed.data.every((entry) => entry.payload.protocolVersion === 'v4')).toBe(true);
+  });
+
+  it('canonical manual V4 zero-debt creation (1 BTC, 0 drawn, 0 premium, 0 risk premium, 80% collateral factor) records exactly ONE V4 history entry with zero debt preserved', async () => {
+    useAaveV4BaseDrawnRateStore.setState(readyV4BaseDrawnRateState());
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    await selectV4(user);
+    await user.type(screen.getByLabelText('Portfolio name', { exact: false }), 'Canonical V4');
+    await user.clear(screen.getByLabelText('BTC quantity', { exact: false }));
+    await user.type(screen.getByLabelText('BTC quantity', { exact: false }), '1');
+    await user.type(screen.getByLabelText('Current BTC price (USD)', { exact: false }), '64000');
+    await user.type(screen.getByLabelText('Collateral factor (%)', { exact: false }), '80');
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(4);
+    });
+    // Drawn debt / premium debt / risk premium are left at their honest
+    // untouched zero default — no wallet address, a genuine zero-debt
+    // position.
+    expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByLabelText('Premium debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByLabelText('Risk premium (%)', { exact: false })).toHaveValue(0);
+
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    expect(portfolios).toHaveLength(1);
+    const portfolio = portfolios[0].portfolio;
+    expect(portfolio.protocolVersion).toBe('v4');
+    expect(portfolio.collateral.quantity).toBe(1);
+    expect(portfolio.v4DebtState).toMatchObject({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      riskPremium: 0,
+      baseDrawnApr: 0.04,
+    });
+    expect(portfolio.debt.balance).toBe(0);
+    // Provenance follow-up (fb09f38) — the wallet-debt sub-group was
+    // never itself touched, so it is honestly `'manual'`; base drawn APR
+    // was genuinely live-fetched.
+    expect(portfolio.v4DebtStateSource).toBe('manual');
+    expect(portfolio.v4BaseDrawnAprSource).toBe('live');
+    expect(portfolio.v4CollateralRiskSource).toBe('manual');
+    expect(portfolio.v4CollateralRisk).toEqual({ collateralFactor: 0.8, dynamicConfigKey: 0 });
+
+    await waitFor(async () => {
+      const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) return;
+      expect(listed.data).toHaveLength(1);
+    });
+    const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const entry = listed.data[0]?.payload;
+    expect(entry?.protocolVersion).toBe('v4');
+    expect(entry?.debt.quantity).toBe(0);
+    // Zero-debt convention (services/portfolioHistory/buildPortfolioHistoryEntry.ts) —
+    // `Infinity` Health Factor is not JSON-representable, normalized to
+    // `null`, never a fabricated finite number.
+    expect(entry?.healthFactor).toBeNull();
+  });
+
+  it('normal V3 creation still records exactly ONE V3 history entry — unchanged behavior', async () => {
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    // V3 is the default selection — no `selectV4` call.
+    await user.type(screen.getByLabelText('Portfolio name', { exact: false }), 'V3 Portfolio');
+    await user.clear(screen.getByLabelText('BTC quantity', { exact: false }));
+    await user.type(screen.getByLabelText('BTC quantity', { exact: false }), '1');
+    await user.type(screen.getByLabelText('Debt balance', { exact: false }), '10000');
+    await user.type(screen.getByLabelText('Current BTC price (USD)', { exact: false }), '64000');
+    await user.type(screen.getByLabelText('Maximum LTV (%)', { exact: false }), '75');
+    await user.type(screen.getByLabelText('Liquidation threshold (%)', { exact: false }), '80');
+    await user.type(screen.getByLabelText('Borrow APR (%)', { exact: false }), '5');
+    await user.type(screen.getByLabelText('Supply APR (%)', { exact: false }), '2');
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    expect(portfolios).toHaveLength(1);
+    const portfolio = portfolios[0].portfolio;
+    expect(portfolio.protocolVersion).toBeUndefined();
+
+    await waitFor(async () => {
+      const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) return;
+      expect(listed.data).toHaveLength(1);
+    });
+    const listed = await listPortfolioHistoryForPortfolio(portfolio.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data[0]?.payload.protocolVersion).toBe('v3');
   });
 });

@@ -454,7 +454,20 @@ export function NewPortfolioPageClient() {
         protocol: { maxLoanToValue: 0, liquidationThreshold: 0, borrowApr: 0, supplyApr: 0 },
       };
 
-      const result = create(v4Data, { marketSource, protocolSource: 'manual' });
+      // Portfolio Creation Defect 2 fix — `create()` alone can never
+      // produce this portfolio's real, completed V4 state (protocolVersion/
+      // v4Position/v4DebtState/v4CollateralRisk are not part of
+      // `PortfolioInput`; the chain of setter calls below is what actually
+      // establishes them). `skipInitialHistorySnapshot: true` defers the
+      // very first history attempt to that chain's own existing
+      // `attemptHistorySnapshot` calls, so the first entry this portfolio
+      // ever gets reflects the real, completed submission — never a
+      // transient V3-shaped phantom of a state the user never chose or saw.
+      const result = create(v4Data, {
+        marketSource,
+        protocolSource: 'manual',
+        skipInitialHistorySnapshot: true,
+      });
       if (!result.ok) {
         setError('root', { message: result.errors.map((error) => error.message).join(' ') });
         return;

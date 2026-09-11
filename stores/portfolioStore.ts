@@ -346,7 +346,43 @@ export interface PortfolioStoreActions {
    */
   create: (
     input: unknown,
-    sourceOverrides?: { marketSource?: AaveV4DataSource; protocolSource?: AaveV4DataSource },
+    sourceOverrides?: {
+      marketSource?: AaveV4DataSource;
+      protocolSource?: AaveV4DataSource;
+      /**
+       * Portfolio Creation Defect 2 fix — suppresses ONLY this call's own
+       * initial `attemptHistorySnapshot` attempt; nothing else about
+       * `create()` changes (validation, portfolio construction, summary
+       * calculation, the in-memory write, or `schedulePortfolioSave` all
+       * run exactly as they always do). Defaults to `false`/unset for
+       * every caller that doesn't pass it — the exact previous
+       * unconditional-snapshot behavior, unchanged (every caller before
+       * this feature, and V3 creation today).
+       *
+       * Exists for exactly one caller:
+       * `app/portfolios/new/NewPortfolioPageClient.tsx`'s V4 branch, which
+       * — unlike V3 — cannot pass its full intended state to `create()`
+       * at all (`protocolVersion`/`v4Position`/`v4DebtState`/
+       * `v4CollateralRisk` are not part of `PortfolioInput`; they are
+       * validated and written exclusively by their own dedicated actions,
+       * called AFTER `create()` returns an id). Without this flag,
+       * `create()`'s own unconditional snapshot would record a
+       * transient, never-user-observed V3-shaped phantom entry before
+       * that post-create chain ever runs. With it, `create()` performs
+       * every other step unchanged and simply defers the FIRST snapshot
+       * attempt to whichever of that chain's own existing
+       * `attemptHistorySnapshot` calls (`setProtocolVersion`/
+       * `setAaveV4Position`/`setAaveV4DebtState`/`setAaveV4CollateralRisk`
+       * — reused verbatim, no new history-writing mechanism) is the first
+       * to reach a genuinely computable summary. If the V4 fieldset is
+       * left too incomplete for any of them to ever compute one, the
+       * portfolio correctly ends up with zero initial history entries —
+       * the same "no meaningful snapshot for an unsummarizable state"
+       * rule `attemptHistorySnapshot` itself already documents, not a new
+       * exception carved out for creation.
+       */
+      skipInitialHistorySnapshot?: boolean;
+    },
   ) => MappingResult<Portfolio>;
   update: (id: string, input: unknown) => MappingResult<Portfolio>;
   /**
@@ -979,7 +1015,16 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     // V1.1 Batch 2 — "portfolio creation" is always a snapshot attempt;
     // `isMaterialPortfolioHistoryChange` sees no prior entry and always
     // records the first one.
-    attemptHistorySnapshot(portfolio, summary);
+    //
+    // Portfolio Creation Defect 2 fix — unless the caller has more setup
+    // of its own still to run before this portfolio's state is complete
+    // (`sourceOverrides.skipInitialHistorySnapshot`; see that field's own
+    // doc comment on the `create` interface above), in which case this
+    // one attempt is deferred to that caller's own later, already-existing
+    // `attemptHistorySnapshot` call once a genuinely complete state exists.
+    if (!sourceOverrides?.skipInitialHistorySnapshot) {
+      attemptHistorySnapshot(portfolio, summary);
+    }
 
     return { ok: true, data: portfolio };
   },
