@@ -1324,11 +1324,18 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 Follow-up — a protocol-version switch is always a
+    // deliberate action (the radio group's own `onChange`, never a silent
+    // hook), and `isMaterialPortfolioHistoryChange` already hardcodes a
+    // `protocolVersion` change as always-material. Unconditional, the same
+    // discipline `create`/`update`/`applyPortfolioState` already use.
+    attemptHistorySnapshot(portfolio, summary);
   },
 
   setAaveV4Position: (id, v4Position) => {
@@ -1363,11 +1370,24 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    const summary = buildSummary(portfolio);
     set((state) => ({
-      portfolios: { ...state.portfolios, [id]: { portfolio, summary: buildSummary(portfolio) } },
+      portfolios: { ...state.portfolios, [id]: { portfolio, summary } },
       errors: [],
     }));
     schedulePortfolioSave(portfolio);
+    // V1.1 Batch 2 Follow-up — offered to the same existing orchestrator
+    // as every other deliberate action (this is only ever called from the
+    // address sub-form's own submit or portfolio creation, never a silent
+    // hook). `PersistedPortfolioHistoryEntry` does not persist the wallet
+    // address itself, so `isMaterialPortfolioHistoryChange` has no field
+    // to detect an address-only change by — an edit that changes only
+    // `v4Position` therefore dedupes away against an existing entry
+    // (correct given the current schema, not a bug: see this action's own
+    // interface doc comment). It still records when it is the first entry
+    // for this portfolio, or when it lands alongside another material
+    // change already captured on `portfolio`/`summary`.
+    attemptHistorySnapshot(portfolio, summary);
 
     return { ok: true, data: portfolio };
   },

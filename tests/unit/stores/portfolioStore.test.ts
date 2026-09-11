@@ -2438,6 +2438,151 @@ describe('usePortfolioStore — Portfolio History trigger wiring (V1.1 Batch 2)'
 });
 
 /**
+ * Portfolio History Follow-up — closes the gap the trigger wiring above
+ * left open: `setProtocolVersion`/`setAaveV4Position` never called
+ * `attemptHistorySnapshot` at all, so
+ * `isMaterialPortfolioHistoryChange`'s own "a protocol-version change is
+ * always material" rule (`services/portfolioHistory/isMaterialPortfolioHistoryChange.ts`)
+ * was unreachable through the one action that actually changes protocol
+ * version. Reuses `waitForHistoryLength` above — same fire-and-forget
+ * polling discipline, no new mechanism, no schema change.
+ */
+describe('usePortfolioStore — setProtocolVersion / setAaveV4Position history wiring (Portfolio History Follow-up)', () => {
+  it('setProtocolVersion() records a new history entry switching V3 -> V4 once valid V4 state is present, leaving the prior entry unchanged', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    // Populate valid V4 debt/collateral-risk state while the portfolio is
+    // still flagged V3 — neither setter requires `protocolVersion === 'v4'`
+    // to accept a write (no cross-inference), and the V3 calculation path
+    // they're compared against here doesn't consume either field, so both
+    // calls are themselves correctly deduped against the initial entry.
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const beforeSwitch = await listPortfolioHistoryForPortfolio(created.id);
+    expect(beforeSwitch.ok).toBe(true);
+    if (!beforeSwitch.ok) return;
+    expect(beforeSwitch.data).toHaveLength(1);
+    const priorEntry = beforeSwitch.data[0];
+
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    await waitForHistoryLength(created.id, 2);
+
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const newest = listed.data.find((entry) => entry.recordId !== priorEntry?.recordId);
+    expect(newest?.payload.protocolVersion).toBe('v4');
+    // The pre-switch entry itself is untouched — immutability.
+    const stillThere = listed.data.find((entry) => entry.recordId === priorEntry?.recordId);
+    expect(stillThere?.payload).toEqual(priorEntry?.payload);
+  });
+
+  it('setProtocolVersion() records a new history entry switching V4 -> V3, leaving the prior V4 entry unchanged', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(created.id, 2);
+    const beforeSwitch = await listPortfolioHistoryForPortfolio(created.id);
+    expect(beforeSwitch.ok).toBe(true);
+    if (!beforeSwitch.ok) return;
+    const v4Entry = beforeSwitch.data.find((entry) => entry.payload.protocolVersion === 'v4');
+    expect(v4Entry).toBeDefined();
+
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v3');
+    await waitForHistoryLength(created.id, 3);
+
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const newest = listed.data.find(
+      (entry) => !beforeSwitch.data.some((existing) => existing.recordId === entry.recordId),
+    );
+    expect(newest?.payload.protocolVersion).toBe('v3');
+    // The pre-switch V4 entry itself is untouched — immutability.
+    const stillThereV4 = listed.data.find((entry) => entry.recordId === v4Entry?.recordId);
+    expect(stillThereV4?.payload).toEqual(v4Entry?.payload);
+  });
+
+  it('setProtocolVersion() does not record a duplicate entry when the resulting materiality check finds no real change (dedup)', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    // The portfolio is already implicitly V3 (protocolVersion undefined);
+    // setting it explicitly to 'v3' is a no-op for history purposes —
+    // `isMaterialPortfolioHistoryChange` sees `'v3' === 'v3'` and every
+    // other financial value unchanged.
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v3');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(1);
+  });
+
+  it('setAaveV4Position() offers a snapshot attempt to the existing orchestrator, recording an entry once it produces a fully-valid V4 state', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // None of the above materializes an entry yet — summary calculation
+    // still fails closed until `v4DebtState` is also set (same baseline
+    // the existing `setAaveV4DebtState` trigger test above documents).
+    const beforeDebtState = await listPortfolioHistoryForPortfolio(created.id);
+    expect(beforeDebtState.ok && beforeDebtState.data).toHaveLength(1);
+
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(created.id, 2);
+  });
+
+  it('setAaveV4Position() dedupes an address-only change on an already-fully-configured V4 portfolio — wallet address is not part of the persisted history schema', async () => {
+    const created = createValidPortfolio();
+    await waitForHistoryLength(created.id, 1);
+
+    usePortfolioStore.getState().setProtocolVersion(created.id, 'v4');
+    usePortfolioStore
+      .getState()
+      .setAaveV4Position(created.id, { userAddress: VALID_V4_ADDRESS as `0x${string}` });
+    usePortfolioStore
+      .getState()
+      .setAaveV4CollateralRisk(created.id, VALID_V4_COLLATERAL_RISK, 'manual');
+    usePortfolioStore.getState().setAaveV4DebtState(created.id, VALID_V4_DEBT_STATE, 'manual');
+    await waitForHistoryLength(created.id, 2);
+
+    // Change ONLY the wallet address — every persisted history field
+    // (protocolVersion, collateral/debt quantities, healthFactor,
+    // dataSource, etc.) is unchanged, and `PersistedPortfolioHistoryEntry`
+    // has no field that records the address itself, so
+    // `isMaterialPortfolioHistoryChange` correctly finds nothing material
+    // and this dedupes away rather than fabricating a new "material"
+    // reason it was never designed to detect.
+    usePortfolioStore.getState().setAaveV4Position(created.id, {
+      userAddress: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const listed = await listPortfolioHistoryForPortfolio(created.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.data).toHaveLength(2);
+  });
+});
+
+/**
  * V1.1 Batch 3 ("Apply to Portfolio") — `applyPortfolioState`. Proposals
  * are constructed directly here (a plain `PortfolioApplyProposal`
  * object, using the real `calculatePortfolioSummary` for `before`/
