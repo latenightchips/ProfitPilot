@@ -340,6 +340,11 @@ describe('NewPortfolioPageClient — V4 live bootstrap: prefill + provenance', (
     // debt is always `drawnDebt + premiumDebt`, never an independently
     // typed value.
     expect(portfolio.debt.balance).toBe(12300);
+    // Provenance follow-up — both the wallet-position sub-group
+    // (`v4DebtStateSource`, asserted above) and the independent
+    // base-drawn-APR sub-group are genuinely live here, so both must
+    // report `'live'`.
+    expect(portfolio.v4BaseDrawnAprSource).toBe('live');
   });
 
   it('editing only a debt-state field flips v4DebtStateSource to manual while v4CollateralRiskSource stays live', async () => {
@@ -390,6 +395,108 @@ describe('NewPortfolioPageClient — V4 live bootstrap: prefill + provenance', (
     expect(portfolio.v4CollateralRisk).toEqual({ collateralFactor: 0.7, dynamicConfigKey: 0 });
     expect(portfolio.v4DebtStateSource).toBe('live');
   });
+
+  // Provenance follow-up — the vacuous-truth regression this batch fixes.
+  // `v4DebtState` is fed by TWO independent sub-groups (wallet-position:
+  // drawnDebt/premiumDebt/riskPremium, and the address-free base-drawn
+  // rate) — these tests exercise the case where only ONE of the two was
+  // ever itself live-prefilled or edited, the case none of the tests
+  // above cover (those vary collateral-risk vs. debt-state, never the
+  // two sub-groups *within* debt-state against each other).
+  it('no wallet address, wallet-debt fields left at their untouched zero default, base drawn APR live — v4DebtStateSource is manual, v4BaseDrawnAprSource is live, zero values are real (not missing)', async () => {
+    useAaveV4BaseDrawnRateStore.setState(readyV4BaseDrawnRateState());
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    await selectV4(user);
+    await fillSharedFields(user);
+    await user.type(screen.getByLabelText('Current BTC price (USD)', { exact: false }), '64000');
+    await user.type(screen.getByLabelText('Collateral factor (%)', { exact: false }), '80');
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(4);
+    });
+    // Wallet-debt fields are never touched — no address was entered, and
+    // they are left exactly at their honest default zero.
+    expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByLabelText('Premium debt', { exact: false })).toHaveValue(0);
+    expect(screen.getByLabelText('Risk premium (%)', { exact: false })).toHaveValue(0);
+
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    expect(portfolios).toHaveLength(1);
+    const portfolio = portfolios[0].portfolio;
+    expect(portfolio.v4Position).toBeUndefined();
+    // The regression: this sub-group was never itself fetched live or
+    // edited — it must not inherit `'live'` merely because its sibling
+    // (base drawn APR) made the overall v4DebtState reportable.
+    expect(portfolio.v4DebtStateSource).toBe('manual');
+    expect(portfolio.v4BaseDrawnAprSource).toBe('live');
+    // The submitted zero values are real, deliberate zeros — not treated
+    // as missing/undefined.
+    expect(portfolio.v4DebtState).toMatchObject({
+      drawnDebt: 0,
+      premiumDebt: 0,
+      riskPremium: 0,
+      baseDrawnApr: 0.04,
+    });
+    expect(portfolio.debt.balance).toBe(0);
+  });
+
+  it('wallet debt genuinely live via a wallet address, base drawn APR genuinely never fetched live or edited — v4DebtStateSource is live, v4BaseDrawnAprSource is manual', async () => {
+    useAaveV4CollateralRiskLiveDataStore.setState(readyV4CollateralRiskState());
+    useAaveV4ReservePriceStore.setState(readyV4ReservePriceState());
+    useAaveV4LiveDataStore.setState(readyV4DebtState());
+    // `useAaveV4BaseDrawnRateStore` stays idle (the `beforeEach` default)
+    // — the base-drawn-rate fetch fires unconditionally but this test
+    // never lets it resolve to `'ready'`, so it is genuinely never live.
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    await selectV4(user);
+    await fillSharedFields(user);
+    await user.type(screen.getByLabelText('On-chain address (optional)'), VALID_ADDRESS);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Drawn debt', { exact: false })).toHaveValue(12000);
+    });
+    expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(0);
+
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    const portfolio = portfolios[0].portfolio;
+    expect(portfolio.v4DebtStateSource).toBe('live');
+    // The regression, mirrored: base drawn APR was never itself fetched
+    // live or edited — it must not inherit `'live'` merely because its
+    // sibling (wallet-position debt) is genuinely live.
+    expect(portfolio.v4BaseDrawnAprSource).toBe('manual');
+    expect(portfolio.v4DebtState?.baseDrawnApr).toBe(0);
+  });
+
+  it('both live-prefilled, then only base drawn APR is edited — v4BaseDrawnAprSource flips to manual, v4DebtStateSource (wallet-position) stays live', async () => {
+    useAaveV4CollateralRiskLiveDataStore.setState(readyV4CollateralRiskState());
+    useAaveV4ReservePriceStore.setState(readyV4ReservePriceState());
+    useAaveV4LiveDataStore.setState(readyV4DebtState());
+    useAaveV4BaseDrawnRateStore.setState(readyV4BaseDrawnRateState());
+    const user = userEvent.setup();
+    render(<NewPortfolioPageClient />);
+    await selectV4(user);
+    await fillSharedFields(user);
+    await user.type(screen.getByLabelText('On-chain address (optional)'), VALID_ADDRESS);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base drawn APR (%)', { exact: false })).toHaveValue(4);
+    });
+
+    await user.clear(screen.getByLabelText('Base drawn APR (%)', { exact: false }));
+    await user.type(screen.getByLabelText('Base drawn APR (%)', { exact: false }), '5');
+    await user.click(screen.getByRole('button', { name: 'Create Portfolio' }));
+
+    const portfolios = Object.values(usePortfolioStore.getState().portfolios);
+    const portfolio = portfolios[0].portfolio;
+    expect(portfolio.v4BaseDrawnAprSource).toBe('manual');
+    expect(portfolio.v4DebtState?.baseDrawnApr).toBeCloseTo(0.05);
+    // Sibling sub-group is untouched by this edit — still live.
+    expect(portfolio.v4DebtStateSource).toBe('live');
+    expect(portfolio.v4DebtState?.drawnDebt).toBe(12000);
+  });
 });
 
 describe('NewPortfolioPageClient — V4 manual creation (no wallet/RPC required)', () => {
@@ -408,6 +515,7 @@ describe('NewPortfolioPageClient — V4 manual creation (no wallet/RPC required)
     expect(portfolio.v4Position).toBeUndefined();
     expect(portfolio.marketSource).toBe('manual');
     expect(portfolio.v4DebtStateSource).toBe('manual');
+    expect(portfolio.v4BaseDrawnAprSource).toBe('manual');
     expect(portfolio.v4DebtState).toEqual({
       drawnDebt: 12000,
       premiumDebt: 300,

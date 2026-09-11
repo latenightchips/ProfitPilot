@@ -444,12 +444,24 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
 
         const debtStateTouched = baseDrawnAprTouched || walletDebtTouched;
         let debtState: NewPortfolioV4DebtStateSubmission | undefined;
-        // V4 Mixed-Provenance UX batch — `debtStateSource` now reports
-        // ONLY the wallet-position sub-group's own provenance;
-        // `baseDrawnAprSource` is computed independently below. A group
-        // that was never touched at all trivially satisfies its own "ok"
-        // condition (nothing to overclaim), but a touched group must
-        // genuinely be live, never merely because its sibling is.
+        // V4 Manual-Data / Provenance Audit follow-up — `debtStateSource`
+        // reports ONLY the wallet-position sub-group's own provenance;
+        // `baseDrawnAprSource` is computed independently below.
+        // `walletDebtLive`/`baseDrawnAprLive` already encode "genuinely
+        // live AND still undirtied" — used directly, with no
+        // "untouched therefore ok to call live" fallback. A sub-group
+        // that was never itself touched (no live fetch, no manual edit —
+        // e.g. a zero-debt position left at its honest default because no
+        // wallet address was ever entered) is submitted here only because
+        // its SIBLING sub-group made the overall `debtState` object
+        // reportable, never because that makes IT live: it must default
+        // to `'manual'`, the same as any other value that was never
+        // actually observed live. The previous `!touched || live` form
+        // vacuously treated "never touched" as "ok to call live," letting
+        // an untouched sub-group inherit a `'live'` label purely from its
+        // sibling being touched — exactly the cross-contamination this
+        // file's own header comment says must never happen, just in the
+        // other direction.
         let debtStateSource: AaveV4DataSource = 'manual';
         let baseDrawnAprSource: AaveV4DataSource = 'manual';
         if (debtStateTouched) {
@@ -465,10 +477,8 @@ export const NewPortfolioV4Fields = forwardRef<NewPortfolioV4FieldsHandle, { deb
             });
             return { ok: false };
           }
-          const baseDrawnAprOk = !baseDrawnAprTouched || baseDrawnAprLive;
-          const walletDebtOk = !walletDebtTouched || walletDebtLive;
-          debtStateSource = walletDebtOk ? 'live' : 'manual';
-          baseDrawnAprSource = baseDrawnAprOk ? 'live' : 'manual';
+          debtStateSource = walletDebtLive ? 'live' : 'manual';
+          baseDrawnAprSource = baseDrawnAprLive ? 'live' : 'manual';
           debtState = {
             drawnDebt: parsed.data.drawnDebt,
             premiumDebt: parsed.data.premiumDebt,
