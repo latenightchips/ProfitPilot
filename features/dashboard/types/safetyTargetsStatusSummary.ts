@@ -31,7 +31,7 @@ export interface SafetyTargetRowSummary {
   status: SafetyTargetStatus;
   /** e.g. "Target: 1.50 · Current: 2.10". */
   detailFormatted: string;
-  /** "Met" / "Not met" / "Not configured" / "Not available" / (Safety Buffer % zero-debt only) "No liquidation risk to compare against". */
+  /** "Met" / "Not met" / "Not configured" / "Not available" / (Safety Buffer % zero-debt only) "No liquidation risk to compare against" / (Safety Buffer % only, target `>= 100`) "Invalid target". */
   statusLabel: string;
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSafetyTargetsStatus,
   formatSafetyTargetStatusLabel,
+  isValidSafetyBufferTarget,
   type SafetyTargetComparison,
 } from '@/services/portfolio/safetyTargetsStatus';
 import { calculatePortfolioSummary } from '@/services/portfolio/summary';
@@ -285,6 +286,116 @@ describe('buildSafetyTargetsStatus — zero-debt portfolio (no liquidation risk)
   });
 });
 
+/**
+ * Safety Buffer ≥100% Persistence-Compatibility batch. Precedence:
+ * target missing -> not_configured; target >= 100 -> invalid_configuration
+ * (checked before current-value availability); target valid but current
+ * unavailable -> unavailable; otherwise the existing inclusive
+ * current >= target comparison. The persisted-read schema stays
+ * permissive (unchanged), so `buildSafetyTargetsStatus` is the one place
+ * a `>= 100` target is ever actually encountered.
+ */
+describe('buildSafetyTargetsStatus — Safety Buffer invalid configuration (target >= 100)', () => {
+  it('target=150 is "invalid_configuration" regardless of a valid, computable current buffer', () => {
+    const portfolio = basePortfolio({ settings: { safetyTargets: { safetyBufferPercent: 150 } } });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    const status = buildSafetyTargetsStatus(portfolio, summary, NOW);
+
+    expect(status.safetyBufferPercent).toEqual({
+      status: 'invalid_configuration',
+      target: 150,
+      current: 75,
+    });
+  });
+
+  it('target=100 (the exact boundary) is also "invalid_configuration"', () => {
+    const portfolio = basePortfolio({ settings: { safetyTargets: { safetyBufferPercent: 100 } } });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    const status = buildSafetyTargetsStatus(portfolio, summary, NOW);
+
+    expect(status.safetyBufferPercent.status).toBe('invalid_configuration');
+  });
+
+  it('target=99.99 uses the ordinary comparison, never invalid_configuration', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 99.99 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    const status = buildSafetyTargetsStatus(portfolio, summary, NOW);
+
+    // current (75) < target (99.99) -> not_met, not invalid_configuration.
+    expect(status.safetyBufferPercent).toEqual({
+      status: 'not_met',
+      target: 99.99,
+      current: 75,
+    });
+  });
+
+  it('an invalid target takes precedence over a zero-debt/unavailable current buffer — a zero-debt portfolio with a stored target of 150 is "invalid_configuration", not "unavailable"', () => {
+    const portfolio = basePortfolio({
+      debt: { asset: 'USDC', balance: 0 },
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    const status = buildSafetyTargetsStatus(portfolio, summary, NOW);
+
+    expect(status.safetyBufferPercent).toEqual({
+      status: 'invalid_configuration',
+      target: 150,
+      current: null,
+    });
+  });
+
+  it('an invalid target takes precedence even when the underlying PortfolioSummary itself fails', () => {
+    const portfolio = basePortfolio({
+      collateral: { asset: 'BTC', quantity: -1 }, // forces calculatePortfolioSummary to fail
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    expect(summary.ok).toBe(false);
+    const status = buildSafetyTargetsStatus(portfolio, summary, NOW);
+
+    expect(status.safetyBufferPercent).toEqual({
+      status: 'invalid_configuration',
+      target: 150,
+      current: null,
+    });
+  });
+});
+
+/**
+ * `isValidSafetyBufferTarget` — the one write-time domain predicate
+ * `stores/portfolioStore.ts`'s `create()`/`update()` call to reject a
+ * newly submitted/changed Safety Buffer target. Pure, fixture-free.
+ */
+describe('isValidSafetyBufferTarget', () => {
+  it('accepts every value in the valid range, including both endpoints', () => {
+    expect(isValidSafetyBufferTarget(0)).toBe(true);
+    expect(isValidSafetyBufferTarget(0.01)).toBe(true);
+    expect(isValidSafetyBufferTarget(50)).toBe(true);
+    expect(isValidSafetyBufferTarget(99)).toBe(true);
+    expect(isValidSafetyBufferTarget(99.99)).toBe(true);
+    expect(isValidSafetyBufferTarget(99.999999)).toBe(true);
+  });
+
+  it('rejects 100 and anything at or above it', () => {
+    expect(isValidSafetyBufferTarget(100)).toBe(false);
+    expect(isValidSafetyBufferTarget(100.01)).toBe(false);
+    expect(isValidSafetyBufferTarget(150)).toBe(false);
+  });
+
+  it('rejects negative values', () => {
+    expect(isValidSafetyBufferTarget(-1)).toBe(false);
+    expect(isValidSafetyBufferTarget(-0.01)).toBe(false);
+  });
+
+  it('rejects non-finite values', () => {
+    expect(isValidSafetyBufferTarget(NaN)).toBe(false);
+    expect(isValidSafetyBufferTarget(Infinity)).toBe(false);
+    expect(isValidSafetyBufferTarget(-Infinity)).toBe(false);
+  });
+});
+
 describe('buildSafetyTargetsStatus — failed PortfolioSummary', () => {
   it('marks only the two summary-dependent fields "unavailable"; Target BTC Price and Holding Period are unaffected', () => {
     const portfolio = basePortfolio({
@@ -333,6 +444,11 @@ describe('formatSafetyTargetStatusLabel', () => {
     current: 1,
   };
   const unavailable: SafetyTargetComparison = { status: 'unavailable', target: 1, current: null };
+  const invalidConfiguration: SafetyTargetComparison = {
+    status: 'invalid_configuration',
+    target: 150,
+    current: 75,
+  };
 
   it('Target Health Factor: "Met" / "Not met"', () => {
     expect(formatSafetyTargetStatusLabel('targetHealthFactor', met, 'Not available')).toBe('Met');
@@ -392,5 +508,11 @@ describe('formatSafetyTargetStatusLabel', () => {
         'No liquidation risk to compare against',
       ),
     ).toBe('No liquidation risk to compare against');
+  });
+
+  it('"invalid_configuration" always returns "Invalid target", ignoring the caller-supplied unavailableText', () => {
+    expect(
+      formatSafetyTargetStatusLabel('safetyBufferPercent', invalidConfiguration, 'Not available'),
+    ).toBe('Invalid target');
   });
 });

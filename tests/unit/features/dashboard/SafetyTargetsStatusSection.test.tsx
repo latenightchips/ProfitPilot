@@ -145,3 +145,33 @@ describe('SafetyTargetsStatusSection — detail formatting', () => {
     expect(screen.getByText('Target: $40,000.00 · Current: $50,000.00')).toBeInTheDocument();
   });
 });
+
+/** Safety Buffer ≥100% Persistence-Compatibility batch. */
+const SAFETY_BUFFER_INVALID: SafetyTargetsStatusSummary = {
+  rows: [
+    ...ALL_CONFIGURED.rows.filter((r) => r.key !== 'safetyBufferPercent'),
+    {
+      key: 'safetyBufferPercent',
+      label: 'Safety Buffer',
+      status: 'invalid_configuration',
+      detailFormatted:
+        'Target: 150% · Current: — · Safety Buffer targets must be below 100%. Update this target in Portfolio Settings.',
+      statusLabel: 'Invalid target',
+    },
+  ],
+};
+
+describe('SafetyTargetsStatusSection — Safety Buffer invalid configuration', () => {
+  it('renders "Invalid target" and the correction explanation, never "Below target"/"On target"/"Not configured"', () => {
+    render(<SafetyTargetsStatusSection summary={SAFETY_BUFFER_INVALID} />);
+
+    expect(screen.getByText('Invalid target')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Target: 150% · Current: — · Safety Buffer targets must be below 100%. Update this target in Portfolio Settings.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Below target')).not.toBeInTheDocument();
+    expect(screen.queryByText('On target')).not.toBeInTheDocument();
+  });
+});

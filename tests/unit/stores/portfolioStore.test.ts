@@ -149,6 +149,177 @@ describe('usePortfolioStore.update (M4-003)', () => {
   });
 });
 
+/**
+ * Safety Buffer ≥100% Persistence-Compatibility batch. The persisted-read
+ * schema (`portfolioSafetyTargetsSchema`, `types/portfolio.schema.ts`)
+ * deliberately stays permissive — unchanged by this batch — so these
+ * tests exercise the separate write-time domain guard
+ * (`isValidSafetyBufferTarget`, `services/portfolio/safetyTargetsStatus.ts`)
+ * `create()`/`update()` call instead of a Zod bound.
+ */
+describe('usePortfolioStore — Safety Buffer ≥100% write-time domain guard', () => {
+  const SAFETY_BUFFER_ERROR_CODE = 'PORTFOLIO_INPUT_SETTINGS_SAFETYTARGETS_SAFETYBUFFERPERCENT';
+
+  function createValid() {
+    const result = usePortfolioStore.getState().create(validInput());
+    if (!result.ok) throw new Error('setup failed');
+    return result.data;
+  }
+
+  /**
+   * Simulates a portfolio hydrated from a legacy persisted record whose
+   * Safety Buffer target predates this batch — bypasses `create()`'s own
+   * guard entirely, the same way `load()` would hydrate it via the
+   * deliberately permissive persisted-read schema. Never goes through
+   * `update()` either, so it proves nothing about the guard itself; it
+   * only sets up the "already has an invalid legacy value" precondition
+   * the guard tests below need.
+   */
+  function seedLegacySafetyBufferPercent(portfolioId: string, value: number) {
+    usePortfolioStore.setState((state) => {
+      const record = state.portfolios[portfolioId];
+      return {
+        portfolios: {
+          ...state.portfolios,
+          [portfolioId]: {
+            ...record,
+            portfolio: {
+              ...record.portfolio,
+              settings: {
+                ...record.portfolio.settings,
+                safetyTargets: {
+                  ...record.portfolio.settings.safetyTargets,
+                  safetyBufferPercent: value,
+                },
+              },
+            },
+          },
+        },
+      };
+    });
+  }
+
+  describe('create()', () => {
+    it('accepts a new Safety Buffer target just below 100% (99.99)', () => {
+      const result = usePortfolioStore
+        .getState()
+        .create(validInput({ settings: { safetyTargets: { safetyBufferPercent: 99.99 } } }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(99.99);
+    });
+
+    it('rejects a new Safety Buffer target of exactly 100%, creating no portfolio', () => {
+      const result = usePortfolioStore
+        .getState()
+        .create(validInput({ settings: { safetyTargets: { safetyBufferPercent: 100 } } }));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: SAFETY_BUFFER_ERROR_CODE });
+      expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
+    });
+
+    it('rejects a new Safety Buffer target of 150%, creating no portfolio or history entry', () => {
+      const result = usePortfolioStore
+        .getState()
+        .create(validInput({ settings: { safetyTargets: { safetyBufferPercent: 150 } } }));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      // No portfolio id was ever assigned, so there is nothing a history
+      // snapshot could have been recorded against either.
+      expect(Object.keys(usePortfolioStore.getState().portfolios)).toHaveLength(0);
+    });
+  });
+
+  describe('update()', () => {
+    it('succeeds on an unrelated field edit while a legacy 150% Safety Buffer target is carried through unchanged', () => {
+      const created = createValid();
+      seedLegacySafetyBufferPercent(created.id, 150);
+
+      const result = usePortfolioStore.getState().update(created.id, {
+        name: 'Renamed',
+        settings: { safetyTargets: { safetyBufferPercent: 150 } },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.name).toBe('Renamed');
+      // The legacy value round-trips byte-identical — never rewritten.
+      expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(150);
+    });
+
+    it('changes a legacy 150% Safety Buffer target to a valid 99%, clearing the invalid state', () => {
+      const created = createValid();
+      seedLegacySafetyBufferPercent(created.id, 150);
+
+      const result = usePortfolioStore.getState().update(created.id, {
+        settings: { safetyTargets: { safetyBufferPercent: 99 } },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(99);
+    });
+
+    it('rejects changing a legacy 150% Safety Buffer target to another invalid value (120%)', () => {
+      const created = createValid();
+      seedLegacySafetyBufferPercent(created.id, 150);
+
+      const result = usePortfolioStore.getState().update(created.id, {
+        settings: { safetyTargets: { safetyBufferPercent: 120 } },
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]).toMatchObject({ code: SAFETY_BUFFER_ERROR_CODE });
+      // The rejected write never replaces the existing (still-legacy) value.
+      expect(
+        usePortfolioStore.getState().portfolios[created.id].portfolio.settings.safetyTargets
+          ?.safetyBufferPercent,
+      ).toBe(150);
+    });
+
+    it('rejects changing a valid 50% Safety Buffer target to an invalid 100%', () => {
+      const created = usePortfolioStore
+        .getState()
+        .create(validInput({ settings: { safetyTargets: { safetyBufferPercent: 50 } } }));
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = usePortfolioStore.getState().update(created.data.id, {
+        settings: { safetyTargets: { safetyBufferPercent: 100 } },
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(
+        usePortfolioStore.getState().portfolios[created.data.id].portfolio.settings.safetyTargets
+          ?.safetyBufferPercent,
+      ).toBe(50);
+    });
+
+    it('rejected Safety Buffer update leaves the stored portfolio and its history untouched', async () => {
+      const created = createValid();
+      await waitForHistoryLength(created.id, 1);
+      seedLegacySafetyBufferPercent(created.id, 150);
+
+      const beforePortfolio = usePortfolioStore.getState().portfolios[created.id].portfolio;
+      const result = usePortfolioStore.getState().update(created.id, {
+        settings: { safetyTargets: { safetyBufferPercent: 120 } },
+      });
+
+      expect(result.ok).toBe(false);
+      expect(usePortfolioStore.getState().portfolios[created.id].portfolio).toEqual(
+        beforePortfolio,
+      );
+      // Give any fire-and-forget history-snapshot attempt a real chance
+      // to run before asserting the negative — the rejected update must
+      // never reach the point where one would be attempted.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForHistoryLength(created.id, 1);
+    });
+  });
+});
+
 describe('usePortfolioStore.create — marketUpdatedAt/protocolUpdatedAt (M4-014/M4-015)', () => {
   it('sets both timestamps to the creation time', () => {
     const created = usePortfolioStore.getState().create(validInput());

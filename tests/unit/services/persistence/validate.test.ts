@@ -59,6 +59,20 @@ describe('validatePersistedRecord — envelope + payload structure', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('accepts a whole portfolio envelope carrying a legacy safetyBufferPercent of 150 — Safety Buffer ≥100% Persistence-Compatibility batch (no portfolio-wide data loss for a pre-existing invalid target)', () => {
+    const legacy: Portfolio = {
+      ...validPortfolioPayload(),
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    };
+    const envelope = createEnvelope<Portfolio>('portfolio', 'portfolio-1', legacy);
+    const result = validatePersistedRecord<Portfolio>('portfolio', envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The whole record loads — every other field, not merely the one
+    // invalid target — round-tripped byte-identical.
+    expect(result.data.payload).toEqual(legacy);
+  });
+
   it('rejects a portfolio payload with a negative BTC quantity — reused Engine-aligned bounds', () => {
     const invalid = { ...validPortfolioPayload(), collateral: { asset: 'BTC', quantity: -1 } };
     const envelope = createEnvelope('portfolio', 'portfolio-1', invalid);

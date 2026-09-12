@@ -6,6 +6,7 @@ import {
   buildSafetyTargetsStatus,
   formatSafetyTargetStatusLabel,
   type PortfolioSummary,
+  SAFETY_BUFFER_INVALID_TARGET_EXPLANATION,
   type ServiceResult,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
@@ -120,7 +121,7 @@ function buildRows(portfolio: Portfolio, summary: ServiceResult<PortfolioSummary
         'safetyBufferPercent',
         buffer,
         summary.ok ? 'No liquidation risk to compare against' : 'Not available',
-      )}`,
+      )}${buffer.status === 'invalid_configuration' ? ` — ${SAFETY_BUFFER_INVALID_TARGET_EXPLANATION}` : ''}`,
     },
   ];
 }

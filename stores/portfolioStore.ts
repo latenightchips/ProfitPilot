@@ -238,6 +238,7 @@ import {
   calculatePortfolioSummary,
   createApplicationError,
   deletePortfolioHistoryForPortfolio,
+  isValidSafetyBufferTarget,
   type MappingResult,
   type PersistedActivePortfolio,
   persistenceService,
@@ -641,6 +642,27 @@ function notFoundError(id: string): ApplicationError {
   );
 }
 
+/**
+ * Safety Buffer ≥100% Persistence-Compatibility batch — a domain rule
+ * `portfolioSafetyTargetsSchema` (`types/portfolio.schema.ts`)
+ * deliberately does not enforce, so the persisted-read schema stays
+ * permissive for a legacy value already on disk (see
+ * `services/portfolio/safetyTargetsStatus.ts`'s own header comment).
+ * Only `create()`/`update()` below call `isValidSafetyBufferTarget`,
+ * and only against a value actually being submitted/changed — never a
+ * value merely inherited unchanged from an existing portfolio. Same
+ * `PORTFOLIO_INPUT_...` code shape `zodErrorToErrors` would have
+ * produced for this exact field path, so this reads as an ordinary
+ * validation failure to any caller, even though it isn't Zod-generated.
+ */
+function invalidSafetyBufferTargetError(value: number): ApplicationError {
+  return createApplicationError(
+    'validation',
+    'PORTFOLIO_INPUT_SETTINGS_SAFETYTARGETS_SAFETYBUFFERPERCENT',
+    `Safety Buffer target must be at least 0% and below 100% (received ${value}%).`,
+  );
+}
+
 /** V1.1 Batch 3 ("Apply to Portfolio") Section 9 — the portfolio changed since this apply proposal was generated. */
 function staleApplyProposalError(id: string): ApplicationError {
   return createApplicationError(
@@ -969,8 +991,24 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       return { ok: false, errors };
     }
 
-    const now = new Date().toISOString();
     const data: PortfolioInput = parsed.data;
+
+    // Safety Buffer ≥100% Persistence-Compatibility batch — a brand-new
+    // portfolio has no existing value to compare against, so any
+    // submitted Safety Buffer target is by definition newly submitted.
+    // See `invalidSafetyBufferTargetError`'s own doc comment for why
+    // this lives here rather than in `portfolioInputSchema` itself.
+    const newSafetyBufferPercent = data.settings.safetyTargets?.safetyBufferPercent;
+    if (
+      newSafetyBufferPercent !== undefined &&
+      !isValidSafetyBufferTarget(newSafetyBufferPercent)
+    ) {
+      const errors = [invalidSafetyBufferTargetError(newSafetyBufferPercent)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
+    const now = new Date().toISOString();
     const portfolio: Portfolio = {
       id: crypto.randomUUID(),
       name: data.name,
@@ -1047,6 +1085,27 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     }
 
     const update: PortfolioInputUpdate = parsed.data;
+
+    // Safety Buffer ≥100% Persistence-Compatibility batch — reject only
+    // when the incoming Safety Buffer value actually differs from what
+    // this portfolio already has persisted. A value carried through
+    // unchanged (e.g. this same debounced autosave tick re-submitting an
+    // untouched, legacy-invalid Safety Buffer alongside an edit to some
+    // other field entirely) must never be re-rejected here — see
+    // `invalidSafetyBufferTargetError`'s own doc comment.
+    const incomingSafetyBufferPercent = update.settings?.safetyTargets?.safetyBufferPercent;
+    const existingSafetyBufferPercent =
+      existing.portfolio.settings.safetyTargets?.safetyBufferPercent;
+    if (
+      incomingSafetyBufferPercent !== undefined &&
+      incomingSafetyBufferPercent !== existingSafetyBufferPercent &&
+      !isValidSafetyBufferTarget(incomingSafetyBufferPercent)
+    ) {
+      const errors = [invalidSafetyBufferTargetError(incomingSafetyBufferPercent)];
+      set({ errors, saveStatus: 'error' });
+      return { ok: false, errors };
+    }
+
     const merged = {
       name: update.name ?? existing.portfolio.name,
       description: update.description ?? existing.portfolio.description,

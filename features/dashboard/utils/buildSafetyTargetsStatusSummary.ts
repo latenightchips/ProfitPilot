@@ -50,6 +50,7 @@ import {
   buildSafetyTargetsStatus,
   formatSafetyTargetStatusLabel,
   type PortfolioSummary,
+  SAFETY_BUFFER_INVALID_TARGET_EXPLANATION,
   type ServiceResult,
 } from '@/services';
 import type { Portfolio } from '@/types/portfolio';
@@ -141,6 +142,10 @@ export function buildSafetyTargetsStatusSummary(
         status.safetyBufferPercent.current === null
           ? '—'
           : formatPercentagePoints(status.safetyBufferPercent.current)
+      }${
+        status.safetyBufferPercent.status === 'invalid_configuration'
+          ? ` · ${SAFETY_BUFFER_INVALID_TARGET_EXPLANATION}`
+          : ''
       }`,
       statusLabel: formatSafetyTargetStatusLabel(
         'safetyBufferPercent',

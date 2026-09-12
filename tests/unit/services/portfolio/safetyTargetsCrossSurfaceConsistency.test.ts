@@ -288,6 +288,31 @@ describe('safety targets cross-surface consistency — D. valid zero values', ()
   });
 });
 
+describe('safety targets cross-surface consistency — G. Safety Buffer invalid configuration (target >= 100)', () => {
+  it('canonical and Dashboard both render "Invalid target" for a legacy safetyBufferPercent of 150; CSV still exports the raw target unaffected (no comparison performed there)', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const portfolioSummary = calculatePortfolioSummary(portfolio, 'manual');
+    const canonical = buildSafetyTargetsStatus(portfolio, portfolioSummary);
+    const dashboard = buildSafetyTargetsStatusSummary(portfolio, portfolioSummary);
+    const csv = buildPortfolioPositionsCsv([portfolio]);
+    const csvFields = csvRowFor(csv.split('\n'), portfolio.id);
+
+    expect(canonical.safetyBufferPercent.status).toBe('invalid_configuration');
+    const bufferRow = dashboardRowFor(dashboard, 'safetyBufferPercent');
+    expect(bufferRow.status).toBe('invalid_configuration');
+    expect(bufferRow.statusLabel).toBe('Invalid target');
+    expect(bufferRow.statusLabel).not.toBe('Below target');
+    expect(bufferRow.statusLabel).not.toBe('On target');
+    expect(bufferRow.statusLabel).not.toBe('Not configured');
+
+    // CSV performs no comparison (its own header comment) — the raw
+    // configured target still exports verbatim, unaffected by validity.
+    expect(csvFields[CSV_INDEX.safetyBufferPercent]).toBe('150');
+  });
+});
+
 describe('safety targets cross-surface consistency — E. multiple portfolios, no cross-record leakage', () => {
   it('two portfolios with differing safety-target configurations keep their own values distinct across canonical/Dashboard/CSV', () => {
     const portfolioA = basePortfolio({
@@ -434,6 +459,8 @@ describe('Safety Targets Cross-Surface Consistency — status-label text agreeme
         },
       },
       { settings: {} },
+      // Safety Buffer ≥100% Persistence-Compatibility batch.
+      { settings: { safetyTargets: { safetyBufferPercent: 150 } } },
     ];
 
     for (const overrides of scenarios) {

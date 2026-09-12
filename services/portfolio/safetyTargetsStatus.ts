@@ -100,6 +100,26 @@
  * future batch — this release only changes Buffer's status label
  * ("On target"/"Below target"), not its recommendation behavior, which
  * stays absent.
+ *
+ * **Safety Buffer ≥100% Persistence-Compatibility batch.** The persisted/
+ * hydration schema (`portfolioSafetyTargetsSchema`,
+ * `types/portfolio.schema.ts`) deliberately stays permissive (finite,
+ * nonnegative, no upper bound) so a legacy portfolio already carrying a
+ * finite `safetyBufferPercent >= 100` keeps loading — see the design
+ * report this batch implements for why tightening that shared Zod object
+ * (read AND write-time, since `portfolioInputSchema`,
+ * `portfolioDetailsSchema`, and `persistedPortfolioPayloadSchema` all
+ * reference the identical object) would either reject the whole
+ * portfolio on load or silently break the Portfolio Settings form's
+ * debounced autosave for unrelated field edits. Two independent
+ * additions live outside that schema instead: `isValidSafetyBufferTarget`
+ * below is the one domain predicate `stores/portfolioStore.ts`'s
+ * `create()`/`update()` call to reject a *newly submitted/changed*
+ * value of `>= 100` (never applied to a value merely inherited unchanged
+ * from an existing portfolio); and the new `'invalid_configuration'`
+ * status below is how an *already-persisted* `>= 100` value is honestly
+ * represented — never silently shown as `'not_met'`/`'unavailable'`, and
+ * never fixed up. No migration, no normalization, no schema change.
  */
 import { calculateLiquidationBufferPercent } from '@/services/portfolioHistory';
 import type { Portfolio } from '@/types/portfolio';
@@ -109,7 +129,8 @@ import type { PortfolioSummary } from './summary';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export type SafetyTargetStatus = 'met' | 'not_met' | 'not_configured' | 'unavailable';
+export type SafetyTargetStatus =
+  'met' | 'not_met' | 'not_configured' | 'unavailable' | 'invalid_configuration';
 
 export interface SafetyTargetComparison {
   /**
@@ -118,7 +139,15 @@ export interface SafetyTargetComparison {
    * iff a target IS configured but the current value cannot be computed
    * (a failed `PortfolioSummary`, or — Safety Buffer % only — a
    * zero-debt portfolio with no liquidation risk to measure a buffer
-   * against). Otherwise `current >= target` decides `'met'`/`'not_met'`.
+   * against). `'invalid_configuration'` — Safety Buffer % only — iff the
+   * configured target itself is `>= 100`, a mathematically unreachable
+   * value under the current finite-debt liquidation-buffer definition
+   * (`Buffer = 1 − 1/HealthFactor` is always `< 100` for finite nonzero
+   * debt); checked *before* current-value availability, so a zero-debt
+   * portfolio with a stored target of `150` is `'invalid_configuration'`,
+   * not `'unavailable'` — the configuration itself is the problem, not
+   * whether a current value happens to be computable. Otherwise `current
+   * >= target` decides `'met'`/`'not_met'`.
    */
   status: SafetyTargetStatus;
   /** The configured target, verbatim, or `null` iff not configured. A genuine `0` (valid for `holdingPeriodDays`/`safetyBufferPercent`) is never treated as absent. */
@@ -151,6 +180,30 @@ const NOT_MET_LABEL: Record<SafetyTargetKey, string> = {
   holdingPeriodDays: 'In progress',
 };
 
+/** Status label for `'invalid_configuration'` — Safety Buffer % only today; see `SafetyTargetComparison.status`'s own doc comment for the precedence this represents. */
+export const INVALID_CONFIGURATION_LABEL = 'Invalid target';
+
+/** Explanation text shown alongside `INVALID_CONFIGURATION_LABEL` on both surfaces (`app/portfolio/SafetyTargetsStatusPanel.tsx`, `features/dashboard/utils/buildSafetyTargetsStatusSummary.ts`) — one shared string so the two can never phrase this differently. */
+export const SAFETY_BUFFER_INVALID_TARGET_EXPLANATION =
+  'Safety Buffer targets must be below 100%. Update this target in Portfolio Settings.';
+
+/**
+ * The one domain predicate for whether a Safety Buffer target value is
+ * acceptable to *write* — `0 <= value < 100`. Deliberately not part of
+ * `portfolioSafetyTargetsSchema` (see this file's own header comment):
+ * this only gates a *newly submitted/changed* value
+ * (`stores/portfolioStore.ts`'s `create()`/`update()`), never a value
+ * merely inherited unchanged from an existing portfolio, and never the
+ * persisted-read path. `Number.isFinite` guards the same non-finite
+ * cases the schema's own `.finite()` already rejects at read time, kept
+ * here too so this predicate is safe to call standalone (e.g. from a
+ * form's own field-level validation) without first re-deriving that
+ * schema's rules.
+ */
+export function isValidSafetyBufferTarget(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value < 100;
+}
+
 /**
  * Canonical status-label text for one Safety Target — the single mapping
  * both `app/portfolio/SafetyTargetsStatusPanel.tsx` and
@@ -178,6 +231,8 @@ export function formatSafetyTargetStatusLabel(
       return 'Not configured';
     case 'unavailable':
       return unavailableText;
+    case 'invalid_configuration':
+      return INVALID_CONFIGURATION_LABEL;
   }
 }
 
@@ -185,6 +240,25 @@ function compareAtLeast(target: number | null, current: number | null): SafetyTa
   if (target === null) return { status: 'not_configured', target: null, current };
   if (current === null) return { status: 'unavailable', target, current: null };
   return { status: current >= target ? 'met' : 'not_met', target, current };
+}
+
+/**
+ * Safety Buffer %'s own comparator — `compareAtLeast` plus one
+ * precedence check ahead of it: an `>= 100` target is
+ * `'invalid_configuration'` regardless of whether `current` is
+ * computable, so a zero-debt portfolio with a stored target of `150`
+ * reads as an invalid configuration, never merely "unavailable." Not
+ * folded into `compareAtLeast` itself — the other three fields have no
+ * analogous "the target value itself is out of domain" concept.
+ */
+function compareSafetyBufferPercent(
+  target: number | null,
+  current: number | null,
+): SafetyTargetComparison {
+  if (target !== null && target >= 100) {
+    return { status: 'invalid_configuration', target, current };
+  }
+  return compareAtLeast(target, current);
 }
 
 /** `null` iff `summary` failed, or (Safety Buffer % specifically) the portfolio has no debt/liquidation risk to measure a buffer against — never a fabricated value. Converts `calculateLiquidationBufferPercent`'s own 0–1 fraction to the same 0–100 scale `safetyBufferPercent` is persisted in. */
@@ -226,7 +300,7 @@ export function buildSafetyTargetsStatus(
       targets?.targetBtcPriceUsd ?? null,
       portfolio.market.btcPriceUsd,
     ),
-    safetyBufferPercent: compareAtLeast(
+    safetyBufferPercent: compareSafetyBufferPercent(
       targets?.safetyBufferPercent ?? null,
       currentSafetyBufferPercent(portfolio, summary),
     ),

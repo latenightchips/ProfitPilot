@@ -133,6 +133,41 @@ describe('validateImportFile', () => {
     expect(result.data.issues).toHaveLength(0);
   });
 
+  /**
+   * Safety Buffer ≥100% Persistence-Compatibility batch — an imported
+   * historical portfolio carrying a legacy, finite
+   * `safetyBufferPercent >= 100` must import successfully, exactly like
+   * any other portfolio field, since `ImportValidator.ts` reuses the same
+   * `validatePersistedRecord` chokepoint the read/hydration path uses
+   * (see `services/portfolio/safetyTargetsStatus.ts`'s own header
+   * comment for why that schema stays permissive). The new `< 100`
+   * domain rule is a write-time-only concern
+   * (`stores/portfolioStore.ts`), never enforced here.
+   */
+  it('accepts an imported portfolio carrying a legacy finite safetyBufferPercent of 150 without flagging it as an issue', () => {
+    const file = validFullBackupFile();
+    const legacyPayload = {
+      ...(file.records.portfolio[0].payload as Record<string, unknown>),
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    };
+    file.records.portfolio = [
+      {
+        ...file.records.portfolio[0],
+        payload: legacyPayload,
+        checksum: computeChecksum(legacyPayload),
+      } as never,
+    ];
+
+    const result = validateImportFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.validRecordsByType.portfolio).toHaveLength(1);
+    expect(result.data.issues).toHaveLength(0);
+    expect(
+      (result.data.validRecordsByType.portfolio?.[0]?.payload as Record<string, unknown>).settings,
+    ).toEqual({ safetyTargets: { safetyBufferPercent: 150 } });
+  });
+
   it('excludes a record with a corrupted payload but keeps the rest of the file valid', () => {
     const file = validFullBackupFile();
     const corrupted = { ...validPortfolioEnvelope('portfolio-2') };

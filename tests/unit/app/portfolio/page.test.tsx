@@ -326,6 +326,110 @@ describe('PortfolioPage — auto-save (M4-006 Requirement)', () => {
 });
 
 /**
+ * Safety Buffer ≥100% Persistence-Compatibility batch. Mirrors the
+ * "auto-save (M4-006 Requirement)" describe block above exactly (same
+ * fake-timers/debounce pattern) — the write-time domain guard
+ * (`isValidSafetyBufferTarget`) lives inside the same debounced `watch()`
+ * handler this fieldset already auto-saves through, not a separate
+ * mechanism. Proves the two properties the design explicitly required:
+ * (A) an invalid Safety Buffer edit is visibly rejected and never
+ * persisted, and (B) an unrelated edit is never trapped by a legacy
+ * invalid Safety Buffer value carried through unchanged.
+ */
+describe('PortfolioPage — Safety Buffer ≥100% write-time domain guard (Safety Buffer Persistence-Compatibility batch)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Simulates a portfolio hydrated from a legacy persisted record whose
+   * Safety Buffer target predates this batch — bypasses `create()`'s own
+   * guard entirely, the same way `load()` would hydrate it via the
+   * deliberately permissive persisted-read schema.
+   */
+  function seedLegacySafetyBufferPercent(portfolioId: string, value: number) {
+    usePortfolioStore.setState((state) => {
+      const record = state.portfolios[portfolioId];
+      return {
+        portfolios: {
+          ...state.portfolios,
+          [portfolioId]: {
+            ...record,
+            portfolio: {
+              ...record.portfolio,
+              settings: {
+                ...record.portfolio.settings,
+                safetyTargets: {
+                  ...record.portfolio.settings.safetyTargets,
+                  safetyBufferPercent: value,
+                },
+              },
+            },
+          },
+        },
+      };
+    });
+  }
+
+  it('auto-saves an unrelated field edit while a legacy 150% Safety Buffer target is carried through unchanged', async () => {
+    const created = createAndSelect();
+    seedLegacySafetyBufferPercent(created.id, 150);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    // The legacy value renders visibly in the field, not silently hidden.
+    expect(screen.getByLabelText('Safety buffer (%)', { exact: false })).toHaveValue(150);
+
+    const nameInput = screen.getByLabelText('Portfolio name', { exact: false });
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Renamed Portfolio');
+    await vi.advanceTimersByTimeAsync(700);
+
+    const updated = usePortfolioStore.getState().portfolios[created.id].portfolio;
+    expect(updated.name).toBe('Renamed Portfolio');
+    expect(updated.settings.safetyTargets?.safetyBufferPercent).toBe(150);
+  });
+
+  it('rejects a newly typed Safety Buffer value of 120%, shows a useful inline message, and never persists it', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    const bufferInput = screen.getByLabelText('Safety buffer (%)', { exact: false });
+    await user.type(bufferInput, '120');
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings.safetyTargets
+        ?.safetyBufferPercent,
+    ).toBeUndefined();
+    expect(screen.getByText(/Safety Buffer target must be/i)).toBeInTheDocument();
+  });
+
+  it('changes a legacy 150% Safety Buffer target to a valid 99%, clearing the inline invalid state on the next successful save', async () => {
+    const created = createAndSelect();
+    seedLegacySafetyBufferPercent(created.id, 150);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    const bufferInput = screen.getByLabelText('Safety buffer (%)', { exact: false });
+    await user.clear(bufferInput);
+    await user.type(bufferInput, '99');
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings.safetyTargets
+        ?.safetyBufferPercent,
+    ).toBe(99);
+    expect(screen.queryByText(/Safety Buffer target must be/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
  * Recommendation preferences form — v1.18.0 Batch 3
  * (`docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §3, §7). Mirrors the
  * "auto-save (M4-006 Requirement)" describe block just above: same fake

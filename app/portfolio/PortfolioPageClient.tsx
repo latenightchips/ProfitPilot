@@ -672,6 +672,10 @@ function RequiredMark() {
   return <span aria-hidden="true">*</span>;
 }
 
+/** Safety Buffer ≥100% Persistence-Compatibility batch — the one error code `invalidSafetyBufferTargetError` (`stores/portfolioStore.ts`) produces, so this form can distinguish "the Store rejected this specific field's new value" from any other `update()` failure without string-matching a message. */
+const SAFETY_BUFFER_TARGET_ERROR_CODE =
+  'PORTFOLIO_INPUT_SETTINGS_SAFETYTARGETS_SAFETYBUFFERPERCENT';
+
 function PortfolioDetailsForm({
   portfolioId,
   portfolio,
@@ -680,6 +684,7 @@ function PortfolioDetailsForm({
   portfolio: Portfolio;
 }) {
   const update = usePortfolioStore((state) => state.update);
+  const [safetyBufferError, setSafetyBufferError] = useState<string | undefined>(undefined);
 
   const {
     register,
@@ -711,10 +716,29 @@ function PortfolioDetailsForm({
         const recommendationPreferences =
           borrow === undefined && loop === undefined ? undefined : { borrow, loop };
 
-        update(portfolioId, {
+        // Safety Buffer ≥100% Persistence-Compatibility batch — this
+        // debounced tick always re-submits the form's *entire* current
+        // snapshot (react-hook-form's `watch()`, not a per-field diff),
+        // so a legacy-invalid Safety Buffer the user never touched rides
+        // along on every autosave regardless of which field changed.
+        // `portfolioStore.update()` itself only rejects when that value
+        // actually differs from what's persisted, so an unrelated edit
+        // still succeeds; this only surfaces the rejection inline
+        // instead of letting it fail silently, and never clears/clamps
+        // the field or fabricates success.
+        const result = update(portfolioId, {
           ...parsed.data,
           settings: { ...parsed.data.settings, recommendationPreferences },
         });
+
+        if (!result.ok) {
+          const bufferError = result.errors.find(
+            (error) => error.code === SAFETY_BUFFER_TARGET_ERROR_CODE,
+          );
+          setSafetyBufferError(bufferError?.message);
+          return;
+        }
+        setSafetyBufferError(undefined);
       }, AUTOSAVE_DEBOUNCE_MS);
     });
     return () => {
@@ -815,12 +839,20 @@ function PortfolioDetailsForm({
           <input
             type="number"
             step="any"
+            id="settings.safetyTargets.safetyBufferPercent"
+            aria-invalid={safetyBufferError ? 'true' : undefined}
+            aria-describedby={safetyBufferError ? 'safetyBufferPercent-error' : undefined}
             {...register('settings.safetyTargets.safetyBufferPercent', {
               setValueAs: (value) => (value === '' ? undefined : Number(value)),
             })}
             className="rounded-md border border-border bg-transparent px-3 py-2"
           />
         </label>
+        {safetyBufferError && (
+          <span id="safetyBufferPercent-error" className="text-xs text-destructive">
+            {safetyBufferError}
+          </span>
+        )}
       </fieldset>
 
       {/*

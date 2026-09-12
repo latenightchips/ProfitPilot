@@ -686,3 +686,64 @@ describe('persistedPortfolioPayloadSchema (v1.18.0 Batch 1: settings.recommendat
     );
   });
 });
+
+/**
+ * Safety Buffer ≥100% Persistence-Compatibility batch. This schema
+ * deliberately does NOT gain a `< 100` upper bound on
+ * `safetyBufferPercent` — see `services/portfolio/safetyTargetsStatus.ts`'s
+ * own header comment for why: a legacy portfolio already carrying a
+ * finite `safetyBufferPercent >= 100` must keep hydrating, in full,
+ * exactly as before. The new `< 100` rule lives entirely outside this
+ * schema (`isValidSafetyBufferTarget`, checked by
+ * `stores/portfolioStore.ts`'s `create()`/`update()` at write time,
+ * never here). What was already invalid before this batch — negative,
+ * non-finite, or non-numeric — must remain rejected identically.
+ */
+describe('persistedPortfolioPayloadSchema — Safety Buffer ≥100% persistence compatibility', () => {
+  it('accepts a legacy finite safetyBufferPercent of exactly 100 without rejecting the portfolio', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { safetyTargets: { safetyBufferPercent: 100 } } }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(100);
+  });
+
+  it('accepts a legacy finite safetyBufferPercent of 150 without rejecting the portfolio or any other field', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({
+        name: 'Legacy Portfolio',
+        settings: { safetyTargets: { safetyBufferPercent: 150 } },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(150);
+    // No other field is affected by the presence of a legacy-invalid target.
+    expect(result.data.name).toBe('Legacy Portfolio');
+    expect(result.data.collateral).toEqual({ asset: 'BTC', quantity: 1.5 });
+  });
+
+  it('accepts an ordinary safetyBufferPercent of 99.99 (unaffected by this batch)', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { safetyTargets: { safetyBufferPercent: 99.99 } } }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.settings.safetyTargets?.safetyBufferPercent).toBe(99.99);
+  });
+
+  it('still rejects a negative safetyBufferPercent, exactly as before this batch', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { safetyTargets: { safetyBufferPercent: -1 } } }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('still rejects a non-numeric (string) safetyBufferPercent, exactly as before this batch', () => {
+    const result = persistedPortfolioPayloadSchema.safeParse(
+      validPayload({ settings: { safetyTargets: { safetyBufferPercent: '150' } } }),
+    );
+    expect(result.success).toBe(false);
+  });
+});

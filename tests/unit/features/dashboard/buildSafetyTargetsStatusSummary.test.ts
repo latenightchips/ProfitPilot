@@ -350,3 +350,38 @@ describe('buildSafetyTargetsStatusSummary — target-specific status labels', ()
     expect(rowFor(below, 'safetyBufferPercent').statusLabel).toBe('Below target');
   });
 });
+
+/** Safety Buffer ≥100% Persistence-Compatibility batch. */
+describe('buildSafetyTargetsStatusSummary — Safety Buffer invalid configuration (target >= 100)', () => {
+  it('reports status "invalid_configuration", statusLabel "Invalid target", and includes the correction explanation in detailFormatted', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = buildSafetyTargetsStatusSummary(
+      portfolio,
+      calculatePortfolioSummary(portfolio, 'manual'),
+    );
+    const bufferRow = rowFor(summary, 'safetyBufferPercent');
+
+    expect(bufferRow.status).toBe('invalid_configuration');
+    expect(bufferRow.statusLabel).toBe('Invalid target');
+    expect(bufferRow.detailFormatted).toContain(
+      'Safety Buffer targets must be below 100%. Update this target in Portfolio Settings.',
+    );
+  });
+
+  it('takes precedence over the zero-debt "unavailable" case', () => {
+    const portfolio = basePortfolio({
+      debt: { asset: 'USDC', balance: 0 },
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = buildSafetyTargetsStatusSummary(
+      portfolio,
+      calculatePortfolioSummary(portfolio, 'manual'),
+    );
+    const bufferRow = rowFor(summary, 'safetyBufferPercent');
+
+    expect(bufferRow.status).toBe('invalid_configuration');
+    expect(bufferRow.statusLabel).not.toBe('No liquidation risk to compare against');
+  });
+});

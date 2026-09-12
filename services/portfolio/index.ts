@@ -137,6 +137,9 @@ export type {
 export {
   buildSafetyTargetsStatus,
   formatSafetyTargetStatusLabel,
+  INVALID_CONFIGURATION_LABEL,
+  isValidSafetyBufferTarget,
+  SAFETY_BUFFER_INVALID_TARGET_EXPLANATION,
   type SafetyTargetComparison,
   type SafetyTargetKey,
   type SafetyTargetsStatus,

@@ -338,3 +338,45 @@ describe('SafetyTargetsStatusPanel — target-specific status language', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });
+
+describe('SafetyTargetsStatusPanel — Safety Buffer invalid configuration (Safety Buffer ≥100% Persistence-Compatibility batch)', () => {
+  it('renders "Invalid target" and the correction explanation for a legacy safetyBufferPercent of 150, never "Below target"/"On target"/"Not configured"', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    const bufferRow = row('Safety buffer (%)');
+    expect(bufferRow.textContent).toContain('Invalid target');
+    expect(bufferRow.textContent).toContain(
+      'Safety Buffer targets must be below 100%. Update this target in Portfolio Settings.',
+    );
+    expect(bufferRow.textContent).not.toContain('Below target');
+    expect(bufferRow.textContent).not.toContain('On target');
+    expect(bufferRow.textContent).not.toContain('Not configured');
+  });
+
+  it('renders "Invalid target" (not the zero-debt "No liquidation risk" text) for an invalid target on a zero-debt portfolio', () => {
+    const portfolio = basePortfolio({
+      debt: { asset: 'USDC', balance: 0 },
+      settings: { safetyTargets: { safetyBufferPercent: 150 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    const bufferRow = row('Safety buffer (%)');
+    expect(bufferRow.textContent).toContain('Invalid target');
+    expect(bufferRow.textContent).not.toContain('No liquidation risk to compare against');
+  });
+
+  it('renders the ordinary "On target" label for a valid Safety Buffer target well below 100%, unaffected by this batch', () => {
+    const portfolio = basePortfolio({
+      settings: { safetyTargets: { safetyBufferPercent: 10 } },
+    });
+    const summary = calculatePortfolioSummary(portfolio, 'manual');
+    render(<SafetyTargetsStatusPanel portfolio={portfolio} summary={summary} />);
+
+    expect(row('Safety buffer (%)').textContent).toContain('On target');
+  });
+});
