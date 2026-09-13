@@ -117,23 +117,34 @@ describe('filterCategoryFor', () => {
 });
 
 describe('RECOMMENDATION_FILTER_CATEGORIES', () => {
-  it('lists exactly the six documented filter categories, in the documented order', () => {
+  it('lists exactly the five remaining supported filter categories, in order', () => {
     expect(RECOMMENDATION_FILTER_CATEGORIES.map((category) => category.id)).toEqual([
       'safety',
       'debt',
       'collateral',
       'interest',
       'leverage',
-      'exitReadiness',
     ]);
+  });
+
+  /**
+   * Exit Readiness Removal batch (PROJECT_STATUS.md conflict #11, closed
+   * WON'T-IMPLEMENT) — `exitReadiness` used to be a sixth entry here.
+   */
+  it('no longer lists exitReadiness', () => {
+    expect(RECOMMENDATION_FILTER_CATEGORIES.map((category) => category.id)).not.toContain(
+      'exitReadiness',
+    );
   });
 });
 
 describe('UNAVAILABLE_FILTER_REASONS', () => {
-  it('covers exactly the three categories permanently unavailable for their own independent reasons (v1.18.0 Batch 3)', () => {
-    expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(
-      ['safety', 'interest', 'exitReadiness'].sort(),
-    );
+  it('covers exactly the two categories permanently unavailable for their own independent reasons', () => {
+    expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(['interest', 'safety']);
+  });
+
+  it('no longer covers exitReadiness — the category was removed entirely, not merely marked unavailable', () => {
+    expect('exitReadiness' in UNAVAILABLE_FILTER_REASONS).toBe(false);
   });
 
   it('no longer covers leverage — its availability now depends on this portfolio’s own Loop preferences (v1.18.0 Batch 3, spec §8)', () => {

@@ -5,10 +5,13 @@ import { useRecommendationCenterStore } from '@/stores/recommendationCenterStore
 
 /**
  * Recommendation Filters — 06_TASKS.md M7-032 ("Implement Recommendation
- * List"). Filter by: "Safety / Debt / Collateral / Interest / Leverage /
- * Exit readiness." Pure filter selector — `RecommendationList.tsx` reads
- * `categoryFilter` and decides what to render for each category,
- * including the four that are always unavailable (see
+ * List"). Filter by: Safety / Debt / Collateral / Interest / Leverage —
+ * M7-032's own original text also named "Exit readiness" as a sixth
+ * filter, but that category is closed WON'T-IMPLEMENT (PROJECT_STATUS.md
+ * conflict #11) and no longer rendered; see `recommendationTaxonomy.ts`'s
+ * own header comment. Pure filter selector — `RecommendationList.tsx`
+ * reads `categoryFilter` and decides what to render for each category,
+ * including the two that are always unavailable (see
  * `recommendationTaxonomy.ts`'s own `UNAVAILABLE_FILTER_REASONS`); this
  * component only sets which one is selected.
  */

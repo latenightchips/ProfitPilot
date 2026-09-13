@@ -39,11 +39,15 @@
  * fabricate what the Service doesn't own" principle as `sourceStatus`.
  *
  * **`unavailableCategories` is preserved, not dropped.** `generateRecommendations`
- * already reports which of the six documented recommendation categories
- * (Safety, Interest cost, Exit readiness) are unavailable and why —
+ * reports which recommendation categories are unavailable and why —
  * dropping that here would silently hide real, already-documented
- * specification gaps (conflicts #1, #7-adjacent, #11) from anything
- * consuming this Service.
+ * specification gaps (Safety, conflict #1; Interest cost, the F-065
+ * "Expected Annual Portfolio Growth" gap) from anything consuming this
+ * Service. "Exit readiness" — originally a sixth documented category,
+ * PROJECT_STATUS.md conflict #11 — is closed WON'T-IMPLEMENT and no
+ * longer appears here at all; see `generateRecommendations.ts`'s own
+ * header comment for why it was removed rather than kept as a third
+ * unavailable entry.
  */
 import {
   calculateCollateralValue,

@@ -7,8 +7,9 @@ import type {
 /**
  * Recommendation Center taxonomy — 06_TASKS.md M7-032 ("Implement
  * Recommendation List"). Group by: "Critical / High / Medium /
- * Informational." Filter by: "Safety / Debt / Collateral / Interest /
- * Leverage / Exit readiness."
+ * Informational." Filter by (M7-032's own original text): "Safety /
+ * Debt / Collateral / Interest / Leverage / Exit readiness" — "Exit
+ * readiness" is no longer one of them; see the note below.
  *
  * **No Formula ID governs either scheme — both are display mappings
  * derived from already-implemented, already-documented values, not new
@@ -43,18 +44,35 @@ import type {
  * per-portfolio state `RecommendationList.tsx` reads from the Store's own
  * `unavailableReasons.loop` (spec §8), not a static string here.
  *
- * **`safety`/`interest`/`exitReadiness` remain permanently unavailable,
- * unchanged by this batch** — restate (not re-import) the exact same
- * three reasons `engine/recommendation/generateRecommendations.ts`'s own
- * local `UNAVAILABLE_CATEGORIES` constant already documents (that
- * constant is not exported; duplicating its three short, stable,
- * conflict-citing strings here — the same "each component owns its own
- * small static label map" precedent `FullExitResult.tsx`'s/
- * `PartialExitResult.tsx`'s own independently-declared
- * `UNAVAILABLE_COST_LABELS` maps already established — was judged
- * lower-risk than the corresponding Engine export, since the task
- * instructions ask Engine changes to be avoided unless "absolutely
- * required," and duplicating three short strings is not).
+ * **`safety`/`interest` remain permanently unavailable, unchanged by this
+ * batch** — restate (not re-import) the exact same two reasons
+ * `engine/recommendation/generateRecommendations.ts`'s own local
+ * `UNAVAILABLE_CATEGORIES` constant already documents (that constant is
+ * not exported; duplicating its short, stable, conflict-citing strings
+ * here — the same "each component owns its own small static label map"
+ * precedent `FullExitResult.tsx`'s/`PartialExitResult.tsx`'s own
+ * independently-declared `UNAVAILABLE_COST_LABELS` maps already
+ * established — was judged lower-risk than the corresponding Engine
+ * export, since the task instructions ask Engine changes to be avoided
+ * unless "absolutely required," and duplicating two short strings is
+ * not).
+ *
+ * **`exitReadiness` removed entirely (PROJECT_STATUS.md conflict #11,
+ * closed WON'T-IMPLEMENT).** It used to be a third permanently-
+ * unavailable filter here, alongside `safety`/`interest` — but unlike
+ * those two, which are real specification gaps a future batch could
+ * still resolve (a risk-band scheme; an "Expected Annual Portfolio
+ * Growth" figure), no Formula ID or deterministic rule for "Exit
+ * readiness" was ever specified anywhere, and F-047 "Risk Reduction
+ * Efficiency" — the one candidate mapping PROJECT_STATUS.md considered —
+ * was explicitly declined as a silent redefinition. Keeping a filter tab
+ * whose only possible outcome is "not available" is a dead product
+ * promise, not an honest gap disclosure, so both the filter tab
+ * (`RECOMMENDATION_FILTER_CATEGORIES` below) and its reason
+ * (`UNAVAILABLE_FILTER_REASONS` below) are gone, not merely hidden. The
+ * category may return only behind a new, explicit product specification
+ * — see `engine/recommendation/generateRecommendations.ts`'s own header
+ * comment for the identical decision at the Engine layer.
  */
 export type RecommendationSeverity = 'Critical' | 'High' | 'Medium' | 'Informational';
 
@@ -166,7 +184,6 @@ export const RECOMMENDATION_FILTER_CATEGORIES: {
   { id: 'collateral', label: 'Collateral' },
   { id: 'interest', label: 'Interest' },
   { id: 'leverage', label: 'Leverage' },
-  { id: 'exitReadiness', label: 'Exit Readiness' },
 ];
 
 const FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY: Record<
@@ -183,22 +200,24 @@ export function filterCategoryFor(recommendation: Recommendation): Recommendatio
 }
 
 /**
- * The three categories still permanently blocked, unaffected by this
+ * The two categories still permanently blocked, unaffected by this
  * batch. `leverage` is deliberately **not** listed here anymore
  * (v1.18.0 Batch 3, spec §8) — its availability now depends on this
  * portfolio's own `recommendationPreferences.loop`, so a static
  * "always unavailable" string would become actively wrong the moment a
  * user configures it. `RecommendationList.tsx` sources `leverage`'s
  * per-portfolio-state reason from the Store's own `unavailableReasons.loop`
- * instead (`calculateRecommendationActions`, Batch 2).
+ * instead (`calculateRecommendationActions`, Batch 2). `exitReadiness` is
+ * not listed here either anymore (PROJECT_STATUS.md conflict #11, closed
+ * WON'T-IMPLEMENT) — see this file's own header comment for why it was
+ * removed as a filter category entirely, rather than kept as a third
+ * permanently-unavailable reason.
  */
 export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCategory, string>> = {
   safety:
     'F-060 "Health Factor Recommendation" requires a risk-band scheme, and the documented bands disagree across README.md, 01_PRD.md REQ-001, 01_PRD.md REQ-005, and 02_Formulas.md F-026/F-060 themselves — see PROJECT_STATUS.md conflict #1.',
   interest:
     'F-065 "Interest Warning" requires an "Expected Annual Portfolio Growth" figure with no formula or definition anywhere in 02_Formulas.md.',
-  exitReadiness:
-    'No Formula ID in the Recommendation Engine chapter (F-060-F-069) maps to "Exit readiness" specifically; implementing one would mean inventing a rule not documented anywhere.',
 };
 
 /**

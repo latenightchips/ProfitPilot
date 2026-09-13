@@ -96,7 +96,19 @@ describe('generateRecommendationSet (M3-012)', () => {
     const categories = result.data.unavailableCategories.map((c) => c.category);
     expect(categories).toContain('safety');
     expect(categories).toContain('interestCost');
-    expect(categories).toContain('exitReadiness');
+  });
+
+  /**
+   * Exit Readiness Removal batch (PROJECT_STATUS.md conflict #11, closed
+   * WON'T-IMPLEMENT) — `exitReadiness` used to be asserted present here
+   * too, alongside `safety`/`interestCost`.
+   */
+  it('no longer reports exitReadiness as an unavailable category', () => {
+    const result = generateRecommendationSet(basePortfolio(), baseRules(), 'live');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const categories = result.data.unavailableCategories.map((c) => c.category);
+    expect(categories).not.toContain('exitReadiness');
   });
 
   it('threads sourceStatus through to metadata', () => {

@@ -165,15 +165,38 @@ describe('RecommendationList — error recovery (M7-038)', () => {
 });
 
 describe('RecommendationList — unavailable categories', () => {
+  /**
+   * Safety Buffer batch's sibling cleanup — "Exit Readiness Removal"
+   * (PROJECT_STATUS.md conflict #11, closed WON'T-IMPLEMENT): `exitReadiness`
+   * used to be a third case here (`['exitReadiness', /F-060-F-069/]`).
+   * `categoryFilter` can no longer even be set to that value —
+   * `RecommendationFilterCategory` no longer includes the literal — so
+   * there is nothing left to test; `safety`/`interest` remain the two
+   * real, still-open specification gaps.
+   */
   it.each([
     ['safety', /conflict #1/],
     ['interest', /F-065/],
-    ['exitReadiness', /F-060-F-069/],
   ] as const)('shows a real, traceable reason for the %s filter', (category, expected) => {
     setReady({ categoryFilter: category });
     render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
     expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
     expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  /**
+   * Exit Readiness Removal batch (PROJECT_STATUS.md conflict #11, closed
+   * WON'T-IMPLEMENT) — proves no "Exit Readiness" text, unavailable-
+   * reason card, or F-060-F-069 reference renders anywhere, under the
+   * default "all" filter (the only filter state reachable via the UI now
+   * that `RecommendationFilterCategory` no longer has an `'exitReadiness'`
+   * literal at all).
+   */
+  it('renders no Exit Readiness unavailable-message card anywhere', () => {
+    setReady({ categoryFilter: 'all' });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+    expect(screen.queryByText(/exit readiness/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/F-060-F-069/)).not.toBeInTheDocument();
   });
 
   /**

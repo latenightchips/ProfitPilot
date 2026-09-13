@@ -98,17 +98,30 @@ export type RecommendationItemId = 'repayment' | 'additionalCollateral' | 'borro
 export type RecommendationCenterStatus = 'idle' | 'noTarget' | 'ready' | 'error';
 
 /**
- * The six documented filter categories (M7-032 "Filter by"), defined
- * here — not in `features/recommendations/` — matching
- * `stores/exitPlannerStore.ts`'s own `ExitPlannerType` precedent: a
- * Store-owned selection type the feature layer imports, not the reverse
- * (Stores never import from `features/`, per this codebase's established
- * dependency direction). `features/recommendations/utils/recommendationTaxonomy.ts`
+ * The five filter categories M7-032's own "Filter by" list still
+ * supports, defined here — not in `features/recommendations/` —
+ * matching `stores/exitPlannerStore.ts`'s own `ExitPlannerType`
+ * precedent: a Store-owned selection type the feature layer imports, not
+ * the reverse (Stores never import from `features/`, per this codebase's
+ * established dependency direction). `features/recommendations/utils/recommendationTaxonomy.ts`
  * owns the *display* mapping (labels, severity grouping, unavailable
  * reasons) built on top of this type.
+ *
+ * **`'exitReadiness'` removed (PROJECT_STATUS.md conflict #11, closed
+ * WON'T-IMPLEMENT).** M2-025 originally named "Exit readiness" as a
+ * sixth category; no Formula ID or deterministic rule for it was ever
+ * specified, so the filter it would have gated always rendered a
+ * permanent "not available" message and never a real recommendation.
+ * This state was never persisted (`categoryFilter` is plain in-memory
+ * Zustand state, confirmed by no other file referencing this type
+ * outside this Store and `recommendationTaxonomy.ts`) and this type is
+ * not part of any exported/persisted API — removing the literal outright
+ * is safe; there is no compatibility surface to preserve it for. See
+ * `engine/recommendation/generateRecommendations.ts`'s own header
+ * comment for the identical decision at the Engine layer.
  */
 export type RecommendationFilterCategory =
-  'safety' | 'debt' | 'collateral' | 'interest' | 'leverage' | 'exitReadiness';
+  'safety' | 'debt' | 'collateral' | 'interest' | 'leverage';
 
 export type AcknowledgementsByPortfolio = Record<
   string,

@@ -46,11 +46,6 @@ const UNAVAILABLE_CATEGORIES: UnavailableRecommendationCategory[] = [
     reason:
       'F-065 "Interest Warning" requires an "Expected Annual Portfolio Growth" figure with no formula or definition anywhere in 02_Formulas.md — the same gap that blocked part of M2-018\'s "Excessive cost" check.',
   },
-  {
-    category: 'exitReadiness',
-    reason:
-      'No Formula ID in the Recommendation Engine chapter (F-060-F-069) maps to "Exit readiness" specifically; implementing one would mean inventing a rule not documented anywhere.',
-  },
 ];
 
 /**
@@ -60,15 +55,30 @@ const UNAVAILABLE_CATEGORIES: UnavailableRecommendationCategory[] = [
  * Runs every implemented recommendation rule against one portfolio and
  * returns the full deterministic result set in one call, per the DoD
  * ("recommendations are generated from explicit rules rather than opaque
- * AI behavior"). Of the six documented "Recommendation categories" (Safety
- * / Debt management / Collateral management / Interest cost / Leverage /
- * Exit readiness), three are implemented — Debt management (F-061, F-062),
- * Collateral management (F-063), and Leverage (F-064) — and three are not,
- * itemized in `unavailableCategories` with reasons rather than silently
- * omitted: Safety (F-060, blocked by the Health Factor risk-band
- * conflict), Interest cost (F-065, no formula for its "Expected Annual
- * Portfolio Growth" input), and Exit readiness (no Formula ID in this
- * chapter maps to it at all).
+ * AI behavior"). Of the six "Recommendation categories" 06_TASKS.md
+ * M2-025 originally named (Safety / Debt management / Collateral
+ * management / Interest cost / Leverage / Exit readiness), three are
+ * implemented — Debt management (F-061, F-062), Collateral management
+ * (F-063), and Leverage (F-064) — and two remain unavailable, itemized in
+ * `unavailableCategories` with reasons rather than silently omitted:
+ * Safety (F-060, blocked by the Health Factor risk-band conflict) and
+ * Interest cost (F-065, no formula for its "Expected Annual Portfolio
+ * Growth" input).
+ *
+ * **"Exit readiness" (PROJECT_STATUS.md conflict #11) — closed
+ * WON'T-IMPLEMENT, not merely unavailable.** No Formula ID in the
+ * Recommendation Engine chapter (F-060-F-069) ever named or implied it,
+ * and no deterministic rule for it exists anywhere in this
+ * specification; F-047 "Risk Reduction Efficiency" (a per-repayment-
+ * dollar efficiency ratio, not a readiness judgment) was considered as a
+ * mapping and explicitly declined. Since no future batch can implement
+ * this category without first inventing a definition the specification
+ * never supplied, it is removed from this Engine's own category set
+ * entirely, not merely retained as a fourth documented gap alongside
+ * Safety/Interest cost above — those two remain because a real,
+ * potentially-resolvable specification gap blocks them; this one had no
+ * specification to begin with. See `recommendationTaxonomy.ts`'s own
+ * header comment for the identical decision on the UI-facing filter.
  *
  * Tagged F-061 as its primary Formula ID, since it has no dedicated ID of
  * its own (a task-level orchestrator, the same pattern established for

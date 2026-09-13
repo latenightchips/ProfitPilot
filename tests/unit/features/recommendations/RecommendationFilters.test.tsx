@@ -23,13 +23,24 @@ beforeEach(() => {
 });
 
 describe('RecommendationFilters', () => {
-  it('renders "All" plus all six documented filter categories', () => {
+  it('renders "All" plus the five remaining supported filter categories', () => {
     render(<RecommendationFilters />);
-    ['All', 'Safety', 'Debt', 'Collateral', 'Interest', 'Leverage', 'Exit Readiness'].forEach(
-      (label) => {
-        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
-      },
-    );
+    ['All', 'Safety', 'Debt', 'Collateral', 'Interest', 'Leverage'].forEach((label) => {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Exit Readiness Removal batch (PROJECT_STATUS.md conflict #11, closed
+   * WON'T-IMPLEMENT) — M7-032's own original task text named "Exit
+   * readiness" as a sixth filter category; no button, tab, or unavailable
+   * placeholder for it may render anywhere in this group, on any state.
+   */
+  it('renders no "Exit Readiness" filter/button/tab at all', () => {
+    render(<RecommendationFilters />);
+    expect(screen.queryByRole('button', { name: /exit readiness/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/exit readiness/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(6); // All + 5 categories, not 7.
   });
 
   it('marks "All" as pressed by default', () => {

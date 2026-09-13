@@ -18634,7 +18634,7 @@ so the Service layer simply inherits the same coverage.
 target type was invented to work around the gap. Still open at the
 specification level.
 
-### 11. "Exit readiness" (M2-025) has no Formula ID anywhere in the Recommendation Engine chapter — BLOCKS full M2-025
+### 11. "Exit readiness" (M2-025) has no Formula ID anywhere in the Recommendation Engine chapter — BLOCKS full M2-025 (CLOSED — WON'T IMPLEMENT, Exit Readiness Removal batch)
 
 Found while implementing Batch 10. `06_TASKS.md` M2-025 lists "Exit
 readiness" as one of six "Recommendation categories," but a full read of
@@ -18649,6 +18649,30 @@ formula in `02_Formulas.md`, or map this category to existing Exit
 Strategy chapter formulas (F-047 "Risk Reduction Efficiency" looks like
 the closest conceptual fit, though `06_TASKS.md` never draws that
 connection) and update the task documentation to say so explicitly.
+
+**Resolved this way, explicitly, by a dedicated audit and cleanup batch
+(Exit Readiness Removal, post-v1.24.0/Safety Buffer Persistence-
+Compatibility)** — not by either action item above. The audit found no
+canonical Exit Readiness definition anywhere in the repository, confirmed
+F-047 "Risk Reduction Efficiency" is a per-repayment-dollar efficiency
+ratio and genuinely not an Exit Readiness metric (mapping it here would
+have been a silent redefinition this same conflict's own action item
+already flagged as merely a "looks like" guess, never confirmed), and
+found F-048 "Optimal Exit Window"/F-049 "Exit Confidence Score" equally
+unimplemented and unspecified. Owner decision: **close as WON'T
+IMPLEMENT under the current specification** rather than invent a rule.
+`exitReadiness` has been removed entirely from the user-facing
+Recommendation filter taxonomy (`features/recommendations/utils/recommendationTaxonomy.ts`),
+the `RecommendationFilterCategory` type (`stores/recommendationCenterStore.ts`),
+and the Engine's own `UNAVAILABLE_CATEGORIES` list
+(`engine/recommendation/generateRecommendations.ts`) — not merely
+re-marked unavailable, since a permanently-unavailable filter with no
+possible resolution is a dead product promise, not an honest gap
+disclosure. F-047/F-048/F-049 are unchanged (still `not_implemented` in
+`tests/fixtures/formulaCoverage.ts`, for their own original,
+independent reasons); Exit Planner is unchanged; no new Formula ID or
+financial calculation was introduced. The category may only return
+behind a new, explicit product specification.
 
 ### 12. F-067 "Simple Portfolio Score" documents weights but not the component formulas they weight
 

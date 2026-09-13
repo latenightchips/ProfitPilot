@@ -55,16 +55,33 @@ describe('generateRecommendations (M2-025, F-061)', () => {
     ]);
   });
 
-  it('itemizes the three unimplemented categories, with a reason for each', () => {
+  it('itemizes the two remaining unimplemented categories, with a reason for each', () => {
     const result = generateRecommendations(baseParams());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const categories = result.value.unavailableCategories.map((c) => c.category);
-    expect(categories).toEqual(['safety', 'interestCost', 'exitReadiness']);
+    expect(categories).toEqual(['safety', 'interestCost']);
     for (const entry of result.value.unavailableCategories) {
       expect(entry.reason.length).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * Exit Readiness Removal batch (PROJECT_STATUS.md conflict #11, closed
+   * WON'T-IMPLEMENT) — `exitReadiness` used to be a third entry here,
+   * itemized as unavailable rather than omitted. It is now omitted
+   * entirely: no Formula ID mapping was introduced for it, and it is no
+   * longer reported as an unavailable category either — the concept has
+   * been removed, not merely left blocked.
+   */
+  it('no longer itemizes exitReadiness at all', () => {
+    const result = generateRecommendations(baseParams());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const categories = result.value.unavailableCategories.map((c) => c.category);
+    expect(categories).not.toContain('exitReadiness');
   });
 
   it('every recommendation is traceable per M2-026 (all six fields populated)', () => {
