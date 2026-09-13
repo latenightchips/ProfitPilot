@@ -72,6 +72,7 @@ import {
   calculateAdditionalCollateralRecommendation,
   calculateBorrowRecommendation,
   calculateCollateralValue,
+  calculateInterestCostRecommendation,
   calculateLoopRecommendation,
   calculateRepaymentRecommendation,
   type Recommendation,
@@ -93,8 +94,17 @@ import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '.
  * Spec §6.1's own `RecommendationItemId` — the four items the Recommendation
  * Center can ever surface, `'repayment'`/`'additionalCollateral'` (already
  * shipped) plus the two this batch makes computable, `'borrow'`/`'loop'`.
+ *
+ * **`'interestCost'` (F-065, owner decision)** — added following the exact
+ * same whole-function `targetHealthFactor` gate as `'borrow'` above.
+ * F-065's own Engine parameters (Debt Value, APR, the caller-supplied
+ * `expectedAnnualPortfolioGrowthUsd`) do not technically require
+ * `targetHealthFactor` either — this is the same deliberate, documented
+ * choice already made for Borrow just below (`NO_TARGET_REASON`'s own
+ * comment), not a new architectural exception carved out for this item.
  */
-export type RecommendationItemId = 'repayment' | 'additionalCollateral' | 'borrow' | 'loop';
+export type RecommendationItemId =
+  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost';
 
 /**
  * Spec §6.1's own output shape. `items` holds only the items whose full
@@ -117,6 +127,9 @@ const BORROW_UNAVAILABLE_REASON =
 
 const LOOP_UNAVAILABLE_REASON =
   'Configure your Loop borrow percentage and maximum acceptable annual interest cost in Portfolio Settings → Recommendation Preferences to see Loop recommendations here.';
+
+const INTEREST_COST_UNAVAILABLE_REASON =
+  'Configure your Expected Annual Portfolio Growth in Portfolio Settings → Recommendation Preferences to see Interest Cost recommendations here.';
 
 /**
  * Generates whichever recommendation actions this portfolio's own
@@ -180,6 +193,7 @@ export function calculateRecommendationActions(
           additionalCollateral: NO_TARGET_REASON,
           borrow: NO_TARGET_REASON,
           loop: NO_TARGET_REASON,
+          interestCost: NO_TARGET_REASON,
         },
       },
       {
@@ -332,6 +346,30 @@ export function calculateRecommendationActions(
     items.loop = loopStep.value;
   } else {
     unavailableReasons.loop = LOOP_UNAVAILABLE_REASON;
+  }
+
+  // Interest Cost — independent of Borrow/Loop (same partial-configuration
+  // discipline). Available iff `recommendationPreferences.interestCost.expectedAnnualPortfolioGrowthUsd`
+  // is set; reuses the same `dispatchedEngineInput` Borrow/Loop already use
+  // (real V4 effective borrow rate applied where relevant — F-065 needs no
+  // liquidationThreshold/maxLoanToValue dispatch, but sharing the one
+  // already-built input avoids a second, redundant V4 dispatch pass).
+  const interestCostPreferences = portfolio.settings.recommendationPreferences?.interestCost;
+  if (interestCostPreferences?.expectedAnnualPortfolioGrowthUsd !== undefined) {
+    const interestCostStep = step(
+      calculateInterestCostRecommendation({
+        portfolio: dispatchedEngineInput,
+        expectedAnnualPortfolioGrowthUsd: interestCostPreferences.expectedAnnualPortfolioGrowthUsd,
+      }),
+      tracked,
+      sourceStatus,
+    );
+    if (!interestCostStep.ok) return interestCostStep.failure;
+    tracked = interestCostStep.tracked;
+    warnings.push(...interestCostStep.warnings);
+    items.interestCost = interestCostStep.value;
+  } else {
+    unavailableReasons.interestCost = INTEREST_COST_UNAVAILABLE_REASON;
   }
 
   return createServiceSuccess(

@@ -401,6 +401,64 @@ describe('recommendationPreferencesSchema (v1.18.0 Batch 1)', () => {
     expect(result.error.issues[0]?.message).toBe('Enter your minimum Health Factor for borrowing.');
     expect(result.error.issues[0]?.message).not.toContain('NaN');
   });
+
+  /**
+   * `interestCost` (F-065, owner decision) — unlike `borrow`/`loop`'s
+   * `.positive()` bounds above, `expectedAnnualPortfolioGrowthUsd` uses
+   * `.nonnegative()`: `0` is a valid configured value (a portfolio whose
+   * owner expects zero growth), not a rejected one.
+   */
+  it('accepts interestCost present but empty', () => {
+    expect(recommendationPreferencesSchema.safeParse({ interestCost: {} }).success).toBe(true);
+  });
+
+  it('accepts a fully populated interestCost group, independent of borrow/loop', () => {
+    const result = recommendationPreferencesSchema.safeParse({
+      interestCost: { expectedAnnualPortfolioGrowthUsd: 5000 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts zero as a valid expectedAnnualPortfolioGrowthUsd', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        interestCost: { expectedAnnualPortfolioGrowthUsd: 0 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a negative expectedAnnualPortfolioGrowthUsd', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        interestCost: { expectedAnnualPortfolioGrowthUsd: -1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects NaN and Infinity for expectedAnnualPortfolioGrowthUsd', () => {
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        interestCost: { expectedAnnualPortfolioGrowthUsd: NaN },
+      }).success,
+    ).toBe(false);
+    expect(
+      recommendationPreferencesSchema.safeParse({
+        interestCost: { expectedAnnualPortfolioGrowthUsd: Infinity },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('gives a friendly error message, not the raw Zod default, for an invalid expectedAnnualPortfolioGrowthUsd', () => {
+    const result = recommendationPreferencesSchema.safeParse({
+      interestCost: { expectedAnnualPortfolioGrowthUsd: NaN },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toBe(
+      'Enter your expected annual portfolio growth in USD.',
+    );
+    expect(result.error.issues[0]?.message).not.toContain('NaN');
+  });
 });
 
 /**

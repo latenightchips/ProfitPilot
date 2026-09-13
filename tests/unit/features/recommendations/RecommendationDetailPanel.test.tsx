@@ -385,6 +385,51 @@ describe('RecommendationDetailPanel — Borrow/Loop (v1.18.0 Batch 3)', () => {
   });
 });
 
+/** F-065 (owner decision). */
+const INTEREST_COST_RECOMMENDATION: Recommendation = {
+  category: 'interestCost',
+  triggeringCondition: 'Annual Interest exceeds Expected Annual Portfolio Growth.',
+  relevantValues: { annualInterestUsd: 1500, expectedAnnualPortfolioGrowthUsd: 1000 },
+  expectedEffect: 'Interest costs may outweigh expected returns.',
+  decisionPriority: 'Reduce Interest Costs',
+  suggestedAction: 'Interest costs may outweigh expected returns.',
+  formulaReferences: ['F-065', 'F-032', 'F-003'],
+};
+
+describe('RecommendationDetailPanel — interestCost (F-065, owner decision)', () => {
+  it('shows the interest-cost-specific current values and no related planning tool', () => {
+    setReady('interestCost', {
+      actions: { ...ACTIONS, interestCost: INTEREST_COST_RECOMMENDATION },
+    });
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
+
+    expect(screen.getByText('Annual Interest')).toBeInTheDocument();
+    expect(screen.getByText('Expected Annual Portfolio Growth')).toBeInTheDocument();
+    expect(screen.getByText('F-065, F-032, F-003')).toBeInTheDocument();
+    expect(
+      screen.getByText('No related planning tool for this recommendation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Open /i })).not.toBeInTheDocument();
+    // Not routed through `presentationTextFor` (Borrow/Loop only) — the raw
+    // Engine `triggeringCondition`/`suggestedAction` render directly, and no
+    // separate "Raw Engine output" line is shown (that line only appears
+    // when `presented !== null`).
+    expect(
+      screen.getByText('Annual Interest exceeds Expected Annual Portfolio Growth.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Raw Engine output/)).not.toBeInTheDocument();
+  });
+
+  it('assumptions text names Portfolio Settings → Recommendation Preferences and states this is a user-entered figure, not a ProfitPilot forecast', () => {
+    setReady('interestCost', {
+      actions: { ...ACTIONS, interestCost: INTEREST_COST_RECOMMENDATION },
+    });
+    render(<RecommendationDetailPanel portfolio={PORTFOLIO} explanations={null} />);
+    expect(screen.getByText(/Recommendation Preferences/)).toBeInTheDocument();
+    expect(screen.getByText(/not a return ProfitPilot forecasts/)).toBeInTheDocument();
+  });
+});
+
 /**
  * V1.1 Batch 5 ("Recommendation Quality & Explainability"). Uses a real
  * portfolio (`usePortfolioStore().create(...)`) rather than the plain

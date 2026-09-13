@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ADDITIONAL_COLLATERAL_VALUE_LABELS,
   filterCategoryFor,
+  INTEREST_COST_VALUE_LABELS,
   isActionableRecommendation,
+  ITEM_FILTER_CATEGORY,
   presentationTextFor,
   RECOMMENDATION_FILTER_CATEGORIES,
   REPAYMENT_VALUE_LABELS,
@@ -104,15 +106,58 @@ describe('isActionableRecommendation', () => {
       ),
     ).toBe(false);
   });
+
+  it('F-065: is true for interestCost when Annual Interest strictly exceeds Expected Annual Portfolio Growth', () => {
+    expect(
+      isActionableRecommendation(
+        'interestCost',
+        recommendation({
+          category: 'interestCost',
+          relevantValues: { annualInterestUsd: 1000.01, expectedAnnualPortfolioGrowthUsd: 1000 },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('F-065: is false for interestCost on exact equality — strict ">" only', () => {
+    expect(
+      isActionableRecommendation(
+        'interestCost',
+        recommendation({
+          category: 'interestCost',
+          relevantValues: { annualInterestUsd: 1000, expectedAnnualPortfolioGrowthUsd: 1000 },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('F-065: is false for interestCost when Annual Interest is below Expected Annual Portfolio Growth', () => {
+    expect(
+      isActionableRecommendation(
+        'interestCost',
+        recommendation({
+          category: 'interestCost',
+          relevantValues: { annualInterestUsd: 0, expectedAnnualPortfolioGrowthUsd: 0 },
+        }),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('filterCategoryFor', () => {
-  it('maps each of the three real Recommendation categories to its filter category', () => {
+  it('maps each of the four real Recommendation categories to its filter category', () => {
     expect(filterCategoryFor(recommendation({ category: 'debtManagement' }))).toBe('debt');
     expect(filterCategoryFor(recommendation({ category: 'collateralManagement' }))).toBe(
       'collateral',
     );
     expect(filterCategoryFor(recommendation({ category: 'leverage' }))).toBe('leverage');
+    expect(filterCategoryFor(recommendation({ category: 'interestCost' }))).toBe('interest');
+  });
+});
+
+describe('ITEM_FILTER_CATEGORY', () => {
+  it('F-065: maps interestCost to the interest filter category', () => {
+    expect(ITEM_FILTER_CATEGORY.interestCost).toBe('interest');
   });
 });
 
@@ -139,8 +184,8 @@ describe('RECOMMENDATION_FILTER_CATEGORIES', () => {
 });
 
 describe('UNAVAILABLE_FILTER_REASONS', () => {
-  it('covers exactly the two categories permanently unavailable for their own independent reasons', () => {
-    expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(['interest', 'safety']);
+  it('covers exactly the one category permanently unavailable for its own unresolved reason', () => {
+    expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(['safety']);
   });
 
   it('no longer covers exitReadiness — the category was removed entirely, not merely marked unavailable', () => {
@@ -149,6 +194,10 @@ describe('UNAVAILABLE_FILTER_REASONS', () => {
 
   it('no longer covers leverage — its availability now depends on this portfolio’s own Loop preferences (v1.18.0 Batch 3, spec §8)', () => {
     expect(UNAVAILABLE_FILTER_REASONS.leverage).toBeUndefined();
+  });
+
+  it('F-065: no longer covers interest — its availability now depends on this portfolio’s own Interest Cost preference (owner decision)', () => {
+    expect(UNAVAILABLE_FILTER_REASONS.interest).toBeUndefined();
   });
 
   it('does not cover debt or collateral — both are real, populated categories', () => {
@@ -185,6 +234,12 @@ describe('value label maps', () => {
         'requiredUsd',
         'equivalentBtc',
       ].sort(),
+    );
+  });
+
+  it('F-065: INTEREST_COST_VALUE_LABELS covers exactly calculateInterestCostRecommendation’s two relevantValues keys', () => {
+    expect(Object.keys(INTEREST_COST_VALUE_LABELS).sort()).toEqual(
+      ['annualInterestUsd', 'expectedAnnualPortfolioGrowthUsd'].sort(),
     );
   });
 });

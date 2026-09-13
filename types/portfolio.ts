@@ -143,6 +143,15 @@ export interface ExecutionCostAssumptionsSettings {
  * persisted `Portfolio` data. `loop.targetHealthFactor` is deliberately
  * not a field here — F-064 reuses the existing, already-persisted
  * `PortfolioSafetyTargets.targetHealthFactor` (spec §3).
+ *
+ * **`interestCost` (F-065 Interest Cost Recommendation, owner decision)**
+ * — added following the exact same "own sibling group, leaf independently
+ * optional, no invented default" precedent as `borrow`/`loop` above.
+ * `expectedAnnualPortfolioGrowthUsd` is a user-entered USD/year figure,
+ * never derived from BTC price, collateral value, equity, leveraged
+ * exposure, initial investment, cost basis, or historical return — see
+ * `engine/recommendation/calculateInterestCostRecommendation.ts`'s own
+ * header comment for the full owner decision this field encodes.
  */
 export interface RecommendationPreferences {
   borrow?: {
@@ -152,6 +161,9 @@ export interface RecommendationPreferences {
   loop?: {
     loopBorrowPercentage?: number;
     maxAcceptableAnnualInterestCost?: number;
+  };
+  interestCost?: {
+    expectedAnnualPortfolioGrowthUsd?: number;
   };
 }
 

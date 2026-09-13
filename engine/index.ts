@@ -197,17 +197,19 @@ export {
   calculatePortfolioValue,
 } from './portfolio';
 
-/** Recommendation Engine — F-061–F-064; M2-025/M2-026. */
+/** Recommendation Engine — F-061–F-065; M2-025/M2-026. */
 export {
   type AdditionalCollateralRecommendationParams,
   type BorrowRecommendationParams,
   calculateAdditionalCollateralRecommendation,
   calculateBorrowRecommendation,
+  calculateInterestCostRecommendation,
   calculateLoopRecommendation,
   calculateRepaymentRecommendation,
   type DecisionPriority,
   generateRecommendations,
   type GenerateRecommendationsParams,
+  type InterestCostRecommendationParams,
   type LoopRecommendationParams,
   type Recommendation,
   type RecommendationCategory,

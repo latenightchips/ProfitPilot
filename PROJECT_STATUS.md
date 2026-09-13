@@ -18594,6 +18594,30 @@ M2-018 or any other task. Flagged for the same eventual resolution: the
 M2-032 Formula Traceability Audit, or a `06_TASKS.md` update that assigns a
 Recommendation Engine milestone/task set to this chapter.
 
+**Update — F-065 Interest Cost Recommendation, owner decision.** This
+conflict's own text cites F-065 "Interest Warning" as the discovery
+trigger, but the two gaps it carried were never the same gap: **the
+chapter's own missing task assignment** (this conflict, still open — none
+of F-060, F-066–F-069 has a `06_TASKS.md` task any more than they did
+before) is distinct from **F-065's specific "Expected Annual Portfolio
+Growth" dimensional ambiguity**, which a later read-only specification
+gate found had no defined unit anywhere in `02_Formulas.md` (not "no
+formula at all" — F-065 states a comparison rule, `Annual Interest >
+Expected Annual Portfolio Growth`, but never says what unit the right-hand
+side is in). **The unit gap is now resolved by an explicit owner decision**:
+"Expected Annual Portfolio Growth" is a user-entered USD/year figure —
+`RecommendationPreferences.interestCost.expectedAnnualPortfolioGrowthUsd`
+(`types/portfolio.ts`), never derived from BTC price, collateral value,
+equity, leveraged exposure, initial investment, cost basis, or historical
+return. F-065 is implemented on this basis
+(`engine/recommendation/calculateInterestCostRecommendation.ts`), wired
+into `calculateRecommendationActions`/the Recommendation Center's
+"Interest" filter/Portfolio Settings, following F-061 Borrow's own
+"caller/user-supplied threshold, never an invented default" precedent.
+This conflict itself stays open — the whole-chapter task-assignment gap is
+unaffected; only F-065's own piece of what this conflict originally
+flagged is closed.
+
 ### 10. "Target cash proceeds" (M2-024) has ambiguous mechanics, not just a missing formula — BLOCKS full M2-024
 
 **This is a behavioral / business-rule ambiguity about execution order,

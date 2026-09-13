@@ -171,17 +171,43 @@ describe('RecommendationList — unavailable categories', () => {
    * used to be a third case here (`['exitReadiness', /F-060-F-069/]`).
    * `categoryFilter` can no longer even be set to that value —
    * `RecommendationFilterCategory` no longer includes the literal — so
-   * there is nothing left to test; `safety`/`interest` remain the two
-   * real, still-open specification gaps.
+   * there is nothing left to test. `interest` used to be a second case
+   * here too (`['interest', /F-065/]`) — F-065 (owner decision) resolved
+   * that gap, so `interest` moved to the same per-item-reason pattern
+   * `leverage` already uses below, not this whole-category banner. `safety`
+   * remains the one real, still-open specification gap.
    */
-  it.each([
-    ['safety', /conflict #1/],
-    ['interest', /F-065/],
-  ] as const)('shows a real, traceable reason for the %s filter', (category, expected) => {
-    setReady({ categoryFilter: category });
+  it.each([['safety', /conflict #1/]] as const)(
+    'shows a real, traceable reason for the %s filter',
+    (category, expected) => {
+      setReady({ categoryFilter: category });
+      render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+      expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
+      expect(screen.getByText(expected)).toBeInTheDocument();
+    },
+  );
+
+  /**
+   * F-065 (owner decision) — `interest` follows the exact same
+   * per-portfolio-state pattern `leverage`/Loop already established just
+   * below: a real reason sourced from the Store's own
+   * `unavailableReasons.interestCost`, shown without the "Not available
+   * for this category" whole-category prefix.
+   */
+  it('shows the real, per-portfolio-state reason for Interest Cost under the interest filter, not a whole-category banner', () => {
+    setReady({
+      categoryFilter: 'interest',
+      unavailableReasons: {
+        interestCost: 'Configure your Expected Annual Portfolio Growth to see this recommendation.',
+      },
+    });
     render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
-    expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
-    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Configure your Expected Annual Portfolio Growth to see this recommendation.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not available for this category/)).not.toBeInTheDocument();
   });
 
   /**

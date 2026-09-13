@@ -7,6 +7,10 @@ export {
   calculateBorrowRecommendation,
 } from './calculateBorrowRecommendation';
 export {
+  calculateInterestCostRecommendation,
+  type InterestCostRecommendationParams,
+} from './calculateInterestCostRecommendation';
+export {
   calculateLoopRecommendation,
   type LoopRecommendationParams,
 } from './calculateLoopRecommendation';

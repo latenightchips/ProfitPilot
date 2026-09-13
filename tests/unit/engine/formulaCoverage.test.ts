@@ -176,15 +176,15 @@ describe('Formula Coverage Report (M2-029)', () => {
     ).toEqual([]);
   });
 
-  it('counts match the expected 39 implemented / 34 not-implemented split', () => {
+  it('counts match the expected 40 implemented / 33 not-implemented split (F-065, owner decision)', () => {
     const implementedCount = FORMULA_COVERAGE_REGISTRY.filter(
       (entry) => entry.status === 'implemented',
     ).length;
     const notImplementedCount = FORMULA_COVERAGE_REGISTRY.filter(
       (entry) => entry.status === 'not_implemented',
     ).length;
-    expect(implementedCount).toBe(39);
-    expect(notImplementedCount).toBe(34);
+    expect(implementedCount).toBe(40);
+    expect(notImplementedCount).toBe(33);
     expect(implementedCount + notImplementedCount).toBe(73);
   });
 });

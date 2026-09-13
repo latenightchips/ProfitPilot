@@ -457,6 +457,9 @@ describe('PortfolioPage — Recommendation preferences form (v1.18.0 Batch 3)', 
     expect(
       screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
     ).toHaveValue(null);
+    expect(screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false })).toHaveValue(
+      null,
+    );
   });
 
   it('B: entering both Borrow fields persists them to the store', async () => {
@@ -620,6 +623,125 @@ describe('PortfolioPage — Recommendation preferences form (v1.18.0 Batch 3)', 
     expect(
       screen.getByLabelText('Maximum acceptable annual interest cost', { exact: false }),
     ).toHaveValue(500);
+  });
+
+  /**
+   * F-065 (owner decision) — Interest Cost's own single field, following
+   * the exact same persist/clear/reject/round-trip pattern as Borrow/Loop
+   * above, but independent of them (a single optional field, not a pair).
+   */
+  it('K: entering the Expected Annual Portfolio Growth field persists it to the store', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false }),
+      '10000',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.interestCost).toEqual({
+      expectedAnnualPortfolioGrowthUsd: 10000,
+    });
+  });
+
+  it('K: entering 0 for Expected Annual Portfolio Growth persists it as a real, valid zero — not "unset"', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false }),
+      '0',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.interestCost).toEqual({
+      expectedAnnualPortfolioGrowthUsd: 0,
+    });
+  });
+
+  it('K: clearing a previously-set Expected Annual Portfolio Growth returns it to the canonical absent state', async () => {
+    const created = createAndSelect({
+      settings: {
+        recommendationPreferences: {
+          interestCost: { expectedAnnualPortfolioGrowthUsd: 10000 },
+        },
+      },
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.clear(screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false }));
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.interestCost).toBeUndefined();
+  });
+
+  it('K: rejects a negative Expected Annual Portfolio Growth and does not persist it', async () => {
+    const created = createAndSelect();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false }),
+      '-100',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(
+      usePortfolioStore.getState().portfolios[created.id].portfolio.settings
+        .recommendationPreferences,
+    ).toBeUndefined();
+    expect(
+      screen.getByText('Expected annual portfolio growth must be zero or greater.'),
+    ).toBeInTheDocument();
+  });
+
+  it('K: setting Interest Cost does not disturb an already-configured, independent Borrow pair', async () => {
+    const created = createAndSelect({
+      settings: {
+        recommendationPreferences: {
+          borrow: { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 },
+        },
+      },
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<PortfolioPage />);
+
+    await user.type(
+      screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false }),
+      '10000',
+    );
+    await vi.advanceTimersByTimeAsync(700);
+
+    const settings = usePortfolioStore.getState().portfolios[created.id].portfolio.settings;
+    expect(settings.recommendationPreferences?.borrow).toEqual({
+      userMinHealthFactor: 1.5,
+      targetDebtRatio: 0.5,
+    });
+    expect(settings.recommendationPreferences?.interestCost).toEqual({
+      expectedAnnualPortfolioGrowthUsd: 10000,
+    });
+  });
+
+  it('K: reloads a previously-saved Expected Annual Portfolio Growth (round trip through the store)', () => {
+    createAndSelect({
+      settings: {
+        recommendationPreferences: {
+          interestCost: { expectedAnnualPortfolioGrowthUsd: 10000 },
+        },
+      },
+    });
+    render(<PortfolioPage />);
+
+    expect(screen.getByLabelText('Expected Annual Portfolio Growth', { exact: false })).toHaveValue(
+      10000,
+    );
   });
 });
 

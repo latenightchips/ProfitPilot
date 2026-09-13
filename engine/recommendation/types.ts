@@ -24,7 +24,8 @@ export type DecisionPriority =
   | 'Improve Capital Efficiency'
   | 'Achieve User Goals';
 
-export type RecommendationCategory = 'debtManagement' | 'collateralManagement' | 'leverage';
+export type RecommendationCategory =
+  'debtManagement' | 'collateralManagement' | 'leverage' | 'interestCost';
 
 export interface Recommendation {
   category: RecommendationCategory;

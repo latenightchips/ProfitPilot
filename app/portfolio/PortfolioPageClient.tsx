@@ -713,8 +713,15 @@ function PortfolioDetailsForm({
         const preferences = parsed.data.settings.recommendationPreferences;
         const borrow = pruneEmptyPreferenceGroup(preferences?.borrow);
         const loop = pruneEmptyPreferenceGroup(preferences?.loop);
+        // F-065 (owner decision) — `interestCost` follows the exact same
+        // prune-and-reassemble treatment as `borrow`/`loop` above; omitting
+        // it here would silently drop every configured Expected Annual
+        // Portfolio Growth value on the next autosave tick.
+        const interestCost = pruneEmptyPreferenceGroup(preferences?.interestCost);
         const recommendationPreferences =
-          borrow === undefined && loop === undefined ? undefined : { borrow, loop };
+          borrow === undefined && loop === undefined && interestCost === undefined
+            ? undefined
+            : { borrow, loop, interestCost };
 
         // Safety Buffer ≥100% Persistence-Compatibility batch — this
         // debounced tick always re-submits the form's *entire* current
@@ -955,15 +962,24 @@ function PortfolioDetailsForm({
         beyond the "Safety target settings"/"Execution cost assumptions"
         fieldsets' own silent-no-op-on-invalid precedent (an invalid value
         there is simply never persisted, with no visible feedback).
+
+        F-065 (owner decision) adds a third, independent field below:
+        `expectedAnnualPortfolioGrowthUsd` unlocks Interest Cost
+        recommendations the same way Borrow's/Loop's own pairs do — a
+        single optional field (not a pair), zero is a valid configured
+        value (unlike Borrow's/Loop's own positive-only fields), and it is
+        never derived, defaulted, or pre-filled from this portfolio's own
+        BTC price, collateral value, or debt.
       */}
       <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-semibold text-foreground">
           Recommendation preferences
         </legend>
         <p className="text-xs text-muted-foreground">
-          Configure these to unlock Borrow and Loop recommendations in the Recommendation Center.
-          Each pair below is independent — Repayment and Additional Collateral recommendations
-          already work from your Safety target settings above and do not need these.
+          Configure these to unlock Borrow, Loop, and Interest Cost recommendations in the
+          Recommendation Center. Each group below is independent — Repayment and Additional
+          Collateral recommendations already work from your Safety target settings above and do not
+          need these.
         </p>
 
         <p className="text-xs font-medium text-foreground">Borrow</p>
@@ -1113,6 +1129,52 @@ function PortfolioDetailsForm({
         <p className="text-xs text-muted-foreground">
           The most you&rsquo;re willing to pay in projected annual interest for one more loop step,
           in USD.
+        </p>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span>Expected Annual Portfolio Growth (USD/year)</span>
+          <input
+            id="recommendationPreferences-expectedAnnualPortfolioGrowthUsd"
+            type="number"
+            step="any"
+            aria-invalid={
+              errors.settings?.recommendationPreferences?.interestCost
+                ?.expectedAnnualPortfolioGrowthUsd
+                ? 'true'
+                : undefined
+            }
+            aria-describedby={
+              errors.settings?.recommendationPreferences?.interestCost
+                ?.expectedAnnualPortfolioGrowthUsd
+                ? 'recommendationPreferences-expectedAnnualPortfolioGrowthUsd-error'
+                : undefined
+            }
+            {...register(
+              'settings.recommendationPreferences.interestCost.expectedAnnualPortfolioGrowthUsd',
+              {
+                setValueAs: (value) => (value === '' ? undefined : Number(value)),
+              },
+            )}
+            className="rounded-md border border-border bg-transparent px-3 py-2"
+          />
+        </label>
+        {errors.settings?.recommendationPreferences?.interestCost
+          ?.expectedAnnualPortfolioGrowthUsd && (
+          <span
+            id="recommendationPreferences-expectedAnnualPortfolioGrowthUsd-error"
+            className="text-xs text-destructive"
+          >
+            {
+              errors.settings.recommendationPreferences.interestCost
+                .expectedAnnualPortfolioGrowthUsd.message
+            }
+          </span>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Enter the amount you personally expect this portfolio to grow by each year, in USD.
+          ProfitPilot does not calculate or forecast this figure for you — it only compares your own
+          number against your real, currently computed annual interest cost, and flags it when
+          interest costs may outweigh that expectation.
         </p>
       </fieldset>
     </form>

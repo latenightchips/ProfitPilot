@@ -128,6 +128,8 @@ const RISK_TRADEOFF_BY_CATEGORY: Record<Recommendation['category'], string> = {
     'Adding collateral improves Health Factor and reduces liquidation risk, but ties up additional capital that could otherwise be deployed elsewhere.',
   leverage:
     'Adjusting leverage changes both upside exposure and liquidation sensitivity in the same direction — more leverage increases both, less leverage reduces both.',
+  interestCost:
+    'A warning compares your own configured Expected Annual Portfolio Growth against the real, computed Annual Interest — it is a prompt to reassess that expectation or your leverage, not a specific action ProfitPilot is recommending.',
 };
 
 const COST_BENEFIT_NOT_MODELED =

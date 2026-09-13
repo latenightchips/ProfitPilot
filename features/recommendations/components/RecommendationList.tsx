@@ -87,8 +87,22 @@ function explanationFor(
  * Engine `triggeringCondition`/`suggestedAction` fields directly.
  * `repayment`/`additionalCollateral` are unaffected — spec §10 keeps
  * their existing copy unchanged.
+ *
+ * **F-065 `interestCost` (owner decision)** — extends `ITEM_ORDER`
+ * following the exact same "absent from `actions` is skipped, not shown
+ * disabled" pattern Borrow/Loop already established; its own
+ * `unavailableReasons.interestCost` renders the same per-item line.
+ * `presentationTextFor` is not extended to it — like Repayment/Additional
+ * Collateral, it keeps reading `triggeringCondition`/`suggestedAction`
+ * directly (no spec proposes replacement copy for it).
  */
-const ITEM_ORDER: RecommendationItemId[] = ['repayment', 'additionalCollateral', 'borrow', 'loop'];
+const ITEM_ORDER: RecommendationItemId[] = [
+  'repayment',
+  'additionalCollateral',
+  'borrow',
+  'loop',
+  'interestCost',
+];
 
 interface ListItem {
   id: RecommendationItemId;

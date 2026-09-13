@@ -44,18 +44,31 @@ import type {
  * per-portfolio state `RecommendationList.tsx` reads from the Store's own
  * `unavailableReasons.loop` (spec §8), not a static string here.
  *
- * **`safety`/`interest` remain permanently unavailable, unchanged by this
- * batch** — restate (not re-import) the exact same two reasons
+ * **`safety` remains permanently unavailable, unchanged by this batch** —
+ * restates (not re-imports) the exact same reason
  * `engine/recommendation/generateRecommendations.ts`'s own local
  * `UNAVAILABLE_CATEGORIES` constant already documents (that constant is
- * not exported; duplicating its short, stable, conflict-citing strings
+ * not exported; duplicating its short, stable, conflict-citing string
  * here — the same "each component owns its own small static label map"
  * precedent `FullExitResult.tsx`'s/`PartialExitResult.tsx`'s own
  * independently-declared `UNAVAILABLE_COST_LABELS` maps already
  * established — was judged lower-risk than the corresponding Engine
  * export, since the task instructions ask Engine changes to be avoided
- * unless "absolutely required," and duplicating two short strings is
- * not).
+ * unless "absolutely required," and duplicating a short string is not).
+ *
+ * **`interest` (F-065, owner decision) is no longer permanently
+ * unavailable.** Its dimensional gap — no defined unit for "Expected
+ * Annual Portfolio Growth" — is resolved: it is a user-entered USD/year
+ * figure (`RecommendationPreferences.interestCost.expectedAnnualPortfolioGrowthUsd`,
+ * `types/portfolio.ts`). Its availability now follows the exact same
+ * per-portfolio-configuration pattern `leverage`/`loop` already
+ * established just above: gone from this static map, sourced instead from
+ * the Store's own `unavailableReasons.interestCost`
+ * (`calculateRecommendationActions`). `engine/recommendation/generateRecommendations.ts`'s
+ * own `UNAVAILABLE_CATEGORIES` constant is intentionally left unchanged —
+ * that Engine function is M3-012's separate, all-or-nothing composition
+ * with zero production call sites (`services/recommendation/recommendationActions.ts`'s
+ * own header comment), not part of this taxonomy's rendering path.
  *
  * **`exitReadiness` removed entirely (PROJECT_STATUS.md conflict #11,
  * closed WON'T-IMPLEMENT).** It used to be a third permanently-
@@ -138,18 +151,28 @@ export function isActionableRecommendation(
       healthFactor > userMinHealthFactor && availableBorrow > 0 && debtRatio < targetDebtRatio;
     return !acceptable;
   }
-  const {
-    newHealthFactor,
-    targetHealthFactor,
-    availableBorrow: loopAvailableBorrow,
-    annualInterestCost,
-    maxAcceptableAnnualInterestCost,
-  } = recommendation.relevantValues;
-  const loopRecommended =
-    newHealthFactor > targetHealthFactor &&
-    loopAvailableBorrow > 0 &&
-    annualInterestCost <= maxAcceptableAnnualInterestCost;
-  return !loopRecommended;
+  if (id === 'loop') {
+    const {
+      newHealthFactor,
+      targetHealthFactor,
+      availableBorrow: loopAvailableBorrow,
+      annualInterestCost,
+      maxAcceptableAnnualInterestCost,
+    } = recommendation.relevantValues;
+    const loopRecommended =
+      newHealthFactor > targetHealthFactor &&
+      loopAvailableBorrow > 0 &&
+      annualInterestCost <= maxAcceptableAnnualInterestCost;
+    return !loopRecommended;
+  }
+  // 'interestCost' (F-065, owner decision) — re-applies the canonical
+  // strict-`>` rule directly to the already-computed `relevantValues`, the
+  // same "re-derive from the fixed relevantValues shape, not a new
+  // calculation" precedent as every case above. The warning condition
+  // itself IS the actionable case (mirrors `borrow`/`loop`'s binary shape:
+  // "acceptable"/"loop recommended" is non-actionable, its negation is).
+  const { annualInterestUsd, expectedAnnualPortfolioGrowthUsd } = recommendation.relevantValues;
+  return annualInterestUsd > expectedAnnualPortfolioGrowthUsd;
 }
 
 /**
@@ -193,6 +216,7 @@ const FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY: Record<
   debtManagement: 'debt',
   collateralManagement: 'collateral',
   leverage: 'leverage',
+  interestCost: 'interest',
 };
 
 export function filterCategoryFor(recommendation: Recommendation): RecommendationFilterCategory {
@@ -200,15 +224,17 @@ export function filterCategoryFor(recommendation: Recommendation): Recommendatio
 }
 
 /**
- * The two categories still permanently blocked, unaffected by this
- * batch. `leverage` is deliberately **not** listed here anymore
- * (v1.18.0 Batch 3, spec §8) — its availability now depends on this
- * portfolio's own `recommendationPreferences.loop`, so a static
- * "always unavailable" string would become actively wrong the moment a
- * user configures it. `RecommendationList.tsx` sources `leverage`'s
- * per-portfolio-state reason from the Store's own `unavailableReasons.loop`
- * instead (`calculateRecommendationActions`, Batch 2). `exitReadiness` is
- * not listed here either anymore (PROJECT_STATUS.md conflict #11, closed
+ * The one category still permanently blocked, unaffected by this batch.
+ * `leverage` is deliberately **not** listed here anymore (v1.18.0 Batch 3,
+ * spec §8) — its availability now depends on this portfolio's own
+ * `recommendationPreferences.loop`, so a static "always unavailable"
+ * string would become actively wrong the moment a user configures it.
+ * `RecommendationList.tsx` sources `leverage`'s per-portfolio-state reason
+ * from the Store's own `unavailableReasons.loop` instead
+ * (`calculateRecommendationActions`, Batch 2). `interest` is not listed
+ * here either anymore (F-065, owner decision) — same reasoning, sourced
+ * from `unavailableReasons.interestCost` instead. `exitReadiness` is not
+ * listed here either anymore (PROJECT_STATUS.md conflict #11, closed
  * WON'T-IMPLEMENT) — see this file's own header comment for why it was
  * removed as a filter category entirely, rather than kept as a third
  * permanently-unavailable reason.
@@ -216,8 +242,6 @@ export function filterCategoryFor(recommendation: Recommendation): Recommendatio
 export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCategory, string>> = {
   safety:
     'F-060 "Health Factor Recommendation" requires a risk-band scheme, and the documented bands disagree across README.md, 01_PRD.md REQ-001, 01_PRD.md REQ-005, and 02_Formulas.md F-026/F-060 themselves — see PROJECT_STATUS.md conflict #1.',
-  interest:
-    'F-065 "Interest Warning" requires an "Expected Annual Portfolio Growth" figure with no formula or definition anywhere in 02_Formulas.md.',
 };
 
 /**
@@ -235,6 +259,7 @@ export const ITEM_FILTER_CATEGORY: Record<RecommendationItemId, RecommendationFi
   additionalCollateral: 'collateral',
   borrow: 'debt',
   loop: 'leverage',
+  interestCost: 'interest',
 };
 
 /**
@@ -285,6 +310,16 @@ export const LOOP_VALUE_LABELS: Record<string, string> = {
   availableBorrow: 'Available Borrow',
   annualInterestCost: 'Annual Interest Cost',
   maxAcceptableAnnualInterestCost: 'Maximum Acceptable Annual Interest Cost',
+};
+
+/**
+ * F-065 Interest Cost's exact `relevantValues` keys (owner decision) —
+ * `calculateInterestCostRecommendation.ts`'s own literal object, the same
+ * exhaustive, explicit-label-map precedent as the maps above.
+ */
+export const INTEREST_COST_VALUE_LABELS: Record<string, string> = {
+  annualInterestUsd: 'Annual Interest',
+  expectedAnnualPortfolioGrowthUsd: 'Expected Annual Portfolio Growth',
 };
 
 /** Keys whose value is a BTC quantity, not a currency amount or ratio — for display formatting only. */

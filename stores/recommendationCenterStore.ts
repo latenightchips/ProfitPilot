@@ -92,8 +92,13 @@ import type { Portfolio } from '@/types/portfolio';
  * same layering direction `services/recommendation/recommendationActions.ts`'s
  * own header comment documents for why it does not import `Portfolio`
  * concepts the other way.
+ *
+ * **`'interestCost'` (F-065, owner decision)** — matches
+ * `services/recommendation/recommendationActions.ts`'s own identical
+ * union, extended the same way `'borrow'`/`'loop'` already were.
  */
-export type RecommendationItemId = 'repayment' | 'additionalCollateral' | 'borrow' | 'loop';
+export type RecommendationItemId =
+  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost';
 
 export type RecommendationCenterStatus = 'idle' | 'noTarget' | 'ready' | 'error';
 

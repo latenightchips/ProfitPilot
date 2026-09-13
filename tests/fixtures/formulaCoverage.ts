@@ -276,13 +276,7 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     status: 'implemented',
   },
   { id: 'F-064', title: 'Loop Recommendation', status: 'implemented' },
-  {
-    id: 'F-065',
-    title: 'Interest Warning',
-    status: 'not_implemented',
-    reason:
-      'No numeric threshold anywhere in 02_Formulas.md for what counts as a "high" interest cost (Batch 10 finding).',
-  },
+  { id: 'F-065', title: 'Interest Warning', status: 'implemented' },
   {
     id: 'F-066',
     title: 'Profit Target Recommendation',

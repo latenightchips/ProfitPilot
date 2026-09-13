@@ -39,6 +39,7 @@ function basePortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
 
 const FULL_BORROW_PREFS = { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 };
 const FULL_LOOP_PREFS = { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 };
+const FULL_INTEREST_COST_PREFS = { expectedAnnualPortfolioGrowthUsd: 1000 };
 
 describe('calculateRecommendationActions — no target Health Factor configured (spec §5 row 1)', () => {
   it('returns all four items unavailable, with no target, when settings are entirely empty', () => {
@@ -206,12 +207,16 @@ describe('calculateRecommendationActions — Scenarios D/E: Loop full vs. partia
  * independently computed. Scenarios G/H — one complete, one incomplete,
  * proving true independence (spec §5's full table).
  */
-describe('calculateRecommendationActions — Scenario F: both fully configured, all four independently computed', () => {
-  it('produces all four items when everything is configured', () => {
+describe('calculateRecommendationActions — Scenario F: everything fully configured, all five independently computed', () => {
+  it('produces all five items when everything is configured', () => {
     const portfolio = basePortfolio({
       settings: {
         safetyTargets: { targetHealthFactor: 1.2 },
-        recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+        recommendationPreferences: {
+          borrow: FULL_BORROW_PREFS,
+          loop: FULL_LOOP_PREFS,
+          interestCost: FULL_INTEREST_COST_PREFS,
+        },
       },
     });
     const result = calculateRecommendationActions(portfolio, 'manual');
@@ -220,10 +225,87 @@ describe('calculateRecommendationActions — Scenario F: both fully configured, 
     expect(Object.keys(result.data.items).sort()).toEqual([
       'additionalCollateral',
       'borrow',
+      'interestCost',
       'loop',
       'repayment',
     ]);
     expect(result.data.unavailableReasons).toEqual({});
+  });
+});
+
+/**
+ * Scenario M — Interest Cost's own availability, independent of both
+ * Borrow and Loop, following the exact same "own single field, own real
+ * reason when absent" pattern Borrow/Loop already established (M — since
+ * L was the last V4 scenario letter already in use above).
+ */
+describe('calculateRecommendationActions — Scenario M: Interest Cost independence (F-065, owner decision)', () => {
+  it('M: full Interest Cost config adds F-065 to items, independent of Borrow/Loop', () => {
+    const portfolio = basePortfolio({
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: { interestCost: FULL_INTEREST_COST_PREFS },
+      },
+    });
+    const result = calculateRecommendationActions(portfolio, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items.interestCost).toBeDefined();
+    expect(result.data.items.interestCost?.category).toBe('interestCost');
+    expect(result.data.items.interestCost?.formulaReferences).toContain('F-065');
+    expect(result.data.unavailableReasons.interestCost).toBeUndefined();
+    expect(result.data.items.borrow).toBeUndefined();
+    expect(result.data.items.loop).toBeUndefined();
+    expect(result.data.unavailableReasons.borrow).toBeDefined();
+    expect(result.data.unavailableReasons.loop).toBeDefined();
+  });
+
+  it('M: Interest Cost stays absent, with a real reason, when expectedAnnualPortfolioGrowthUsd is not configured', () => {
+    const portfolio = basePortfolio({ settings: { safetyTargets: { targetHealthFactor: 5 } } });
+    const result = calculateRecommendationActions(portfolio, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items.interestCost).toBeUndefined();
+    expect(result.data.unavailableReasons.interestCost).toBeDefined();
+  });
+
+  it('M: Interest Cost accepts a configured value of exactly zero (0 is valid, not "missing")', () => {
+    const portfolio = basePortfolio({
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: { interestCost: { expectedAnnualPortfolioGrowthUsd: 0 } },
+      },
+    });
+    const result = calculateRecommendationActions(portfolio, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items.interestCost).toBeDefined();
+    expect(result.data.unavailableReasons.interestCost).toBeUndefined();
+  });
+
+  it('M: like Borrow/Loop, Interest Cost is also gated behind targetHealthFactor (whole-function gate, spec §6.1 step 1)', () => {
+    const portfolio = basePortfolio({
+      settings: {
+        recommendationPreferences: { interestCost: FULL_INTEREST_COST_PREFS },
+      },
+    });
+    const result = calculateRecommendationActions(portfolio, 'manual');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.targetHealthFactor).toBeNull();
+    expect(result.data.items.interestCost).toBeUndefined();
+    expect(result.data.unavailableReasons.interestCost).toBeDefined();
+  });
+
+  it('M: fails closed for a negative expectedAnnualPortfolioGrowthUsd that bypassed schema validation', () => {
+    const portfolio = basePortfolio({
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: { interestCost: { expectedAnnualPortfolioGrowthUsd: -1 } },
+      },
+    });
+    const result = calculateRecommendationActions(portfolio, 'manual');
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -493,6 +575,55 @@ describe('calculateRecommendationActions — Scenarios K/L: V4 parity and V4 dis
     expect(v4Result.data.items.loop?.relevantValues.annualInterestCost).not.toBeCloseTo(
       legacyRateResult.data.items.loop?.relevantValues.annualInterestCost ?? NaN,
       2,
+    );
+  });
+
+  it('L: Interest Cost also uses the real derived V4 effective borrow rate, not legacy protocol.borrowApr (F-065, owner decision)', () => {
+    const v4DebtState = {
+      drawnDebt: 20000,
+      premiumDebt: 500,
+      baseDrawnApr: 0.05,
+      riskPremium: 0.1,
+    };
+    const rateStep = deriveAaveV4EffectiveBorrowRate(v4DebtState, null, 'live');
+    expect(rateStep.ok).toBe(true);
+    if (!rateStep.ok) return;
+
+    const v4Result = calculateRecommendationActions(
+      basePortfolio({
+        protocolVersion: 'v4',
+        v4DebtState,
+        v4CollateralRisk: { collateralFactor: 0.75, dynamicConfigKey: 1 },
+        settings: {
+          safetyTargets: { targetHealthFactor: 1.2 },
+          recommendationPreferences: { interestCost: FULL_INTEREST_COST_PREFS },
+        },
+      }),
+      'live',
+    );
+    expect(v4Result.ok).toBe(true);
+    if (!v4Result.ok) return;
+
+    const legacyRateResult = calculateRecommendationActions(
+      basePortfolio({
+        debt: { asset: 'USDC', balance: 20500 },
+        settings: {
+          safetyTargets: { targetHealthFactor: 1.2 },
+          recommendationPreferences: { interestCost: FULL_INTEREST_COST_PREFS },
+        },
+      }),
+      'live',
+    );
+    expect(legacyRateResult.ok).toBe(true);
+    if (!legacyRateResult.ok) return;
+
+    expect(v4Result.data.items.interestCost?.relevantValues.annualInterestUsd).not.toBeCloseTo(
+      legacyRateResult.data.items.interestCost?.relevantValues.annualInterestUsd ?? NaN,
+      2,
+    );
+    expect(v4Result.data.items.interestCost?.relevantValues.annualInterestUsd).toBeCloseTo(
+      20500 * rateStep.value,
+      6,
     );
   });
 });

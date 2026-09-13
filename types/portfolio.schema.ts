@@ -205,6 +205,19 @@ export const recommendationPreferencesSchema = z.object({
         .optional(),
     })
     .optional(),
+  // F-065 Interest Cost Recommendation (owner decision) — `expectedAnnualPortfolioGrowthUsd`
+  // is a user-entered USD/year figure, zero or greater (unlike `borrow`/`loop`'s
+  // `.positive()` bounds above, `0` is a valid configured value — see
+  // `calculateInterestCostRecommendation.ts`'s own boundary-test list).
+  interestCost: z
+    .object({
+      expectedAnnualPortfolioGrowthUsd: z
+        .number({ error: 'Enter your expected annual portfolio growth in USD.' })
+        .finite('Enter your expected annual portfolio growth in USD.')
+        .nonnegative('Expected annual portfolio growth must be zero or greater.')
+        .optional(),
+    })
+    .optional(),
 });
 
 export const portfolioSettingsSchema = z.object({

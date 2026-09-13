@@ -131,6 +131,7 @@ describe('recalculate — a real target', () => {
 
 const FULL_BORROW_PREFS = { userMinHealthFactor: 1.5, targetDebtRatio: 0.5 };
 const FULL_LOOP_PREFS = { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterestCost: 5000 };
+const FULL_INTEREST_COST_PREFS = { expectedAnnualPortfolioGrowthUsd: 1000 };
 
 /**
  * v1.18.0 Batch 3 — store-level wiring to `calculateRecommendationActions`
@@ -190,12 +191,16 @@ describe('recalculate — Recommendation Center store wiring to Borrow/Loop pref
     expect(state.unavailableReasons.borrow).toBeDefined();
   });
 
-  it('N: both pairs complete — all four recommendation items flow through the store at once', () => {
+  it('N: all three pairs/fields complete — all five recommendation items flow through the store at once (F-065, owner decision)', () => {
     useRecommendationCenterStore.getState().recalculate(
       portfolioFixture({
         settings: {
           safetyTargets: { targetHealthFactor: 8 },
-          recommendationPreferences: { borrow: FULL_BORROW_PREFS, loop: FULL_LOOP_PREFS },
+          recommendationPreferences: {
+            borrow: FULL_BORROW_PREFS,
+            loop: FULL_LOOP_PREFS,
+            interestCost: FULL_INTEREST_COST_PREFS,
+          },
         },
       }),
     );
@@ -205,6 +210,7 @@ describe('recalculate — Recommendation Center store wiring to Borrow/Loop pref
     expect(state.actions?.additionalCollateral).toBeDefined();
     expect(state.actions?.borrow).toBeDefined();
     expect(state.actions?.loop).toBeDefined();
+    expect(state.actions?.interestCost).toBeDefined();
     expect(state.unavailableReasons).toEqual({});
   });
 
