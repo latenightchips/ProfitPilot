@@ -67,13 +67,6 @@ unaffected).
   the single largest deferred-feature category; `docs/VERSION_2_BACKLOG.md`
   (this batch, below) is where it is actually prioritized as product
   scope, not duplicated here as a flat list.
-- **Health Factor risk-band classification not implemented** (F-026/
-  F-060, Conflict #1) — four disagreeing source documents with no
-  canonical scheme designated; the UI honestly shows "Not available"
-  rather than guessing (`docs/DEFECT_CLASSIFICATION.md` §6). Blocked on
-  a product decision (which banding scheme governs), not an engineering
-  gap — tracked here as debt because the blocker itself has never been
-  resolved across ten milestones, not because the workaround is wrong.
 - **`03_UI.md`'s Settings "ABOUT" section is partially built** (Conflict
   #39, Milestone 10 Batch 3; partially resolved `v1.16.0`) —
   Application/Formula/Engine Version now display (`v1.16.0`, "Settings

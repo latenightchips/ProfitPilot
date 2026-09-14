@@ -25,7 +25,7 @@ export type DecisionPriority =
   | 'Achieve User Goals';
 
 export type RecommendationCategory =
-  'debtManagement' | 'collateralManagement' | 'leverage' | 'interestCost';
+  'debtManagement' | 'collateralManagement' | 'leverage' | 'interestCost' | 'healthFactor';
 
 export interface Recommendation {
   category: RecommendationCategory;

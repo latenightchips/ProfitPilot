@@ -88,12 +88,29 @@ describe('HealthFactorStatusSection — Formula reference', () => {
   });
 });
 
-describe('HealthFactorStatusSection — Risk classification is not rendered (Conflict #1)', () => {
-  it('never renders a risk-band label like "Healthy" or "Critical"', () => {
+describe('HealthFactorStatusSection — Risk Category (F-026, owner decision, PROJECT_STATUS.md conflict #1 closed)', () => {
+  it('renders the Risk Category value and its F-026 tooltip', () => {
+    render(<HealthFactorStatusSection status={buildStatus()} />);
+    expect(screen.getByText('Risk Category')).toBeInTheDocument();
+    expect(screen.getByText('SAFE')).toBeInTheDocument();
+    expect(screen.getByText('Risk Category').closest('[title]')).toHaveAttribute(
+      'title',
+      'F-026 — see docs/02_Formulas.md',
+    );
+    expect(screen.getByText('Risk Category').closest('[title]')).toHaveAttribute('tabIndex', '0');
+  });
+
+  it('never invents a second, differently-worded risk-band label like "Healthy" or "Critical"', () => {
     render(<HealthFactorStatusSection status={buildStatus()} />);
     for (const label of ['Healthy', 'Critical', 'Safe', 'Elevated']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
+  });
+
+  it('omits the Risk Category row when riskCategory is null (unreachable-in-practice classification failure)', () => {
+    const status = { ...buildStatus(), riskCategory: null };
+    render(<HealthFactorStatusSection status={status} />);
+    expect(screen.queryByText('Risk Category')).not.toBeInTheDocument();
   });
 });
 

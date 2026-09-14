@@ -72,6 +72,7 @@ import {
   calculateAdditionalCollateralRecommendation,
   calculateBorrowRecommendation,
   calculateCollateralValue,
+  calculateHealthFactorRecommendation,
   calculateInterestCostRecommendation,
   calculateLoopRecommendation,
   calculateRepaymentRecommendation,
@@ -102,9 +103,22 @@ import { createServiceSuccess, type ServiceResult, type ServiceWarning } from '.
  * `targetHealthFactor` either — this is the same deliberate, documented
  * choice already made for Borrow just below (`NO_TARGET_REASON`'s own
  * comment), not a new architectural exception carved out for this item.
+ *
+ * **`'healthFactor'` (F-060, owner decision, PROJECT_STATUS.md conflict
+ * #1 closed)** — unlike `'borrow'`/`'loop'`/`'interestCost'`, needs no
+ * `recommendationPreferences` field of its own at all (F-060 consumes
+ * `calculateRiskCategory`/F-026 directly off the dispatched portfolio, no
+ * caller-supplied threshold to configure) — available unconditionally
+ * once `targetHealthFactor` exists, the exact same scope
+ * Repayment/Additional Collateral already have. Still gated behind
+ * `targetHealthFactor` for consistency with this function's own
+ * established whole-function convention, even though F-060's own Risk
+ * Category classification does not itself depend on a configured target
+ * — the same "deliberate whole-function gate, not an incidental
+ * omission" precedent already documented for Borrow above.
  */
 export type RecommendationItemId =
-  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost';
+  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost' | 'healthFactor';
 
 /**
  * Spec §6.1's own output shape. `items` holds only the items whose full
@@ -194,6 +208,7 @@ export function calculateRecommendationActions(
           borrow: NO_TARGET_REASON,
           loop: NO_TARGET_REASON,
           interestCost: NO_TARGET_REASON,
+          healthFactor: NO_TARGET_REASON,
         },
       },
       {
@@ -291,9 +306,25 @@ export function calculateRecommendationActions(
   tracked = additionalCollateralStep.tracked;
   warnings.push(...additionalCollateralStep.warnings);
 
+  // Health Factor Recommendation (F-060) — unconditional once
+  // `targetHealthFactor` exists, exactly matching Repayment/Additional
+  // Collateral's own scope (no `recommendationPreferences` field of its
+  // own to configure — see `RecommendationItemId`'s own doc comment
+  // above for why it is still gated behind `targetHealthFactor` for
+  // consistency despite not needing one).
+  const healthFactorStep = step(
+    calculateHealthFactorRecommendation({ portfolio: dispatchedEngineInput }),
+    tracked,
+    sourceStatus,
+  );
+  if (!healthFactorStep.ok) return healthFactorStep.failure;
+  tracked = healthFactorStep.tracked;
+  warnings.push(...healthFactorStep.warnings);
+
   const items: Partial<Record<RecommendationItemId, Recommendation>> = {
     repayment: repaymentStep.value,
     additionalCollateral: additionalCollateralStep.value,
+    healthFactor: healthFactorStep.value,
   };
   const unavailableReasons: Partial<Record<RecommendationItemId, string>> = {};
 

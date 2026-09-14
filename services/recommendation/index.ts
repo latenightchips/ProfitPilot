@@ -16,6 +16,14 @@
  * (`features/recommendations/utils/recommendationTaxonomy.ts`) — no
  * Engine file changes were needed for that addition, only this barrel.
  *
+ * `calculateRiskCategory`/`RiskCategory`/`HEALTH_FACTOR_ACTIONABLE_CATEGORIES`
+ * (F-026/F-060, owner decision, PROJECT_STATUS.md conflict #1 closed) —
+ * re-exported the same way, for `recommendationTaxonomy.ts`'s own
+ * `isActionableRecommendation('healthFactor', ...)` case, which must
+ * re-derive the Risk Category from `relevantValues.healthFactor` by
+ * calling this exact function rather than duplicating F-026's own
+ * threshold table a second time in the UI layer.
+ *
  * `calculateRecommendationActions` — v1.18.0 Batch 2, resolving Conflict
  * #29's preference-source gap per
  * `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md` §6. Exported here
@@ -46,3 +54,8 @@ export {
   type TargetHealthFactorActions,
 } from './targetHealthFactorActions';
 export type { DecisionPriority, Recommendation, RecommendationCategory } from '@/engine';
+export {
+  calculateRiskCategory,
+  HEALTH_FACTOR_ACTIONABLE_CATEGORIES,
+  type RiskCategory,
+} from '@/engine';

@@ -168,24 +168,40 @@ describe('RecommendationList — unavailable categories', () => {
   /**
    * Safety Buffer batch's sibling cleanup — "Exit Readiness Removal"
    * (PROJECT_STATUS.md conflict #11, closed WON'T-IMPLEMENT): `exitReadiness`
-   * used to be a third case here (`['exitReadiness', /F-060-F-069/]`).
-   * `categoryFilter` can no longer even be set to that value —
-   * `RecommendationFilterCategory` no longer includes the literal — so
-   * there is nothing left to test. `interest` used to be a second case
-   * here too (`['interest', /F-065/]`) — F-065 (owner decision) resolved
-   * that gap, so `interest` moved to the same per-item-reason pattern
-   * `leverage` already uses below, not this whole-category banner. `safety`
-   * remains the one real, still-open specification gap.
+   * used to be a third case in a whole-category-banner `it.each` here
+   * (`['exitReadiness', /F-060-F-069/]`). `categoryFilter` can no longer
+   * even be set to that value — `RecommendationFilterCategory` no longer
+   * includes the literal — so there is nothing left to test. `interest`
+   * used to be a second case (`['interest', /F-065/]`) — F-065 (owner
+   * decision) resolved that gap, moving `interest` to the same
+   * per-item-reason pattern `leverage` uses below. `safety` was the last
+   * remaining whole-category case (`['safety', /conflict #1/]`) — F-026/
+   * F-060 (owner decision, PROJECT_STATUS.md conflict #1 closed) resolved
+   * it the same way, moving `safety` to its own per-item-reason test just
+   * below `interest`'s. No whole-category-banner cases remain, so this
+   * `it.each` was removed entirely rather than left with an empty array.
    */
-  it.each([['safety', /conflict #1/]] as const)(
-    'shows a real, traceable reason for the %s filter',
-    (category, expected) => {
-      setReady({ categoryFilter: category });
-      render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
-      expect(screen.getByText(/Not available for this category/)).toBeInTheDocument();
-      expect(screen.getByText(expected)).toBeInTheDocument();
-    },
-  );
+
+  /**
+   * F-026/F-060 (owner decision) — `safety` follows the exact same
+   * per-portfolio-state pattern `interest`/`leverage` already established:
+   * a real reason sourced from the Store's own
+   * `unavailableReasons.healthFactor`, shown without the "Not available
+   * for this category" whole-category prefix.
+   */
+  it('shows the real, per-portfolio-state reason for Health Factor under the safety filter, not a whole-category banner', () => {
+    setReady({
+      categoryFilter: 'safety',
+      unavailableReasons: {
+        healthFactor: 'Configure a target Health Factor to see this recommendation.',
+      },
+    });
+    render(<RecommendationList portfolio={PORTFOLIO} explanations={null} />);
+    expect(
+      screen.getByText('Configure a target Health Factor to see this recommendation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not available for this category/)).not.toBeInTheDocument();
+  });
 
   /**
    * F-065 (owner decision) — `interest` follows the exact same

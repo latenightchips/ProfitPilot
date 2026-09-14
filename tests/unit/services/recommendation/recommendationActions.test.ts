@@ -42,7 +42,7 @@ const FULL_LOOP_PREFS = { loopBorrowPercentage: 0.5, maxAcceptableAnnualInterest
 const FULL_INTEREST_COST_PREFS = { expectedAnnualPortfolioGrowthUsd: 1000 };
 
 describe('calculateRecommendationActions — no target Health Factor configured (spec §5 row 1)', () => {
-  it('returns all four items unavailable, with no target, when settings are entirely empty', () => {
+  it('returns all six items unavailable, with no target, when settings are entirely empty', () => {
     const result = calculateRecommendationActions(basePortfolio(), 'manual');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -52,6 +52,8 @@ describe('calculateRecommendationActions — no target Health Factor configured 
     expect(result.data.unavailableReasons.additionalCollateral).toBeDefined();
     expect(result.data.unavailableReasons.borrow).toBeDefined();
     expect(result.data.unavailableReasons.loop).toBeDefined();
+    expect(result.data.unavailableReasons.interestCost).toBeDefined();
+    expect(result.data.unavailableReasons.healthFactor).toBeDefined();
   });
 
   it('still returns real, honest ServiceMetadata (not a fabricated engineVersion/formulaVersion) even though no recommendation is computed', () => {
@@ -207,8 +209,8 @@ describe('calculateRecommendationActions — Scenarios D/E: Loop full vs. partia
  * independently computed. Scenarios G/H — one complete, one incomplete,
  * proving true independence (spec §5's full table).
  */
-describe('calculateRecommendationActions — Scenario F: everything fully configured, all five independently computed', () => {
-  it('produces all five items when everything is configured', () => {
+describe('calculateRecommendationActions — Scenario F: everything fully configured, all six independently computed', () => {
+  it('produces all six items when everything is configured', () => {
     const portfolio = basePortfolio({
       settings: {
         safetyTargets: { targetHealthFactor: 1.2 },
@@ -225,6 +227,7 @@ describe('calculateRecommendationActions — Scenario F: everything fully config
     expect(Object.keys(result.data.items).sort()).toEqual([
       'additionalCollateral',
       'borrow',
+      'healthFactor',
       'interestCost',
       'loop',
       'repayment',
@@ -468,7 +471,7 @@ describe('calculateRecommendationActions — Scenarios K/L: V4 parity and V4 dis
     expect(result.errors[0]).toMatchObject({ code: 'AAVE_V4_COLLATERAL_RISK_MISSING' });
   });
 
-  it('K: succeeds and produces all four items once V4 state is fully synced and preferences configured', () => {
+  it('K: succeeds and produces all five items once V4 state is fully synced and preferences configured', () => {
     const result = calculateRecommendationActions(
       v4Portfolio({
         settings: {
@@ -483,6 +486,7 @@ describe('calculateRecommendationActions — Scenarios K/L: V4 parity and V4 dis
     expect(Object.keys(result.data.items).sort()).toEqual([
       'additionalCollateral',
       'borrow',
+      'healthFactor',
       'loop',
       'repayment',
     ]);

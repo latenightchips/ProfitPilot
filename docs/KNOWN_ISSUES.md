@@ -63,12 +63,6 @@ documentation-only inconsistency.
   backup already covers it (`docs/DISASTER_RECOVERY.md`'s "User
   deletion") — Archive is the reversible alternative for portfolios
   specifically; a deliberate design choice, not an oversight.
-- **Health Factor risk-band classification (F-026/F-060) is not
-  implemented.** No canonical risk-banding scheme is defined across the
-  4 disagreeing source documents (Conflict #1, `PROJECT_STATUS.md`); the
-  UI honestly shows "Not available" rather than fabricating a scheme
-  (`docs/DEFECT_CLASSIFICATION.md` §6). Not a defect — no incorrect
-  output exists, and this is correctly the alternative to guessing.
 - **33 of 69 Formula IDs are out of scope** (multi-asset collateral/
   debt, compound interest, swap fees/slippage/gas, several
   Recommendation Engine formulas) — each with a recorded reason

@@ -2,7 +2,11 @@
  * Health Factor Status builder — 06_TASKS.md M5-007. See
  * `../types/healthFactorStatus.ts` for the full design reasoning.
  */
-import { calculateTargetHealthFactorActions, type PortfolioSummary } from '@/services';
+import {
+  calculateRiskCategory,
+  calculateTargetHealthFactorActions,
+  type PortfolioSummary,
+} from '@/services';
 import type { Portfolio } from '@/types/portfolio';
 
 import type { HealthFactorStatus } from '../types/healthFactorStatus';
@@ -23,8 +27,11 @@ function buildExplanation(current: number, target: number | null): string {
 /**
  * Builds the Health Factor Status view model from an already-successful
  * `PortfolioSummary` (M3-005) and the portfolio's own configured target,
- * if any. Never invents a target, and never classifies risk — see this
- * module's own header comment.
+ * if any. Never invents a target. Classifies risk via `calculateRiskCategory`
+ * (F-026, owner decision, PROJECT_STATUS.md conflict #1 closed) — the
+ * same canonical classification F-060/the Recommendation Center's
+ * `healthFactor` item use, never a second, independently-derived label —
+ * see this module's own header comment.
  */
 export function buildHealthFactorStatus(
   portfolio: Portfolio,
@@ -33,6 +40,9 @@ export function buildHealthFactorStatus(
   const target = portfolio.settings.safetyTargets?.targetHealthFactor ?? null;
   const current = summary.healthFactor;
   const distanceFromTarget = target !== null && Number.isFinite(current) ? current - target : null;
+
+  const riskCategoryResult = calculateRiskCategory(current);
+  const riskCategory = riskCategoryResult.ok ? riskCategoryResult.value : null;
 
   let requiredActions: HealthFactorStatus['requiredActions'] = null;
   if (target !== null) {
@@ -48,6 +58,7 @@ export function buildHealthFactorStatus(
   return {
     currentHealthFactor: current,
     formattedCurrentHealthFactor: formatHealthFactor(current),
+    riskCategory,
     configuredTarget: target,
     formattedConfiguredTarget: target !== null ? formatHealthFactor(target) : null,
     distanceFromTarget,

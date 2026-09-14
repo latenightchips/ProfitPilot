@@ -16,6 +16,7 @@ function baseHealthFactorStatus(overrides: Partial<HealthFactorStatus> = {}): He
   return {
     currentHealthFactor: 4,
     formattedCurrentHealthFactor: '4',
+    riskCategory: 'SAFE',
     configuredTarget: null,
     formattedConfiguredTarget: null,
     distanceFromTarget: null,

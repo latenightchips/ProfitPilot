@@ -5,8 +5,8 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
 
 /**
  * Health Factor Status builder — 06_TASKS.md M5-007. "Risk
- * classification" is deliberately not covered here — it is not built at
- * all (Conflict #1); see `../types/healthFactorStatus.ts`.
+ * classification" — now `status.riskCategory` (F-026, owner decision,
+ * PROJECT_STATUS.md conflict #1 closed); see `../types/healthFactorStatus.ts`.
  */
 beforeEach(() => {
   usePortfolioStore.setState({
@@ -53,6 +53,7 @@ describe('buildHealthFactorStatus — no target configured', () => {
 
     expect(status.currentHealthFactor).toBe(4);
     expect(status.formattedCurrentHealthFactor).toBe('4');
+    expect(status.riskCategory).toBe('SAFE');
     expect(status.configuredTarget).toBeNull();
     expect(status.distanceFromTarget).toBeNull();
     expect(status.requiredActions).toBeNull();
@@ -104,6 +105,46 @@ describe('buildHealthFactorStatus — zero-debt portfolio (Conflict #20)', () =>
 
     expect(status.currentHealthFactor).toBe(Infinity);
     expect(status.formattedCurrentHealthFactor).toBe('∞');
+    expect(status.riskCategory).toBe('SAFE');
     expect(status.explanation).toBe('Health Factor is above your configured target.');
+  });
+});
+
+describe('buildHealthFactorStatus — riskCategory (F-026, owner decision)', () => {
+  /**
+   * Calls `calculateRiskCategory` (F-026) directly — the same canonical
+   * classification F-060/the Recommendation Center's `healthFactor` item
+   * use — so this Dashboard surface can never disagree with them over the
+   * identical Health Factor value. `liquidationThreshold: 1` and
+   * `debt.balance: 1` make Health Factor exactly equal `market.btcPriceUsd`,
+   * so each case's own `btcPriceUsd` directly is the Health Factor under
+   * test.
+   */
+  it.each<[number, string]>([
+    [2.500001, 'SAFE'],
+    [2.5, 'MONITOR'],
+    [2.000001, 'MONITOR'],
+    [2.0, 'ELEVATED'],
+    [1.500001, 'ELEVATED'],
+    [1.5, 'HIGH RISK'],
+    [1.200001, 'HIGH RISK'],
+    [1.2, 'LIQUIDATION RISK'],
+  ])('classifies Health Factor %s as %s, agreeing with F-026/F-060', (btcPriceUsd, expected) => {
+    const { portfolio, summary } = createAndGetSummary({
+      collateral: { asset: 'BTC', quantity: 1 },
+      debt: { asset: 'USDC', balance: 1 },
+      market: { btcPriceUsd },
+      protocol: {
+        maxLoanToValue: 0.7,
+        liquidationThreshold: 1,
+        borrowApr: 0.05,
+        supplyApr: 0.02,
+      },
+    });
+
+    const status = buildHealthFactorStatus(portfolio, summary);
+
+    expect(status.currentHealthFactor).toBe(btcPriceUsd);
+    expect(status.riskCategory).toBe(expected);
   });
 });

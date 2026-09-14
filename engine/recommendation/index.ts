@@ -7,6 +7,11 @@ export {
   calculateBorrowRecommendation,
 } from './calculateBorrowRecommendation';
 export {
+  calculateHealthFactorRecommendation,
+  HEALTH_FACTOR_ACTIONABLE_CATEGORIES,
+  type HealthFactorRecommendationParams,
+} from './calculateHealthFactorRecommendation';
+export {
   calculateInterestCostRecommendation,
   type InterestCostRecommendationParams,
 } from './calculateInterestCostRecommendation';

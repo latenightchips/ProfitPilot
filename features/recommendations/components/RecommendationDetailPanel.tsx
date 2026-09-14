@@ -15,6 +15,7 @@ import {
   BORROW_VALUE_LABELS,
   BTC_VALUE_KEYS,
   HEALTH_FACTOR_VALUE_KEYS,
+  HEALTH_FACTOR_VALUE_LABELS,
   INTEREST_COST_VALUE_LABELS,
   isActionableRecommendation,
   LOOP_VALUE_LABELS,
@@ -105,11 +106,13 @@ import type { Portfolio } from '@/types/portfolio';
  * why.
  */
 /**
- * No `borrow`/`interestCost` key — neither has a related tool at all (see
- * this file's own header comment for Borrow; Interest Cost is a warning
- * about existing debt, not a "how much to change" action a planning tool
- * could be prefilled with, so it follows the identical "no related tool"
- * treatment as Borrow below).
+ * No `borrow`/`interestCost`/`healthFactor` key — none of the three has a
+ * related tool at all (see this file's own header comment for Borrow;
+ * Interest Cost is a warning about existing debt, not a "how much to
+ * change" action a planning tool could be prefilled with; Health Factor
+ * is a pure Risk Category classification with no numeric "how much"
+ * target of its own to hand to a planner — all three follow the
+ * identical "no related tool" treatment as Borrow below).
  */
 const RELATED_TOOL_BY_ITEM = {
   repayment: 'Exit Planner',
@@ -130,7 +133,8 @@ function labelsFor(id: RecommendationItemId): Record<string, string> {
   if (id === 'additionalCollateral') return ADDITIONAL_COLLATERAL_VALUE_LABELS;
   if (id === 'borrow') return BORROW_VALUE_LABELS;
   if (id === 'loop') return LOOP_VALUE_LABELS;
-  return INTEREST_COST_VALUE_LABELS;
+  if (id === 'interestCost') return INTEREST_COST_VALUE_LABELS;
+  return HEALTH_FACTOR_VALUE_LABELS;
 }
 
 /**
@@ -153,6 +157,9 @@ function assumptionsTextFor(id: RecommendationItemId, targetHealthFactor: number
   }
   if (id === 'interestCost') {
     return 'Uses this portfolio’s own configured Expected Annual Portfolio Growth from Portfolio Settings → Recommendation Preferences — a figure you enter yourself, not a return ProfitPilot forecasts or derives from BTC price, collateral value, or historical performance. Compared against the real Annual Interest computed from this portfolio’s current debt and interest rate.';
+  }
+  if (id === 'healthFactor') {
+    return 'Classifies this portfolio’s own current Health Factor into one canonical Risk Category (SAFE / MONITOR / ELEVATED / HIGH RISK / LIQUIDATION RISK) — the same classification shown on the Dashboard’s Health Factor Status section. Not derived from, and does not require, a configured Target Health Factor.';
   }
   return `Uses this portfolio’s own configured Target Health Factor (${targetHealthFactorText}) from Portfolio Settings → Safety Targets. ${costCaveat}`;
 }
@@ -390,8 +397,9 @@ export function RecommendationDetailPanel({
       return;
     }
     // 'loop' — navigation only, no prefill (see this file's own header
-    // comment). 'borrow'/'interestCost' never reach here — their own
-    // "Related Strategy Tool" section below never renders this button.
+    // comment). 'borrow'/'interestCost'/'healthFactor' never reach here —
+    // their own "Related Strategy Tool" section below never renders this
+    // button.
     router.push('/loop-builder');
   }
 
@@ -496,7 +504,9 @@ export function RecommendationDetailPanel({
 
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         <span className="text-xs font-medium text-foreground">Related Strategy Tool</span>
-        {selectedItemId === 'borrow' || selectedItemId === 'interestCost' ? (
+        {selectedItemId === 'borrow' ||
+        selectedItemId === 'interestCost' ||
+        selectedItemId === 'healthFactor' ? (
           <span className="text-muted-foreground">
             No related planning tool for this recommendation.
           </span>

@@ -1,4 +1,10 @@
-import type { DecisionPriority, Recommendation, RecommendationCategory } from '@/services';
+import {
+  calculateRiskCategory,
+  type DecisionPriority,
+  HEALTH_FACTOR_ACTIONABLE_CATEGORIES,
+  type Recommendation,
+  type RecommendationCategory,
+} from '@/services';
 import type {
   RecommendationFilterCategory,
   RecommendationItemId,
@@ -44,17 +50,21 @@ import type {
  * per-portfolio state `RecommendationList.tsx` reads from the Store's own
  * `unavailableReasons.loop` (spec §8), not a static string here.
  *
- * **`safety` remains permanently unavailable, unchanged by this batch** —
- * restates (not re-imports) the exact same reason
- * `engine/recommendation/generateRecommendations.ts`'s own local
- * `UNAVAILABLE_CATEGORIES` constant already documents (that constant is
- * not exported; duplicating its short, stable, conflict-citing string
- * here — the same "each component owns its own small static label map"
- * precedent `FullExitResult.tsx`'s/`PartialExitResult.tsx`'s own
- * independently-declared `UNAVAILABLE_COST_LABELS` maps already
- * established — was judged lower-risk than the corresponding Engine
- * export, since the task instructions ask Engine changes to be avoided
- * unless "absolutely required," and duplicating a short string is not).
+ * **`safety` (F-060, owner decision, PROJECT_STATUS.md conflict #1
+ * closed) is no longer permanently unavailable.** The Health Factor
+ * risk-band disagreement across README.md/`01_PRD.md` REQ-001/REQ-005/
+ * `02_Formulas.md` F-026/F-060 is resolved by an explicit owner
+ * decision: one canonical classification (`calculateRiskCategory`,
+ * F-026, `01_PRD.md` REQ-005-A as the chosen basis with its own
+ * overlapping boundaries made mutually exclusive), consumed — not
+ * re-derived — by F-060's own guidance layer. Its availability now
+ * follows the exact same per-portfolio-configuration pattern
+ * `leverage`/`interest` already established: gone from this static map,
+ * sourced instead from the Store's own `unavailableReasons.healthFactor`
+ * (`calculateRecommendationActions`). `engine/recommendation/generateRecommendations.ts`'s
+ * own `UNAVAILABLE_CATEGORIES` constant is intentionally left unchanged,
+ * for the identical reason `interest`'s own paragraph below already
+ * gives for that Engine function.
  *
  * **`interest` (F-065, owner decision) is no longer permanently
  * unavailable.** Its dimensional gap — no defined unit for "Expected
@@ -165,14 +175,35 @@ export function isActionableRecommendation(
       annualInterestCost <= maxAcceptableAnnualInterestCost;
     return !loopRecommended;
   }
-  // 'interestCost' (F-065, owner decision) — re-applies the canonical
-  // strict-`>` rule directly to the already-computed `relevantValues`, the
-  // same "re-derive from the fixed relevantValues shape, not a new
-  // calculation" precedent as every case above. The warning condition
-  // itself IS the actionable case (mirrors `borrow`/`loop`'s binary shape:
-  // "acceptable"/"loop recommended" is non-actionable, its negation is).
-  const { annualInterestUsd, expectedAnnualPortfolioGrowthUsd } = recommendation.relevantValues;
-  return annualInterestUsd > expectedAnnualPortfolioGrowthUsd;
+  if (id === 'interestCost') {
+    // (F-065, owner decision) — re-applies the canonical strict-`>` rule
+    // directly to the already-computed `relevantValues`, the same
+    // "re-derive from the fixed relevantValues shape, not a new
+    // calculation" precedent as every case above. The warning condition
+    // itself IS the actionable case (mirrors `borrow`/`loop`'s binary
+    // shape: "acceptable"/"loop recommended" is non-actionable, its
+    // negation is).
+    const { annualInterestUsd, expectedAnnualPortfolioGrowthUsd } = recommendation.relevantValues;
+    return annualInterestUsd > expectedAnnualPortfolioGrowthUsd;
+  }
+  // 'healthFactor' (F-060, owner decision, PROJECT_STATUS.md conflict #1
+  // closed) — re-derives the Risk Category from `relevantValues.healthFactor`
+  // by calling `calculateRiskCategory` (F-026) itself, the ONE canonical
+  // classification, rather than duplicating its threshold table here.
+  // SAFE/MONITOR are the non-actionable pair ("No action required." both
+  // ways); ELEVATED/HIGH RISK/LIQUIDATION RISK are actionable — see
+  // `calculateHealthFactorRecommendation.ts`'s own
+  // `HEALTH_FACTOR_ACTIONABLE_CATEGORIES`, the single source of truth for
+  // this split, reused here rather than restated as a second set.
+  const riskCategoryResult = calculateRiskCategory(recommendation.relevantValues.healthFactor);
+  // Unreachable in practice — `relevantValues.healthFactor` always came
+  // from an already-successful `calculateHealthFactorRecommendation` call,
+  // whose own Health Factor can never be NaN or negative (see
+  // `calculateRiskCategory`'s own doc comment). Treated as non-actionable
+  // rather than throwing, the same fail-closed-not-fabricated discipline
+  // this whole feature applies to every other unreachable branch.
+  if (!riskCategoryResult.ok) return false;
+  return HEALTH_FACTOR_ACTIONABLE_CATEGORIES.has(riskCategoryResult.value);
 }
 
 /**
@@ -217,6 +248,7 @@ const FILTER_CATEGORY_BY_RECOMMENDATION_CATEGORY: Record<
   collateralManagement: 'collateral',
   leverage: 'leverage',
   interestCost: 'interest',
+  healthFactor: 'safety',
 };
 
 export function filterCategoryFor(recommendation: Recommendation): RecommendationFilterCategory {
@@ -224,25 +256,25 @@ export function filterCategoryFor(recommendation: Recommendation): Recommendatio
 }
 
 /**
- * The one category still permanently blocked, unaffected by this batch.
- * `leverage` is deliberately **not** listed here anymore (v1.18.0 Batch 3,
- * spec §8) — its availability now depends on this portfolio's own
- * `recommendationPreferences.loop`, so a static "always unavailable"
- * string would become actively wrong the moment a user configures it.
- * `RecommendationList.tsx` sources `leverage`'s per-portfolio-state reason
- * from the Store's own `unavailableReasons.loop` instead
- * (`calculateRecommendationActions`, Batch 2). `interest` is not listed
- * here either anymore (F-065, owner decision) — same reasoning, sourced
- * from `unavailableReasons.interestCost` instead. `exitReadiness` is not
+ * No category is permanently blocked anymore. `leverage` was the first to
+ * lose this treatment (v1.18.0 Batch 3, spec §8) — its availability
+ * depends on this portfolio's own `recommendationPreferences.loop`, so a
+ * static "always unavailable" string would become actively wrong the
+ * moment a user configures it. `RecommendationList.tsx` sources
+ * `leverage`'s per-portfolio-state reason from the Store's own
+ * `unavailableReasons.loop` instead (`calculateRecommendationActions`,
+ * Batch 2). `interest` (F-065, owner decision) and `safety` (F-060,
+ * owner decision, PROJECT_STATUS.md conflict #1 closed) followed the
+ * same path — sourced from `unavailableReasons.interestCost`/
+ * `unavailableReasons.healthFactor` instead. `exitReadiness` is not
  * listed here either anymore (PROJECT_STATUS.md conflict #11, closed
  * WON'T-IMPLEMENT) — see this file's own header comment for why it was
- * removed as a filter category entirely, rather than kept as a third
- * permanently-unavailable reason.
+ * removed as a filter category entirely, rather than kept as a fourth
+ * permanently-unavailable reason. Kept as a `Partial<Record<...>>` (not
+ * removed outright) since a future, still-unresolved Formula ID gap
+ * could legitimately need this mechanism again.
  */
-export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCategory, string>> = {
-  safety:
-    'F-060 "Health Factor Recommendation" requires a risk-band scheme, and the documented bands disagree across README.md, 01_PRD.md REQ-001, 01_PRD.md REQ-005, and 02_Formulas.md F-026/F-060 themselves — see PROJECT_STATUS.md conflict #1.',
-};
+export const UNAVAILABLE_FILTER_REASONS: Partial<Record<RecommendationFilterCategory, string>> = {};
 
 /**
  * Which filter category each item id belongs to, addressable even when
@@ -260,6 +292,7 @@ export const ITEM_FILTER_CATEGORY: Record<RecommendationItemId, RecommendationFi
   borrow: 'debt',
   loop: 'leverage',
   interestCost: 'interest',
+  healthFactor: 'safety',
 };
 
 /**
@@ -320,6 +353,19 @@ export const LOOP_VALUE_LABELS: Record<string, string> = {
 export const INTEREST_COST_VALUE_LABELS: Record<string, string> = {
   annualInterestUsd: 'Annual Interest',
   expectedAnnualPortfolioGrowthUsd: 'Expected Annual Portfolio Growth',
+};
+
+/**
+ * F-060 Health Factor Recommendation's exact `relevantValues` keys (owner
+ * decision) — `calculateHealthFactorRecommendation.ts`'s own literal
+ * object. The Risk Category itself is not a `relevantValues` key (it is
+ * a string, not a number — `Recommendation.relevantValues` is
+ * `Record<string, number>`), so it is never shown via this label map;
+ * it is instead read directly off `recommendation.triggeringCondition`/
+ * `recommendation.suggestedAction`.
+ */
+export const HEALTH_FACTOR_VALUE_LABELS: Record<string, string> = {
+  healthFactor: 'Health Factor',
 };
 
 /** Keys whose value is a BTC quantity, not a currency amount or ratio — for display formatting only. */

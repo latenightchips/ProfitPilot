@@ -95,8 +95,16 @@ function explanationFor(
  * `presentationTextFor` is not extended to it — like Repayment/Additional
  * Collateral, it keeps reading `triggeringCondition`/`suggestedAction`
  * directly (no spec proposes replacement copy for it).
+ *
+ * **F-060 `healthFactor` (owner decision, PROJECT_STATUS.md conflict #1
+ * closed)** — same "absent from `actions` is skipped" pattern, same
+ * untouched `presentationTextFor`. Placed FIRST in `ITEM_ORDER`, matching
+ * 02_Formulas.md's own documented "Safety always has higher priority than
+ * profitability" DECISION PRIORITY ordering this item's fixed
+ * `'Prevent Liquidation'` `decisionPriority` reflects.
  */
 const ITEM_ORDER: RecommendationItemId[] = [
+  'healthFactor',
   'repayment',
   'additionalCollateral',
   'borrow',

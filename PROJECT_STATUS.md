@@ -18448,7 +18448,7 @@ the two batches already delivered.
 These are **not** resolved in code. They are flagged for a product/engineering
 decision before the milestone that depends on them.
 
-### 1. Health Factor risk-band thresholds disagree across four documents — BLOCKS Milestone 2 (Risk classification, Formula F-026/F-060) and Milestone 5 (Dashboard)
+### 1. Health Factor risk-band thresholds disagree across four documents — RESOLVED, owner decision (was: BLOCKS Milestone 2 (Risk classification, Formula F-026/F-060) and Milestone 5 (Dashboard))
 
 | Source                                         | Bands                                                                                                              |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -18464,6 +18464,61 @@ because of this conflict — it's the only sub-item left undone in M2-009.
 Action needed: pick one banding scheme (or explicitly define which doc
 governs which context) before F-026 (Batch 3 cleanup) or F-060 (Batch 8,
 Recommendation Engine) can be implemented.
+
+**Update — F-026/F-060 Risk Category, owner decision. This conflict is
+now fully closed.** The four disagreeing tables above stay exactly as
+written — a frozen historical record of the disagreement, not rewritten
+to hide it — but none of them governs the running application any more.
+The owner selected **`01_PRD.md` REQ-005-A as the canonical basis**, with
+that requirement's own historical overlapping-boundary wording made
+explicitly mutually exclusive — every Health Factor value now belongs to
+exactly one category, by strict descending comparison:
+
+| Band             | Category         |
+| ---------------- | ---------------- |
+| HF > 2.50        | SAFE             |
+| 2.00 < HF ≤ 2.50 | MONITOR          |
+| 1.50 < HF ≤ 2.00 | ELEVATED         |
+| 1.20 < HF ≤ 1.50 | HIGH RISK        |
+| HF ≤ 1.20        | LIQUIDATION RISK |
+
+This is implemented as a single function, `calculateRiskCategory`
+(F-026, `engine/health/calculateRiskCategory.ts`) — the **one and only**
+Health Factor classification in this codebase. `+Infinity` (F-022's own
+documented zero-debt output) classifies SAFE, the trivial consequence of
+`Infinity > 2.50`; NaN and any negative Health Factor fail closed rather
+than fabricating a category. Comparisons run against the real numeric
+value — no rounding before classification.
+
+**F-026/F-060 share exactly one classification.** F-060
+(`calculateHealthFactorRecommendation`,
+`engine/recommendation/calculateHealthFactorRecommendation.ts`) never
+maintains a second threshold table — it calls `calculateRiskCategory`
+directly and only ever layers guidance text on top of that one result.
+The Dashboard's Health Factor Status section
+(`features/dashboard/utils/buildHealthFactorStatus.ts`) and the
+Recommendation Center's own `isActionableRecommendation('healthFactor', ...)`
+case (`features/recommendations/utils/recommendationTaxonomy.ts`) both
+call the identical function too, so F-026, the Dashboard, and F-060 can
+never disagree over the same Health Factor value. F-060's guidance
+mapping is the exact, literal owner decision — not inferred, not
+reworded, and not extended with either of the two historical F-060
+action sentences ("Consider monitoring weekly." / "Consider partial
+repayment.") the owner explicitly excluded from the canonical mapping:
+
+| Risk Category    | Guidance                                                |
+| ---------------- | ------------------------------------------------------- |
+| SAFE             | "No action required."                                   |
+| MONITOR          | "No action required." (intentionally identical to SAFE) |
+| ELEVATED         | "Avoid additional borrowing."                           |
+| HIGH RISK        | "Reduce debt or add collateral."                        |
+| LIQUIDATION RISK | "Immediate action recommended."                         |
+
+No configurable/user-adjustable bands were introduced — the thresholds
+above are fixed. Aave V3 and V4 both reach `calculateRiskCategory`
+through the same already-computed Health Factor, with no V4-specific
+bands and V4's existing fail-closed behavior on missing debt-state fully
+preserved.
 
 ### 2. Two `04_BUILD_GUIDE.md` pages are referenced but missing content
 

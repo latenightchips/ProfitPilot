@@ -107,13 +107,7 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
   { id: 'F-023', title: 'Distance to Liquidation', status: 'implemented' },
   { id: 'F-024', title: 'Liquidation Price', status: 'implemented' },
   { id: 'F-025', title: 'Liquidation Buffer', status: 'implemented' },
-  {
-    id: 'F-026',
-    title: 'Risk Category',
-    status: 'not_implemented',
-    reason:
-      'Blocked by PROJECT_STATUS.md conflict #1: Health Factor risk-band thresholds disagree across 4 source documents; implementing would mean picking one arbitrarily.',
-  },
+  { id: 'F-026', title: 'Risk Category', status: 'implemented' },
   { id: 'F-027', title: 'Maximum Additional Debt', status: 'implemented' },
   {
     id: 'F-028',
@@ -261,13 +255,7 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     reason:
       "A composite report aggregating F-054-F-058's own outputs plus a generated recommendation; blocked transitively by all five being unimplemented, and no task assigns it.",
   },
-  {
-    id: 'F-060',
-    title: 'Health Factor Recommendation',
-    status: 'not_implemented',
-    reason:
-      "Blocked by PROJECT_STATUS.md conflict #1: the same Health Factor risk-band disagreement, this time in the Recommendation Engine's own rules.",
-  },
+  { id: 'F-060', title: 'Health Factor Recommendation', status: 'implemented' },
   { id: 'F-061', title: 'Borrow Recommendation', status: 'implemented' },
   { id: 'F-062', title: 'Repayment Recommendation', status: 'implemented' },
   {

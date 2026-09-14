@@ -96,9 +96,12 @@ import type { Portfolio } from '@/types/portfolio';
  * **`'interestCost'` (F-065, owner decision)** — matches
  * `services/recommendation/recommendationActions.ts`'s own identical
  * union, extended the same way `'borrow'`/`'loop'` already were.
+ *
+ * **`'healthFactor'` (F-060, owner decision, PROJECT_STATUS.md conflict
+ * #1 closed)** — matches that same Service file's own identical union.
  */
 export type RecommendationItemId =
-  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost';
+  'repayment' | 'additionalCollateral' | 'borrow' | 'loop' | 'interestCost' | 'healthFactor';
 
 export type RecommendationCenterStatus = 'idle' | 'noTarget' | 'ready' | 'error';
 

@@ -130,6 +130,8 @@ const RISK_TRADEOFF_BY_CATEGORY: Record<Recommendation['category'], string> = {
     'Adjusting leverage changes both upside exposure and liquidation sensitivity in the same direction — more leverage increases both, less leverage reduces both.',
   interestCost:
     'A warning compares your own configured Expected Annual Portfolio Growth against the real, computed Annual Interest — it is a prompt to reassess that expectation or your leverage, not a specific action ProfitPilot is recommending.',
+  healthFactor:
+    'States your current Health Factor risk category and its matching guidance — it does not itself repay debt, add collateral, borrow, or loop; any of those remain a separate, deliberate action you take elsewhere.',
 };
 
 const COST_BENEFIT_NOT_MODELED =

@@ -63,7 +63,12 @@ export {
 } from './exit';
 
 /** Health Factor & Target-Health-Factor borrowing — F-022, F-027; M2-009, M2-011. */
-export { calculateAdditionalBorrow, calculateHealthFactor } from './health';
+export {
+  calculateAdditionalBorrow,
+  calculateHealthFactor,
+  calculateRiskCategory,
+  type RiskCategory,
+} from './health';
 
 /** Simple Interest — F-030–F-032; M2-012. */
 export {
@@ -197,18 +202,21 @@ export {
   calculatePortfolioValue,
 } from './portfolio';
 
-/** Recommendation Engine — F-061–F-065; M2-025/M2-026. */
+/** Recommendation Engine — F-060–F-065; M2-025/M2-026. */
 export {
   type AdditionalCollateralRecommendationParams,
   type BorrowRecommendationParams,
   calculateAdditionalCollateralRecommendation,
   calculateBorrowRecommendation,
+  calculateHealthFactorRecommendation,
   calculateInterestCostRecommendation,
   calculateLoopRecommendation,
   calculateRepaymentRecommendation,
   type DecisionPriority,
   generateRecommendations,
   type GenerateRecommendationsParams,
+  HEALTH_FACTOR_ACTIONABLE_CATEGORIES,
+  type HealthFactorRecommendationParams,
   type InterestCostRecommendationParams,
   type LoopRecommendationParams,
   type Recommendation,

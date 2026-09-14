@@ -184,8 +184,8 @@ describe('RECOMMENDATION_FILTER_CATEGORIES', () => {
 });
 
 describe('UNAVAILABLE_FILTER_REASONS', () => {
-  it('covers exactly the one category permanently unavailable for its own unresolved reason', () => {
-    expect(Object.keys(UNAVAILABLE_FILTER_REASONS).sort()).toEqual(['safety']);
+  it('F-026/F-060: covers no category at all — every filter category now has a real, populated path (owner decision, PROJECT_STATUS.md conflict #1 closed)', () => {
+    expect(Object.keys(UNAVAILABLE_FILTER_REASONS)).toEqual([]);
   });
 
   it('no longer covers exitReadiness — the category was removed entirely, not merely marked unavailable', () => {
@@ -198,6 +198,10 @@ describe('UNAVAILABLE_FILTER_REASONS', () => {
 
   it('F-065: no longer covers interest — its availability now depends on this portfolio’s own Interest Cost preference (owner decision)', () => {
     expect(UNAVAILABLE_FILTER_REASONS.interest).toBeUndefined();
+  });
+
+  it('F-026/F-060: no longer covers safety — its availability now depends on this portfolio’s own Health Factor Recommendation (owner decision)', () => {
+    expect(UNAVAILABLE_FILTER_REASONS.safety).toBeUndefined();
   });
 
   it('does not cover debt or collateral — both are real, populated categories', () => {

@@ -42,6 +42,35 @@ export function validateNonNegative(value: DecimalInput, field: string): Validat
   return finite;
 }
 
+/**
+ * F-026 Risk Category input validation — the one deliberate divergence
+ * from `validateFinite`/`validateNonNegative` above. Health Factor is the
+ * one Engine quantity documented to legitimately equal `+Infinity`
+ * (`calculateHealthFactor`'s own "Health Factor without debt" branch,
+ * F-022) — `validateFinite` would incorrectly reject that real, expected
+ * value. Rejects NaN and any negative value (including `-Infinity`),
+ * which Health Factor can never legitimately be; accepts `+Infinity` and
+ * every non-negative finite number, unrounded.
+ */
+export function validateHealthFactorForClassification(
+  value: DecimalInput,
+  field: string,
+): ValidationResult {
+  let decimal: Decimal;
+  try {
+    decimal = toDecimal(value);
+  } catch {
+    return fail('INVALID_HEALTH_FACTOR', `${field} must be a valid number.`);
+  }
+  if (decimal.isNaN()) {
+    return fail('INVALID_HEALTH_FACTOR', `${field} must be a valid number.`);
+  }
+  if (decimal.isNegative()) {
+    return fail('INVALID_NON_NEGATIVE', `${field} must not be negative.`);
+  }
+  return succeed(decimal);
+}
+
 export function validatePositive(value: DecimalInput, field: string): ValidationResult {
   const finite = validateFinite(value, field);
   if (!finite.ok) return finite;
