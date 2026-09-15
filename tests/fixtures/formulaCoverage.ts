@@ -277,7 +277,7 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     title: 'Simple Portfolio Score',
     status: 'not_implemented',
     reason:
-      'Weights are documented but per-component 0-100 scoring formulas are not (PROJECT_STATUS.md conflict #12).',
+      "Closed WON'T IMPLEMENT under the current specification (owner decision, PROJECT_STATUS.md conflict #12) — its documented component weights (Health Factor 40%, Debt Ratio 20%, Interest Cost 15%, Leverage 15%, Portfolio Growth 10%) have no canonical 0-100 normalization formulas, and Portfolio Growth is not itself a canonical available input. Building either would mean inventing arbitrary scoring rules rather than documenting existing ones. Existing per-metric surfaces (Health Factor/F-026/F-060, Debt Ratio, Interest Cost/F-065, Leverage, the Recommendation Summary) already expose this information with more transparent, sourced semantics than a black-box composite score would.",
   },
   {
     id: 'F-068',

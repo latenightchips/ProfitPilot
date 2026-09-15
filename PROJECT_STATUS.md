@@ -18897,6 +18897,48 @@ argues against inventing the missing normalization rather than for it.
 Action needed: either document each component's 0–100 conversion, or
 descope F-067 explicitly.
 
+**Update — F-067 Simple Portfolio Score, owner decision.** F-067 is closed
+**WON'T IMPLEMENT under the current specification**. No 0–100 Portfolio
+Score will be implemented under the current specification. Reasons:
+
+1. F-067 provides component weights (Health Factor 40%, Debt Ratio 20%,
+   Interest Cost 15%, Leverage 15%, Portfolio Growth 10%) but does not
+   provide canonical 0–100 normalization formulas for those components —
+   this conflict's own action item above already named that as the
+   blocking gap, and it was never resolved.
+2. Creating those normalizations now would mean inventing arbitrary new
+   scoring rules rather than documenting rules that already exist, which
+   this chapter's own "No hidden scoring" implementation note already
+   argues against.
+3. Portfolio Growth is not currently a canonical product value and must
+   not be fabricated from BTC appreciation assumptions, expected
+   portfolio return, historical return, cost basis, acquisition price, or
+   target price — the same category of invented-assumption problem
+   already rejected for F-066's Target Portfolio Value/Target Profit
+   inputs (this section's own F-066 update, above).
+4. F-067's own example bands (92 Excellent / 76 Good / 58 Average / 34
+   High Risk) and M-010's example bands (90+ Excellent / 75–89 Healthy /
+   60–74 Acceptable / 40–59 Needs Attention / Below 40 High Risk) use
+   different labels for the same score ranges, reinforcing that no single
+   canonical score-band system exists to implement against.
+5. Current product surfaces already expose the useful underlying metrics
+   independently, with more transparent, sourced semantics: Health Factor
+   (F-026/F-060), Debt Ratio, Interest Cost (F-065), Leverage, and the
+   Recommendation Summary. ProfitPilot prefers those transparent,
+   individually-sourced metrics over an arbitrary black-box composite
+   Portfolio Score.
+
+This closes the **formula product-disposition** question for the F-060–F-069
+chapter: F-060 implemented, F-061 implemented, F-062 implemented, F-063
+implemented, F-064 implemented, F-065 implemented, F-066 WON'T IMPLEMENT,
+F-067 WON'T IMPLEMENT, F-068 SUPERSEDED, F-069 SUPERSEDED. Every Formula ID
+in the chapter now has a definitive, non-pending product disposition. This
+does **not** claim every Recommendation-related documentation/process gap
+in this file is resolved — F-060's own original task-assignment gap
+(further above in this same conflict) and the still-open "Expected Annual
+Portfolio Growth" figure that partially blocks F-065's own comparison
+behavior remain separate, open items, untouched by this update.
+
 ### 13. F-040 "Target Debt" does not account for collateral sold during an exit — `calculateTargetExit`'s `'healthFactor'` target does not exactly reproduce the requested Health Factor
 
 **F-040 itself is not being marked incorrect.** Stated directly, as four
