@@ -48,19 +48,32 @@
  * `features/recommendations/components/RecommendationList.tsx`'s own
  * identical `ITEM_ORDER` constant, which itself matches the documented
  * "DECISION PRIORITY" tiers each item's `decisionPriority` already carries
- * (Repayment/Additional Collateral: "Maintain Target Health Factor";
- * Borrow/Loop: "Improve Capital Efficiency" — a strictly lower tier), with
- * a stable declaration-order tiebreak within a shared tier. Restated here
- * rather than imported, matching this codebase's own "each component owns
- * its own small static ordering" precedent (see e.g.
+ * (Health Factor: "Prevent Liquidation"; Repayment/Additional Collateral:
+ * "Maintain Target Health Factor"; Borrow/Loop: "Improve Capital
+ * Efficiency"; Interest Cost: "Reduce Interest Costs"), with a stable
+ * declaration-order tiebreak within a shared tier. Restated here rather
+ * than imported, matching this codebase's own "each component owns its
+ * own small static ordering" precedent (see e.g.
  * `UNAVAILABLE_FILTER_REASONS`'s restatement in `recommendationTaxonomy.ts`).
  *
- * **Maximum item count is now 4, not 2** — proven from
- * `RecommendationActionsResult.items`'s own `RecommendationItemId` union
- * (`'repayment' | 'additionalCollateral' | 'borrow' | 'loop'`, exactly
- * four members) and spec §5's independence guarantee (no item's
- * availability depends on another's), not assumed from the v1.19.0
- * roadmap audit's own suggestion.
+ * **Dashboard/Recommendation-Center parity fix (post-F-026/F-060 audit)**
+ * — `ITEM_ORDER` previously listed only `'repayment' | 'additionalCollateral'
+ * | 'borrow' | 'loop'`, the four items that existed when v1.19.0 Batch 1
+ * wrote it. `'healthFactor'` (F-060) and `'interestCost'` (F-065) were
+ * added to `RecommendationItemId`/`calculateRecommendationActions` by
+ * later batches without this file being revisited, so both were silently
+ * omitted from the Dashboard summary despite being fully computed and
+ * already shown in the Recommendation Center. `ITEM_ORDER` now lists all
+ * six currently-implemented ids, in `RecommendationList.tsx`'s own
+ * canonical order. No selection/ranking logic changed — this loop already
+ * iterated an arbitrary-length `ITEM_ORDER` and already skipped any id
+ * absent from `actionsResult.data.items`; only the array literal was
+ * stale. There is no independent "show at most N" product rule anywhere
+ * in `06_TASKS.md`, `03_UI.md`, or `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
+ * — the previous "maximum item count is 4" claim in this file's own prior
+ * revision was derived solely from `ITEM_ORDER`'s own length, not a
+ * separately documented cap; `RecommendationSummarySection.tsx` has never
+ * truncated `summary.items`.
  *
  * **Presentation-language boundary reused, not reinvented.** Borrow/Loop's
  * `explanation`/`suggestedAction` fields are sourced through
@@ -68,9 +81,13 @@
  * `RecommendationList.tsx`/`RecommendationDetailPanel.tsx` already do —
  * this Dashboard section never reads their raw `triggeringCondition`/
  * `suggestedAction` directly, the same boundary the Recommendation Center
- * itself already established. Repayment/Additional Collateral are
- * unaffected (spec §10 excludes them from `presentationTextFor` — their
- * existing copy is unchanged).
+ * itself already established. Repayment/Additional Collateral/Health
+ * Factor/Interest Cost are unaffected (`presentationTextFor` is
+ * deliberately scoped to `'borrow' | 'loop'` only — spec §10 excludes the
+ * others; `RecommendationList.tsx`/`RecommendationDetailPanel.tsx` read
+ * Health Factor's and Interest Cost's own raw fields directly too, the
+ * same convention this file's existing `toItem` fallback already used for
+ * Repayment/Additional Collateral) — their existing copy is unchanged.
  */
 import {
   calculateRecommendationActions,
@@ -92,7 +109,14 @@ import type {
 const SOURCE_STATUS = 'manual';
 
 /** See this file's own header comment — matches `RecommendationList.tsx`'s identical `ITEM_ORDER`. */
-const ITEM_ORDER: RecommendationItemId[] = ['repayment', 'additionalCollateral', 'borrow', 'loop'];
+const ITEM_ORDER: RecommendationItemId[] = [
+  'healthFactor',
+  'repayment',
+  'additionalCollateral',
+  'borrow',
+  'loop',
+  'interestCost',
+];
 
 function toItem(
   id: RecommendationItemId,

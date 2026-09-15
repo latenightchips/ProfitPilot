@@ -46,12 +46,21 @@
  * documented rule, but a necessary, honestly-labeled tiebreak for items
  * sharing one tier.
  *
- * **"View all action" — still not built (unchanged by Batch 1).** Every
- * recommendation this section can ever compute (at most 4 as of Batch 1,
- * proven from `RecommendationItemId`'s own four-member union) is already
- * shown; there is no larger set to reveal. Building a "View all" control
- * with nothing additional behind it would be the same kind of dead
- * affordance M5-012's chart was avoided for.
+ * **"View all action" — still not built (unchanged by Batch 1, and by the
+ * post-F-026/F-060 parity fix below).** Every recommendation this section
+ * can ever compute (six as of the parity fix, proven from
+ * `RecommendationItemId`'s own six-member union) is already shown; there
+ * is no larger set to reveal. Building a "View all" control with nothing
+ * additional behind it would be the same kind of dead affordance M5-012's
+ * chart was avoided for.
+ *
+ * **Post-F-026/F-060 parity fix** — `'healthFactor'` (F-060) and
+ * `'interestCost'` (F-065) are now included alongside the original four
+ * items; see `../utils/buildRecommendationSummary.ts`'s own header
+ * comment for the full reasoning. Both follow the exact same "only shown
+ * when actionable, via `isActionableRecommendation`" rule already
+ * documented above for every other item — no new availability rule was
+ * introduced.
  *
  * **"Dismiss or acknowledge behavior only if documented" — not built.**
  * Neither term appears anywhere in `01_PRD.md`, `03_UI.md`, or

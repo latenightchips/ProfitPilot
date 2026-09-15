@@ -19,27 +19,29 @@ import type { RecommendationSummary } from '../types/recommendationSummary';
  * **v1.19.0 Batch 2** (Dashboard Recommendation Summary Parity, UI
  * Wiring) — this component needed **no rendering-logic change** to
  * correctly display the expanded, up-to-4-item canonical set Batch 1's
- * `buildRecommendationSummary` now produces: `summary.items.map(...)`
+ * `buildRecommendationSummary` then produced: `summary.items.map(...)`
  * was already written generically over an arbitrary-length array, never
  * assuming exactly two, and never re-sorting — `summary.items`' own
- * order (Batch 1's `ITEM_ORDER`: Repayment, Additional Collateral,
- * Borrow, Loop) is rendered as-is. Borrow/Loop's `explanation`/
- * `suggestedAction` are already the presentation-safe strings Batch 1's
- * `presentationTextFor` integration supplies on the `RecommendationSummaryItem`
- * itself — this component reads exactly the same four fields
- * (`explanation`, `suggestedAction`, `category`, `riskLevel`,
- * `expectedEffect`) for every item regardless of which of the four
- * canonical ids produced it, deriving no financial semantics, calling no
- * formula, and reconstructing no presentation text of its own. Only this
- * file's own stale header comment (which previously said "why only
- * repayment/additional-collateral recommendations are shown," no longer
- * true) needed correcting.
+ * order is rendered as-is. Borrow/Loop's `explanation`/`suggestedAction`
+ * are already the presentation-safe strings Batch 1's `presentationTextFor`
+ * integration supplies on the `RecommendationSummaryItem` itself — this
+ * component reads exactly the same five fields (`explanation`,
+ * `suggestedAction`, `category`, `riskLevel`, `expectedEffect`) for every
+ * item regardless of which canonical id produced it, deriving no
+ * financial semantics, calling no formula, and reconstructing no
+ * presentation text of its own.
  *
- * **"View all" reconsidered, still not built.** All four canonical items
+ * **Post-F-026/F-060 parity fix** — `buildRecommendationSummary`'s
+ * `ITEM_ORDER` now includes `'healthFactor'`/`'interestCost'` alongside
+ * the original four items (see that file's own header comment); this
+ * component again needed no change, for the same reason as Batch 2
+ * above — it already renders `summary.items` generically.
+ *
+ * **"View all" reconsidered, still not built.** All six canonical items
  * (when present) already render in this one list with no truncation —
  * there is still no larger set behind a "View all" link to reveal, and
  * no `06_TASKS.md` task or `docs/RECOMMENDATION_ENGINE_PREFERENCES_SPEC.md`
- * requirement calls for collapsing a 3- or 4-item list. Four short cards
+ * requirement calls for collapsing a short list. A handful of short cards
  * in a vertical `flex flex-col` list is not a layout problem this
  * section's existing bordered-list shape doesn't already handle.
  *

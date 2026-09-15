@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { buildRecommendationSummary } from '@/features/dashboard';
-import { presentationTextFor } from '@/features/recommendations/utils/recommendationTaxonomy';
+import {
+  isActionableRecommendation,
+  presentationTextFor,
+} from '@/features/recommendations/utils/recommendationTaxonomy';
 import { calculateRecommendationActions } from '@/services';
 import { usePortfolioStore } from '@/stores/portfolioStore';
 import type { Portfolio } from '@/types/portfolio';
@@ -237,8 +240,8 @@ describe('buildRecommendationSummary — Loop complete configuration', () => {
   });
 });
 
-describe('buildRecommendationSummary — both Borrow and Loop complete (maximum item count)', () => {
-  it('proves the real maximum is 4, not 2 — repayment, additionalCollateral, borrow, loop, in that canonical order', () => {
+describe('buildRecommendationSummary — both Borrow and Loop complete', () => {
+  it('includes repayment, additionalCollateral, borrow, loop, in that canonical order (healthFactor/interestCost absent/non-actionable for this fixture)', () => {
     const portfolio = portfolioFixture({
       settings: {
         safetyTargets: { targetHealthFactor: 5 },
@@ -264,6 +267,193 @@ describe('buildRecommendationSummary — both Borrow and Loop complete (maximum 
       'Improve Capital Efficiency',
       'Improve Capital Efficiency',
     ]);
+  });
+});
+
+/**
+ * Post-F-026/F-060 parity fix — `'healthFactor'`/`'interestCost'` were
+ * added to `ITEM_ORDER` after being silently omitted despite being fully
+ * computed by `calculateRecommendationActions`. Mirrors the exact same
+ * fixture style as the Borrow/Loop describe blocks above: a
+ * `portfolioFixture` override plus one assertion block per item, isolated
+ * from the others wherever possible.
+ */
+describe('buildRecommendationSummary — Health Factor (F-060) participation', () => {
+  it('includes an actionable Health Factor item, first in canonical order, when the Risk Category is actionable (ELEVATED/HIGH RISK/LIQUIDATION RISK)', () => {
+    // 2 BTC * $50,000 * 0.8 liquidation threshold / $45,000 debt = 1.7778 -> ELEVATED (actionable).
+    const portfolio = portfolioFixture({
+      debt: { asset: 'USDC', balance: 45000 },
+      settings: { safetyTargets: { targetHealthFactor: 5 } },
+    });
+    const summary = buildRecommendationSummary(portfolio);
+
+    expect(summary.items).toHaveLength(3);
+    expect(summary.emptyReason).toBeNull();
+    expect(summary.items[0].priority).toBe(1);
+    expect(summary.items[0].category).toBe('healthFactor');
+    expect(summary.items[0].riskLevel).toBe('Prevent Liquidation');
+    expect(summary.items[0].explanation).toBe('Health Factor risk category: ELEVATED.');
+    expect(summary.items[0].suggestedAction).toBe('Avoid additional borrowing.');
+    // Repayment/Additional Collateral remain in their own established order, shifted one slot later.
+    expect(summary.items[1].category).toBe('debtManagement');
+    expect(summary.items[2].category).toBe('collateralManagement');
+  });
+
+  it('omits the Health Factor item when the Risk Category is non-actionable (SAFE/MONITOR) — the default fixture (HF 4.0, SAFE)', () => {
+    const portfolio = portfolioFixture({
+      settings: { safetyTargets: { targetHealthFactor: 5 } },
+    });
+    const summary = buildRecommendationSummary(portfolio);
+
+    expect(summary.items.some((item) => item.category === 'healthFactor')).toBe(false);
+  });
+
+  it('never invents a second Health Factor classification — the explanation/suggestedAction are the raw F-060 fields, unchanged', () => {
+    const portfolio = portfolioFixture({
+      debt: { asset: 'USDC', balance: 45000 },
+      settings: { safetyTargets: { targetHealthFactor: 5 } },
+    });
+    const actionsResult = calculateRecommendationActions(portfolio, 'manual');
+    expect(actionsResult.ok).toBe(true);
+    if (!actionsResult.ok) return;
+    const { healthFactor } = actionsResult.data.items;
+    expect(healthFactor).toBeDefined();
+    if (healthFactor === undefined) return;
+
+    const summary = buildRecommendationSummary(portfolio);
+    const healthFactorItem = summary.items.find((item) => item.category === 'healthFactor');
+    expect(healthFactorItem?.explanation).toBe(healthFactor.triggeringCondition);
+    expect(healthFactorItem?.suggestedAction).toBe(healthFactor.suggestedAction);
+    expect(healthFactorItem?.expectedEffect).toBe(healthFactor.expectedEffect);
+  });
+});
+
+describe('buildRecommendationSummary — Interest Cost (F-065) participation', () => {
+  // Default `portfolioFixture` debt ($20,000) * borrowApr (0.05) = $1,000/year
+  // real annual interest. Setting the configured expected growth below that
+  // ($500) makes `annualInterestUsd > expectedAnnualPortfolioGrowthUsd` true
+  // — the actionable case (F-065's own warning condition).
+  const ACTIONABLE_INTEREST_COST_PREFS = { expectedAnnualPortfolioGrowthUsd: 500 };
+
+  it('includes an actionable Interest Cost item when configured and the warning condition is met', () => {
+    const portfolio = portfolioFixture({
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: { interestCost: ACTIONABLE_INTEREST_COST_PREFS },
+      },
+    });
+    const summary = buildRecommendationSummary(portfolio);
+
+    expect(summary.items).toHaveLength(3);
+    expect(summary.emptyReason).toBeNull();
+    const interestCostItem = summary.items[2];
+    expect(interestCostItem.category).toBe('interestCost');
+    expect(interestCostItem.riskLevel).toBe('Reduce Interest Costs');
+    expect(interestCostItem.priority).toBe(3);
+  });
+
+  it('omits the Interest Cost item when not configured', () => {
+    const portfolio = portfolioFixture({
+      settings: { safetyTargets: { targetHealthFactor: 5 } },
+    });
+    const summary = buildRecommendationSummary(portfolio);
+    expect(summary.items.some((item) => item.category === 'interestCost')).toBe(false);
+  });
+
+  it('reads the raw F-065 explanation/suggestedAction directly — no presentation wrapper (matching Repayment/Additional Collateral/Health Factor, not Borrow/Loop)', () => {
+    const portfolio = portfolioFixture({
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: { interestCost: ACTIONABLE_INTEREST_COST_PREFS },
+      },
+    });
+    const actionsResult = calculateRecommendationActions(portfolio, 'manual');
+    expect(actionsResult.ok).toBe(true);
+    if (!actionsResult.ok) return;
+    const { interestCost } = actionsResult.data.items;
+    expect(interestCost).toBeDefined();
+    if (interestCost === undefined) return;
+
+    const summary = buildRecommendationSummary(portfolio);
+    const interestCostItem = summary.items.find((item) => item.category === 'interestCost');
+    expect(interestCostItem?.explanation).toBe(interestCost.triggeringCondition);
+    expect(interestCostItem?.suggestedAction).toBe(interestCost.suggestedAction);
+  });
+});
+
+describe('buildRecommendationSummary — all six currently-implemented items at once', () => {
+  it('includes healthFactor, repayment, additionalCollateral, borrow, loop, interestCost, in exactly that canonical order, when all six results are actionable', () => {
+    const portfolio = portfolioFixture({
+      // 2 BTC * $50,000 * 0.8 / $45,000 debt = 1.7778 -> ELEVATED (Health Factor actionable).
+      debt: { asset: 'USDC', balance: 45000 },
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: {
+          borrow: ACTIONABLE_BORROW_PREFS,
+          loop: ACTIONABLE_LOOP_PREFS,
+          // $45,000 debt * 5% borrowApr = $2,250/year annual interest > $1,000 expected growth.
+          interestCost: { expectedAnnualPortfolioGrowthUsd: 1000 },
+        },
+      },
+    });
+    const summary = buildRecommendationSummary(portfolio);
+
+    expect(summary.items).toHaveLength(6);
+    expect(summary.emptyReason).toBeNull();
+    expect(summary.items.map((item) => item.category)).toEqual([
+      'healthFactor',
+      'debtManagement',
+      'collateralManagement',
+      'debtManagement',
+      'leverage',
+      'interestCost',
+    ]);
+    expect(summary.items.map((item) => item.riskLevel)).toEqual([
+      'Prevent Liquidation',
+      'Maintain Target Health Factor',
+      'Maintain Target Health Factor',
+      'Improve Capital Efficiency',
+      'Improve Capital Efficiency',
+      'Reduce Interest Costs',
+    ]);
+    expect(summary.items.map((item) => item.priority)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('never silently drops a computed, actionable item solely because of stale ITEM_ORDER — every id calculateRecommendationActions itself reports as actionable appears in the summary', () => {
+    const portfolio = portfolioFixture({
+      debt: { asset: 'USDC', balance: 45000 },
+      settings: {
+        safetyTargets: { targetHealthFactor: 5 },
+        recommendationPreferences: {
+          borrow: ACTIONABLE_BORROW_PREFS,
+          loop: ACTIONABLE_LOOP_PREFS,
+          interestCost: { expectedAnnualPortfolioGrowthUsd: 1000 },
+        },
+      },
+    });
+    const actionsResult = calculateRecommendationActions(portfolio, 'manual');
+    expect(actionsResult.ok).toBe(true);
+    if (!actionsResult.ok) return;
+
+    const actionableIds = (
+      Object.keys(actionsResult.data.items) as (keyof typeof actionsResult.data.items)[]
+    ).filter((id) => {
+      const recommendation = actionsResult.data.items[id];
+      return recommendation !== undefined && isActionableRecommendation(id, recommendation);
+    });
+    expect(actionableIds.sort()).toEqual(
+      [
+        'healthFactor',
+        'repayment',
+        'additionalCollateral',
+        'borrow',
+        'loop',
+        'interestCost',
+      ].sort(),
+    );
+
+    const summary = buildRecommendationSummary(portfolio);
+    expect(summary.items).toHaveLength(actionableIds.length);
   });
 });
 

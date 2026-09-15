@@ -18,9 +18,15 @@ import { usePortfolioStore } from '@/stores/portfolioStore';
  * Additional Collateral rendering is unaffected. The new blocks below
  * them use hand-built `RecommendationSummary` fixtures — per this
  * batch's own instruction to test UI rendering, not recommendation
- * formulas — to cover zero-through-four items, canonical ordering,
+ * formulas — to cover zero-through-several items, canonical ordering,
  * Borrow/Loop presentation-text passthrough, and accessibility/list
  * semantics.
+ *
+ * **Post-F-026/F-060 parity fix** — added `HEALTH_FACTOR_ITEM`/
+ * `INTEREST_COST_ITEM` fixtures and a six-item rendering test below,
+ * proving this component itself never truncates `summary.items` (it
+ * never did — the omission was `buildRecommendationSummary.ts`'s own
+ * stale `ITEM_ORDER`, fixed separately).
  */
 beforeEach(() => {
   usePortfolioStore.setState({
@@ -150,6 +156,23 @@ const LOOP_ITEM = item({
   suggestedAction: 'Qwerp loop presentation detail, not real Engine copy',
   expectedEffect: 'Qwerp loop fixture expected effect',
 });
+// Post-F-026/F-060 parity fix fixtures.
+const HEALTH_FACTOR_ITEM = item({
+  priority: 1,
+  category: 'healthFactor',
+  riskLevel: 'Prevent Liquidation',
+  explanation: 'Fizzbin health factor fixture explanation',
+  suggestedAction: 'Fizzbin health factor fixture suggested action',
+  expectedEffect: 'Fizzbin health factor fixture expected effect',
+});
+const INTEREST_COST_ITEM = item({
+  priority: 6,
+  category: 'interestCost',
+  riskLevel: 'Reduce Interest Costs',
+  explanation: 'Wobbuf interest cost fixture explanation',
+  suggestedAction: 'Wobbuf interest cost fixture suggested action',
+  expectedEffect: 'Wobbuf interest cost fixture expected effect',
+});
 
 describe('RecommendationSummarySection — unavailable empty state (fixture)', () => {
   it('renders the "unavailable" message for zero items with emptyReason "unavailable"', () => {
@@ -198,7 +221,7 @@ describe('RecommendationSummarySection — variable item counts (fixture)', () =
     expect(screen.getByText('Priority 4')).toBeInTheDocument();
   });
 
-  it('renders all four canonical recommendations at once', () => {
+  it('renders four canonical recommendations together (repayment, additionalCollateral, borrow, loop)', () => {
     render(
       <RecommendationSummarySection
         summary={summaryFixture([REPAYMENT_ITEM, COLLATERAL_ITEM, BORROW_ITEM, LOOP_ITEM])}
@@ -210,6 +233,36 @@ describe('RecommendationSummarySection — variable item counts (fixture)', () =
     expect(screen.getByText('Priority 2')).toBeInTheDocument();
     expect(screen.getByText('Priority 3')).toBeInTheDocument();
     expect(screen.getByText('Priority 4')).toBeInTheDocument();
+  });
+
+  /**
+   * Post-F-026/F-060 parity fix — proves the component itself never
+   * truncates `summary.items`, regardless of how many the builder
+   * produces. This component reads `summary.items` generically
+   * (`summary.items.map(...)`) and was never the source of the previous
+   * omission — the builder's own stale `ITEM_ORDER` was. Six items here
+   * (rather than four) is a fixture choice, not evidence of a display cap
+   * this component enforces.
+   */
+  it('renders all six currently-implemented recommendation categories together, none dropped', () => {
+    render(
+      <RecommendationSummarySection
+        summary={summaryFixture([
+          HEALTH_FACTOR_ITEM,
+          REPAYMENT_ITEM,
+          COLLATERAL_ITEM,
+          BORROW_ITEM,
+          LOOP_ITEM,
+          INTEREST_COST_ITEM,
+        ])}
+      />,
+    );
+    const listItems = screen.getAllByRole('listitem');
+    expect(listItems).toHaveLength(6);
+    expect(screen.getByText('Category: healthFactor')).toBeInTheDocument();
+    expect(screen.getByText('Category: interestCost')).toBeInTheDocument();
+    expect(screen.getByText('Risk level: Prevent Liquidation')).toBeInTheDocument();
+    expect(screen.getByText('Risk level: Reduce Interest Costs')).toBeInTheDocument();
   });
 });
 
