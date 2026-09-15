@@ -284,14 +284,14 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     title: 'Primary Recommendation',
     status: 'not_implemented',
     reason:
-      'No task in 06_TASKS.md maps to this formula (Batch 10 finding, part of the F-060-F-069 chapter gap).',
+      "Superseded (owner decision, PROJECT_STATUS.md conflict #9) — historical F-068 required collapsing to one shown recommendation, but that single-primary design was already, deliberately rejected twice in favor of a ranked, multi-item list (M5-015's own plural framing over conflict #30's Page 3 mockup; conflict #32's identical Loop Builder finding). Deterministic ordering already exists via DecisionPriority -> severity -> canonical item order (`features/recommendations/utils/recommendationTaxonomy.ts`), which is finer-grained than F-068's own flat 5-item priority list. No Primary Recommendation selector will be built.",
   },
   {
     id: 'F-069',
     title: 'Recommendation Summary',
     status: 'not_implemented',
     reason:
-      'No task in 06_TASKS.md maps to this formula (Batch 10 finding, part of the F-060-F-069 chapter gap).',
+      'Superseded (owner decision, PROJECT_STATUS.md conflict #9) — its Health Factor/leverage/annual interest/recommendation summary purpose is already satisfied across existing, separate Dashboard surfaces (KPI grid, Health Factor Status, Debt/Interest panel, Recommendation Summary section) plus the Recommendation explanation/presentation layer (`services/recommendation/explainRecommendation.ts`); no standalone F-069 formula or duplicate consolidated card is needed.',
   },
   {
     id: 'F-070',

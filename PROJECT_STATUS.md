@@ -18709,10 +18709,87 @@ acquisition-price model exists anywhere in this codebase, and building
 one is its own, separate, not-yet-made product decision.
 
 This conflict itself stays open for the remaining Formula IDs in the
-chapter (F-060, F-067–F-069) — only F-066's own piece of what this
-conflict originally flagged is closed. `tests/fixtures/formulaCoverage.ts`'s
+chapter (F-060, F-067–F-069 at the time) — only F-066's own piece of
+what this conflict originally flagged is closed. `tests/fixtures/formulaCoverage.ts`'s
 F-066 entry stays `not_implemented` (mechanically accurate — no F-066
 code exists in any form) with its `reason` updated to record this
+disposition; no new `FormulaCoverageStatus` value was introduced.
+
+**Update — F-068 Primary Recommendation / F-069 Recommendation
+Summary, owner decision.** A dedicated product-readiness audit
+(post-F-066-reconciliation) extracted both formulas' exact
+specification text, found neither has ever had a `06_TASKS.md` task,
+and traced every "only one recommendation is shown" reference in
+`docs/03_UI.md` back to sources already established elsewhere in this
+document as historical, superseded drafts: conflict #30 (`03_UI.md`
+Page 3, the Dashboard mockup carrying F-068's own "PRIMARY
+RECOMMENDATION"/"only one primary recommendation" language) and
+conflict #32 (`03_UI.md` Page 6, the Loop Builder mockup repeating the
+identical "only one primary recommendation" rule) — both already
+resolved in favor of `06_TASKS.md` and the as-built product, not the
+mockups. The audit also found that M5-015's own batch write-up (above,
+Milestone 5 progress) had already faced this exact tension directly —
+"`03_UI.md`'s own 'PRIMARY RECOMMENDATION' mockup... states 'Only one
+recommendation is displayed,' while M5-015's own Display list names
+'Top recommendations' (plural)... M5-015's own plural framing was
+followed" — meaning the single-primary-recommendation design was
+already, deliberately rejected once before this audit even began.
+
+**Owner decision: both F-068 and F-069 are closed SUPERSEDED under the
+current specification** — the same disposition class, and the same
+"close under the current specification rather than invent a rule"
+reasoning, conflict #11 (Exit Readiness) and F-066 (above) already
+established for this chapter.
+
+**F-068's own purpose — show recommendations in priority order, with
+only the top one surfaced — is superseded by the existing, intentional,
+more expressive ranked multi-recommendation design**: every
+`Recommendation` already carries a `decisionPriority`
+(`engine/recommendation/types.ts`, the exact five-tier "DECISION
+PRIORITY" list `02_Formulas.md` page 8 documents), `severityFor`
+(`features/recommendations/utils/recommendationTaxonomy.ts`) derives a
+four-tier `RecommendationSeverity` from it, and
+`RecommendationList.tsx`'s own `sortItems` already sorts every
+Recommendation Center item by `SEVERITY_ORDER` first and a fixed
+`ITEM_ORDER` as a deterministic tiebreak — a complete, already-tested,
+already-shipped priority ordering, finer-grained than F-068's own flat
+five-item list. Collapsing this to a single shown item, as F-068's
+historical text requires, would remove information users can already
+see today, not add any. **The current ranked, multi-item design is
+intentional and stays canonical — no Primary Recommendation selector,
+new `RecommendationItemId`, or hidden mechanism will be built**, and no
+change was made to `DecisionPriority`, severity, ordering, or any
+Recommendation filter.
+
+**F-069's own purpose — a consolidated dashboard summary of Health
+Factor, leverage, annual interest, and a recommendation — is superseded
+by the existing, already-shipped Dashboard**: those same values are
+already independently displayed (`DashboardKpiGrid`,
+`HealthFactorStatusSection`, the Debt/Interest panel,
+`RecommendationSummarySection`), and every `Recommendation` already
+carries its own `triggeringCondition`/`suggestedAction`/`expectedEffect`
+plus a richer explanation layer
+(`services/recommendation/explainRecommendation.ts`'s
+`RecommendationExplanation` — quantified before/after impact, a fixed
+risk-tradeoff sentence per category, cost/benefit, confidence). **No
+duplicate consolidated Recommendation Summary card or formula is being
+introduced.**
+
+**One presentation idea surfaced by the audit, explicitly not
+authorized in this batch**: an overall plain-language portfolio/risk
+label (e.g. "Healthy") derived from F-026's already-decided
+`RiskCategory`, which would be the one genuinely new element F-069's
+own worked example implies beyond already-displayed data. This remains
+only a possible future UI enhancement — no Formula ID was invented for
+it, and it is not part of this reconciliation.
+
+Conflict #9 itself stays open for F-060's original task-assignment gap
+and F-067 (still blocked by conflict #12's own missing component
+sub-scores) — F-068's and F-069's own pieces of what this conflict
+originally flagged are now both closed.
+`tests/fixtures/formulaCoverage.ts`'s F-068/F-069 entries stay
+`not_implemented` (mechanically accurate — no code exists for either in
+any form) with their `reason` fields updated to record this
 disposition; no new `FormulaCoverageStatus` value was introduced.
 
 ### 10. "Target cash proceeds" (M2-024) has ambiguous mechanics, not just a missing formula — BLOCKS full M2-024
