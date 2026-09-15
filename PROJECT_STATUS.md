@@ -18673,6 +18673,48 @@ This conflict itself stays open — the whole-chapter task-assignment gap is
 unaffected; only F-065's own piece of what this conflict originally
 flagged is closed.
 
+**Update — F-066 Profit Target Recommendation, owner decision.** A
+dedicated spec-gate audit (post-Dashboard-Recommendation-Summary-parity)
+found F-066's own specification (`02_Formulas.md`) carries three inputs
+— Target BTC Price, Target Portfolio Value, Target Profit — with no
+equation, worked example, or Recommendation-field mapping for any of
+them, and found a standing, already-approved decision
+(`services/portfolio/safetyTargetsStatus.ts`'s own header comment,
+Safety Targets Semantic/Status Cleanup batch) stating Target BTC Price
+"is not intended to gain... an associated Recommendation." **Owner
+decision: F-066's Recommendation-Engine interpretation is closed WON'T
+IMPLEMENT under the current specification** — the same disposition, and
+the same "close under the current specification rather than invent a
+rule" reasoning, conflict #11 (Exit Readiness) already established for
+this exact class of gap. No `RecommendationItemId`, `RecommendationCategory`,
+or Recommendation filter/category has been or will be added for F-066;
+`engine/`, `services/`, `features/`, and `stores/` are unchanged.
+
+Target BTC Price's own concept — notifying when the portfolio's BTC
+price reaches a user-configured target — remains fully satisfied outside
+the Recommendation Engine, by the existing, unchanged Safety Targets
+feature (`services/portfolio/safetyTargetsStatus.ts`): canonical states
+stay **Not configured / Below target / Target reached**; the comparator
+stays `current >= target` (equality counts as reached, no tolerance or
+rounding); and reaching the target implies no automatic financial action
+(sell/exit/repay/borrow/loop/add collateral/rebalance) — the same
+informational-milestone framing that comparator's own header comment
+already documents.
+
+Target Portfolio Value and Target Profit remain separately deferred/
+unsupported, for the reason already recorded elsewhere in this document
+and in `docs/VERSION_2_BACKLOG.md` §3 and
+`docs/STARTING_VALUE_BASELINE_SPEC.md`: no canonical cost-basis or
+acquisition-price model exists anywhere in this codebase, and building
+one is its own, separate, not-yet-made product decision.
+
+This conflict itself stays open for the remaining Formula IDs in the
+chapter (F-060, F-067–F-069) — only F-066's own piece of what this
+conflict originally flagged is closed. `tests/fixtures/formulaCoverage.ts`'s
+F-066 entry stays `not_implemented` (mechanically accurate — no F-066
+code exists in any form) with its `reason` updated to record this
+disposition; no new `FormulaCoverageStatus` value was introduced.
+
 ### 10. "Target cash proceeds" (M2-024) has ambiguous mechanics, not just a missing formula — BLOCKS full M2-024
 
 **This is a behavioral / business-rule ambiguity about execution order,

@@ -269,7 +269,8 @@ export const FORMULA_COVERAGE_REGISTRY: readonly FormulaCoverageEntry[] = [
     id: 'F-066',
     title: 'Profit Target Recommendation',
     status: 'not_implemented',
-    reason: 'No task in 06_TASKS.md maps to this formula (Batch 10 finding).',
+    reason:
+      "Recommendation-Engine interpretation closed WON'T IMPLEMENT under the current specification (owner decision, PROJECT_STATUS.md conflict #9) — no Recommendation item/category/filter for it exists or will be added. Its Target BTC Price input is already satisfied outside the Recommendation Engine, by Safety Targets (informational only). Its other two inputs, Target Portfolio Value and Target Profit, remain separately deferred/unsupported — no canonical cost-basis or acquisition-price model exists for either.",
   },
   {
     id: 'F-067',
